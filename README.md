@@ -1,5 +1,7 @@
 # clipboard-manager
 
+[![Build Windows exe](https://github.com/NourEldin-Osama/clipboard-manager/actions/workflows/build-windows.yml/badge.svg)](https://github.com/NourEldin-Osama/clipboard-manager/actions/workflows/build-windows.yml)
+
 An open-source, offline clipboard manager for Windows (also builds on Linux and macOS), written entirely in Rust.
 It keeps your clipboard history, reads the text inside screenshots and images on your own machine, and lets you
 search everything **by meaning** with local embedding models. For example, type *"receipt from the hardware store"* and
@@ -30,8 +32,12 @@ the first time an image is processed (turn OCR off to avoid it). After that, eve
 
 ## Install on Windows
 
-### Option A: download / copy the prebuilt `.exe`
-`dist/clipboard-manager.exe` is a single, self-contained binary that needs no installer and no runtime. Put it anywhere, for example
+### Option A: download the prebuilt `.exe`
+Every push is built on GitHub's Windows machines. Open the [Actions page](https://github.com/NourEldin-Osama/clipboard-manager/actions/workflows/build-windows.yml),
+click the latest green run, and download **clipboard-manager-windows-x64-…** under *Artifacts* (you need to be signed in to GitHub).
+Unzip it to get `clipboard-manager.exe`. Builds are kept for 30 days.
+
+`clipboard-manager.exe` is a single, self-contained binary that needs no installer and no runtime. Put it anywhere, for example
 `%LOCALAPPDATA%\Programs\clipboard-manager\`, and run it. To start it at login, press `Win+R`, type `shell:startup` and
 put a shortcut to the `.exe` in that folder.
 

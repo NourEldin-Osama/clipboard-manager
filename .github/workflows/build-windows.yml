@@ -1,0 +1,46 @@
+name: Build Windows exe
+
+on:
+  push:
+    branches: ["**"]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+# Cancel an older run of the same branch when a newer push arrives.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 60
+    env:
+      CARGO_TERM_COLOR: always
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      # Caches compiled dependencies; later builds only recompile this crate.
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-all-crates: true
+
+      - name: Test
+        run: cargo test --locked
+
+      - name: Build (dist profile)
+        run: cargo build --locked --profile dist
+
+      - name: Upload exe
+        uses: actions/upload-artifact@v4
+        with:
+          name: clipboard-manager-windows-x64-${{ github.sha }}
+          path: target/dist/clipboard-manager.exe
+          if-no-files-found: error
+          retention-days: 30
