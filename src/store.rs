@@ -65,6 +65,9 @@ pub struct Item {
     /// User labels, as typed; compared case-insensitively.
     #[serde(default)]
     pub tags: Vec<String>,
+    /// Times it was copied back from the list ("Most used").
+    #[serde(default)]
+    pub uses: u32,
 }
 
 impl Item {
@@ -267,6 +270,7 @@ mod tests {
             hash: fnv1a(text.as_bytes()),
             source: None,
             tags: Vec::new(),
+            uses: 0,
         }
     }
 

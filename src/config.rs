@@ -129,6 +129,33 @@ impl Default for Keys {
     }
 }
 
+/// How the list is ordered. Searching and browsing each remember their own.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum SortOrder {
+    /// Closest to the query; only while searching.
+    BestMatch,
+    /// Last copied or used first.
+    Recent,
+    Oldest,
+    AToZ,
+    /// Copied back from the list most often.
+    MostUsed,
+}
+
+impl SortOrder {
+    pub const ALL: [SortOrder; 5] = [Self::BestMatch, Self::Recent, Self::Oldest, Self::AToZ, Self::MostUsed];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::BestMatch => "Best match",
+            Self::Recent => "Recent",
+            Self::Oldest => "Oldest",
+            Self::AToZ => "A to Z",
+            Self::MostUsed => "Most used",
+        }
+    }
+}
+
 /// How the main window lays out the history.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ViewMode {
@@ -189,6 +216,12 @@ pub struct Config {
     pub keys: Keys,
     pub language: Language,
     pub time_format: TimeFormat,
+    /// Order while browsing (never `BestMatch`).
+    pub sort: SortOrder,
+    /// Order while searching.
+    pub search_sort: SortOrder,
+    /// Pinned items above the rest, whatever the order.
+    pub pinned_first: bool,
 }
 
 impl Default for Config {
@@ -215,6 +248,9 @@ impl Default for Config {
             keys: Keys::default(),
             language: Language::English,
             time_format: TimeFormat::H12,
+            sort: SortOrder::Recent,
+            search_sort: SortOrder::BestMatch,
+            pinned_first: true,
         }
     }
 }
