@@ -784,7 +784,6 @@ impl App {
         let b = tip(mode_button(ui, tr(current.label()), false), tr("Sort by"));
         let searching = !self.query.trim().is_empty();
         let mut pick = None;
-        let mut toggle_pinned = false;
         egui::Popup::menu(&b).show(|ui| {
             ui.set_width(MENU_W);
             let weak = ui.visuals().weak_text_color();
@@ -800,18 +799,9 @@ impl App {
                     pick = Some(s);
                 }
             }
-            ui.separator();
-            if check_row(ui, "Pinned on top", self.cfg.pinned_first).clicked() {
-                toggle_pinned = true;
-            }
         });
         if let Some(s) = pick {
             self.set_sort(s);
-        }
-        if toggle_pinned {
-            self.cfg.pinned_first = !self.cfg.pinned_first;
-            self.save_config();
-            self.dirty = true;
         }
     }
 

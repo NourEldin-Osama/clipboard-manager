@@ -721,7 +721,9 @@ impl App {
             self.results.retain(|h| items[h.idx].has_tag(tag));
         }
         let sort = self.sort();
-        search::order(&self.items, &mut self.results, sort, self.cfg.pinned_first);
+        // While searching, the best matches lead even when pinned items don't match as well.
+        let pinned_first = self.cfg.pinned_first && self.query.trim().is_empty();
+        search::order(&self.items, &mut self.results, sort, pinned_first);
         let still_there = self.selected.map(|id| self.results.iter().any(|h| self.items[h.idx].id == id)).unwrap_or(false);
         if !still_there {
             self.selected = self.results.first().map(|h| self.items[h.idx].id);

@@ -220,7 +220,7 @@ pub struct Config {
     pub sort: SortOrder,
     /// Order while searching.
     pub search_sort: SortOrder,
-    /// Pinned items above the rest, whatever the order.
+    /// Pinned items above the rest while browsing (not while searching).
     pub pinned_first: bool,
 }
 
