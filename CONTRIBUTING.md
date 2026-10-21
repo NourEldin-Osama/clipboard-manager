@@ -17,6 +17,9 @@ cargo test
 cargo clippy
 ```
 
+The pull-request checks build with `--config ci/fast-build.toml` (no optimisation, no debug info), which is much
+quicker from a cold cache; use it locally too if you only want to run the tests.
+
 Builds made on your own PC have no build number and never update themselves. The Windows release is built by
 GitHub Actions on every push to `main` (see the README for cross-compiling from Linux). If the repo lives on a synced
 drive, keep the build cache elsewhere: `CARGO_TARGET_DIR=/some/local/dir cargo build`.
