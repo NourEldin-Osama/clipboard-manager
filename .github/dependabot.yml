@@ -1,0 +1,16 @@
+# Weekly pull requests to keep crates and GitHub Actions current.
+version: 2
+updates:
+  - package-ecosystem: cargo
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      # Minor and patch bumps arrive as one pull request.
+      crates:
+        update-types: [minor, patch]
+    open-pull-requests-limit: 5
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
