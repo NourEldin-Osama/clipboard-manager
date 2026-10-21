@@ -56,6 +56,7 @@ fn file_item(path: &Path, next_id: &mut u64) -> Option<Item> {
         created: now(),
         hash: fnv1a(path_str.as_bytes()),
         source: Some(path.to_path_buf()),
+        tags: Vec::new(),
     };
     if IMAGE_EXT.contains(&e.as_str()) {
         let (w, h) = image::image_dimensions(path).ok()?;

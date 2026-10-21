@@ -5,6 +5,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod app;
+mod autostart;
 mod clipboard;
 mod config;
 mod embed;
@@ -14,6 +15,7 @@ mod models;
 mod ocr;
 mod search;
 mod store;
+mod tray;
 mod worker;
 
 use eframe::egui;
@@ -59,8 +61,14 @@ fn init_logging(paths: &config::Paths) {
     std::panic::set_hook(Box::new(|info| log::error!("panic: {info}")));
 }
 
-/// A simple generated icon: a rounded clipboard in the accent colour.
 fn icon() -> egui::IconData {
+    let (rgba, n) = icon_rgba();
+    egui::IconData { rgba, width: n, height: n }
+}
+
+/// A simple generated icon: a rounded clipboard in the accent colour. Also
+/// used for the tray.
+pub fn icon_rgba() -> (Vec<u8>, u32) {
     let n = 64u32;
     let mut rgba = vec![0u8; (n * n * 4) as usize];
     for y in 0..n {
@@ -81,7 +89,7 @@ fn icon() -> egui::IconData {
             }
         }
     }
-    egui::IconData { rgba, width: n, height: n }
+    (rgba, n)
 }
 
 fn rounded(x: f32, y: f32, x0: f32, y0: f32, x1: f32, y1: f32, r: f32) -> bool {

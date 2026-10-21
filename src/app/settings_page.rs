@@ -2,14 +2,17 @@
 //! the search model waits for "Apply", because a half-typed address would
 //! otherwise reconnect on every keystroke.
 
-use eframe::egui::{Align, Frame, Layout, Margin, Ui};
+use eframe::egui::{Align, Frame, Layout, Margin, Pos2, Rect, Ui};
 
+use super::icons::{self, Icon};
+use super::shortcut;
 use super::view::{accent, chip, primary_button, reveal, ACCENTS, AMBER, GREEN, RED};
 use super::*;
 use crate::config::Density;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(super) enum SettingsPage {
+    General,
     Search,
     Clipboard,
     Shortcuts,
@@ -18,18 +21,22 @@ pub(super) enum SettingsPage {
 }
 
 impl SettingsPage {
-    const ALL: [SettingsPage; 5] = [Self::Search, Self::Clipboard, Self::Shortcuts, Self::Appearance, Self::Data];
+    const ALL: [SettingsPage; 6] = [Self::General, Self::Search, Self::Clipboard, Self::Shortcuts, Self::Appearance, Self::Data];
 
-    fn label(self) -> (&'static str, &'static str) {
+    fn label(self) -> (Icon, &'static str) {
         match self {
-            Self::Search => ("🔍", "Search & AI model"),
-            Self::Clipboard => ("📋", "Clipboard"),
-            Self::Shortcuts => ("⌨", "Shortcuts"),
-            Self::Appearance => ("🎨", "Appearance"),
-            Self::Data => ("🔒", "Data & privacy"),
+            Self::General => (Icon::Sliders, "General"),
+            Self::Search => (Icon::Search, "Search & AI model"),
+            Self::Clipboard => (Icon::Clipboard, "Clipboard"),
+            Self::Shortcuts => (Icon::Keyboard, "Shortcuts"),
+            Self::Appearance => (Icon::Palette, "Appearance"),
+            Self::Data => (Icon::Lock, "Data & privacy"),
         }
     }
 }
+
+/// Picks one shortcut out of the settings.
+type KeyField = fn(&mut Config) -> &mut String;
 
 const HISTORY_SIZES: [usize; 5] = [500, 1_000, 5_000, 20_000, 100_000];
 const VECTOR_SIZES: [(usize, &str); 4] = [(0, "Full · best quality"), (512, "512 · smaller"), (256, "256 · compact"), (128, "128 · tiny, fastest")];
@@ -77,8 +84,7 @@ fn segmented<T: PartialEq + Copy>(ui: &mut Ui, value: &mut T, options: &[(T, &st
 }
 
 fn info(ui: &mut Ui, text: &str) {
-    ui.add(egui::Label::new(RichText::new("ℹ").size(13.0).color(ui.visuals().weak_text_color())).sense(Sense::hover()))
-        .on_hover_text(text);
+    icons::glyph(ui, Icon::Info, 14.0, ui.visuals().weak_text_color()).on_hover_text(text);
 }
 
 fn section(ui: &mut Ui, title: &str) {
@@ -102,8 +108,13 @@ fn setting(ui: &mut Ui, label: &str, help: &str, changed: bool, control: impl Fn
                 info(ui, help);
             }
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                if changed && ui.add(egui::Button::new(RichText::new("↺").size(14.0)).frame_when_inactive(false)).on_hover_text("Back to default").clicked() {
-                    reset = true;
+                // The reset button's space is kept when it's hidden, so controls stay in one column.
+                if changed {
+                    if icons::icon_button_ex(ui, Icon::Reset, "Back to default", Vec2::splat(28.0), 14.0, None, None).clicked() {
+                        reset = true;
+                    }
+                } else {
+                    ui.add_space(28.0 + ui.spacing().item_spacing.x);
                 }
                 control(ui);
             });
@@ -141,6 +152,7 @@ impl App {
     pub(super) fn open_settings(&mut self, page: SettingsPage) {
         self.draft = Some(self.cfg.clone());
         self.settings_page = page;
+        self.recording = None;
         self.confirm = None;
     }
 
@@ -165,6 +177,8 @@ impl App {
                 }
             }
         }
+        let tray_changed = d.tray != self.cfg.tray;
+        let login_changed = d.start_at_login != self.cfg.start_at_login;
         let look_changed = d.accent != self.cfg.accent || d.theme != self.cfg.theme;
         let search_changed = d.search_mode != self.cfg.search_mode || d.min_similarity != self.cfg.min_similarity;
         self.cfg = d;
@@ -181,6 +195,16 @@ impl App {
         }
         if keys_changed {
             self.register_hotkeys(ctx);
+        }
+        if tray_changed {
+            self.set_tray(self.cfg.tray);
+        }
+        if login_changed {
+            if let Err(e) = crate::autostart::set(self.cfg.start_at_login) {
+                self.set_error(format!("{e:#}"));
+                self.cfg.start_at_login = !self.cfg.start_at_login;
+                self.save_config();
+            }
         }
         if search_changed {
             self.query_changed = Some(Instant::now() - QUERY_DEBOUNCE);
@@ -205,7 +229,7 @@ impl App {
             .frame(Frame::new().inner_margin(Margin { left: 12, right: 16, top: 12, bottom: 8 }).fill(panel))
             .show(ui, |ui| {
                 ui.horizontal(|ui| {
-                    if ui.add(egui::Button::new(RichText::new("←  Back").size(14.0)).frame_when_inactive(false)).on_hover_text("Esc").clicked() {
+                    if icons::icon_button_ex(ui, Icon::Back, "Back (Esc)", Vec2::splat(34.0), 15.0, None, None).clicked() {
                         close = true;
                     }
                     ui.add_space(8.0);
@@ -217,7 +241,9 @@ impl App {
                             }
                             chip(ui, "Model changes not applied yet", AMBER);
                         } else {
-                            ui.label(RichText::new("✔ Changes are saved automatically").size(12.5).color(ui.visuals().weak_text_color()));
+                            let weak = ui.visuals().weak_text_color();
+                            ui.label(RichText::new("Changes are saved automatically").size(12.5).color(weak));
+                            icons::glyph(ui, Icon::Check, 13.0, weak);
                         }
                     });
                 });
@@ -232,14 +258,20 @@ impl App {
                 for page in SettingsPage::ALL {
                     let (icon, name) = page.label();
                     let sel = self.settings_page == page;
-                    let text = RichText::new(format!("{icon}   {name}")).size(14.0).color(if sel { accent() } else { ui.visuals().text_color() });
-                    let b = egui::Button::new(text)
-                        .frame_when_inactive(sel)
-                        .fill(if sel { accent().gamma_multiply(0.13) } else { Color32::TRANSPARENT })
-                        .min_size(Vec2::new(ui.available_width(), 36.0));
-                    if ui.add(b).clicked() {
+                    let (rect, r) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 36.0), Sense::click());
+                    let v = ui.visuals();
+                    let color = if sel { accent() } else if r.hovered() { v.strong_text_color() } else { v.text_color() };
+                    if sel {
+                        ui.painter().rect_filled(rect, CornerRadius::same(8), accent().gamma_multiply(0.13));
+                    } else if r.hovered() {
+                        ui.painter().rect_filled(rect, CornerRadius::same(8), v.widgets.hovered.weak_bg_fill);
+                    }
+                    icons::paint(ui.painter(), Rect::from_center_size(Pos2::new(rect.left() + 22.0, rect.center().y), Vec2::splat(16.0)), icon, color);
+                    ui.painter().text(Pos2::new(rect.left() + 42.0, rect.center().y), egui::Align2::LEFT_CENTER, name, FontId::proportional(14.0), color);
+                    if r.clicked() {
                         self.settings_page = page;
                         self.confirm = None;
+                        self.recording = None;
                     }
                 }
             });
@@ -249,6 +281,7 @@ impl App {
             egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
                 ui.set_max_width(720.0);
                 match self.settings_page {
+                    SettingsPage::General => general_page(ui, &mut d),
                     SettingsPage::Search => self.search_page(ui, &mut d, &mut apply_model),
                     SettingsPage::Clipboard => clipboard_page(ui, &mut d),
                     SettingsPage::Shortcuts => self.shortcuts_page(ui, &mut d, &mut apply_keys),
@@ -271,6 +304,8 @@ impl App {
         live.ignore_next_hotkey = self.cfg.ignore_next_hotkey.clone();
         if live != self.cfg {
             self.apply_settings(live, &ctx, false);
+            // A setting the system refused (start at sign-in) snaps back.
+            d.start_at_login = self.cfg.start_at_login;
         }
         if apply_keys {
             let mut c = self.cfg.clone();
@@ -309,7 +344,9 @@ impl App {
         let (dot, text) = self.model_status();
         ui.horizontal(|ui| {
             ui.add_space(10.0);
-            ui.label(RichText::new(format!("● {text}")).size(13.0).color(if dot == Color32::GRAY { ui.visuals().weak_text_color() } else { dot }));
+            let color = if dot == Color32::GRAY { ui.visuals().weak_text_color() } else { dot };
+            icons::glyph(ui, Icon::Dot, 12.0, color);
+            ui.label(RichText::new(text).size(13.0).color(color));
         });
         ui.add_space(4.0);
         let mut kind = match &d.backend {
@@ -384,48 +421,75 @@ impl App {
     fn shortcuts_page(&mut self, ui: &mut Ui, d: &mut Config, apply_keys: &mut bool) {
         let def = Config::default();
         section(ui, "Anywhere in Windows");
-        let mut key_row = |ui: &mut Ui, label: &str, help: &str, value: &mut String, default: &str| {
-            let changed = value != default;
-            let ok = value.trim().is_empty() || HotKey::from_str(value.trim()).is_ok();
-            if setting(ui, label, help, changed, |ui| {
-                if !ok {
-                    chip(ui, "⚠ Not a valid shortcut", RED);
-                } else if value.trim().is_empty() {
-                    chip(ui, "Off", Color32::GRAY);
+        let globals: [(&'static str, &str, &str, KeyField); 2] = [
+            ("show", "Show or hide this window", "Opens the window over whatever you're doing; press again to hide it.", |c| &mut c.show_hotkey),
+            ("ignore", "Don't record the next copy", "Press before copying something private: the next copy is skipped.", |c| &mut c.ignore_next_hotkey),
+        ];
+        for (id, label, help, field) in globals {
+            let default = field(&mut def.clone()).clone();
+            let value = field(d);
+            let invalid = !value.trim().is_empty() && HotKey::from_str(value.trim()).is_err();
+            let mut result = shortcut::Recorded::Nothing;
+            let reset = setting(ui, label, help, *value != default, |ui| {
+                result = shortcut::recorder(ui, value, self.recording == Some(id), true, &mut self.record_problem);
+                if invalid {
+                    chip(ui, "⚠ Not usable", RED);
                 }
-                let r = ui.add(egui::TextEdit::singleline(value).desired_width(150.0).hint_text("e.g. Alt+V"));
-                if r.lost_focus() && ok {
-                    *apply_keys = true;
-                }
-            }) {
-                *value = default.to_string();
+            });
+            if reset {
+                *value = default;
                 *apply_keys = true;
             }
-        };
-        key_row(ui, "Show or hide this window", "Opens the window over whatever you're doing; press again to hide it.", &mut d.show_hotkey, &def.show_hotkey);
-        key_row(ui, "Don't record the next copy", "Press before copying something private: the next copy is skipped.", &mut d.ignore_next_hotkey, &def.ignore_next_hotkey);
-        if let Some(e) = &self.hotkey_error {
-            ui.horizontal(|ui| {
-                ui.add_space(10.0);
-                ui.label(RichText::new(format!("⚠ {e}")).size(12.5).color(RED));
-            });
+            match result {
+                shortcut::Recorded::Started => {
+                    // Off while recording, so pressing the current keys doesn't hide the window.
+                    self.hotkeys = None;
+                    self.recording = Some(id);
+                }
+                shortcut::Recorded::Changed | shortcut::Recorded::Cancelled => {
+                    self.recording = None;
+                    *apply_keys = true;
+                }
+                shortcut::Recorded::Nothing => {}
+            }
         }
-        note(ui, "Type a shortcut like Alt+V, Ctrl+Shift+Space or Super+V and press Enter. Leave empty to turn it off.");
+        if let Some(e) = &self.hotkey_error {
+            note(ui, &format!("⚠ {e}"));
+        }
 
         section(ui, "Inside the app");
-        for (keys, what) in [
-            ("↑  ↓", "Move through the list"),
-            ("Enter", "Copy the selected item and hide the window"),
-            ("Ctrl  P", "Pin or unpin"),
-            ("Shift  Del", "Delete"),
-            ("Esc", "Clear the search, or hide the window"),
-        ] {
-            ui.horizontal(|ui| {
-                ui.add_space(10.0);
-                ui.add_sized([110.0, 26.0], egui::Label::new(RichText::new(keys).monospace().size(13.0).color(accent())));
-                ui.label(RichText::new(what).size(14.0));
+        let locals: [(&'static str, &str, KeyField); 5] = [
+            ("copy", "Copy the selected item and hide the window", |c| &mut c.keys.copy),
+            ("pin", "Pin or unpin", |c| &mut c.keys.pin),
+            ("delete", "Delete", |c| &mut c.keys.delete),
+            ("tag", "Add a tag", |c| &mut c.keys.tag),
+            ("view", "Switch between Grid, List and Detail", |c| &mut c.keys.view),
+        ];
+        let current: Vec<(&str, String)> = locals.iter().map(|(id, _, f)| (*id, f(&mut d.clone()).clone())).collect();
+        for (id, label, field) in locals {
+            let default = field(&mut def.clone()).clone();
+            let value = field(d);
+            let clash = !value.is_empty() && current.iter().any(|(other, v)| *other != id && v.eq_ignore_ascii_case(value));
+            let mut result = shortcut::Recorded::Nothing;
+            let reset = setting(ui, label, "", *value != default, |ui| {
+                result = shortcut::recorder(ui, value, self.recording == Some(id), false, &mut self.record_problem);
+                if clash {
+                    chip(ui, "Used twice", AMBER);
+                }
             });
+            if reset {
+                *value = default;
+            }
+            match result {
+                shortcut::Recorded::Started => self.recording = Some(id),
+                shortcut::Recorded::Changed | shortcut::Recorded::Cancelled => self.recording = None,
+                shortcut::Recorded::Nothing => {}
+            }
         }
+        for (label, keys) in [("Move through the list", "Up+Down"), ("Move between cards in the grid", "Left+Right"), ("Close details, clear the search, or hide", "Escape")] {
+            setting(ui, label, "Built in; can't be changed.", false, |ui| shortcut::fixed(ui, keys));
+        }
+        note(ui, "Click a shortcut, then press the new keys. Backspace turns it off, Esc cancels.");
     }
 
     fn data_page(&mut self, ui: &mut Ui, d: &mut Config) {
@@ -491,6 +555,23 @@ impl App {
     }
 }
 
+fn general_page(ui: &mut Ui, d: &mut Config) {
+    let def = Config::default();
+    section(ui, "Startup");
+    if setting(ui, "Start when you sign in", "Opens the app each time you sign in to Windows. It starts hidden: in the system tray when that's on, otherwise minimised.", d.start_at_login != def.start_at_login, |ui| {
+        toggle(ui, &mut d.start_at_login);
+    }) {
+        d.start_at_login = def.start_at_login;
+    }
+    section(ui, "System tray");
+    if setting(ui, "Keep running in the system tray", "Shows an icon in the notification area. Closing or minimising the window hides it there and history keeps recording. Click the icon to open; right-click it to quit.", d.tray != def.tray, |ui| {
+        toggle(ui, &mut d.tray);
+    }) {
+        d.tray = def.tray;
+    }
+    note(ui, "With both on, the app starts quietly in the tray each time you sign in.");
+}
+
 fn clipboard_page(ui: &mut Ui, d: &mut Config) {
     let def = Config::default();
     section(ui, "Recording");
@@ -543,6 +624,12 @@ fn appearance_page(ui: &mut Ui, d: &mut Config) {
         d.accent = def.accent;
     }
     section(ui, "List");
+    if setting(ui, "Layout", "Grid shows cards, List shows rows; both open details on demand. Detail keeps the selected item beside the list. The view button next to the search box switches too.", d.view != def.view, |ui| {
+        let options: Vec<(ViewMode, &str)> = ViewMode::ALL.iter().map(|v| (*v, v.label())).collect();
+        segmented(ui, &mut d.view, &options);
+    }) {
+        d.view = def.view;
+    }
     if setting(ui, "Density", "Compact fits more items on screen by hiding the second line.", d.density != def.density, |ui| {
         segmented(ui, &mut d.density, &[(Density::Comfortable, "Comfortable"), (Density::Compact, "Compact")]);
     }) {
@@ -600,7 +687,7 @@ fn server_settings(ui: &mut Ui, s: &mut ServerConfig, list: &mut ModelList) {
     setting(ui, "Model", "Leave empty to use the server's default embedding model. Pick from ▾ or type a name your server knows.", !s.model.trim().is_empty(), |ui| {
         let any = default_name.is_some() || !list.found.listed.is_empty();
         if editable && any {
-            let b = ui.add(egui::Button::new("▾").frame_when_inactive(false));
+            let b = icons::icon_button_ex(ui, Icon::ChevronDown, "Models on this server", Vec2::splat(28.0), 11.0, None, None);
             egui::Popup::menu(&b).show(|ui| {
                 ui.set_min_width(320.0);
                 if let Some(dn) = &default_name {
