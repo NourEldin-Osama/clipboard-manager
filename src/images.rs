@@ -7,7 +7,8 @@ use std::sync::mpsc::{channel, Receiver, Sender};
 
 use eframe::egui::ColorImage;
 
-pub const THUMB_PX: u32 = 96;
+/// Large enough for grid cards; list rows scale it down.
+pub const THUMB_PX: u32 = 280;
 pub const PREVIEW_PX: u32 = 1600;
 
 pub struct Loaded {

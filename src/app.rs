@@ -13,12 +13,13 @@ use global_hotkey::hotkey::HotKey;
 use global_hotkey::{GlobalHotKeyEvent, GlobalHotKeyManager, HotKeyState};
 
 use crate::clipboard::{self, Captured, Flags};
-use crate::config::{Config, EmbedBackend, LaunchConfig, Paths, SearchMode, ServerConfig, Theme};
+use crate::config::{Config, EmbedBackend, LaunchConfig, Paths, SearchMode, ServerConfig, Theme, ViewMode};
 use crate::embed::Embedding;
 use crate::images::ImageLoader;
 use crate::import;
 use crate::models::{self, Progress, SIGLIP_MODELS};
 use crate::search::{self, Filter, Hit};
+use crate::tray::{Tray, TrayCmd};
 use crate::store::{looks_like_link, now, Item, Kind, Origin, Store};
 use crate::worker::{Event, Job, Worker};
 
@@ -26,7 +27,7 @@ const QUERY_DEBOUNCE: Duration = Duration::from_millis(180);
 /// While indexing, re-rank at most this often instead of after every vector.
 const RESEARCH_EVERY: Duration = Duration::from_millis(400);
 /// Thumbnail textures kept before the cache is dropped and refilled from what is visible.
-const MAX_THUMBS: usize = 600;
+const MAX_THUMBS: usize = 300;
 
 /// Derived from the selected item once, not every frame.
 struct DetailText {
@@ -101,6 +102,36 @@ impl ModelList {
     }
 }
 
+/// Shows and hides the main window from any thread: hotkeys, the tray, the UI.
+/// With the tray on, hiding takes the window off the taskbar; otherwise it minimises.
+#[derive(Clone)]
+struct WindowCtl {
+    ctx: egui::Context,
+    tray: Arc<AtomicBool>,
+    hidden: Arc<AtomicBool>,
+    focus_search: Arc<AtomicBool>,
+}
+
+impl WindowCtl {
+    fn show(&self) {
+        self.hidden.store(false, Ordering::SeqCst);
+        self.ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
+        self.ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(false));
+        self.ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
+        self.focus_search.store(true, Ordering::SeqCst);
+        self.ctx.request_repaint();
+    }
+
+    fn hide(&self) {
+        if self.tray.load(Ordering::SeqCst) {
+            self.hidden.store(true, Ordering::SeqCst);
+            self.ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
+        } else {
+            self.ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(true));
+        }
+    }
+}
+
 /// Keeps the registrations alive; dropping the manager unregisters them.
 struct Hotkeys {
     _manager: GlobalHotKeyManager,
@@ -154,6 +185,28 @@ pub struct App {
     confirm: Option<&'static str>,
     /// Scroll offset and visible height of the list, from the last frame.
     list_view: (f32, f32),
+    /// Grid and List views show the details pane only after "Open details".
+    details_open: bool,
+    /// Cards per row in the grid, from the last frame, for ↑ ↓ navigation.
+    grid_cols: usize,
+    win: WindowCtl,
+    tray: Option<Tray>,
+    tray_tx: std::sync::mpsc::Sender<TrayCmd>,
+    tray_rx: Receiver<TrayCmd>,
+    /// "Quit" from the tray: let the close through instead of hiding.
+    quitting: bool,
+    was_minimized: bool,
+    /// Frames left in which to hide a window started by sign-in.
+    start_hidden: u8,
+    /// The shortcut field listening for keys in Settings, and why the last try was refused.
+    recording: Option<&'static str>,
+    record_problem: Option<&'static str>,
+    /// Only items carrying this tag are listed.
+    tag_filter: Option<String>,
+    /// The tag being typed in the details pane, for that item.
+    tag_input: Option<(u64, String)>,
+    /// Give the tag field focus on its next frame (it was just opened).
+    tag_focus: bool,
 }
 
 impl App {
@@ -179,7 +232,17 @@ impl App {
         let c = ctx.clone();
         clipboard::spawn_watcher(flags.clone(), cap_tx, move || c.request_repaint());
 
+        let focus_search = Arc::new(AtomicBool::new(true));
+        let win = WindowCtl { ctx: ctx.clone(), tray: Arc::new(AtomicBool::new(false)), hidden: Arc::new(AtomicBool::new(false)), focus_search: focus_search.clone() };
+        let (tray_tx, tray_rx) = channel();
         let mut app = Self {
+            win,
+            tray: None,
+            tray_tx,
+            tray_rx,
+            quitting: false,
+            was_minimized: false,
+            start_hidden: if crate::autostart::launched_minimized() { 3 } else { 0 },
             paths,
             draft: None,
             store,
@@ -204,7 +267,7 @@ impl App {
             dirty: true,
             selected: None,
             scroll_to_selected: false,
-            focus_search: Arc::new(AtomicBool::new(true)),
+            focus_search,
             focused: Arc::new(AtomicBool::new(true)),
             thumbs: HashMap::new(),
             preview: None,
@@ -223,6 +286,13 @@ impl App {
             settings_page: SettingsPage::Search,
             confirm: None,
             list_view: (0.0, 0.0),
+            details_open: false,
+            grid_cols: 1,
+            tag_filter: None,
+            tag_input: None,
+            tag_focus: false,
+            recording: None,
+            record_problem: None,
             cfg,
         };
         app.lower = app.items.iter().map(|i| (i.id, i.searchable_text().to_lowercase())).collect();
@@ -235,6 +305,15 @@ impl App {
             }
         }
         app.register_hotkeys(&ctx);
+        if app.cfg.tray {
+            app.set_tray(true);
+        }
+        if app.cfg.start_at_login {
+            // Refreshes the stored path in case the app was moved.
+            if let Err(e) = crate::autostart::set(true) {
+                log::warn!("{e:#}");
+            }
+        }
         Ok(app)
     }
 
@@ -279,19 +358,16 @@ impl App {
         let show = parse(&self.cfg.show_hotkey);
         let ignore = parse(&self.cfg.ignore_next_hotkey);
         let (show_id, ignore_id) = (show.map(|h| h.id()), ignore.map(|h| h.id()));
-        let (c, flags, focus, focused) = (ctx.clone(), self.flags.clone(), self.focus_search.clone(), self.focused.clone());
+        let (c, flags, focused, win) = (ctx.clone(), self.flags.clone(), self.focused.clone(), self.win.clone());
         GlobalHotKeyEvent::set_event_handler(Some(move |e: GlobalHotKeyEvent| {
             if e.state() != HotKeyState::Pressed {
                 return;
             }
             if Some(e.id()) == show_id {
-                if focused.load(Ordering::SeqCst) {
-                    c.send_viewport_cmd(egui::ViewportCommand::Minimized(true));
+                if focused.load(Ordering::SeqCst) && !win.hidden.load(Ordering::SeqCst) {
+                    win.hide();
                 } else {
-                    c.send_viewport_cmd(egui::ViewportCommand::Visible(true));
-                    c.send_viewport_cmd(egui::ViewportCommand::Minimized(false));
-                    c.send_viewport_cmd(egui::ViewportCommand::Focus);
-                    focus.store(true, Ordering::SeqCst);
+                    win.show();
                 }
             } else if Some(e.id()) == ignore_id {
                 flags.ignore_next.store(true, Ordering::SeqCst);
@@ -299,6 +375,68 @@ impl App {
             c.request_repaint();
         }));
         self.hotkeys = Some(Hotkeys { _manager: manager });
+    }
+
+    /// Adds or removes the tray icon. Without a tray, hiding falls back to minimising.
+    fn set_tray(&mut self, on: bool) {
+        self.tray = None;
+        if on {
+            let (rgba, size) = crate::icon_rgba();
+            let paused = !self.flags.enabled.load(Ordering::SeqCst);
+            let c = self.win.ctx.clone();
+            match Tray::new(rgba, size, paused, self.tray_tx.clone(), move || c.request_repaint()) {
+                Ok(t) => self.tray = Some(t),
+                Err(e) => self.set_error(format!("system tray unavailable: {e:#}")),
+            }
+        }
+        self.win.tray.store(self.tray.is_some(), Ordering::SeqCst);
+        if self.tray.is_none() && self.win.hidden.swap(false, Ordering::SeqCst) {
+            self.win.show();
+        }
+    }
+
+    fn set_recording(&mut self, on: bool) {
+        self.cfg.monitor_clipboard = on;
+        self.flags.enabled.store(on, Ordering::SeqCst);
+        self.save_config();
+    }
+
+    /// Hides to the tray on close or minimise, and handles tray commands.
+    /// Runs every frame, including while the window is hidden.
+    fn window_logic(&mut self, ctx: &egui::Context) {
+        while let Ok(cmd) = self.tray_rx.try_recv() {
+            match cmd {
+                TrayCmd::Show => self.win.show(),
+                TrayCmd::TogglePause => {
+                    let on = !self.flags.enabled.load(Ordering::SeqCst);
+                    self.set_recording(on);
+                }
+                TrayCmd::Quit => {
+                    self.quitting = true;
+                    ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                }
+            }
+        }
+        if let Some(t) = &mut self.tray {
+            t.set_paused(!self.flags.enabled.load(Ordering::SeqCst));
+        }
+        if self.start_hidden > 0 {
+            self.start_hidden -= 1;
+            self.win.hide();
+            ctx.request_repaint();
+        }
+        let (close, minimized) = ctx.input(|i| (i.viewport().close_requested(), i.viewport().minimized.unwrap_or(false)));
+        if self.tray.is_some() {
+            if close && !self.quitting {
+                ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
+                self.win.hide();
+            }
+            // Only the moment of minimising: the window stays minimised while hidden.
+            if minimized && !self.was_minimized && !self.win.hidden.load(Ordering::SeqCst) {
+                self.win.hide();
+            }
+        }
+        self.was_minimized = minimized;
     }
 
     fn save_config(&mut self) {
@@ -373,6 +511,7 @@ impl App {
             created: now(),
             hash,
             source: None,
+            tags: Vec::new(),
         };
         match c {
             Captured::Text(t) => {
@@ -402,7 +541,7 @@ impl App {
         let mut history: Vec<(i64, u64)> = self
             .items
             .iter()
-            .filter(|i| i.origin == Origin::Clipboard && !i.pinned)
+            .filter(|i| i.origin == Origin::Clipboard && !i.is_kept())
             .map(|i| (i.created, i.id))
             .collect();
         if history.len() <= self.cfg.max_items {
@@ -506,7 +645,9 @@ impl App {
                 self.loader.forget(l.id, true);
                 continue;
             }
-            let tex = l.image.map(|ci| ctx.load_texture(format!("{}{}", if l.preview { "preview" } else { "thumb" }, l.id), ci, egui::TextureOptions::LINEAR));
+            // Mipmaps keep thumbnails smooth when shrunk into a list row.
+            let opts = if l.preview { egui::TextureOptions::LINEAR } else { egui::TextureOptions { mipmap_mode: Some(egui::TextureFilter::Linear), ..egui::TextureOptions::LINEAR } };
+            let tex = l.image.map(|ci| ctx.load_texture(format!("{}{}", if l.preview { "preview" } else { "thumb" }, l.id), ci, opts));
             if l.preview {
                 // A preview for an item the user already moved past is dropped.
                 if self.selected == Some(l.id) {
@@ -568,6 +709,10 @@ impl App {
                 image_vectors: matches!(self.backend, BackendState::Ready { images: true, .. }),
             },
         );
+        if let Some(tag) = &self.tag_filter {
+            let items = &self.items;
+            self.results.retain(|h| items[h.idx].has_tag(tag));
+        }
         let still_there = self.selected.map(|id| self.results.iter().any(|h| self.items[h.idx].id == id)).unwrap_or(false);
         if !still_there {
             self.selected = self.results.first().map(|h| self.items[h.idx].id);
@@ -578,7 +723,7 @@ impl App {
         self.items.iter().find(|i| i.id == id)
     }
 
-    fn copy(&mut self, id: u64, ctx: &egui::Context) {
+    fn copy(&mut self, id: u64) {
         let Some(it) = self.item(id).cloned() else { return };
         self.flags.ignore_next.store(true, Ordering::SeqCst);
         let r = match it.kind {
@@ -603,7 +748,7 @@ impl App {
                 }
                 self.toast("Copied");
                 if self.cfg.minimize_after_copy {
-                    ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(true));
+                    self.win.hide();
                 }
             }
             Err(e) => {
@@ -622,6 +767,73 @@ impl App {
         }
     }
 
+    /// Every tag in use with its item count, most used first.
+    fn all_tags(&self) -> Vec<(String, usize)> {
+        let mut counts: HashMap<String, (String, usize)> = HashMap::new();
+        for t in self.items.iter().flat_map(|i| &i.tags) {
+            counts.entry(t.to_lowercase()).or_insert_with(|| (t.clone(), 0)).1 += 1;
+        }
+        let mut v: Vec<(String, usize)> = counts.into_values().collect();
+        v.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.to_lowercase().cmp(&b.0.to_lowercase())));
+        v
+    }
+
+    fn save_item(&mut self, id: u64) {
+        if let Some(it) = self.items.iter().find(|i| i.id == id) {
+            if let Err(e) = self.store.put(it) {
+                let e = format!("saving item: {e}");
+                self.set_error(e);
+                return;
+            }
+            self.lower.insert(id, it.searchable_text().to_lowercase());
+        }
+        self.dirty = true;
+    }
+
+    /// Adds comma-separated tags, keeping the spelling of a tag already in use.
+    fn add_tags(&mut self, id: u64, input: &str) {
+        let known = self.all_tags();
+        let Some(it) = self.items.iter_mut().find(|i| i.id == id) else { return };
+        for t in input.split(',').map(|t| t.trim().trim_start_matches('#').trim()).filter(|t| !t.is_empty()) {
+            let t: String = t.chars().take(40).collect();
+            if it.has_tag(&t) {
+                continue;
+            }
+            let t = known.iter().find(|(k, _)| k.eq_ignore_ascii_case(&t)).map(|(k, _)| k.clone()).unwrap_or(t);
+            it.tags.push(t);
+        }
+        self.save_item(id);
+    }
+
+    fn remove_tag(&mut self, id: u64, tag: &str) {
+        if let Some(it) = self.items.iter_mut().find(|i| i.id == id) {
+            it.tags.retain(|t| !t.eq_ignore_ascii_case(tag));
+        }
+        self.save_item(id);
+        self.drop_stale_tag_filter();
+    }
+
+    /// Removes a tag from every item that has it.
+    fn delete_tag(&mut self, tag: &str) {
+        let ids: Vec<u64> = self.items.iter().filter(|i| i.has_tag(tag)).map(|i| i.id).collect();
+        for id in &ids {
+            if let Some(it) = self.items.iter_mut().find(|i| i.id == *id) {
+                it.tags.retain(|t| !t.eq_ignore_ascii_case(tag));
+            }
+            self.save_item(*id);
+        }
+        self.drop_stale_tag_filter();
+        self.toast(format!("Removed #{tag} from {} item{}", ids.len(), if ids.len() == 1 { "" } else { "s" }));
+    }
+
+    fn drop_stale_tag_filter(&mut self) {
+        if let Some(t) = &self.tag_filter {
+            if !self.items.iter().any(|i| i.has_tag(t)) {
+                self.tag_filter = None;
+            }
+        }
+    }
+
     fn delete(&mut self, id: u64) {
         if let Some(pos) = self.items.iter().position(|i| i.id == id) {
             let it = self.items.remove(pos);
@@ -632,6 +844,7 @@ impl App {
             self.thumbs.remove(&id);
             self.lower.remove(&id);
             self.loader.forget(id, false);
+            self.drop_stale_tag_filter();
             // Keep the selection on a neighbour.
             let idx = self.results.iter().position(|h| h.idx == pos);
             self.dirty = true;
@@ -684,9 +897,9 @@ impl App {
         self.detail.as_ref().unwrap()
     }
 
-    /// Deletes unpinned clipboard items; pinned and imported items stay.
+    /// Deletes clipboard items; pinned, tagged and imported items stay.
     fn clear_history(&mut self) {
-        let doomed: Vec<Item> = self.items.iter().filter(|i| i.origin == Origin::Clipboard && !i.pinned).cloned().collect();
+        let doomed: Vec<Item> = self.items.iter().filter(|i| i.origin == Origin::Clipboard && !i.is_kept()).cloned().collect();
         for it in &doomed {
             if let Err(e) = self.store.delete(it) {
                 self.set_error(format!("delete failed: {e}"));
@@ -702,7 +915,9 @@ impl App {
     }
 }
 
+mod icons;
 mod settings_page;
+mod shortcut;
 mod view;
 
 use settings_page::SettingsPage;

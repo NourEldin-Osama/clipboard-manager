@@ -186,6 +186,7 @@ mod tests {
             created,
             hash: fnv1a(text.as_bytes()),
             source: None,
+            tags: Vec::new(),
         }
     }
 

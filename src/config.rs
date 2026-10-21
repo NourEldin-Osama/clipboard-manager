@@ -96,6 +96,54 @@ pub enum Density {
     Compact,
 }
 
+/// In-app shortcuts, spelled like "Ctrl+P".
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Keys {
+    pub copy: String,
+    pub pin: String,
+    pub delete: String,
+    pub tag: String,
+    pub view: String,
+}
+
+impl Default for Keys {
+    fn default() -> Self {
+        Self { copy: "Enter".into(), pin: "Ctrl+P".into(), delete: "Shift+Delete".into(), tag: "Ctrl+T".into(), view: "Ctrl+L".into() }
+    }
+}
+
+/// How the main window lays out the history.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ViewMode {
+    /// Cards across the whole window; details open on demand.
+    Grid,
+    /// Rows across the whole window; details open on demand.
+    List,
+    /// Rows on the left, the selected item always shown on the right.
+    Detail,
+}
+
+impl ViewMode {
+    pub const ALL: [ViewMode; 3] = [Self::Grid, Self::List, Self::Detail];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Grid => "Grid",
+            Self::List => "List",
+            Self::Detail => "Detail",
+        }
+    }
+
+    pub fn next(self) -> Self {
+        match self {
+            Self::Grid => Self::List,
+            Self::List => Self::Detail,
+            Self::Detail => Self::Grid,
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Config {
@@ -117,6 +165,12 @@ pub struct Config {
     pub group_by_date: bool,
     /// Index into the accent palette.
     pub accent: usize,
+    pub view: ViewMode,
+    /// Show a tray icon; closing or minimising the window hides it there.
+    pub tray: bool,
+    /// Launch (hidden) when the user signs in.
+    pub start_at_login: bool,
+    pub keys: Keys,
 }
 
 impl Default for Config {
@@ -137,6 +191,10 @@ impl Default for Config {
             density: Density::Comfortable,
             group_by_date: true,
             accent: 0,
+            view: ViewMode::Detail,
+            tray: false,
+            start_at_login: false,
+            keys: Keys::default(),
         }
     }
 }
