@@ -935,6 +935,115 @@ impl App {
         }
     }
 
+    /// A strip under the search bar while an update is found, downloading,
+    /// ready, or failed. "Later" hides it until something changes.
+    fn update_bar(&mut self, ui: &mut Ui) {
+        let show = !self.update_hidden && matches!(self.update, UpdateState::Available(_) | UpdateState::Downloading(..) | UpdateState::Ready(..) | UpdateState::Failed { .. });
+        if !show {
+            return;
+        }
+        let ctx = ui.ctx().clone();
+        let fill = accent().gamma_multiply(if ui.visuals().dark_mode { 0.18 } else { 0.09 });
+        let mut action: Option<&'static str> = None;
+        egui::Panel::top("update")
+            .show_separator_line(false)
+            .frame(Frame::new().inner_margin(Margin { left: 16, right: 12, top: 6, bottom: 6 }).fill(fill))
+            .show(ui, |ui| {
+                row(ui, |ui| {
+                    let text_color = ui.visuals().strong_text_color();
+                    let notes = match &self.update {
+                        UpdateState::Available(r) | UpdateState::Downloading(r, _) | UpdateState::Ready(r, _) => Some(r.notes_url.clone()),
+                        UpdateState::Failed { release: Some(r), .. } => Some(r.notes_url.clone()),
+                        _ => None,
+                    };
+                    match &self.update {
+                        UpdateState::Available(r) => {
+                            ui.label(txt(&trf("Version {version} is available", &[("version", &r.label())]), 13.5, Some(text_color)));
+                        }
+                        UpdateState::Downloading(r, p) => {
+                            let (done, total) = (p.done.load(Ordering::Relaxed), p.total.load(Ordering::Relaxed).max(1));
+                            if done >= total {
+                                ui.label(txt(&trf("Checking the download of version {version}…", &[("version", &r.label())]), 13.5, Some(text_color)));
+                                ui.add(egui::Spinner::new().size(14.0));
+                            } else {
+                                ui.label(txt(&trf("Downloading version {version}…", &[("version", &r.label())]), 13.5, Some(text_color)));
+                                ui.add(egui::ProgressBar::new(done as f32 / total as f32).desired_width(160.0).text(format!("{} / {} MB", done >> 20, total >> 20)));
+                            }
+                        }
+                        UpdateState::Ready(r, _) => {
+                            ui.label(txt(&trf("Version {version} is ready. Restart to update, or it installs when you quit.", &[("version", &r.label())]), 13.5, Some(text_color)));
+                        }
+                        UpdateState::Failed { error, .. } => {
+                            icons::glyph(ui, Icon::Warning, 14.0, RED);
+                            ui.add(egui::Label::new(txt(&trf("Update failed: {error}", &[("error", error)]), 13.0, Some(RED))).truncate());
+                        }
+                        _ => {}
+                    }
+                    far(ui, |ui| {
+                        if icon_button_ex(ui, Icon::Close, "Later", Vec2::splat(26.0), 12.0, None, None).clicked() {
+                            action = Some("later");
+                        }
+                        match &self.update {
+                            UpdateState::Available(_) => {
+                                if ui.button(txt(tr("Skip this version"), 13.0, None)).clicked() {
+                                    action = Some("skip");
+                                }
+                                if primary_button(ui, "Download").clicked() {
+                                    action = Some("download");
+                                }
+                            }
+                            UpdateState::Downloading(..) => {
+                                if ui.button(txt(tr("Cancel"), 13.0, None)).clicked() {
+                                    action = Some("cancel");
+                                }
+                            }
+                            UpdateState::Ready(..) => {
+                                if primary_button(ui, "Restart to update").clicked() {
+                                    action = Some("restart");
+                                }
+                            }
+                            UpdateState::Failed { release: Some(_), .. } if ui.button(txt(tr("Try again"), 13.0, None)).clicked() => {
+                                action = Some("retry");
+                            }
+                            _ => {}
+                        }
+                        if let Some(url) = notes {
+                            if ui.link(txt(tr("What's new"), 13.0, None)).clicked() {
+                                ctx.open_url(egui::OpenUrl::new_tab(url));
+                            }
+                        }
+                    });
+                });
+            });
+        match action {
+            Some("later") => self.update_hidden = true,
+            Some("skip") => {
+                if let UpdateState::Available(r) = &self.update {
+                    self.cfg.skipped_update = r.key();
+                    self.save_config();
+                }
+                self.update = UpdateState::Idle;
+            }
+            Some("download") | Some("retry") => {
+                let r = match &self.update {
+                    UpdateState::Available(r) => Some(r.clone()),
+                    UpdateState::Failed { release: Some(r), .. } => Some(r.clone()),
+                    _ => None,
+                };
+                if let Some(r) = r {
+                    self.download_update(r, &ctx);
+                }
+            }
+            Some("cancel") => {
+                if let UpdateState::Downloading(_, p) = &self.update {
+                    p.cancel.store(true, Ordering::Relaxed);
+                }
+            }
+            Some("restart") => self.restart_to_update(&ctx),
+            _ => {}
+        }
+    }
+
     pub(super) fn model_status(&self) -> (Color32, String) {
         match (&self.backend, &self.cfg.backend) {
             (BackendState::Loading, _) => (AMBER, tr("Loading search model…").into()),
@@ -1791,6 +1900,7 @@ pub(super) fn reveal(p: &std::path::Path) {
 
 impl eframe::App for App {
     fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
+        self.install_on_exit();
         crate::embed::server::stop_launched_server();
     }
 
@@ -1821,6 +1931,7 @@ impl eframe::App for App {
             self.settings_ui(ui);
         } else {
             self.top_bar(ui);
+            self.update_bar(ui);
             self.status_bar(ui);
             self.main_area(ui);
         }

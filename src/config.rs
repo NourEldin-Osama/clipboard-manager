@@ -222,6 +222,12 @@ pub struct Config {
     pub search_sort: SortOrder,
     /// Pinned items above the rest while browsing (not while searching).
     pub pinned_first: bool,
+    /// Look for a new release on start and once a day.
+    pub update_check: bool,
+    /// Download a new release as soon as it's found (otherwise ask first).
+    pub update_download: bool,
+    /// The release "Skip this version" was used on (`version+build`).
+    pub skipped_update: String,
 }
 
 impl Default for Config {
@@ -251,6 +257,9 @@ impl Default for Config {
             sort: SortOrder::Recent,
             search_sort: SortOrder::BestMatch,
             pinned_first: true,
+            update_check: true,
+            update_download: true,
+            skipped_update: String::new(),
         }
     }
 }
