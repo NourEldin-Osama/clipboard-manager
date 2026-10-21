@@ -3,9 +3,20 @@ name: Build Windows exe
 # Builds main only: each push (a merged pull request included) publishes a
 # release with the exe and notes listing the pull requests merged since the
 # previous release. Run it by hand from the Actions tab to rebuild main.
+# Pushes that only touch docs, templates or check settings don't change the
+# exe, so they don't make a release; a push that also changes code does.
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - "**.md"
+      - "docs/**"
+      - "LICENSE-*"
+      - ".github/ISSUE_TEMPLATE/**"
+      - ".github/pull_request_template.md"
+      - ".github/dependabot.yml"
+      - ".github/workflows/checks.yml"
+      - "ci/**"
   workflow_dispatch:
 
 # Builds of main run one after another, so releases come out in order.
@@ -116,13 +127,17 @@ jobs:
           wv="$version.$build"
           mkdir -p winget
           cat > winget/$id.yaml <<YAML
+          # yaml-language-server: \$schema=https://aka.ms/winget-manifest.version.1.12.0.schema.json
+
           PackageIdentifier: $id
           PackageVersion: $wv
           DefaultLocale: en-US
           ManifestType: version
-          ManifestVersion: 1.6.0
+          ManifestVersion: 1.12.0
           YAML
           cat > winget/$id.installer.yaml <<YAML
+          # yaml-language-server: \$schema=https://aka.ms/winget-manifest.installer.1.12.0.schema.json
+
           PackageIdentifier: $id
           PackageVersion: $wv
           InstallerType: portable
@@ -133,9 +148,11 @@ jobs:
               InstallerUrl: $url
               InstallerSha256: ${sha^^}
           ManifestType: installer
-          ManifestVersion: 1.6.0
+          ManifestVersion: 1.12.0
           YAML
           cat > winget/$id.locale.en-US.yaml <<YAML
+          # yaml-language-server: \$schema=https://aka.ms/winget-manifest.defaultLocale.1.12.0.schema.json
+
           PackageIdentifier: $id
           PackageVersion: $wv
           PackageLocale: en-US
@@ -148,7 +165,7 @@ jobs:
           Tags: [clipboard, clipboard-manager, ocr, semantic-search, arabic]
           ReleaseNotesUrl: $repo/releases/tag/$tag
           ManifestType: defaultLocale
-          ManifestVersion: 1.6.0
+          ManifestVersion: 1.12.0
           YAML
           (cd winget && 7z a -tzip ../winget-manifests.zip . > /dev/null)
 
