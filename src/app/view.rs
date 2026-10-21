@@ -199,8 +199,8 @@ pub(super) fn when(ts: i64) -> String {
     }
 }
 
-fn group_label(it: &Item) -> &'static str {
-    if it.pinned {
+fn group_label(it: &Item, pinned_first: bool) -> &'static str {
+    if it.pinned && pinned_first {
         return "Pinned";
     }
     match days_ago(it.created) {
@@ -382,6 +382,24 @@ pub(super) fn chip(ui: &mut Ui, text: impl Into<String>, color: Color32) -> egui
         .inner_margin(Margin::symmetric(8, 3))
         .show(ui, |ui| ui.label(txt(&text, 12.0, Some(color))))
         .response
+}
+
+/// A menu row with a check mark at the far end when `checked`.
+fn check_row(ui: &mut Ui, en: &str, checked: bool) -> egui::Response {
+    let (rect, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 30.0), Sense::click());
+    resp.widget_info(|| egui::WidgetInfo::selected(egui::Role::CheckBox, true, checked, tr(en)));
+    let v = ui.visuals();
+    if resp.hovered() {
+        ui.painter().rect_filled(rect, CornerRadius::same(6), v.widgets.hovered.weak_bg_fill);
+    }
+    let color = if checked { accent() } else if resp.hovered() { v.strong_text_color() } else { v.text_color() };
+    let at = flip(rect, Rect::from_min_size(Pos2::new(rect.left() + 10.0, rect.center().y), Vec2::ZERO)).min;
+    paint_text(ui, ui.painter(), at, start_anchor(egui::Align::Center), tr(en), FontId::proportional(14.0), color);
+    if checked {
+        let mark = flip(rect, Rect::from_center_size(Pos2::new(rect.right() - 16.0, rect.center().y), Vec2::splat(14.0)));
+        icons::paint(ui.painter(), mark, Icon::Check, accent());
+    }
+    resp
 }
 
 /// Width of the small icon menus (add files, more tags).
@@ -748,15 +766,53 @@ impl App {
                 }
             }
             self.tag_chips(ui);
-            if !self.query.trim().is_empty() {
-                far(ui, |ui| {
-                    ui.add_space(4.0);
+            far(ui, |ui| {
+                ui.add_space(4.0);
+                self.sort_menu(ui);
+                if !self.query.trim().is_empty() {
                     let n = self.results.len();
                     let text = if n == 1 { tr("1 result").to_string() } else { trf("{n} results", &[("n", &n)]) };
                     ui.label(txt(&text, 12.5, Some(ui.visuals().weak_text_color())));
-                });
+                }
+            });
+        });
+    }
+
+    /// "Sort by" button and menu. Best match is offered only while searching.
+    fn sort_menu(&mut self, ui: &mut Ui) {
+        let current = self.sort();
+        let b = tip(mode_button(ui, tr(current.label()), false), tr("Sort by"));
+        let searching = !self.query.trim().is_empty();
+        let mut pick = None;
+        let mut toggle_pinned = false;
+        egui::Popup::menu(&b).show(|ui| {
+            ui.set_width(MENU_W);
+            let weak = ui.visuals().weak_text_color();
+            row(ui, |ui| {
+                ui.add_space(10.0);
+                lbl(ui, "SORT BY", 11.0, weak);
+            });
+            for s in SortOrder::ALL {
+                if s == SortOrder::BestMatch && !searching {
+                    continue;
+                }
+                if check_row(ui, s.label(), s == current).clicked() {
+                    pick = Some(s);
+                }
+            }
+            ui.separator();
+            if check_row(ui, "Pinned on top", self.cfg.pinned_first).clicked() {
+                toggle_pinned = true;
             }
         });
+        if let Some(s) = pick {
+            self.set_sort(s);
+        }
+        if toggle_pinned {
+            self.cfg.pinned_first = !self.cfg.pinned_first;
+            self.save_config();
+            self.dirty = true;
+        }
     }
 
     /// The most used tags as filters after the kind chips; the rest in a menu.
@@ -1033,10 +1089,11 @@ impl App {
 
         // Rows, with date/pinned headers when browsing.
         let mut lines: Vec<Line> = Vec::with_capacity(self.results.len() + 8);
-        if !searching && self.cfg.group_by_date {
+        // Day headers only make sense in date order.
+        if !searching && self.cfg.group_by_date && self.sort() == SortOrder::Recent {
             let mut last: Option<&'static str> = None;
             for (r, h) in self.results.iter().enumerate() {
-                let g = group_label(&self.items[h.idx]);
+                let g = group_label(&self.items[h.idx], self.cfg.pinned_first);
                 if last != Some(g) {
                     lines.push(Line::Header(g, 0));
                     last = Some(g);

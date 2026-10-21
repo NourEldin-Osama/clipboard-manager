@@ -2,7 +2,7 @@
 
 use std::collections::HashMap;
 
-use crate::config::SearchMode;
+use crate::config::{SearchMode, SortOrder};
 use crate::embed::Embedding;
 use crate::store::{Item, Kind};
 
@@ -170,6 +170,22 @@ pub fn search(items: &[Item], lower: &HashMap<u64, String>, embeddings: &HashMap
 /// How much containing all the query words adds to a similarity scaled to 0..1.
 const KEYWORD_WEIGHT: f32 = 0.25;
 
+/// Puts `hits` in the chosen order. `BestMatch` keeps the ranking from
+/// `search`; pinned items move to the top (keeping their order) when asked.
+pub fn order(items: &[Item], hits: &mut [Hit], sort: SortOrder, pinned_first: bool) {
+    let newest = |a: &Hit, b: &Hit| (items[b.idx].created, items[b.idx].id).cmp(&(items[a.idx].created, items[a.idx].id));
+    match sort {
+        SortOrder::BestMatch => {}
+        SortOrder::Recent => hits.sort_by(newest),
+        SortOrder::Oldest => hits.sort_by(|a, b| newest(b, a)),
+        SortOrder::AToZ => hits.sort_by_cached_key(|h| (items[h.idx].title().to_lowercase(), std::cmp::Reverse(items[h.idx].created))),
+        SortOrder::MostUsed => hits.sort_by(|a, b| items[b.idx].uses.cmp(&items[a.idx].uses).then_with(|| newest(a, b))),
+    }
+    if pinned_first {
+        hits.sort_by_key(|h| !items[h.idx].pinned);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -190,6 +206,7 @@ mod tests {
             hash: fnv1a(text.as_bytes()),
             source: None,
             tags: Vec::new(),
+            uses: 0,
         }
     }
 
@@ -246,6 +263,23 @@ mod tests {
         // A close meaning match outranks a weak one that merely contains the word.
         let ids: Vec<u64> = hits.iter().map(|h| items[h.idx].id).collect();
         assert_eq!(&ids[..2], &[1, 3], "{ids:?}");
+    }
+
+    #[test]
+    fn sort_orders_and_pinned_switch() {
+        let mut items = vec![item(1, "banana", 10), item(2, "apple", 30), item(3, "cherry", 20)];
+        items[2].pinned = true;
+        items[0].uses = 5;
+        let ids = |sort, pinned| {
+            let mut hits: Vec<Hit> = (0..items.len()).map(|idx| Hit { idx, keyword: 0.0, semantic: None, relevance: None }).collect();
+            order(&items, &mut hits, sort, pinned);
+            hits.iter().map(|h| items[h.idx].id).collect::<Vec<_>>()
+        };
+        assert_eq!(ids(SortOrder::Recent, false), vec![2, 3, 1]);
+        assert_eq!(ids(SortOrder::Oldest, false), vec![1, 3, 2]);
+        assert_eq!(ids(SortOrder::AToZ, false), vec![2, 1, 3]);
+        assert_eq!(ids(SortOrder::MostUsed, false), vec![1, 2, 3]);
+        assert_eq!(ids(SortOrder::AToZ, true), vec![3, 2, 1]);
     }
 
     #[test]
