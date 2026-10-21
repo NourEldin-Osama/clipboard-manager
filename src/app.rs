@@ -13,7 +13,7 @@ use global_hotkey::hotkey::HotKey;
 use global_hotkey::{GlobalHotKeyEvent, GlobalHotKeyManager, HotKeyState};
 
 use crate::clipboard::{self, Captured, Flags};
-use crate::config::{Config, EmbedBackend, LaunchConfig, Paths, SearchMode, ServerConfig, Theme, ViewMode};
+use crate::config::{Config, EmbedBackend, LaunchConfig, Paths, SearchMode, ServerConfig, SortOrder, Theme, ViewMode};
 use crate::embed::Embedding;
 use crate::i18n::{self, tr, trf};
 use crate::images::ImageLoader;
@@ -518,6 +518,7 @@ impl App {
             hash,
             source: None,
             tags: Vec::new(),
+            uses: 0,
         };
         match c {
             Captured::Text(t) => {
@@ -719,10 +720,36 @@ impl App {
             let items = &self.items;
             self.results.retain(|h| items[h.idx].has_tag(tag));
         }
+        let sort = self.sort();
+        // While searching, the best matches lead even when pinned items don't match as well.
+        let pinned_first = self.cfg.pinned_first && self.query.trim().is_empty();
+        search::order(&self.items, &mut self.results, sort, pinned_first);
         let still_there = self.selected.map(|id| self.results.iter().any(|h| self.items[h.idx].id == id)).unwrap_or(false);
         if !still_there {
             self.selected = self.results.first().map(|h| self.items[h.idx].id);
         }
+    }
+
+    /// The order in effect: searching and browsing each remember their own.
+    fn sort(&self) -> SortOrder {
+        if self.query.trim().is_empty() {
+            match self.cfg.sort {
+                SortOrder::BestMatch => SortOrder::Recent,
+                s => s,
+            }
+        } else {
+            self.cfg.search_sort
+        }
+    }
+
+    fn set_sort(&mut self, s: SortOrder) {
+        if self.query.trim().is_empty() {
+            self.cfg.sort = s;
+        } else {
+            self.cfg.search_sort = s;
+        }
+        self.save_config();
+        self.dirty = true;
     }
 
     fn item(&self, id: u64) -> Option<&Item> {
@@ -745,12 +772,14 @@ impl App {
         match r {
             Ok(()) => {
                 if let Some(x) = self.items.iter_mut().find(|i| i.id == id) {
+                    // Copying from the list counts as a use, and makes a copied item recent.
+                    x.uses = x.uses.saturating_add(1);
                     if x.origin == Origin::Clipboard {
                         x.created = now();
-                        let x = x.clone();
-                        let _ = self.store.put(&x);
-                        self.dirty = true;
                     }
+                    let x = x.clone();
+                    let _ = self.store.put(&x);
+                    self.dirty = true;
                 }
                 self.toast("Copied");
                 if self.cfg.minimize_after_copy {
