@@ -21,6 +21,7 @@ use crate::import;
 use crate::models::{self, Progress, SIGLIP_MODELS};
 use crate::search::{self, Filter, Hit};
 use crate::tray::{Tray, TrayCmd};
+use crate::update::{self, Release};
 use crate::store::{looks_like_link, now, Item, Kind, Origin, Store};
 use crate::worker::{Event, Job, Worker};
 
@@ -133,6 +134,27 @@ impl WindowCtl {
     }
 }
 
+/// Where an update stands.
+pub(super) enum UpdateState {
+    Idle,
+    Checking,
+    UpToDate,
+    /// Found; waiting for "Download" (automatic downloads are off).
+    Available(Release),
+    Downloading(Release, Arc<Progress>),
+    /// Verified and saved next to the exe; installs on restart or quit.
+    Ready(Release, PathBuf),
+    Failed { error: String, release: Option<Release> },
+}
+
+enum UpdateMsg {
+    Checked { result: Result<Release, String>, manual: bool },
+    Downloaded(Result<PathBuf, String>),
+}
+
+/// How often a running app looks for a new release.
+const UPDATE_EVERY: Duration = Duration::from_secs(24 * 3600);
+
 /// Keeps the registrations alive; dropping the manager unregisters them.
 struct Hotkeys {
     _manager: GlobalHotKeyManager,
@@ -202,6 +224,11 @@ pub struct App {
     /// The shortcut field listening for keys in Settings, and why the last try was refused.
     recording: Option<&'static str>,
     record_problem: Option<&'static str>,
+    update: UpdateState,
+    update_rx: Option<Receiver<UpdateMsg>>,
+    /// "Later" hides the update bar until the next change.
+    update_hidden: bool,
+    next_update_check: Instant,
     /// Only items carrying this tag are listed.
     tag_filter: Option<String>,
     /// The tag being typed in the details pane, for that item.
@@ -292,6 +319,11 @@ impl App {
             list_view: (0.0, 0.0),
             details_open: false,
             grid_cols: 1,
+            update: UpdateState::Idle,
+            update_rx: None,
+            update_hidden: false,
+            // A little after start, so launching stays quick.
+            next_update_check: Instant::now() + Duration::from_secs(10),
             tag_filter: None,
             tag_input: None,
             tag_focus: false,
@@ -408,6 +440,7 @@ impl App {
     /// Hides to the tray on close or minimise, and handles tray commands.
     /// Runs every frame, including while the window is hidden.
     fn window_logic(&mut self, ctx: &egui::Context) {
+        self.update_logic(ctx);
         while let Ok(cmd) = self.tray_rx.try_recv() {
             match cmd {
                 TrayCmd::Show => self.win.show(),
@@ -441,6 +474,121 @@ impl App {
             }
         }
         self.was_minimized = minimized;
+    }
+
+    // ----- updates -------------------------------------------------------
+
+    /// Looks for a new release in the background.
+    fn check_for_update(&mut self, manual: bool, ctx: &egui::Context) {
+        if self.update_rx.is_some() || update::build().is_none() {
+            return;
+        }
+        let (tx, rx) = channel();
+        let c = ctx.clone();
+        std::thread::spawn(move || {
+            let result = update::check().map_err(|e| format!("{e:#}"));
+            let _ = tx.send(UpdateMsg::Checked { result, manual });
+            c.request_repaint();
+        });
+        self.update_rx = Some(rx);
+        if !matches!(self.update, UpdateState::Downloading(..) | UpdateState::Ready(..)) {
+            self.update = UpdateState::Checking;
+        }
+        self.next_update_check = Instant::now() + UPDATE_EVERY;
+    }
+
+    fn download_update(&mut self, r: Release, ctx: &egui::Context) {
+        let progress = Arc::new(Progress::default());
+        let (tx, rx) = channel();
+        let (p, rr, c) = (progress.clone(), r.clone(), ctx.clone());
+        std::thread::spawn(move || {
+            let _ = tx.send(UpdateMsg::Downloaded(update::download(&rr, &p).map_err(|e| format!("{e:#}"))));
+            c.request_repaint();
+        });
+        self.update_rx = Some(rx);
+        self.update = UpdateState::Downloading(r, progress);
+        self.update_hidden = false;
+    }
+
+    fn update_logic(&mut self, ctx: &egui::Context) {
+        if self.cfg.update_check && Instant::now() >= self.next_update_check {
+            self.check_for_update(false, ctx);
+        }
+        let Some(rx) = &self.update_rx else { return };
+        let Ok(msg) = rx.try_recv() else {
+            if matches!(self.update, UpdateState::Downloading(..)) {
+                ctx.request_repaint_after(Duration::from_millis(250));
+            }
+            return;
+        };
+        self.update_rx = None;
+        match msg {
+            UpdateMsg::Checked { result: Ok(r), manual } => {
+                if matches!(self.update, UpdateState::Downloading(..) | UpdateState::Ready(..)) {
+                    return;
+                }
+                if !r.is_newer() {
+                    self.update = if manual { UpdateState::UpToDate } else { UpdateState::Idle };
+                } else if !manual && r.key() == self.cfg.skipped_update {
+                    self.update = UpdateState::Idle;
+                } else if self.cfg.update_download {
+                    self.download_update(r, ctx);
+                } else {
+                    self.update = UpdateState::Available(r);
+                    self.update_hidden = false;
+                }
+            }
+            UpdateMsg::Checked { result: Err(e), manual } => {
+                log::warn!("update check: {e}");
+                // A failed background check (offline, say) isn't worth a bar.
+                self.update = if manual { UpdateState::Failed { error: e, release: None } } else { UpdateState::Idle };
+            }
+            UpdateMsg::Downloaded(result) => {
+                let release = match std::mem::replace(&mut self.update, UpdateState::Idle) {
+                    UpdateState::Downloading(r, _) => r,
+                    _ => return,
+                };
+                self.update = match result {
+                    Ok(path) => UpdateState::Ready(release, path),
+                    // Cancelled: back to asking.
+                    Err(e) if e == "cancelled" => UpdateState::Available(release),
+                    Err(e) => {
+                        log::warn!("update download: {e}");
+                        UpdateState::Failed { error: e, release: Some(release) }
+                    }
+                };
+                self.update_hidden = false;
+            }
+        }
+    }
+
+    /// Swaps in the downloaded version and starts it.
+    fn restart_to_update(&mut self, ctx: &egui::Context) {
+        let UpdateState::Ready(r, path) = &self.update else { return };
+        let r = r.clone();
+        let result = update::install(path).and_then(|exe| {
+            update::relaunch(&exe).inspect_err(|_| {
+                // The new version wouldn't start: keep this one.
+                let _ = update::roll_back();
+            })
+        });
+        match result {
+            Ok(()) => {
+                self.update = UpdateState::Idle;
+                self.quitting = true;
+                ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+            }
+            Err(e) => self.update = UpdateState::Failed { error: format!("{e:#}"), release: Some(r) },
+        }
+    }
+
+    /// A downloaded update not yet installed goes in on quit, for the next start.
+    pub(super) fn install_on_exit(&mut self) {
+        if let UpdateState::Ready(_, path) = &self.update {
+            if let Err(e) = update::install(path) {
+                log::warn!("installing update on exit: {e:#}");
+            }
+        }
     }
 
     fn save_config(&mut self) {

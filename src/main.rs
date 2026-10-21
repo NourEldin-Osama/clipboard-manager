@@ -17,6 +17,7 @@ mod ocr;
 mod search;
 mod store;
 mod tray;
+mod update;
 mod worker;
 
 use eframe::egui;
@@ -30,6 +31,12 @@ fn main() -> eframe::Result {
         }
     };
     init_logging(&paths);
+    // After an update, the previous version is still closing; let it go first
+    // so its hotkeys are free and its exe can be removed.
+    if std::env::args().any(|a| a == update::AFTER_UPDATE_ARG) {
+        std::thread::sleep(std::time::Duration::from_millis(1500));
+    }
+    update::clean_up();
     log::info!("clipboard-manager {} starting, data in {}", env!("CARGO_PKG_VERSION"), paths.root.display());
     // The window title is set before the app starts, so read the language now.
     let cfg = config::Config::load(&paths.config);
