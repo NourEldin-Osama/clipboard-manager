@@ -35,13 +35,13 @@ the first time an image is processed (turn OCR off to avoid it). After that, eve
 ## Install on Windows
 
 ### Option A: download the prebuilt `.exe`
-Every push is built on GitHub's Windows machines. Open the [Actions page](https://github.com/NourEldin-Osama/clipboard-manager/actions/workflows/build-windows.yml),
-click the latest green run, and download **clipboard-manager-windows-x64-…** under *Artifacts* (you need to be signed in to GitHub).
-Unzip it to get `clipboard-manager.exe`. Builds are kept for 30 days.
+Every change merged into `main` is built on GitHub's Windows machines and published on the
+[Releases page](https://github.com/NourEldin-Osama/clipboard-manager/releases/latest), with notes listing the pull requests it includes.
+Download **clipboard-manager-windows-x64.exe** from the latest release.
 
-`clipboard-manager.exe` is a single, self-contained binary that needs no installer and no runtime. Put it anywhere, for example
-`%LOCALAPPDATA%\Programs\clipboard-manager\`, and run it. To start it at login, press `Win+R`, type `shell:startup` and
-put a shortcut to the `.exe` in that folder.
+It is a single, self-contained binary that needs no installer and no runtime. Put it anywhere, for example
+`%LOCALAPPDATA%\Programs\clipboard-manager\`, and run it. To start it when you sign in, turn on
+*Settings → General → Start when you sign in*.
 
 ### Option B: build from source on Windows
 1. Install Rust from <https://rustup.rs> (accept the default *MSVC* toolchain; it will offer to install the Visual Studio Build Tools).
