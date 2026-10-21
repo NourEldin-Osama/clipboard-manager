@@ -1,0 +1,193 @@
+# clipboard-manager
+
+An open-source, offline clipboard manager for Windows (also builds on Linux and macOS), written entirely in Rust.
+It keeps your clipboard history, reads the text inside screenshots and images on your own machine, and lets you
+search everything **by meaning** with local embedding models. For example, type *"receipt from the hardware store"* and
+it finds the photo you copied last week.
+
+It is a clean-room reimplementation inspired by the feature set of the Planck clipboard manager: it was written from
+public feature descriptions only, and it shares no code or assets with Planck and has no affiliation with it.
+
+## Features
+
+| | |
+|---|---|
+| **Clipboard history** | Text, links, images and copied files. Duplicate copies are merged and moved to the top. Pin items to keep them forever. |
+| **Global hotkeys** | `Alt+V` shows/hides the window, `Alt+C` skips recording the next copy. Both can be changed in Settings. |
+| **Keyboard-first** | Type to search, `↑/↓` to move, `Enter` (or double-click) copies and hides the window so you can paste right away, `Ctrl+P` pins, `Shift+Del` deletes, `Esc` clears the search or hides the window. |
+| **On-device OCR** | Text in images and screenshots becomes searchable ([ocrs](https://github.com/robertknight/ocrs), pure Rust). |
+| **Semantic search** | Hybrid mode merges keyword and embedding results with reciprocal-rank fusion. You can also choose *Meaning* or *Keyword* only. |
+| **Built-in model (pure Rust)** | SigLIP (English or multilingual, Arabic included) runs inside the app on the CPU through [candle](https://github.com/huggingface/candle). It puts text and images in one shared space, so text can find images. |
+| **Your own model server** | Paste the URL of any local embedding server (llama.cpp `llama-server`, the bundled Sentence Transformers server, Ollama, LM Studio, vLLM) and pick the model from a dropdown filled by the server's model list. The app can also launch `llama-server` for you. Presets are included for **EmbeddingGemma**, **BiUltraVBERT** and **ColUltraVBERT**. Multi-vector (ColBERT-style) output is detected and scored with MaxSim, and Matryoshka truncation is supported. |
+| **Library import** | Drag files or folders onto the window, or use `＋ → Import folder…`. Images and text and code files are indexed alongside your clipboard. |
+| **Privacy** | Nothing leaves your machine. Clipboard content that password managers mark as sensitive (`ExcludeClipboardContentFromMonitorProcessing`) is never recorded. Neither is anything that looks like an API key, token, private key or random password (on by default; you can turn it off in Settings). You can pause recording at any time. |
+| **Smart ranking** | Image matches and text matches are ranked separately and then merged, because text-to-image similarity scores are naturally much lower than text-to-text ones. Without this, photos would be buried under text. |
+| **Look and feel** | A list grouped by Pinned / Today / Yesterday / This week, with kind icons, thumbnails, matched words highlighted and relevance bars while searching. A details pane with a large preview. Light and dark themes, five accent colours, comfortable or compact density. |
+| **Settings that explain themselves** | Sections down the side (Search & AI model, Clipboard, Shortcuts, Appearance, Data & privacy). Every option has an ℹ explanation and plain-language choices. Settings you've changed are highlighted, each with a one-click reset. Changes apply instantly. |
+
+The only network access is the one-time model downloads you start yourself in Settings, plus a 12 MB OCR model download
+the first time an image is processed (turn OCR off to avoid it). After that, everything works without a network connection.
+
+## Install on Windows
+
+### Option A: download / copy the prebuilt `.exe`
+`dist/clipboard-manager.exe` is a single, self-contained binary that needs no installer and no runtime. Put it anywhere, for example
+`%LOCALAPPDATA%\Programs\clipboard-manager\`, and run it. To start it at login, press `Win+R`, type `shell:startup` and
+put a shortcut to the `.exe` in that folder.
+
+### Option B: build from source on Windows
+1. Install Rust from <https://rustup.rs> (accept the default *MSVC* toolchain; it will offer to install the Visual Studio Build Tools).
+2. In PowerShell:
+   ```powershell
+   git clone <this repo> clipboard-manager
+   cd clipboard-manager
+   cargo build --profile dist
+   .\target\dist\clipboard-manager.exe
+   ```
+
+### Option C: cross-compile from Linux
+```bash
+rustup target add x86_64-pc-windows-gnu
+sudo apt install mingw-w64
+cargo build --profile dist --target x86_64-pc-windows-gnu
+# -> target/x86_64-pc-windows-gnu/dist/clipboard-manager.exe
+```
+
+**Build profiles.** `cargo build --release` is tuned for quick rebuilds while you develop (no LTO, 16 codegen units).
+`--profile dist` adds thin LTO for the shipped binary. Debug builds fully optimise only the number-crunching crates
+(candle, gemm, rten, image decoding) and lightly optimise the rest. The first build compiles every dependency and takes a while;
+after that, only this crate is rebuilt. The build is much faster on a machine with more cores than a 2-core cloud VM.
+If the repo lives on a synced or network drive (Google Drive, OneDrive), keep the build cache elsewhere so builds stay fast:
+`CARGO_TARGET_DIR=/some/local/dir cargo build …`
+
+## Choosing a search model
+
+Open **⚙ Settings → Embedding model**.
+
+### Built-in (pure Rust, no extra software)
+Pick a SigLIP model and click **Download**:
+
+| Model | Size | Notes |
+|---|---|---|
+| `google/siglip-base-patch16-256-multilingual` | 1.5 GB | Default. Many languages, including Arabic. |
+| `google/siglip-base-patch16-224` | 0.8 GB | English only, smaller and slightly faster. |
+
+SigLIP works best for finding **images from a description** and for short text. Long documents are truncated to 64 tokens,
+so for text-heavy history a text embedding model such as EmbeddingGemma is the better choice.
+
+### Use your own model server (llama.cpp or Sentence Transformers)
+Run any embedding server on your PC, paste its link into the app and pick a model:
+
+1. **⚙ Settings → Embedding model → Local server / GGUF**
+2. Paste the **Server URL** (or click a preset). The app calls `GET /v1/models` and also sends one test embedding to find
+   the server's **default embedding model**. This matters for servers whose model list shows only chat models.
+   A green *connected · embeddings will use …* line confirms it works. Leave **Model** empty to use that default, or pick or type another.
+3. If the server needs a key (for example `llama-server --api-key …`, Unsloth, or LM Studio with auth enabled), paste it into **API key**.
+   It is sent as `Authorization: Bearer <key>`. It is stored in `config.json` in your app-data folder, never in the repository.
+4. Choose a model and click **Save**. Your existing history is embedded in the background.
+   For EmbeddingGemma models a **Use EmbeddingGemma's search prompts** button appears. Click it for better retrieval.
+
+Example: an Unsloth / llama.cpp server on port 8888 with a key: URL `http://127.0.0.1:8888/v1`, API key `sk-…`,
+model `…embeddinggemma-2…` (pick it from the dropdown), then *Use EmbeddingGemma's search prompts*.
+
+#### llama.cpp (`llama-server`): GGUF models such as [EmbeddingGemma 2](https://huggingface.co/unsloth/embeddinggemma-2-GGUF)
+1. Download a Windows build (`llama-…-bin-win-cpu-x64.zip`, or the CUDA/Vulkan build if you have a GPU) from
+   <https://github.com/ggml-org/llama.cpp/releases> and unzip it. You need a build recent enough to support EmbeddingGemma 2.
+2. Download a quant from the model page, for example `embeddinggemma-2-Q8_0.gguf` (310 MB) or `UD-Q4_K_XL` (176 MB).
+   Use Q8_0 or BF16 rather than F16, because the model card warns that F16 activations overflow.
+3. Start it:
+   ```powershell
+   .\llama-server.exe -m embeddinggemma-2-Q8_0.gguf --embeddings --pooling mean --port 8080
+   ```
+4. In the app click the **EmbeddingGemma** preset. It sets `http://127.0.0.1:8080/v1` plus the model's retrieval prompts
+   (`task: search result | query: …` / `title: none | text: …`). Then pick the model from the dropdown.
+
+If you'd rather not keep a console open, tick **Start llama-server for me** and browse to `llama-server.exe` and the `.gguf` file.
+The app then starts the server without opening a window and stops it when the app exits.
+Set *Truncate to dims* to 256 or 128 for a smaller index (Matryoshka). Vectors are re-normalised after truncation.
+
+#### Sentence Transformers: any model on the Hugging Face Hub
+Sentence Transformers has no HTTP server of its own, so one is included: [`tools/st_server.py`](tools/st_server.py)
+(standard library only, besides `sentence-transformers` itself).
+```powershell
+pip install -U sentence-transformers pillow
+python tools\st_server.py --model google/embeddinggemma-300m --model sentence-transformers/clip-ViT-B-32
+```
+Click the **Sentence Transformers** preset (`http://127.0.0.1:8001/v1`). Every `--model` you passed appears in the dropdown.
+- It applies the model's own query/document prompts automatically (the app sends an `X-Embedding-Role` header), so leave the prefix fields empty.
+- Image models (CLIP, SigLIP, BiUltraVBERT …) also embed your images: tick **Embed images too**.
+- Models that need custom code take `--trust-remote-code`, for example
+  `python tools\st_server.py --model <BiUltraVBERT repo> --trust-remote-code`.
+- `--device cuda` uses an NVIDIA GPU, and `--preload` loads the models at start-up instead of on first use.
+- `--api-key <key>` makes the server require that key.
+
+Ollama (`http://127.0.0.1:11434/v1`), LM Studio and vLLM work the same way.
+
+### BiUltraVBERT / ColUltraVBERT via vLLM (text ↔ document-image retrieval)
+These MIT-licensed models are served by vLLM (Linux or WSL2 with a GPU recommended):
+```bash
+vllm serve <hf-repo-of-BiUltraVBERT> --task embed --trust-remote-code --served-model-name BiUltraVBERT
+```
+Choose the **BiUltraVBERT** or **ColUltraVBERT 128-d** preset and set the base URL to where vLLM listens.
+ColUltraVBERT returns one vector per token. The app stores them truncated to 128 dimensions (as the authors recommend) and ranks
+with late-interaction MaxSim.
+
+Each model and prompt configuration keeps its own index, so you can switch between models without losing anything. Items that are missing from
+the active model's index are embedded in the background, and the status bar shows progress.
+
+## Performance
+
+- **The UI never waits on heavy work.** OCR, embedding, thumbnail and preview decoding each run on background threads. Search
+  queries jump ahead of indexing work, so results update while thousands of items are still being indexed.
+- **Batched indexing.** Up to 16 items go to the model per call, which is much faster with llama.cpp and the Sentence
+  Transformers server than one request per item. If a batch fails, its items are retried one by one, so a single bad item can't block the rest.
+- **Cheap per keystroke.** Each item's lower-cased search text is cached. Item text is shared rather than copied, so even
+  1 MB clips cost nothing to display. The list is virtualised, so only visible rows are drawn.
+- **No re-ranking storm.** While indexing, results are re-ranked at most every 0.4 s, not after every new vector.
+- For the fastest semantic search, run llama.cpp or the Sentence Transformers server on a GPU (`--device cuda`), or use a
+  Q4/Q8 GGUF quant on the CPU.
+
+## Where data is stored
+
+`%APPDATA%\clipboard-manager\data\` (open it from Settings → Data):
+
+- `history.redb` stores items, OCR text and embeddings ([redb](https://github.com/cberner/redb), a pure-Rust embedded database)
+- `images\` holds copied images as PNG files
+- `models\` holds downloaded models
+- `config.json` holds settings
+- `clipboard-manager.log` is a log of the current run (the previous run's is kept as `clipboard-manager.old.log`). Open it from Settings → Data → *Show log* and attach it to bug reports.
+
+Set `CLIPBOARD_MANAGER_HOME` to use another folder, for example a portable install on a USB stick.
+
+## Architecture
+
+```
+src/
+  main.rs        window setup
+  app.rs         egui UI: search bar, filters, virtualised list, details pane, settings
+  clipboard.rs   watcher thread (arboard; clipboard sequence number + sensitive-format check on Windows)
+  worker.rs      background indexer thread; owns the OCR engine + embedder; queries pre-empt indexing
+  embed/
+    mod.rs       Embedding (dense / multi-vector), cosine & MaxSim, Embedder trait
+    siglip.rs    in-process SigLIP via candle
+    server.rs    OpenAI-compatible client + optional llama-server launcher
+  ocr.rs         ocrs wrapper
+  search.rs      keyword scoring, semantic ranking, reciprocal-rank fusion
+  store.rs       redb persistence
+  import.rs      files/folders -> items
+  models.rs      model catalogue + atomic (temp-file then rename) downloads
+```
+
+The GUI, database, clipboard handling, OCR and built-in model inference are all Rust. External model servers are optional and
+are only needed for models that the app can't yet run in-process (EmbeddingGemma 2's new `gemma-embedding2` architecture and
+the UltraVBERT family).
+
+## Roadmap
+- Native in-process GGUF inference for EmbeddingGemma (candle quantized backend)
+- Optional AES-GCM encryption at rest
+- Paste directly into the previous window (simulated `Ctrl+V`)
+- System tray icon and close-to-tray
+- PDF text extraction for imported folders
+
+## License
+Dual-licensed under [MIT](LICENSE-MIT) or [Apache-2.0](LICENSE-APACHE), at your option.
