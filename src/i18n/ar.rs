@@ -237,6 +237,7 @@ pub const TABLE: &[(&str, &str)] = &[
     ("A to Z", "أبجديًا"),
     ("Most used", "الأكثر استخدامًا"),
     ("Pinned on top", "المثبتة في الأعلى"),
+    ("Pinned items come first while you browse, whatever the order. Search results are ordered by your sort choice only.", "تظهر العناصر المثبتة أولًا أثناء التصفح، أيًّا كان الترتيب. أما نتائج البحث فتُرتّب حسب اختيارك فقط."),
     ("Advanced", "متقدم"),
     ("English", "English"),
     ("Query prompt", "عبارة الاستعلام"),
