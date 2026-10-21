@@ -1,8 +1,12 @@
 name: Checks
 
 # Tests and lint for pull requests; no exe and no release (those run on main only).
+# Pushes to main run it too, only so that main holds a warm build cache: GitHub
+# lets a pull request use caches saved on main, not ones from other pull requests.
 on:
   pull_request:
+    branches: [main]
+  push:
     branches: [main]
 
 concurrency:
@@ -25,8 +29,10 @@ jobs:
           components: clippy
       - uses: Swatinem/rust-cache@v2
         with:
-          cache-all-crates: true
+          # Only main saves the cache; pull requests just restore it.
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      # ci/fast-build.toml: no optimisation, no debug info; tests don't need them.
       - name: Test
-        run: cargo test --locked
+        run: cargo test --locked --config ci/fast-build.toml
       - name: Lint
-        run: cargo clippy --locked --all-targets
+        run: cargo clippy --locked --all-targets --config ci/fast-build.toml

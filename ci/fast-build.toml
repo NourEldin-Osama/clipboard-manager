@@ -1,0 +1,67 @@
+# Used by the Checks workflow: `cargo test --config ci/fast-build.toml`.
+# Tests only need a quick build, so the number-crunching crates that Cargo.toml
+# optimises for local debugging are left unoptimised here, and no debug info
+# is written. That is most of the compile time on a cold cache.
+
+[profile.dev]
+debug = false
+
+[profile.dev.package."*"]
+opt-level = 0
+
+[profile.dev.package.candle-core]
+opt-level = 0
+
+[profile.dev.package.candle-nn]
+opt-level = 0
+
+[profile.dev.package.gemm]
+opt-level = 0
+
+[profile.dev.package.gemm-common]
+opt-level = 0
+
+[profile.dev.package.gemm-f16]
+opt-level = 0
+
+[profile.dev.package.gemm-f32]
+opt-level = 0
+
+[profile.dev.package.pulp]
+opt-level = 0
+
+[profile.dev.package.rten]
+opt-level = 0
+
+[profile.dev.package.rten-base]
+opt-level = 0
+
+[profile.dev.package.rten-gemm]
+opt-level = 0
+
+[profile.dev.package.rten-imageproc]
+opt-level = 0
+
+[profile.dev.package.rten-simd]
+opt-level = 0
+
+[profile.dev.package.rten-tensor]
+opt-level = 0
+
+[profile.dev.package.rten-vecmath]
+opt-level = 0
+
+[profile.dev.package.ocrs]
+opt-level = 0
+
+[profile.dev.package.image]
+opt-level = 0
+
+[profile.dev.package.png]
+opt-level = 0
+
+[profile.dev.package.fdeflate]
+opt-level = 0
+
+[profile.dev.package.zune-jpeg]
+opt-level = 0
