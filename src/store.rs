@@ -104,7 +104,7 @@ impl Item {
                 _ => {
                     return match &self.source {
                         Some(p) => p.file_name().map(|f| f.to_string_lossy().into_owned()).unwrap_or_default(),
-                        None => format!("Image {}×{}", self.width, self.height),
+                        None => crate::i18n::trf("Image {w}×{h}", &[("w", &self.width), ("h", &self.height)]),
                     }
                 }
             },

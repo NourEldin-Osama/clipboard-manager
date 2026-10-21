@@ -2,13 +2,13 @@
 //! the search model waits for "Apply", because a half-typed address would
 //! otherwise reconnect on every keystroke.
 
-use eframe::egui::{Align, Frame, Layout, Margin, Pos2, Rect, Ui};
+use eframe::egui::{Frame, Margin, Pos2, Rect, Ui};
 
 use super::icons::{self, Icon};
 use super::shortcut;
-use super::view::{accent, chip, primary_button, reveal, ACCENTS, AMBER, GREEN, RED};
+use super::view::{accent, chip, far, flip, lbl, paint_text, primary_button, reveal, row, start_anchor, tip, txt, ACCENTS, AMBER, GREEN, RED};
 use super::*;
-use crate::config::Density;
+use crate::config::{Density, Language, TimeFormat};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(super) enum SettingsPage {
@@ -61,19 +61,21 @@ fn toggle(ui: &mut Ui, on: &mut bool) -> egui::Response {
     );
     let p = ui.painter();
     p.rect_filled(rect, CornerRadius::same(11), bg);
-    let x = rect.left() + 11.0 + t * (rect.width() - 22.0);
+    // Right to left, "on" is to the left.
+    let travel = t * (rect.width() - 22.0);
+    let x = if i18n::rtl() { rect.right() - 11.0 - travel } else { rect.left() + 11.0 + travel };
     p.circle_filled(egui::pos2(x, rect.center().y), 8.0, Color32::WHITE);
     resp
 }
 
-/// Options side by side; the chosen one is tinted. Must be called inside a
-/// right-to-left layout (setting rows), so options are added in reverse.
+/// Options side by side; the chosen one is tinted. Called inside a setting's
+/// control area, which fills from the far end, so options are added in reverse.
 fn segmented<T: PartialEq + Copy>(ui: &mut Ui, value: &mut T, options: &[(T, &str)]) -> bool {
     let mut changed = false;
     ui.spacing_mut().item_spacing.x = 2.0;
     for (v, label) in options.iter().rev() {
         let sel = *value == *v;
-        let text = RichText::new(*label).size(13.0).color(if sel { accent() } else { ui.visuals().text_color() });
+        let text = txt(tr(label), 13.0, Some(if sel { accent() } else { ui.visuals().text_color() }));
         let b = egui::Button::new(text).frame_when_inactive(sel).fill(if sel { accent().gamma_multiply(0.14) } else { Color32::TRANSPARENT });
         if ui.add(b).clicked() && !sel {
             *value = *v;
@@ -84,12 +86,13 @@ fn segmented<T: PartialEq + Copy>(ui: &mut Ui, value: &mut T, options: &[(T, &st
 }
 
 fn info(ui: &mut Ui, text: &str) {
-    icons::glyph(ui, Icon::Info, 14.0, ui.visuals().weak_text_color()).on_hover_text(text);
+    tip(icons::glyph(ui, Icon::Info, 14.0, ui.visuals().weak_text_color()), tr(text));
 }
 
 fn section(ui: &mut Ui, title: &str) {
     ui.add_space(18.0);
-    ui.label(RichText::new(title.to_uppercase()).size(11.5).color(ui.visuals().weak_text_color()));
+    let weak = ui.visuals().weak_text_color();
+    row(ui, |ui| lbl(ui, &tr(title).to_uppercase(), 11.5, weak));
     ui.add_space(4.0);
 }
 
@@ -100,14 +103,14 @@ fn setting(ui: &mut Ui, label: &str, help: &str, changed: bool, control: impl Fn
     let fill = if changed { accent().gamma_multiply(if ui.visuals().dark_mode { 0.14 } else { 0.07 }) } else { Color32::TRANSPARENT };
     Frame::new().fill(fill).corner_radius(CornerRadius::same(8)).inner_margin(Margin::symmetric(10, 6)).show(ui, |ui| {
         ui.set_width(ui.available_width());
-        ui.horizontal(|ui| {
+        row(ui, |ui| {
             ui.set_min_height(30.0);
             let color = if changed { accent() } else { ui.visuals().strong_text_color() };
-            ui.label(RichText::new(label).size(14.0).color(color));
+            lbl(ui, label, 14.0, color);
             if !help.is_empty() {
                 info(ui, help);
             }
-            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+            far(ui, |ui| {
                 // The reset button's space is kept when it's hidden, so controls stay in one column.
                 if changed {
                     if icons::icon_button_ex(ui, Icon::Reset, "Back to default", Vec2::splat(28.0), 14.0, None, None).clicked() {
@@ -124,14 +127,14 @@ fn setting(ui: &mut Ui, label: &str, help: &str, changed: bool, control: impl Fn
 }
 
 fn note(ui: &mut Ui, text: &str) {
-    ui.horizontal_wrapped(|ui| {
-        ui.add_space(10.0);
-        ui.label(RichText::new(text).size(12.5).color(ui.visuals().weak_text_color()));
+    let weak = ui.visuals().weak_text_color();
+    Frame::new().inner_margin(Margin::symmetric(10, 0)).show(ui, |ui| {
+        super::bidi::paragraph(ui, tr(text), FontId::proportional(12.5), weak);
     });
 }
 
 fn path_field(ui: &mut Ui, p: &mut PathBuf, ext: &[&str]) {
-    if ui.button("Browse…").clicked() {
+    if ui.button(txt(tr("Browse…"), 14.0, None)).clicked() {
         let mut dlg = rfd::FileDialog::new();
         if !ext.is_empty() {
             dlg = dlg.add_filter("file", ext).add_filter("all", &["*"]);
@@ -180,6 +183,8 @@ impl App {
         let tray_changed = d.tray != self.cfg.tray;
         let login_changed = d.start_at_login != self.cfg.start_at_login;
         let look_changed = d.accent != self.cfg.accent || d.theme != self.cfg.theme;
+        let language_changed = d.language != self.cfg.language;
+        i18n::set(d.language, d.time_format);
         let search_changed = d.search_mode != self.cfg.search_mode || d.min_similarity != self.cfg.min_similarity;
         self.cfg = d;
         self.flags.enabled.store(self.cfg.monitor_clipboard, Ordering::SeqCst);
@@ -196,8 +201,12 @@ impl App {
         if keys_changed {
             self.register_hotkeys(ctx);
         }
-        if tray_changed {
+        // The tray menu is built once, so a new language rebuilds it.
+        if tray_changed || (language_changed && self.cfg.tray) {
             self.set_tray(self.cfg.tray);
+        }
+        if language_changed {
+            ctx.send_viewport_cmd(egui::ViewportCommand::Title(tr("Clipboard Manager").into()));
         }
         if login_changed {
             if let Err(e) = crate::autostart::set(self.cfg.start_at_login) {
@@ -228,28 +237,31 @@ impl App {
             .show_separator_line(false)
             .frame(Frame::new().inner_margin(Margin { left: 12, right: 16, top: 12, bottom: 8 }).fill(panel))
             .show(ui, |ui| {
-                ui.horizontal(|ui| {
+                row(ui, |ui| {
                     if icons::icon_button_ex(ui, Icon::Back, "Back (Esc)", Vec2::splat(34.0), 15.0, None, None).clicked() {
                         close = true;
                     }
                     ui.add_space(8.0);
-                    ui.label(RichText::new("Settings").size(20.0).strong());
-                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                    let strong = ui.visuals().strong_text_color();
+                    lbl(ui, "Settings", 20.0, strong);
+                    far(ui, |ui| {
                         if model_pending {
-                            if primary_button(ui, "  Apply model  ").clicked() {
+                            if primary_button(ui, "Apply model").clicked() {
                                 apply_model = true;
                             }
-                            chip(ui, "Model changes not applied yet", AMBER);
+                            chip(ui, tr("Model changes not applied yet"), AMBER);
                         } else {
                             let weak = ui.visuals().weak_text_color();
-                            ui.label(RichText::new("Changes are saved automatically").size(12.5).color(weak));
+                            lbl(ui, "Changes are saved automatically", 12.5, weak);
                             icons::glyph(ui, Icon::Check, 13.0, weak);
                         }
                     });
                 });
             });
 
-        egui::Panel::left("settings_nav")
+        // The page list sits on the reading-start side.
+        let nav = if i18n::rtl() { egui::Panel::right("settings_nav") } else { egui::Panel::left("settings_nav") };
+        nav
             .resizable(false)
             .exact_size(220.0)
             .show_separator_line(false)
@@ -266,8 +278,10 @@ impl App {
                     } else if r.hovered() {
                         ui.painter().rect_filled(rect, CornerRadius::same(8), v.widgets.hovered.weak_bg_fill);
                     }
-                    icons::paint(ui.painter(), Rect::from_center_size(Pos2::new(rect.left() + 22.0, rect.center().y), Vec2::splat(16.0)), icon, color);
-                    ui.painter().text(Pos2::new(rect.left() + 42.0, rect.center().y), egui::Align2::LEFT_CENTER, name, FontId::proportional(14.0), color);
+                    let icon_rect = flip(rect, Rect::from_center_size(Pos2::new(rect.left() + 22.0, rect.center().y), Vec2::splat(16.0)));
+                    icons::paint(ui.painter(), icon_rect, icon, color);
+                    let at = flip(rect, Rect::from_min_size(Pos2::new(rect.left() + 42.0, rect.center().y), Vec2::ZERO)).min;
+                    paint_text(ui, ui.painter(), at, start_anchor(egui::Align::Center), tr(name), FontId::proportional(14.0), color);
                     if r.clicked() {
                         self.settings_page = page;
                         self.confirm = None;
@@ -279,15 +293,19 @@ impl App {
         let content = ui.visuals().extreme_bg_color;
         egui::CentralPanel::default().frame(Frame::new().inner_margin(Margin { left: 28, right: 20, top: 8, bottom: 16 }).fill(content)).show(ui, |ui| {
             egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
-                ui.set_max_width(720.0);
-                match self.settings_page {
+                // A readable column, next to the page list (on the right in Arabic).
+                let area = ui.available_rect_before_wrap();
+                let w = area.width().min(720.0);
+                let x = if i18n::rtl() { area.right() - w } else { area.left() };
+                let column = Rect::from_min_size(Pos2::new(x, area.top()), Vec2::new(w, area.height()));
+                ui.scope_builder(egui::UiBuilder::new().max_rect(column), |ui| match self.settings_page {
                     SettingsPage::General => general_page(ui, &mut d),
                     SettingsPage::Search => self.search_page(ui, &mut d, &mut apply_model),
                     SettingsPage::Clipboard => clipboard_page(ui, &mut d),
                     SettingsPage::Shortcuts => self.shortcuts_page(ui, &mut d, &mut apply_keys),
                     SettingsPage::Appearance => appearance_page(ui, &mut d),
                     SettingsPage::Data => self.data_page(ui, &mut d),
-                }
+                });
                 ui.add_space(24.0);
             });
         });
@@ -330,10 +348,10 @@ impl App {
             d.search_mode = def.search_mode;
         }
         if setting(ui, "Meaning matches to show", "How closely an item has to match before it's listed. \"Show all\" ranks everything by closeness; stricter options hide weak matches. Exact word matches are always shown.", d.min_similarity != def.min_similarity, |ui| {
-            let current = STRICTNESS.iter().find(|(v, _)| (*v - d.min_similarity).abs() < 1e-4).map(|(_, l)| l.to_string()).unwrap_or_else(|| format!("Custom ({:.2})", d.min_similarity));
-            egui::ComboBox::from_id_salt("strict").selected_text(current).width(150.0).show_ui(ui, |ui| {
+            let current = STRICTNESS.iter().find(|(v, _)| (*v - d.min_similarity).abs() < 1e-4).map(|(_, l)| tr(l).to_string()).unwrap_or_else(|| trf("Custom ({v})", &[("v", &format!("{:.2}", d.min_similarity))]));
+            egui::ComboBox::from_id_salt("strict").selected_text(txt(&current, 14.0, None)).width(150.0).show_ui(ui, |ui| {
                 for (v, l) in STRICTNESS {
-                    ui.selectable_value(&mut d.min_similarity, v, l);
+                    ui.selectable_value(&mut d.min_similarity, v, txt(tr(l), 14.0, None));
                 }
             });
         }) {
@@ -342,11 +360,11 @@ impl App {
 
         section(ui, "Meaning search model");
         let (dot, text) = self.model_status();
-        ui.horizontal(|ui| {
+        row(ui, |ui| {
             ui.add_space(10.0);
             let color = if dot == Color32::GRAY { ui.visuals().weak_text_color() } else { dot };
             icons::glyph(ui, Icon::Dot, 12.0, color);
-            ui.label(RichText::new(text).size(13.0).color(color));
+            ui.label(txt(&text, 13.0, Some(color)));
         });
         ui.add_space(4.0);
         let mut kind = match &d.backend {
@@ -370,12 +388,12 @@ impl App {
         }
         if d.backend != self.cfg.backend {
             ui.add_space(8.0);
-            ui.horizontal(|ui| {
+            row(ui, |ui| {
                 ui.add_space(10.0);
-                if primary_button(ui, "  Apply model  ").clicked() {
+                if primary_button(ui, "Apply model").clicked() {
                     *apply_model = true;
                 }
-                ui.label(RichText::new("Your items are indexed again in the background.").size(12.5).color(ui.visuals().weak_text_color()));
+                lbl(ui, "Your items are indexed again in the background.", 12.5, ui.visuals().weak_text_color());
             });
         }
     }
@@ -386,21 +404,22 @@ impl App {
         for m in &SIGLIP_MODELS {
             let ready = models::siglip_ready(&self.paths.models, m.repo);
             let selected = *repo == m.repo;
-            setting(ui, m.label, &format!("{} · {:.1} GB download", m.repo, m.size_mb as f32 / 1000.0), selected, |ui| {
+            let size = format!("{:.1}", m.size_mb as f32 / 1000.0);
+            setting(ui, m.label, &trf("{repo} · {size} GB download", &[("repo", &m.repo), ("size", &size)]), selected, |ui| {
                 if ready {
                     chip(ui, "✔ Downloaded", GREEN);
                 } else if let Some(dl) = self.download.as_ref().filter(|x| x.repo == m.repo) {
                     let p = &dl.progress;
-                    if ui.small_button("Cancel").clicked() {
+                    if ui.small_button(txt(tr("Cancel"), 12.0, None)).clicked() {
                         p.cancel.store(true, Ordering::Relaxed);
                     }
                     let (done, total) = (p.done.load(Ordering::Relaxed), p.total.load(Ordering::Relaxed).max(1));
                     ui.add(egui::ProgressBar::new(done as f32 / total as f32).desired_width(150.0).text(format!("{} / {} MB", done >> 20, total >> 20)));
                     ui.ctx().request_repaint_after(Duration::from_millis(250));
-                } else if self.download.is_none() && ui.button(format!("⬇ Download {:.1} GB", m.size_mb as f32 / 1000.0)).clicked() {
+                } else if self.download.is_none() && ui.button(txt(&trf("Download {size} GB", &[("size", &size)]), 14.0, None)).clicked() {
                     start = Some(m.repo.to_string());
                 }
-                if !selected && ui.add(egui::Button::new("Use").frame_when_inactive(false)).clicked() {
+                if !selected && ui.add(egui::Button::new(txt(tr("Use"), 14.0, None)).frame_when_inactive(false)).clicked() {
                     *repo = m.repo.to_string();
                 }
             });
@@ -496,14 +515,14 @@ impl App {
         section(ui, "Storage");
         let root = self.paths.root.clone();
         setting(ui, "Data folder", "History, images, models and settings are stored here, on this PC only.", false, |ui| {
-            if ui.button("Open").clicked() {
+            if ui.button(txt(tr("Open"), 14.0, None)).clicked() {
                 reveal(&root);
             }
             ui.add(egui::Label::new(RichText::new(root.display().to_string()).size(12.0).color(ui.visuals().weak_text_color())).truncate());
         });
         let log = root.join("clipboard-manager.log");
         setting(ui, "Log file", "A record of what the app did in this session. Attach it when reporting a problem.", false, |ui| {
-            if ui.button("Show").clicked() {
+            if ui.button(txt(tr("Show"), 14.0, None)).clicked() {
                 reveal(&log);
             }
         });
@@ -511,21 +530,21 @@ impl App {
         let pinned = self.items.iter().filter(|i| i.pinned).count();
         let clip = self.items.iter().filter(|i| i.origin == Origin::Clipboard && !i.pinned).count();
         setting(ui, "Stored", "", false, |ui| {
-            ui.label(RichText::new(format!("{} items · {images} images · {pinned} pinned", self.items.len())).size(13.0));
+            ui.label(txt(&trf("{n} items · {i} images · {p} pinned", &[("n", &self.items.len()), ("i", &images), ("p", &pinned)]), 13.0, None));
         });
 
         section(ui, "Clean up");
         let mut clear = false;
         let confirm = self.confirm;
-        setting(ui, "Clear clipboard history", "Deletes copied items. Pinned items and files you added stay.", false, |ui| {
+        setting(ui, "Clear clipboard history", "Deletes copied items. Pinned and tagged items, and files you added, stay.", false, |ui| {
             if confirm == Some("clear") {
-                if ui.add(egui::Button::new(RichText::new(format!("Delete {clip} items")).color(Color32::WHITE)).fill(RED)).clicked() {
+                if ui.add(egui::Button::new(txt(&trf("Delete {n} items", &[("n", &clip)]), 14.0, Some(Color32::WHITE))).fill(RED)).clicked() {
                     clear = true;
                 }
                 if ui.button("Cancel").clicked() {
                     self.confirm = None;
                 }
-            } else if ui.add_enabled(clip > 0, egui::Button::new(RichText::new("Clear…").color(RED))).clicked() {
+            } else if ui.add_enabled(clip > 0, egui::Button::new(txt(tr("Clear…"), 14.0, Some(RED)))).clicked() {
                 self.confirm = Some("clear");
             }
         });
@@ -537,13 +556,13 @@ impl App {
         let confirm = self.confirm;
         setting(ui, "Reset all settings", "Puts every setting back to its default, including the search model.", false, |ui| {
             if confirm == Some("reset") {
-                if ui.add(egui::Button::new(RichText::new("Reset everything").color(Color32::WHITE)).fill(RED)).clicked() {
+                if ui.add(egui::Button::new(txt(tr("Reset everything"), 14.0, Some(Color32::WHITE))).fill(RED)).clicked() {
                     reset = true;
                 }
                 if ui.button("Cancel").clicked() {
                     self.confirm = None;
                 }
-            } else if ui.add_enabled(*d != Config::default(), egui::Button::new("Reset…")).clicked() {
+            } else if ui.add_enabled(*d != Config::default(), egui::Button::new(txt(tr("Reset…"), 14.0, None))).clicked() {
                 self.confirm = Some("reset");
             }
         });
@@ -557,6 +576,18 @@ impl App {
 
 fn general_page(ui: &mut Ui, d: &mut Config) {
     let def = Config::default();
+    section(ui, "Language and time");
+    // Each language is named in itself, so it can be found whatever is showing.
+    if setting(ui, "Language", "The language of the app. Arabic also lays the window out right to left.", d.language != def.language, |ui| {
+        segmented(ui, &mut d.language, &[(Language::English, "English"), (Language::Arabic, "العربية")]);
+    }) {
+        d.language = def.language;
+    }
+    if setting(ui, "Time format", "How times are shown. They're stored in UTC and shown in your time zone.", d.time_format != def.time_format, |ui| {
+        segmented(ui, &mut d.time_format, &[(TimeFormat::H24, "24-hour"), (TimeFormat::H12, "12-hour")]);
+    }) {
+        d.time_format = def.time_format;
+    }
     section(ui, "Startup");
     if setting(ui, "Start when you sign in", "Opens the app each time you sign in to Windows. It starts hidden: in the system tray when that's on, otherwise minimised.", d.start_at_login != def.start_at_login, |ui| {
         toggle(ui, &mut d.start_at_login);
@@ -582,18 +613,18 @@ fn clipboard_page(ui: &mut Ui, d: &mut Config) {
             *v = default;
         }
     };
-    flag(ui, "Record clipboard history", "Save everything you copy. Turn off to pause; the ⏸ button in the main window does the same.", &mut d.monitor_clipboard, def.monitor_clipboard);
+    flag(ui, "Record clipboard history", "Save everything you copy. Turn off to pause; the pause button in the main window does the same.", &mut d.monitor_clipboard, def.monitor_clipboard);
     flag(ui, "Skip passwords and API keys", "Don't save copies that look like a password, API key, token or private key. You still can paste them normally.", &mut d.skip_secrets, def.skip_secrets);
     flag(ui, "Merge duplicate copies", "Copying something you already have moves it to the top instead of adding it again.", &mut d.dedupe, def.dedupe);
     flag(ui, "Read text in images", "Find screenshots and photos by the words in them. Runs on this PC.", &mut d.ocr_images, def.ocr_images);
     section(ui, "After copying from the list");
     flag(ui, "Hide the window", "After you copy an item, the window hides so you can paste right away.", &mut d.minimize_after_copy, def.minimize_after_copy);
     section(ui, "History size");
-    if setting(ui, "Keep up to", "When there are more, the oldest are deleted. Pinned items and files you added are never deleted.", d.max_items != def.max_items, |ui| {
-        let label = |n: usize| format!("{} items", n.to_string().as_bytes().rchunks(3).rev().map(|c| std::str::from_utf8(c).unwrap()).collect::<Vec<_>>().join(","));
-        egui::ComboBox::from_id_salt("history").selected_text(label(d.max_items)).width(140.0).show_ui(ui, |ui| {
+    if setting(ui, "Keep up to", "When there are more, the oldest are deleted. Pinned and tagged items, and files you added, are never deleted.", d.max_items != def.max_items, |ui| {
+        let label = |n: usize| trf("{n} items", &[("n", &n.to_string().as_bytes().rchunks(3).rev().map(|c| std::str::from_utf8(c).unwrap()).collect::<Vec<_>>().join(","))]);
+        egui::ComboBox::from_id_salt("history").selected_text(txt(&label(d.max_items), 14.0, None)).width(140.0).show_ui(ui, |ui| {
             for n in HISTORY_SIZES {
-                ui.selectable_value(&mut d.max_items, n, label(n));
+                ui.selectable_value(&mut d.max_items, n, txt(&label(n), 14.0, None));
             }
         });
     }) {
@@ -605,7 +636,7 @@ fn appearance_page(ui: &mut Ui, d: &mut Config) {
     let def = Config::default();
     section(ui, "Look");
     if setting(ui, "Theme", "System follows your Windows light/dark setting.", d.theme != def.theme, |ui| {
-        segmented(ui, &mut d.theme, &[(Theme::System, "🖥 System"), (Theme::Light, "☀ Light"), (Theme::Dark, "🌙 Dark")]);
+        segmented(ui, &mut d.theme, &[(Theme::System, "System"), (Theme::Light, "Light"), (Theme::Dark, "Dark")]);
     }) {
         d.theme = def.theme;
     }
@@ -616,7 +647,7 @@ fn appearance_page(ui: &mut Ui, d: &mut Config) {
             if d.accent == i {
                 ui.painter().circle_stroke(rect.center(), 12.0, Stroke::new(2.0, *c));
             }
-            if r.on_hover_text(*name).clicked() {
+            if tip(r, tr(name)).clicked() {
                 d.accent = i;
             }
         }
@@ -643,9 +674,9 @@ fn appearance_page(ui: &mut Ui, d: &mut Config) {
 }
 
 fn server_settings(ui: &mut Ui, s: &mut ServerConfig, list: &mut ModelList) {
-    ui.horizontal_wrapped(|ui| {
+    super::view::row_wrapped(ui, |ui| {
         ui.add_space(10.0);
-        ui.label(RichText::new("Quick setup:").size(12.5).color(ui.visuals().weak_text_color()));
+        lbl(ui, "Quick setup:", 12.5, ui.visuals().weak_text_color());
         for (name, url) in [
             ("llama.cpp", "http://127.0.0.1:8080/v1"),
             ("Unsloth", "http://127.0.0.1:8888/v1"),
@@ -671,14 +702,14 @@ fn server_settings(ui: &mut Ui, s: &mut ServerConfig, list: &mut ModelList) {
         list.fetch(s, ui.ctx());
     }
     setting(ui, "Server address", "The address of the embeddings server, usually ending in /v1.", false, |ui| {
-        if editable && ui.add(egui::Button::new("⟳").frame_when_inactive(false)).on_hover_text("Check again").clicked() {
+        if editable && tip(ui.add(egui::Button::new("⟳").frame_when_inactive(false)), tr("Check again")).clicked() {
             list.fetch(s, ui.ctx());
         }
         ui.add_enabled(editable, egui::TextEdit::singleline(&mut s.base_url).hint_text("http://127.0.0.1:8080/v1").desired_width(300.0));
     });
     setting(ui, "API key", "Only if your server asks for one. Sent as a Bearer token and stored only on this PC.", false, |ui| {
         let eye = egui::Button::new(RichText::new("👁").size(15.0)).frame_when_inactive(list.show_key).fill(if list.show_key { accent().gamma_multiply(0.14) } else { Color32::TRANSPARENT });
-        if ui.add(eye).on_hover_text(if list.show_key { "Hide key" } else { "Show key" }).clicked() {
+        if tip(ui.add(eye), tr(if list.show_key { "Hide key" } else { "Show key" })).clicked() {
             list.show_key = !list.show_key;
         }
         ui.add(egui::TextEdit::singleline(&mut s.api_key).password(!list.show_key).hint_text("optional").desired_width(300.0));
@@ -691,13 +722,13 @@ fn server_settings(ui: &mut Ui, s: &mut ServerConfig, list: &mut ModelList) {
             egui::Popup::menu(&b).show(|ui| {
                 ui.set_min_width(320.0);
                 if let Some(dn) = &default_name {
-                    let label = if dn.is_empty() { "Server default".to_string() } else { format!("Server default · {dn}") };
-                    if ui.selectable_label(s.model.is_empty(), label).clicked() {
+                    let label = if dn.is_empty() { tr("Server default").to_string() } else { trf("Server default · {model}", &[("model", dn)]) };
+                    if ui.selectable_label(s.model.is_empty(), txt(&label, 14.0, None)).clicked() {
                         s.model.clear();
                     }
                 }
                 if !list.found.listed.is_empty() {
-                    ui.label(RichText::new("LISTED BY THE SERVER (MAY INCLUDE CHAT MODELS)").size(10.5).weak());
+                    lbl(ui, "LISTED BY THE SERVER (MAY INCLUDE CHAT MODELS)", 10.5, ui.visuals().weak_text_color());
                     for m in &list.found.listed {
                         if ui.selectable_label(s.model == *m, m).clicked() {
                             s.model = m.clone();
@@ -707,22 +738,23 @@ fn server_settings(ui: &mut Ui, s: &mut ServerConfig, list: &mut ModelList) {
             });
         }
         let hint = match default_name.as_deref() {
-            Some(dn) if !dn.is_empty() => format!("default: {dn}"),
-            _ => "server default".to_string(),
+            Some(dn) if !dn.is_empty() => trf("default: {model}", &[("model", &dn)]),
+            _ => tr("server default").to_string(),
         };
         ui.add_enabled(editable, egui::TextEdit::singleline(&mut s.model).hint_text(hint).desired_width(300.0));
     });
-    ui.horizontal_wrapped(|ui| {
+    super::view::row_wrapped(ui, |ui| {
         ui.add_space(10.0);
         if list.pending.is_some() {
             ui.add(egui::Spinner::new().size(12.0));
-            ui.label(RichText::new("Checking the server…").size(12.5).weak());
+            lbl(ui, "Checking the server…", 12.5, ui.visuals().weak_text_color());
         } else if let Some(e) = &list.error {
             chip(ui, format!("⚠ {e}"), RED);
         } else if s.model.trim().is_empty() {
             match default_name.as_deref() {
                 Some(dn) => {
-                    chip(ui, format!("✔ Connected · uses {}", if dn.is_empty() { "the default model" } else { dn }), GREEN);
+                    let model = if dn.is_empty() { tr("the default model") } else { dn };
+                    chip(ui, trf("✔ Connected · uses {model}", &[("model", &model)]), GREEN);
                 }
                 None if !list.found.listed.is_empty() => {
                     chip(ui, "Connected, but no default embedding model: choose one", AMBER);
@@ -733,7 +765,7 @@ fn server_settings(ui: &mut Ui, s: &mut ServerConfig, list: &mut ModelList) {
             chip(ui, "✔ Connected", GREEN);
         }
         if !editable {
-            ui.label(RichText::new("The app starts llama-server itself; it connects after Apply.").size(12.5).weak());
+            lbl(ui, "The app starts llama-server itself; it connects after Apply.", 12.5, ui.visuals().weak_text_color());
         }
     });
 
@@ -741,10 +773,10 @@ fn server_settings(ui: &mut Ui, s: &mut ServerConfig, list: &mut ModelList) {
     let gemma = effective.to_lowercase().contains("embeddinggemma");
     let gemma_prompts = s.query_prefix == ServerConfig::GEMMA_QUERY && s.document_prefix == ServerConfig::GEMMA_DOCUMENT;
     if gemma && !gemma_prompts {
-        ui.horizontal(|ui| {
+        row(ui, |ui| {
             ui.add_space(10.0);
             chip(ui, "💡 EmbeddingGemma searches better with its own prompts", AMBER);
-            if ui.button("Use them").clicked() {
+            if ui.button(txt(tr("Use them"), 14.0, None)).clicked() {
                 s.query_prefix = ServerConfig::GEMMA_QUERY.into();
                 s.document_prefix = ServerConfig::GEMMA_DOCUMENT.into();
             }
@@ -752,7 +784,7 @@ fn server_settings(ui: &mut Ui, s: &mut ServerConfig, list: &mut ModelList) {
     }
 
     ui.add_space(6.0);
-    egui::CollapsingHeader::new(RichText::new("Advanced").size(13.5)).id_salt("advanced").show(ui, |ui| {
+    egui::CollapsingHeader::new(txt(tr("Advanced"), 13.5, None)).id_salt("advanced").show(ui, |ui| {
         setting(ui, "Query prompt", "Text put before what you search for. Some models need it (EmbeddingGemma: “task: search result | query: ”).", !s.query_prefix.is_empty(), |ui| {
             ui.add(egui::TextEdit::singleline(&mut s.query_prefix).hint_text("none").desired_width(300.0));
         });

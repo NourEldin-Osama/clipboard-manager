@@ -4,6 +4,7 @@
 
 use eframe::egui::{Painter, Pos2, Rect, Shape, Ui};
 
+use super::view;
 use crate::store::Kind;
 
 use super::*;
@@ -264,9 +265,10 @@ pub(super) fn paint(p: &Painter, rect: Rect, icon: Icon, color: Color32) {
 /// A flat icon button: background only on hover, or `fill` when given.
 pub(super) fn icon_button_ex(ui: &mut Ui, icon: Icon, tip: &str, size: Vec2, glyph: f32, fill: Option<Color32>, fg: Option<Color32>) -> egui::Response {
     let (rect, resp) = ui.allocate_exact_size(size, Sense::click());
+    let tip = tr(tip);
     resp.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, ui.is_enabled(), tip));
     paint_button(ui, rect, &resp, icon, glyph, fill, fg);
-    resp.on_hover_text(tip)
+    view::tip(resp, tip)
 }
 
 pub(super) fn icon_button(ui: &mut Ui, icon: Icon, tip: &str) -> egui::Response {
@@ -277,7 +279,7 @@ pub(super) fn icon_button(ui: &mut Ui, icon: Icon, tip: &str) -> egui::Response 
 pub(super) fn icon_button_at(ui: &Ui, rect: Rect, id: egui::Id, icon: Icon, tip: &str) -> egui::Response {
     let resp = ui.interact(rect, id, Sense::click());
     paint_button(ui, rect, &resp, icon, 15.0, None, None);
-    resp.on_hover_text(tip)
+    view::tip(resp, tr(tip))
 }
 
 fn paint_button(ui: &Ui, rect: Rect, resp: &egui::Response, icon: Icon, glyph: f32, fill: Option<Color32>, fg: Option<Color32>) {
@@ -313,16 +315,17 @@ pub(super) fn icon_text_size(ui: &Ui, text: &egui::WidgetText, size: f32, icon: 
     (g, size)
 }
 
+/// The icon goes on the reading-start side: left, or right in Arabic.
 pub(super) fn paint_icon_text(p: &Painter, rect: Rect, icon: Icon, icon_size: f32, g: std::sync::Arc<egui::Galley>, color: Color32) {
-    let ic = Rect::from_center_size(Pos2::new(rect.left() + icon_size / 2.0, rect.center().y), Vec2::splat(icon_size));
+    let ic = view::flip(rect, Rect::from_center_size(Pos2::new(rect.left() + icon_size / 2.0, rect.center().y), Vec2::splat(icon_size)));
     paint(p, ic, icon, color);
-    let gp = Pos2::new(ic.right() + 6.0, rect.center().y - g.size().y / 2.0);
-    p.galley(gp, g, color);
+    let x = if i18n::rtl() { ic.left() - 6.0 - g.size().x } else { ic.right() + 6.0 };
+    p.galley(Pos2::new(x, rect.center().y - g.size().y / 2.0), g, color);
 }
 
 /// A rounded tinted label with an icon: kind, state or status.
 pub(super) fn chip(ui: &mut Ui, icon: Icon, text: &str, color: Color32) -> egui::Response {
-    let (g, size) = icon_text_size(ui, &RichText::new(text).into(), 12.0, 12.0);
+    let (g, size) = icon_text_size(ui, &view::txt(tr(text), 12.0, Some(color)), 12.0, 12.0);
     let pad = Vec2::new(8.0, 3.0);
     let (rect, resp) = ui.allocate_exact_size(size + pad * 2.0 + Vec2::new(0.0, 2.0), Sense::hover());
     ui.painter().rect_filled(rect, CornerRadius::same(10), color.gamma_multiply(0.14));
@@ -363,8 +366,9 @@ pub(super) fn menu_item(ui: &mut Ui, icon: Icon, text: &str) -> egui::Response {
         ui.painter().rect_filled(rect, CornerRadius::same(6), v.widgets.hovered.weak_bg_fill);
     }
     let color = if resp.hovered() { v.strong_text_color() } else { v.text_color() };
-    paint(ui.painter(), Rect::from_center_size(Pos2::new(rect.left() + 16.0, rect.center().y), Vec2::splat(15.0)), icon, color);
-    ui.painter().text(Pos2::new(rect.left() + 34.0, rect.center().y), egui::Align2::LEFT_CENTER, text, FontId::proportional(14.0), color);
+    paint(ui.painter(), view::flip(rect, Rect::from_center_size(Pos2::new(rect.left() + 16.0, rect.center().y), Vec2::splat(15.0))), icon, color);
+    let at = view::flip(rect, Rect::from_min_size(Pos2::new(rect.left() + 34.0, rect.center().y), Vec2::ZERO)).min;
+    view::paint_text(ui, ui.painter(), at, view::start_anchor(egui::Align::Center), tr(text), FontId::proportional(14.0), color);
     resp
 }
 

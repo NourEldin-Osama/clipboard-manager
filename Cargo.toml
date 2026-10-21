@@ -13,6 +13,7 @@ auto-launch = "0.6"
 base64 = "0.22"
 candle-core = "0.11"
 candle-nn = "0.11"
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
 directories = "6"
 eframe = { version = "0.37", default-features = false, features = ["accesskit", "clipboard", "default_fonts", "links", "system_fonts", "glow", "persistence", "wayland", "x11"] }
 egui = { version = "0.37", features = ["monochrome_emoji_fonts"] }
@@ -26,9 +27,10 @@ rfd = "0.17"
 rten = { version = "0.26", default-features = false, features = ["rten_format"] }
 serde = { version = "1", features = ["derive", "rc"] }
 serde_json = "1"
-time = { version = "0.3", features = ["local-offset", "formatting", "macros"] }
 # ksni: the Linux tray talks D-Bus directly instead of needing GTK.
 tray-icon = { version = "0.26", default-features = false, features = ["ksni"] }
+# Orders mixed Arabic/Latin text for display; egui lays runs out left to right.
+unicode-bidi = "0.3"
 tokenizers = { version = "0.23", default-features = false, features = ["unstable_wasm"] }
 ureq = { version = "3", features = ["json"] }
 walkdir = "2"

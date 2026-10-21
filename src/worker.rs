@@ -8,6 +8,7 @@ use std::time::Duration;
 
 use anyhow::{anyhow, Result};
 
+use crate::i18n::{tr, trf};
 use crate::config::EmbedBackend;
 use crate::embed::{server::ServerEmbedder, siglip::SigLip, Embedder, Embedding, TextRole};
 use crate::models;
@@ -157,16 +158,16 @@ impl State {
                 if !models::siglip_ready(&self.models_dir, repo) {
                     Err(anyhow!("{repo} is not downloaded yet (Settings → Search model)"))
                 } else {
-                    self.emit(Event::Status(format!("Loading {repo}…")));
+                    self.emit(Event::Status(trf("Loading {repo}…", &[("repo", &repo)])));
                     SigLip::load(&models::siglip_dir(&self.models_dir, repo), &format!("siglip:{repo}"))
                         .map(|m| Some(Box::new(m) as Box<dyn Embedder>))
                 }
             }
             EmbedBackend::Server(cfg) => {
                 self.emit(Event::Status(if cfg.launch.is_some() {
-                    "Starting llama-server…".into()
+                    tr("Starting llama-server…").into()
                 } else {
-                    format!("Connecting to {}…", cfg.base_url)
+                    trf("Connecting to {host}…", &[("host", &cfg.base_url)])
                 }));
                 ServerEmbedder::new(cfg.clone()).and_then(|mut s| {
                     // Probe once so misconfiguration shows up immediately.
@@ -195,7 +196,7 @@ impl State {
         if self.ocr.is_none() && !self.ocr_failed {
             let r = (|| -> Result<Ocr> {
                 if !models::ocr_ready(&self.models_dir) {
-                    self.emit(Event::Status("Downloading OCR models (12 MB, one time)…".into()));
+                    self.emit(Event::Status(tr("Downloading OCR models (12 MB, one time)…").into()));
                     models::download_ocr(&self.models_dir, &Arc::default())?;
                 }
                 Ocr::load(&models::ocr_dir(&self.models_dir))

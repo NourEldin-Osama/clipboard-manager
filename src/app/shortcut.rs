@@ -1,7 +1,7 @@
 //! Keyboard shortcuts stored as text ("Ctrl+Shift+P"), the same spelling the
 //! global hotkey parser reads, plus the click-and-press recorder that edits them.
 
-use eframe::egui::{Align, Event, KeyboardShortcut, Layout, Modifiers, Pos2, Rect, Ui};
+use eframe::egui::{Event, KeyboardShortcut, Modifiers, Pos2, Rect, Ui};
 
 use super::icons::{self, Icon};
 use super::view::accent;
@@ -102,8 +102,9 @@ const FIELD: Vec2 = Vec2::new(170.0, 32.0);
 /// A built-in shortcut, laid out like a recorder so the key caps line up.
 pub(super) fn fixed(ui: &mut Ui, s: &str) {
     let (rect, _) = ui.allocate_exact_size(FIELD, Sense::hover());
-    let mut inner = ui.new_child(egui::UiBuilder::new().max_rect(rect.shrink2(Vec2::new(10.0, 4.0))).layout(Layout::left_to_right(Align::Center)));
-    keycaps(&mut inner, s, true);
+    let mut inner = ui.new_child(egui::UiBuilder::new().max_rect(rect.shrink2(Vec2::new(10.0, 4.0))).layout(view::row_layout()));
+    let keys = if i18n::rtl() { s.split('+').rev().collect::<Vec<_>>().join("+") } else { s.to_string() };
+    keycaps(&mut inner, &keys, true);
 }
 
 /// What the recorder did this frame.
@@ -155,20 +156,23 @@ pub(super) fn recorder(ui: &mut Ui, value: &mut String, recording: bool, global:
     } else if resp.hovered() {
         p.rect_stroke(rect, CornerRadius::same(8), Stroke::new(1.0, v.weak_text_color().gamma_multiply(0.5)), egui::StrokeKind::Inside);
     }
-    let mut inner = ui.new_child(egui::UiBuilder::new().max_rect(rect.shrink2(Vec2::new(10.0, 4.0))).layout(Layout::left_to_right(Align::Center)));
+    // Content starts at the reading edge; the pen sits at the other end.
+    let mut inner = ui.new_child(egui::UiBuilder::new().max_rect(rect.shrink2(Vec2::new(10.0, 4.0))).layout(view::row_layout()));
     if recording {
         let text = problem.unwrap_or("Press keys…");
-        inner.label(RichText::new(text).size(12.5).color(if problem.is_some() { view::RED } else { a }));
+        inner.label(view::txt(tr(text), 12.5, Some(if problem.is_some() { view::RED } else { a })));
         ui.ctx().request_repaint();
     } else if value.trim().is_empty() {
-        inner.label(RichText::new("Off · click to set").size(12.5).color(v.weak_text_color()));
+        inner.label(view::txt(tr("Off · click to set"), 12.5, Some(v.weak_text_color())));
     } else {
-        keycaps(&mut inner, value, false);
-        let pen = Rect::from_center_size(Pos2::new(rect.right() - 16.0, rect.center().y), Vec2::splat(12.0));
+        // Key caps always read left to right ("Ctrl" then "P"); a right-to-left row lays them out backwards.
+        let keys = if i18n::rtl() { value.split('+').rev().collect::<Vec<_>>().join("+") } else { value.clone() };
+        keycaps(&mut inner, &keys, false);
+        let pen = view::flip(rect, Rect::from_center_size(Pos2::new(rect.right() - 16.0, rect.center().y), Vec2::splat(12.0)));
         icons::paint(ui.painter(), pen, Icon::Edit, if resp.hovered() { v.strong_text_color() } else { v.weak_text_color() });
     }
     let tip = if recording { "Press the new keys · Backspace turns it off · Esc cancels" } else { "Click, then press the new keys" };
-    let resp = resp.on_hover_text(tip);
+    let resp = view::tip(resp, tr(tip));
     if resp.clicked() && !recording {
         *problem = None;
         out = Recorded::Started;
