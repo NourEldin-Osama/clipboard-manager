@@ -153,7 +153,7 @@ jobs:
           (cd winget && 7z a -tzip ../winget-manifests.zip . > /dev/null)
 
       - name: Upload exe
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: clipboard-manager-windows-x64-${{ github.sha }}
           path: clipboard-manager-windows-x64.exe
