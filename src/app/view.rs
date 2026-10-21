@@ -943,7 +943,9 @@ impl App {
             return;
         }
         let ctx = ui.ctx().clone();
-        let fill = accent().gamma_multiply(if ui.visuals().dark_mode { 0.18 } else { 0.09 });
+        // Opaque: a panel's frame is all that's painted there, so a see-through
+        // tint would show the window's black backdrop.
+        let fill = ui.visuals().panel_fill.lerp_to_gamma(accent(), if ui.visuals().dark_mode { 0.18 } else { 0.10 });
         let mut action: Option<&'static str> = None;
         egui::Panel::top("update")
             .show_separator_line(false)
