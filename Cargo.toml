@@ -40,6 +40,10 @@ tokenizers = { version = "0.23", default-features = false, features = ["unstable
 ureq = { version = "3", features = ["json"] }
 walkdir = "2"
 
+# Embeds the app icon and file details in the Windows exe (see build.rs).
+[build-dependencies]
+winresource = { version = "0.1", default-features = false }
+
 [target.'cfg(windows)'.dependencies]
 clipboard-win = "5"
 
