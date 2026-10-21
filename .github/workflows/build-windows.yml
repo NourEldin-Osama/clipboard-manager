@@ -43,12 +43,12 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
 
       # Caches compiled dependencies; later builds only recompile this crate.
+      # Caches only the dist build (the tests run in the Checks workflow, on
+      # pull requests and on main), under its own key so it stays small and
+      # restores quickly.
       - uses: Swatinem/rust-cache@v2
         with:
-          cache-all-crates: true
-
-      - name: Test
-        run: cargo test --locked
+          prefix-key: v1-dist
 
       # BUILD_NUMBER goes into the exe, so the app knows which release it is.
       - name: Build (dist profile)
