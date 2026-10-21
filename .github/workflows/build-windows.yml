@@ -45,7 +45,7 @@ jobs:
         env:
           BUILD_NUMBER: ${{ github.run_number }}
 
-      # e.g. v0.1.0-build.7: the crate version plus this workflow's run number.
+      # e.g. v0.2.0-build.7: the crate version plus this workflow's run number.
       - name: Release name
         id: version
         shell: bash
