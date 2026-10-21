@@ -209,12 +209,12 @@ impl Default for Config {
             density: Density::Comfortable,
             group_by_date: true,
             accent: 0,
-            view: ViewMode::Detail,
+            view: ViewMode::Grid,
             tray: false,
-            start_at_login: false,
+            start_at_login: true,
             keys: Keys::default(),
             language: Language::English,
-            time_format: TimeFormat::H24,
+            time_format: TimeFormat::H12,
         }
     }
 }
