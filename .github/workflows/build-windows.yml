@@ -38,7 +38,7 @@ jobs:
         run: cargo build --locked --profile dist
 
       - name: Upload exe
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           name: clipboard-manager-windows-x64-${{ github.sha }}
           path: target/dist/clipboard-manager.exe
