@@ -1,11 +1,26 @@
 # clipboard-manager
 
-[![Build Windows exe](https://github.com/NourEldin-Osama/clipboard-manager/actions/workflows/build-windows.yml/badge.svg)](https://github.com/NourEldin-Osama/clipboard-manager/actions/workflows/build-windows.yml)
+[![Build](https://github.com/NourEldin-Osama/clipboard-manager/actions/workflows/build-windows.yml/badge.svg)](https://github.com/NourEldin-Osama/clipboard-manager/actions/workflows/build-windows.yml)
+[![Latest release](https://img.shields.io/github/v/release/NourEldin-Osama/clipboard-manager?label=release)](https://github.com/NourEldin-Osama/clipboard-manager/releases/latest)
+[![Downloads](https://img.shields.io/github/downloads/NourEldin-Osama/clipboard-manager/total)](https://github.com/NourEldin-Osama/clipboard-manager/releases)
+[![License: MIT or Apache-2.0](https://img.shields.io/badge/license-MIT%20%7C%20Apache--2.0-blue)](#license)
+
+**English** · [العربية](README_AR.md)
 
 An open-source, offline clipboard manager for Windows (also builds on Linux and macOS), written entirely in Rust.
 It keeps your clipboard history, reads the text inside screenshots and images on your own machine, and lets you
 search everything **by meaning** with local embedding models. For example, type *"receipt from the hardware store"* and
 it finds the photo you copied last week.
+
+[![Download for Windows](https://img.shields.io/badge/Download%20for%20Windows-clipboard--manager--windows--x64.exe-5865f2?style=for-the-badge&logo=windows)](https://github.com/NourEldin-Osama/clipboard-manager/releases/latest/download/clipboard-manager-windows-x64.exe)
+
+![Clipboard Manager in Grid view](docs/screenshots/grid.png)
+
+| List with details | Search |
+|---|---|
+| ![List view with the details pane](docs/screenshots/detail.png) | ![Searching the history](docs/screenshots/search.png) |
+| **Arabic, right to left** | **Settings** |
+| ![The window in Arabic](docs/screenshots/arabic.png) | ![General settings](docs/screenshots/settings.png) |
 
 It is a clean-room reimplementation inspired by the feature set of the Planck clipboard manager: it was written from
 public feature descriptions only, and it shares no code or assets with Planck and has no affiliation with it.
@@ -41,7 +56,11 @@ Nothing you copy is ever sent. Everything else works without a network connectio
 ### Option A: download the prebuilt `.exe`
 Every change merged into `main` is built on GitHub's Windows machines and published on the
 [Releases page](https://github.com/NourEldin-Osama/clipboard-manager/releases/latest), with notes listing the pull requests it includes.
-Download **clipboard-manager-windows-x64.exe** from the latest release.
+Download **clipboard-manager-windows-x64.exe** from the latest release, or install it with [Scoop](https://scoop.sh):
+
+```powershell
+scoop install https://github.com/NourEldin-Osama/clipboard-manager/releases/latest/download/clipboard-manager.json
+```
 
 It is a single, self-contained binary that needs no installer and no runtime. Put it anywhere you can write to, for
 example `%LOCALAPPDATA%\Programs\clipboard-manager\`, and run it. To start it when you sign in, turn on

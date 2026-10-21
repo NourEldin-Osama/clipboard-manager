@@ -1,0 +1,20 @@
+name: Feature request
+description: An idea to make the app better.
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What would you like to do?
+      description: The task or problem, in your own words.
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: How could the app help?
+      description: Your idea for how it could work. Mockups or examples from other apps are welcome.
+  - type: textarea
+    id: other
+    attributes:
+      label: Anything else?
