@@ -15,8 +15,10 @@ public feature descriptions only, and it shares no code or assets with Planck an
 | | |
 |---|---|
 | **Clipboard history** | Text, links, images and copied files. Duplicate copies are merged and moved to the top. Pin items to keep them forever. |
+| **Tags** | Label any item with one or more tags (`Ctrl+T`, or *Add tag* in the details pane; existing tags are suggested as you type). The most used tags appear as filters beside the kind filters, tags are searchable (`work` or `#work`), and tagged items, like pinned ones, are never pruned or cleared. Right-click a tag filter to remove it from every item. |
 | **Global hotkeys** | `Alt+V` shows/hides the window, `Alt+C` skips recording the next copy. Both can be changed in Settings. |
-| **Keyboard-first** | Type to search, `↑/↓` to move, `Enter` (or double-click) copies and hides the window so you can paste right away, `Ctrl+P` pins, `Shift+Del` deletes, `Esc` clears the search or hides the window. |
+| **Keyboard-first** | Type to search, `↑/↓` to move, `Enter` (or double-click) copies and hides the window so you can paste right away, `Ctrl+P` pins, `Ctrl+T` tags, `Shift+Del` deletes, `Ctrl+L` switches layout, `Esc` closes the details pane, clears the search or hides the window. In the grid, `↑/↓` move a row and `←/→` one card. Every shortcut except the arrows and `Esc` can be changed in *Settings → Shortcuts*: click it and press the new keys. |
+| **System tray and start at sign-in** | In *Settings → General*: keep the app running in the system tray (closing or minimising the window hides it there; click the icon to open it, right-click to pause recording or quit), and start it hidden when you sign in. |
 | **On-device OCR** | Text in images and screenshots becomes searchable ([ocrs](https://github.com/robertknight/ocrs), pure Rust). |
 | **Semantic search** | Hybrid mode merges keyword and embedding results with reciprocal-rank fusion. You can also choose *Meaning* or *Keyword* only. |
 | **Built-in model (pure Rust)** | SigLIP (English or multilingual, Arabic included) runs inside the app on the CPU through [candle](https://github.com/huggingface/candle). It puts text and images in one shared space, so text can find images. |
@@ -24,8 +26,8 @@ public feature descriptions only, and it shares no code or assets with Planck an
 | **Library import** | Drag files or folders onto the window, or use `＋ → Import folder…`. Images and text and code files are indexed alongside your clipboard. |
 | **Privacy** | Nothing leaves your machine. Clipboard content that password managers mark as sensitive (`ExcludeClipboardContentFromMonitorProcessing`) is never recorded. Neither is anything that looks like an API key, token, private key or random password (on by default; you can turn it off in Settings). You can pause recording at any time. |
 | **Smart ranking** | Image matches and text matches are ranked separately and then merged, because text-to-image similarity scores are naturally much lower than text-to-text ones. Without this, photos would be buried under text. |
-| **Look and feel** | A list grouped by Pinned / Today / Yesterday / This week, with kind icons, thumbnails, matched words highlighted and relevance bars while searching. A details pane with a large preview. Light and dark themes, five accent colours, comfortable or compact density. |
-| **Settings that explain themselves** | Sections down the side (Search & AI model, Clipboard, Shortcuts, Appearance, Data & privacy). Every option has an ℹ explanation and plain-language choices. Settings you've changed are highlighted, each with a one-click reset. Changes apply instantly. |
+| **Look and feel** | A list grouped by Pinned / Today / Yesterday / This week, with kind icons, thumbnails, matched words highlighted and relevance bars while searching. Three layouts, switched with the view button beside the search box: **Grid** (cards), **List** (full-width rows) and **Detail** (list plus a details pane with a large preview). Hovering an item shows delete, copy and open-details buttons. Light and dark themes, five accent colours, comfortable or compact density. |
+| **Settings that explain themselves** | Sections down the side (General, Search & AI model, Clipboard, Shortcuts, Appearance, Data & privacy). Every option has an ℹ explanation and plain-language choices. Settings you've changed are highlighted, each with a one-click reset. Changes apply instantly. |
 
 The only network access is the one-time model downloads you start yourself in Settings, plus a 12 MB OCR model download
 the first time an image is processed (turn OCR off to avoid it). After that, everything works without a network connection.
@@ -170,7 +172,7 @@ Set `CLIPBOARD_MANAGER_HOME` to use another folder, for example a portable insta
 ```
 src/
   main.rs        window setup
-  app.rs         egui UI: search bar, filters, virtualised list, details pane, settings
+  app.rs         egui UI: search bar, filters, grid/list views, details pane, tags, settings
   clipboard.rs   watcher thread (arboard; clipboard sequence number + sensitive-format check on Windows)
   worker.rs      background indexer thread; owns the OCR engine + embedder; queries pre-empt indexing
   embed/
@@ -182,6 +184,8 @@ src/
   store.rs       redb persistence
   import.rs      files/folders -> items
   models.rs      model catalogue + atomic (temp-file then rename) downloads
+  tray.rs        system-tray icon and menu (tray-icon)
+  autostart.rs   start at sign-in (auto-launch: Run key / launch agent / XDG autostart)
 ```
 
 The GUI, database, clipboard handling, OCR and built-in model inference are all Rust. External model servers are optional and
