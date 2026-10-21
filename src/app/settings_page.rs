@@ -238,7 +238,7 @@ impl App {
             .frame(Frame::new().inner_margin(Margin { left: 12, right: 16, top: 12, bottom: 8 }).fill(panel))
             .show(ui, |ui| {
                 row(ui, |ui| {
-                    if icons::icon_button_ex(ui, Icon::Back, "Back (Esc)", Vec2::splat(34.0), 15.0, None, None).clicked() {
+                    if icons::icon_button_ex(ui, Icon::Back, "Back (Esc)", Vec2::splat(34.0), 22.0, None, None).clicked() {
                         close = true;
                     }
                     ui.add_space(8.0);
@@ -702,14 +702,14 @@ fn server_settings(ui: &mut Ui, s: &mut ServerConfig, list: &mut ModelList) {
         list.fetch(s, ui.ctx());
     }
     setting(ui, "Server address", "The address of the embeddings server, usually ending in /v1.", false, |ui| {
-        if editable && tip(ui.add(egui::Button::new("⟳").frame_when_inactive(false)), tr("Check again")).clicked() {
+        if editable && icons::icon_button_ex(ui, Icon::Refresh, "Check again", Vec2::splat(28.0), 16.0, None, None).clicked() {
             list.fetch(s, ui.ctx());
         }
         ui.add_enabled(editable, egui::TextEdit::singleline(&mut s.base_url).hint_text("http://127.0.0.1:8080/v1").desired_width(300.0));
     });
     setting(ui, "API key", "Only if your server asks for one. Sent as a Bearer token and stored only on this PC.", false, |ui| {
-        let eye = egui::Button::new(RichText::new("👁").size(15.0)).frame_when_inactive(list.show_key).fill(if list.show_key { accent().gamma_multiply(0.14) } else { Color32::TRANSPARENT });
-        if tip(ui.add(eye), tr(if list.show_key { "Hide key" } else { "Show key" })).clicked() {
+        let (eye, label) = if list.show_key { (Icon::EyeOff, "Hide key") } else { (Icon::Eye, "Show key") };
+        if icons::icon_button_ex(ui, eye, label, Vec2::splat(28.0), 16.0, None, None).clicked() {
             list.show_key = !list.show_key;
         }
         ui.add(egui::TextEdit::singleline(&mut s.api_key).password(!list.show_key).hint_text("optional").desired_width(300.0));

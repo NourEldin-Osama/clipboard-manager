@@ -22,8 +22,10 @@ pub(super) enum Icon {
     Pin,
     PinFilled,
     Pause,
-    /// Still the old painted triangle until its icon is chosen.
     Play,
+    Refresh,
+    Eye,
+    EyeOff,
     Add,
     Settings,
     Back,
@@ -90,6 +92,10 @@ fn source(icon: Icon) -> Option<(&'static str, &'static [u8])> {
         Icon::Pin => svg!("pin"),
         Icon::PinFilled => svg!("pin_filled"),
         Icon::Pause => svg!("pause"),
+        Icon::Play => svg!("play"),
+        Icon::Refresh => svg!("refresh"),
+        Icon::Eye => svg!("eye"),
+        Icon::EyeOff => svg!("eye_off"),
         Icon::Add => svg!("add"),
         Icon::Settings => svg!("settings"),
         Icon::Back => svg!("back"),
@@ -116,11 +122,12 @@ fn source(icon: Icon) -> Option<(&'static str, &'static [u8])> {
         Icon::Warning => svg!("warning"),
         Icon::Time => svg!("time"),
         Icon::Language => svg!("language"),
-        Icon::Play | Icon::Dot => return None,
+        Icon::Dot => return None,
     })
 }
 
-const ALL: [Icon; 37] = [
+const ALL: [Icon; 40] = [
+    Icon::Refresh, Icon::Eye, Icon::EyeOff,
     Icon::Grid, Icon::List, Icon::Detail, Icon::Copy, Icon::Open, Icon::Delete, Icon::Pin, Icon::PinFilled, Icon::Pause, Icon::Play,
     Icon::Add, Icon::Settings, Icon::Back, Icon::Check, Icon::Edit, Icon::General, Icon::Search, Icon::Clipboard,
     Icon::Keyboard, Icon::Palette, Icon::Lock, Icon::Close, Icon::Dropdown, Icon::Text, Icon::Link, Icon::Image, Icon::Folder,
@@ -167,19 +174,9 @@ pub(super) fn paint(p: &Painter, rect: Rect, icon: Icon, color: Color32) {
     }
 }
 
-/// The two shapes that aren't SVG icons.
-fn paint_shape(p: &Painter, rect: Rect, icon: Icon, color: Color32) {
-    let c = rect.center();
-    let s = rect.width() / 16.0;
-    match icon {
-        Icon::Play => {
-            let pts = vec![Pos2::new(c.x - 4.0 * s, c.y - 6.0 * s), Pos2::new(c.x + 6.0 * s, c.y), Pos2::new(c.x - 4.0 * s, c.y + 6.0 * s)];
-            p.add(egui::Shape::convex_polygon(pts, color, Stroke::NONE));
-        }
-        _ => {
-            p.circle_filled(c, 3.5 * s, color);
-        }
-    }
+/// The status light: a plain circle, not an icon.
+fn paint_shape(p: &Painter, rect: Rect, _icon: Icon, color: Color32) {
+    p.circle_filled(rect.center(), 3.5 * rect.width() / 16.0, color);
 }
 
 /// A flat icon button: background only on hover, or `fill` when given.
