@@ -216,6 +216,7 @@ impl App {
         let cfg = Config::load(&paths.config);
         i18n::set(cfg.language, cfg.time_format);
         add_fonts(&ctx);
+        icons::register(&ctx);
         set_accent(cfg.accent);
         style(&ctx);
         apply_theme(&ctx, cfg.theme);
