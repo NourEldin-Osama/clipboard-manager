@@ -32,8 +32,9 @@ public feature descriptions only, and it shares no code or assets with Planck an
 | **Look and feel** | A list grouped by Pinned / Today / Yesterday / This week, with kind icons, thumbnails, matched words highlighted and relevance bars while searching. Three layouts, switched with the view button beside the search box: **Grid** (cards), **List** (full-width rows) and **Detail** (list plus a details pane with a large preview). Hovering an item shows delete, pin, copy and open-details buttons (the card's content stays put). Light and dark themes, five accent colours, comfortable or compact density. |
 | **Settings that explain themselves** | Sections down the side (General, Search & AI model, Clipboard, Shortcuts, Appearance, Data & privacy). Every option has an ℹ explanation and plain-language choices. Settings you've changed are highlighted, each with a one-click reset. Changes apply instantly. |
 
-The only network access is the one-time model downloads you start yourself in Settings, plus a 12 MB OCR model download
-the first time an image is processed (turn OCR off to avoid it). After that, everything works without a network connection.
+The only network access is the one-time model downloads you start yourself in Settings, a 12 MB OCR model download
+the first time an image is processed (turn OCR off to avoid it), and the update check described below (it can be turned off).
+Nothing you copy is ever sent. Everything else works without a network connection.
 
 ## Install on Windows
 
@@ -42,9 +43,17 @@ Every change merged into `main` is built on GitHub's Windows machines and publis
 [Releases page](https://github.com/NourEldin-Osama/clipboard-manager/releases/latest), with notes listing the pull requests it includes.
 Download **clipboard-manager-windows-x64.exe** from the latest release.
 
-It is a single, self-contained binary that needs no installer and no runtime. Put it anywhere, for example
-`%LOCALAPPDATA%\Programs\clipboard-manager\`, and run it. To start it when you sign in, turn on
+It is a single, self-contained binary that needs no installer and no runtime. Put it anywhere you can write to, for
+example `%LOCALAPPDATA%\Programs\clipboard-manager\`, and run it. To start it when you sign in, turn on
 *Settings → General → Start when you sign in*.
+
+### Updates
+The app keeps itself up to date from the Releases page. On start and once a day it reads the latest release's
+`updater.json` (only that file is fetched; nothing about you is sent). When there's a newer build it downloads it in the
+background, then shows **Restart to update**; if you don't restart, it installs when you quit. Every download must match
+the SHA-256 checksum and an Ed25519 signature made by the release workflow with a key kept as a GitHub secret; anything
+else is refused. *Settings → General → Updates* turns the check off, makes it ask before downloading, and has
+**Check now**. Builds made on your own PC have no build number and don't update themselves.
 
 ### Option B: build from source on Windows
 1. Install Rust from <https://rustup.rs> (accept the default *MSVC* toolchain; it will offer to install the Visual Studio Build Tools).
@@ -189,6 +198,7 @@ src/
   models.rs      model catalogue + atomic (temp-file then rename) downloads
   tray.rs        system-tray icon and menu (tray-icon)
   i18n.rs        interface language (English/Arabic) and local date/time display
+  update.rs      self-update: release manifest, signed download, exe swap
   autostart.rs   start at sign-in (auto-launch: Run key / launch agent / XDG autostart)
 ```
 
