@@ -62,6 +62,9 @@ pub struct Item {
     /// File this item was imported from.
     #[serde(default)]
     pub source: Option<PathBuf>,
+    /// User labels, as typed; compared case-insensitively.
+    #[serde(default)]
+    pub tags: Vec<String>,
 }
 
 impl Item {
@@ -76,7 +79,21 @@ impl Item {
             s.push('\n');
             s.push_str(&p.to_string_lossy());
         }
+        // "#work" and plain "work" both find a tagged item.
+        for t in &self.tags {
+            s.push_str("\n#");
+            s.push_str(t);
+        }
         s
+    }
+
+    pub fn has_tag(&self, tag: &str) -> bool {
+        self.tags.iter().any(|t| t.eq_ignore_ascii_case(tag))
+    }
+
+    /// Kept by pruning and "Clear history": the user marked it as worth keeping.
+    pub fn is_kept(&self) -> bool {
+        self.pinned || !self.tags.is_empty()
     }
 
     /// First non-empty line, shortened; never copies the whole text.
@@ -249,6 +266,7 @@ mod tests {
             created: now(),
             hash: fnv1a(text.as_bytes()),
             source: None,
+            tags: Vec::new(),
         }
     }
 
