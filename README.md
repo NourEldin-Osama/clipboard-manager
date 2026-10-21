@@ -22,12 +22,13 @@ public feature descriptions only, and it shares no code or assets with Planck an
 | **12- or 24-hour clock** | Times are stored in UTC and shown in your time zone, including daylight saving, with the clock you choose in *Settings → General*. |
 | **System tray and start at sign-in** | In *Settings → General*: keep the app running in the system tray (closing or minimising the window hides it there; click the icon to open it, right-click to pause recording or quit), and start it hidden when you sign in. |
 | **On-device OCR** | Text in images and screenshots becomes searchable ([ocrs](https://github.com/robertknight/ocrs), pure Rust). |
-| **Semantic search** | Hybrid mode merges keyword and embedding results with reciprocal-rank fusion. You can also choose *Meaning* or *Keyword* only. |
+| **Sort by** | The menu at the end of the filter row: *Best match* (while searching), *Recent*, *Oldest*, *A to Z* and *Most used* (items you copy back from the list most often). Searching and browsing each remember their own choice. *Settings → Appearance → Pinned on top* keeps pinned items first while browsing (not while searching). |
+| **Semantic search** | Smart mode ranks by meaning (similarity), with a boost for items that contain your words; results are ordered best first and the relevance bars match that order. You can also choose *Meaning* or *Keyword* only. |
 | **Built-in model (pure Rust)** | SigLIP (English or multilingual, Arabic included) runs inside the app on the CPU through [candle](https://github.com/huggingface/candle). It puts text and images in one shared space, so text can find images. |
 | **Your own model server** | Paste the URL of any local embedding server (llama.cpp `llama-server`, the bundled Sentence Transformers server, Ollama, LM Studio, vLLM) and pick the model from a dropdown filled by the server's model list. The app can also launch `llama-server` for you. Presets are included for **EmbeddingGemma**, **BiUltraVBERT** and **ColUltraVBERT**. Multi-vector (ColBERT-style) output is detected and scored with MaxSim, and Matryoshka truncation is supported. |
 | **Library import** | Drag files or folders onto the window, or use `＋ → Import folder…`. Images and text and code files are indexed alongside your clipboard. |
 | **Privacy** | Nothing leaves your machine. Clipboard content that password managers mark as sensitive (`ExcludeClipboardContentFromMonitorProcessing`) is never recorded. Neither is anything that looks like an API key, token, private key or random password (on by default; you can turn it off in Settings). You can pause recording at any time. |
-| **Smart ranking** | Image matches and text matches are ranked separately and then merged, because text-to-image similarity scores are naturally much lower than text-to-text ones. Without this, photos would be buried under text. |
+| **Smart ranking** | Image and text similarities are each scaled by their best match before being merged, because text-to-image similarity scores are naturally much lower than text-to-text ones. Without this, photos would be buried under text. |
 | **Look and feel** | A list grouped by Pinned / Today / Yesterday / This week, with kind icons, thumbnails, matched words highlighted and relevance bars while searching. Three layouts, switched with the view button beside the search box: **Grid** (cards), **List** (full-width rows) and **Detail** (list plus a details pane with a large preview). Hovering an item shows delete, pin, copy and open-details buttons (the card's content stays put). Light and dark themes, five accent colours, comfortable or compact density. |
 | **Settings that explain themselves** | Sections down the side (General, Search & AI model, Clipboard, Shortcuts, Appearance, Data & privacy). Every option has an ℹ explanation and plain-language choices. Settings you've changed are highlighted, each with a one-click reset. Changes apply instantly. |
 
@@ -182,7 +183,7 @@ src/
     siglip.rs    in-process SigLIP via candle
     server.rs    OpenAI-compatible client + optional llama-server launcher
   ocr.rs         ocrs wrapper
-  search.rs      keyword scoring, semantic ranking, reciprocal-rank fusion
+  search.rs      keyword scoring, similarity ranking with a word-match boost
   store.rs       redb persistence
   import.rs      files/folders -> items
   models.rs      model catalogue + atomic (temp-file then rename) downloads

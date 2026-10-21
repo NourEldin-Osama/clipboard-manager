@@ -276,7 +276,7 @@ pub(super) fn glyph(ui: &mut Ui, icon: Icon, size: f32, color: Color32) -> egui:
 
 /// A full-width menu entry with an icon.
 pub(super) fn menu_item(ui: &mut Ui, icon: Icon, text: &str) -> egui::Response {
-    let w = ui.available_width().max(200.0);
+    let w = ui.available_width();
     let (rect, resp) = ui.allocate_exact_size(Vec2::new(w, 30.0), Sense::click());
     let v = ui.visuals();
     if resp.hovered() {

@@ -666,6 +666,11 @@ fn appearance_page(ui: &mut Ui, d: &mut Config) {
     }) {
         d.density = def.density;
     }
+    if setting(ui, "Pinned on top", "Pinned items come first while you browse, whatever the order. Search results are ordered by your sort choice only.", d.pinned_first != def.pinned_first, |ui| {
+        toggle(ui, &mut d.pinned_first);
+    }) {
+        d.pinned_first = def.pinned_first;
+    }
     if setting(ui, "Group by day", "Show Pinned, Today, Yesterday… headers while browsing (not while searching).", d.group_by_date != def.group_by_date, |ui| {
         toggle(ui, &mut d.group_by_date);
     }) {
