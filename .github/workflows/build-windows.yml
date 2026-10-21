@@ -45,7 +45,7 @@ jobs:
         env:
           BUILD_NUMBER: ${{ github.run_number }}
 
-      # e.g. v0.1.0-build.7: the crate version plus this workflow's run number.
+      # e.g. v0.2.0-build.7: the crate version plus this workflow's run number.
       - name: Release name
         id: version
         shell: bash
@@ -85,6 +85,73 @@ jobs:
           JSON
           cat updater.json
 
+      # Package-manager manifests, attached to each release:
+      #   scoop install https://github.com/<repo>/releases/latest/download/clipboard-manager.json
+      # and the three winget files, for submitting to microsoft/winget-pkgs.
+      - name: Package manifests
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="${{ steps.version.outputs.tag }}"
+          version="${{ steps.version.outputs.version }}"
+          build="${{ github.run_number }}"
+          repo="https://github.com/${{ github.repository }}"
+          exe=clipboard-manager-windows-x64.exe
+          sha=$(sha256sum "$exe" | cut -d' ' -f1)
+          url="$repo/releases/download/$tag/$exe"
+          cat > clipboard-manager.json <<JSON
+          {
+            "version": "${tag#v}",
+            "description": "Offline clipboard manager: search your history by words or meaning, OCR, tags, pins, English and Arabic.",
+            "homepage": "$repo",
+            "license": "MIT|Apache-2.0",
+            "url": "$url#/clipboard-manager.exe",
+            "hash": "$sha",
+            "bin": "clipboard-manager.exe",
+            "shortcuts": [["clipboard-manager.exe", "Clipboard Manager"]],
+            "notes": "The app updates itself. History and settings are kept in your AppData folder (clipboard-manager)."
+          }
+          JSON
+          id=NourEldinOsama.ClipboardManager
+          wv="$version.$build"
+          mkdir -p winget
+          cat > winget/$id.yaml <<YAML
+          PackageIdentifier: $id
+          PackageVersion: $wv
+          DefaultLocale: en-US
+          ManifestType: version
+          ManifestVersion: 1.6.0
+          YAML
+          cat > winget/$id.installer.yaml <<YAML
+          PackageIdentifier: $id
+          PackageVersion: $wv
+          InstallerType: portable
+          Commands:
+            - clipboard-manager
+          Installers:
+            - Architecture: x64
+              InstallerUrl: $url
+              InstallerSha256: ${sha^^}
+          ManifestType: installer
+          ManifestVersion: 1.6.0
+          YAML
+          cat > winget/$id.locale.en-US.yaml <<YAML
+          PackageIdentifier: $id
+          PackageVersion: $wv
+          PackageLocale: en-US
+          Publisher: NourEldin Osama
+          PackageName: Clipboard Manager
+          PackageUrl: $repo
+          License: MIT or Apache-2.0
+          LicenseUrl: $repo#license
+          ShortDescription: Offline clipboard manager with search by meaning, OCR, tags and pins.
+          Tags: [clipboard, clipboard-manager, ocr, semantic-search, arabic]
+          ReleaseNotesUrl: $repo/releases/tag/$tag
+          ManifestType: defaultLocale
+          ManifestVersion: 1.6.0
+          YAML
+          (cd winget && 7z a -tzip ../winget-manifests.zip . > /dev/null)
+
       - name: Upload exe
         uses: actions/upload-artifact@v6
         with:
@@ -109,5 +176,7 @@ jobs:
           files: |
             clipboard-manager-windows-x64.exe
             updater.json
+            clipboard-manager.json
+            winget-manifests.zip
           fail_on_unmatched_files: true
           make_latest: true

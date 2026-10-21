@@ -1,6 +1,6 @@
 [package]
 name = "clipboard-manager"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 description = "Offline clipboard history with on-device OCR and semantic (embedding) search for text and images."
 license = "MIT OR Apache-2.0"
@@ -39,6 +39,10 @@ unicode-bidi = "0.3"
 tokenizers = { version = "0.23", default-features = false, features = ["unstable_wasm"] }
 ureq = { version = "3", features = ["json"] }
 walkdir = "2"
+
+# Embeds the app icon and file details in the Windows exe (see build.rs).
+[build-dependencies]
+winresource = { version = "0.1", default-features = false }
 
 [target.'cfg(windows)'.dependencies]
 clipboard-win = "5"
