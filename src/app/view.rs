@@ -71,7 +71,7 @@ fn filter_icon(f: Filter) -> Icon {
         Filter::Links => Icon::Link,
         Filter::Images => Icon::Image,
         Filter::Files => Icon::Folder,
-        Filter::Pinned => Icon::Star,
+        Filter::Pinned => Icon::PinFilled,
     }
 }
 
@@ -365,7 +365,7 @@ fn mode_button(ui: &mut Ui, label: &str, emphasised: bool) -> egui::Response {
     let color = if resp.hovered() && !emphasised { v.text_color() } else { color };
     let text_at = flip(rect, Rect::from_min_size(Pos2::new(rect.left() + 9.0, rect.center().y - g.size().y / 2.0), g.size())).min;
     ui.painter().galley(text_at, g, color);
-    icons::paint(ui.painter(), flip(rect, Rect::from_center_size(Pos2::new(rect.right() - 14.0, rect.center().y), Vec2::splat(10.0))), Icon::ChevronDown, color);
+    icons::paint(ui.painter(), flip(rect, Rect::from_center_size(Pos2::new(rect.right() - 14.0, rect.center().y), Vec2::splat(10.0))), Icon::Dropdown, color);
     resp
 }
 
@@ -620,10 +620,10 @@ impl App {
                     let w = (ui.available_width() - actions_w).max(200.0);
                     self.search_field(ui, w);
                     far(ui, |ui| {
-                        if icons::icon_button(ui, Icon::Gear, "Settings").clicked() {
+                        if icons::icon_button(ui, Icon::Settings, "Settings").clicked() {
                             self.open_settings(SettingsPage::General);
                         }
-                        let import = icons::icon_button(ui, Icon::Plus, "Add files or a folder to search (you can also drop them on the window)");
+                        let import = icons::icon_button(ui, Icon::Add, "Add files or a folder to search (you can also drop them on the window)");
                         egui::Popup::menu(&import).show(|ui| {
                             if icons::menu_item(ui, Icon::File, "Add files…").clicked() {
                                 if let Some(f) = rfd::FileDialog::new().pick_files() {
@@ -863,7 +863,7 @@ impl App {
                 }
             } else {
                 let job = pill_job(tr(if it.tags.is_empty() { "Add tag" } else { "Tag" }), 12.5, ui.visuals().weak_text_color(), None);
-                if tip(icons::pill(ui, Icon::Plus, job, accent(), false), &hint("Add a tag", &self.cfg.keys.tag)).clicked() {
+                if tip(icons::pill(ui, Icon::Add, job, accent(), false), &hint("Add a tag", &self.cfg.keys.tag)).clicked() {
                     self.tag_input = Some((it.id, String::new()));
                     self.tag_focus = true;
                 }
@@ -1107,14 +1107,14 @@ impl App {
                         }
                         if hot {
                             // Hover actions replace the time at the right edge.
-                            let pin = if it.pinned { (Icon::Star, "Unpin") } else { (Icon::StarOutline, "Pin") };
+                            let pin = if it.pinned { (Icon::PinFilled, "Unpin") } else { (Icon::Pin, "Pin") };
                             let mut buttons = vec![
-                                (Icon::Trash, "Delete", ItemAction::Delete(it.id)),
+                                (Icon::Delete, "Delete", ItemAction::Delete(it.id)),
                                 (pin.0, pin.1, ItemAction::Pin(it.id)),
                                 (Icon::Copy, "Copy", ItemAction::Copy(it.id)),
                             ];
                             if can_open {
-                                buttons.push((Icon::Expand, "Open details", ItemAction::Open(it.id)));
+                                buttons.push((Icon::Open, "Open details", ItemAction::Open(it.id)));
                             }
                             let size = 28.0;
                             let mut x = rect.right() - 8.0 - buttons.len() as f32 * (size + 2.0);
@@ -1195,12 +1195,12 @@ impl App {
                     let size = 30.0;
                     let y = rect.bottom() - CARD_FOOTER / 2.0 - size / 2.0;
                     let at = |x: f32| flip(rect, Rect::from_min_size(Pos2::new(x, y), Vec2::splat(size)));
-                    let pin = if it.pinned { (Icon::Star, "Unpin") } else { (Icon::StarOutline, "Pin") };
+                    let pin = if it.pinned { (Icon::PinFilled, "Unpin") } else { (Icon::Pin, "Pin") };
                     for (b, icon, tip, action) in [
-                        (at(rect.left() + 8.0), Icon::Trash, "Delete", ItemAction::Delete(it.id)),
+                        (at(rect.left() + 8.0), Icon::Delete, "Delete", ItemAction::Delete(it.id)),
                         (at(rect.right() - 8.0 - 3.0 * size - 8.0), pin.0, pin.1, ItemAction::Pin(it.id)),
                         (at(rect.right() - 8.0 - 2.0 * size - 4.0), Icon::Copy, "Copy", ItemAction::Copy(it.id)),
-                        (at(rect.right() - 8.0 - size), Icon::Expand, "Open details", ItemAction::Open(it.id)),
+                        (at(rect.right() - 8.0 - size), Icon::Open, "Open details", ItemAction::Open(it.id)),
                     ] {
                         if icon_button_at(ui, b, egui::Id::unique(("card-action", it.id, tip)), icon, tip).clicked() {
                             actions.push(action);
@@ -1276,17 +1276,17 @@ impl App {
             }
             icons::chip(ui, icons::kind(it.kind), it.kind.label(), kind_color(it.kind));
             if it.pinned {
-                chip(ui, "★ Pinned", accent());
+                icons::chip(ui, Icon::PinFilled, "Pinned", accent());
             }
             if it.origin == Origin::Imported {
                 chip(ui, "📂 From your files", Color32::GRAY);
             }
             far(ui, |ui| {
                 let keys = self.cfg.keys.clone();
-                if icons::icon_button(ui, Icon::Trash, &hint("Delete", &keys.delete)).clicked() {
+                if icons::icon_button(ui, Icon::Delete, &hint("Delete", &keys.delete)).clicked() {
                     self.delete(it.id);
                 }
-                let (pin, tip) = if it.pinned { (Icon::Star, hint("Unpin", &keys.pin)) } else { (Icon::StarOutline, hint("Pin: keep forever", &keys.pin)) };
+                let (pin, tip) = if it.pinned { (Icon::PinFilled, hint("Unpin", &keys.pin)) } else { (Icon::Pin, hint("Pin: keep forever", &keys.pin)) };
                 let pin_color = it.pinned.then(accent);
                 if icon_button_ex(ui, pin, &tip, Vec2::splat(34.0), 16.0, None, pin_color).clicked() {
                     self.toggle_pin(it.id);
@@ -1303,7 +1303,7 @@ impl App {
                         reveal(p);
                     }
                 }
-                if it.kind == Kind::Link && icons::icon_button(ui, Icon::Globe, "Open in browser").clicked() {
+                if it.kind == Kind::Link && icons::icon_button(ui, Icon::Browser, "Open in browser").clicked() {
                     ctx.open_url(egui::OpenUrl::new_tab(it.text.trim()));
                 }
                 let copy_tip = trf("{action} · or double-click in the list", &[("action", &hint("Copy", &keys.copy))]);
@@ -1564,7 +1564,7 @@ fn paint_row(ui: &Ui, rect: Rect, hot: bool, it: &Item, hit: &Hit, thumb: Option
         ix -= 56.0;
     }
     if it.pinned {
-        icons::paint(&p, m(Rect::from_center_size(Pos2::new(ix - 6.5, iy), Vec2::splat(13.0))), Icon::Star, a);
+        icons::paint(&p, m(Rect::from_center_size(Pos2::new(ix - 6.5, iy), Vec2::splat(13.0))), Icon::PinFilled, a);
         ix -= 18.0;
     }
     if let Some(s) = hit.semantic {
@@ -1595,6 +1595,8 @@ fn one_line(ui: &Ui, text: &str, terms: &[String], font: FontId, color: Color32,
 
 /// Height of the action strip a card shows while hovered.
 const CARD_FOOTER: f32 = 42.0;
+/// Height of a card's tags row, above the action strip.
+const TAG_ROW: f32 = 28.0;
 
 /// A grid card: kind and age on top, as much of the content as fits below,
 /// and delete / pin / copy / open buttons in a footer strip while hovered.
@@ -1625,26 +1627,28 @@ fn paint_card(ui: &Ui, rect: Rect, hot: bool, it: &Item, thumb: Option<TextureHa
     let age = paint_text(ui, p, age_at, if rtl { Align2::LEFT_CENTER } else { Align2::RIGHT_CENTER }, &ago(it.created), FontId::proportional(12.0), weak);
     if it.pinned {
         let x = if rtl { age.right() + 12.0 } else { age.left() - 12.0 };
-        icons::paint(p, Rect::from_center_size(Pos2::new(x, chip_rect.center().y), Vec2::splat(12.0)), Icon::Star, a);
+        icons::paint(p, Rect::from_center_size(Pos2::new(x, chip_rect.center().y), Vec2::splat(12.0)), Icon::PinFilled, a);
     }
 
-    // Tags along the bottom edge, in the strip the hover footer covers.
-    if !it.tags.is_empty() && !hot {
-        let tp = ui.painter_at(Rect::from_min_max(Pos2::new(rect.left() + pad, rect.bottom() - 34.0), Pos2::new(rect.right() - pad, rect.bottom() - 8.0)));
-        let mut x = rect.left() + pad;
+    // Bottom up: the button strip (empty until hovered), the tags row above it
+    // when there are tags, then the content. Hovering only fills the strip,
+    // so nothing else moves, shrinks or hides.
+    let strip_top = rect.bottom() - CARD_FOOTER;
+    let tags_top = if it.tags.is_empty() { strip_top } else { strip_top - TAG_ROW };
+    if !it.tags.is_empty() {
+        let row = Rect::from_min_max(Pos2::new(rect.left() + pad, tags_top), Pos2::new(rect.right() - pad, strip_top - 2.0));
+        let tp = ui.painter_at(row);
+        let mut x = row.left();
         for t in &it.tags {
             let c = tag_color(t);
             let g = ui.fonts_mut(|f| f.layout_job(bidi::job(&format!("# {t}"), FontId::proportional(11.5), c)));
-            let r = m(Rect::from_min_size(Pos2::new(x, rect.bottom() - 32.0), g.size() + Vec2::new(14.0, 6.0)));
+            let r = flip(rect, Rect::from_min_size(Pos2::new(x, row.center().y - (g.size().y + 6.0) / 2.0), g.size() + Vec2::new(14.0, 6.0)));
             tp.rect_filled(r, CornerRadius::same(9), c.gamma_multiply(if v.dark_mode { 0.25 } else { 0.13 }));
             x += r.width() + 6.0;
             tp.galley(r.min + Vec2::new(7.0, 3.0), g, c);
         }
     }
-
-    // The body always stops above the footer strip, so hovering never moves or
-    // resizes the content; only the strip changes (tags → buttons).
-    let bottom = rect.bottom() - CARD_FOOTER - 4.0;
+    let bottom = tags_top - 4.0;
     let body = Rect::from_min_max(Pos2::new(rect.left() + pad, chip_rect.bottom() + 12.0), Pos2::new(rect.right() - pad, bottom));
     let bp = ui.painter_at(body);
     match (it.kind, thumb) {

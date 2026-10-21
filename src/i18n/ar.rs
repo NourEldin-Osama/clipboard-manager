@@ -88,7 +88,6 @@ pub const TABLE: &[(&str, &str)] = &[
     ("Copy", "نسخ"),
     ("Open details", "فتح التفاصيل"),
     ("Close details (Esc)", "إغلاق التفاصيل (Esc)"),
-    ("★ Pinned", "★ مثبت"),
     ("📂 From your files", "📂 من ملفاتك"),
     ("Pin: keep forever", "تثبيت: احتفظ به دائمًا"),
     ("Save image as…", "حفظ الصورة باسم…"),

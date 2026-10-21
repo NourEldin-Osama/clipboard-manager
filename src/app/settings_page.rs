@@ -25,7 +25,7 @@ impl SettingsPage {
 
     fn label(self) -> (Icon, &'static str) {
         match self {
-            Self::General => (Icon::Sliders, "General"),
+            Self::General => (Icon::General, "General"),
             Self::Search => (Icon::Search, "Search & AI model"),
             Self::Clipboard => (Icon::Clipboard, "Clipboard"),
             Self::Shortcuts => (Icon::Keyboard, "Shortcuts"),
@@ -718,7 +718,7 @@ fn server_settings(ui: &mut Ui, s: &mut ServerConfig, list: &mut ModelList) {
     setting(ui, "Model", "Leave empty to use the server's default embedding model. Pick from ▾ or type a name your server knows.", !s.model.trim().is_empty(), |ui| {
         let any = default_name.is_some() || !list.found.listed.is_empty();
         if editable && any {
-            let b = icons::icon_button_ex(ui, Icon::ChevronDown, "Models on this server", Vec2::splat(28.0), 11.0, None, None);
+            let b = icons::icon_button_ex(ui, Icon::Dropdown, "Models on this server", Vec2::splat(28.0), 11.0, None, None);
             egui::Popup::menu(&b).show(|ui| {
                 ui.set_min_width(320.0);
                 if let Some(dn) = &default_name {
