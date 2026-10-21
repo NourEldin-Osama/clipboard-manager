@@ -1,0 +1,719 @@
+//! Settings as a full page with sections. Changes apply as you make them; only
+//! the search model waits for "Apply", because a half-typed address would
+//! otherwise reconnect on every keystroke.
+
+use eframe::egui::{Align, Frame, Layout, Margin, Ui};
+
+use super::view::{accent, chip, primary_button, reveal, ACCENTS, AMBER, GREEN, RED};
+use super::*;
+use crate::config::Density;
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) enum SettingsPage {
+    Search,
+    Clipboard,
+    Shortcuts,
+    Appearance,
+    Data,
+}
+
+impl SettingsPage {
+    const ALL: [SettingsPage; 5] = [Self::Search, Self::Clipboard, Self::Shortcuts, Self::Appearance, Self::Data];
+
+    fn label(self) -> (&'static str, &'static str) {
+        match self {
+            Self::Search => ("🔍", "Search & AI model"),
+            Self::Clipboard => ("📋", "Clipboard"),
+            Self::Shortcuts => ("⌨", "Shortcuts"),
+            Self::Appearance => ("🎨", "Appearance"),
+            Self::Data => ("🔒", "Data & privacy"),
+        }
+    }
+}
+
+const HISTORY_SIZES: [usize; 5] = [500, 1_000, 5_000, 20_000, 100_000];
+const VECTOR_SIZES: [(usize, &str); 4] = [(0, "Full · best quality"), (512, "512 · smaller"), (256, "256 · compact"), (128, "128 · tiny, fastest")];
+const STRICTNESS: [(f32, &str); 3] = [(0.0, "Show all"), (0.15, "Related only"), (0.3, "Close only")];
+
+// ----- widgets ---------------------------------------------------------------------
+
+/// iOS-style switch.
+fn toggle(ui: &mut Ui, on: &mut bool) -> egui::Response {
+    let (rect, mut resp) = ui.allocate_exact_size(Vec2::new(38.0, 22.0), Sense::click());
+    if resp.clicked() {
+        *on = !*on;
+        resp.mark_changed();
+    }
+    let t = ui.ctx().animate_bool(resp.id, *on);
+    let off = ui.visuals().widgets.inactive.bg_fill;
+    let bg = Color32::from_rgba_premultiplied(
+        (off.r() as f32 + (accent().r() as f32 - off.r() as f32) * t) as u8,
+        (off.g() as f32 + (accent().g() as f32 - off.g() as f32) * t) as u8,
+        (off.b() as f32 + (accent().b() as f32 - off.b() as f32) * t) as u8,
+        255,
+    );
+    let p = ui.painter();
+    p.rect_filled(rect, CornerRadius::same(11), bg);
+    let x = rect.left() + 11.0 + t * (rect.width() - 22.0);
+    p.circle_filled(egui::pos2(x, rect.center().y), 8.0, Color32::WHITE);
+    resp
+}
+
+/// Options side by side; the chosen one is tinted. Must be called inside a
+/// right-to-left layout (setting rows), so options are added in reverse.
+fn segmented<T: PartialEq + Copy>(ui: &mut Ui, value: &mut T, options: &[(T, &str)]) -> bool {
+    let mut changed = false;
+    ui.spacing_mut().item_spacing.x = 2.0;
+    for (v, label) in options.iter().rev() {
+        let sel = *value == *v;
+        let text = RichText::new(*label).size(13.0).color(if sel { accent() } else { ui.visuals().text_color() });
+        let b = egui::Button::new(text).frame_when_inactive(sel).fill(if sel { accent().gamma_multiply(0.14) } else { Color32::TRANSPARENT });
+        if ui.add(b).clicked() && !sel {
+            *value = *v;
+            changed = true;
+        }
+    }
+    changed
+}
+
+fn info(ui: &mut Ui, text: &str) {
+    ui.add(egui::Label::new(RichText::new("ℹ").size(13.0).color(ui.visuals().weak_text_color())).sense(Sense::hover()))
+        .on_hover_text(text);
+}
+
+fn section(ui: &mut Ui, title: &str) {
+    ui.add_space(18.0);
+    ui.label(RichText::new(title.to_uppercase()).size(11.5).color(ui.visuals().weak_text_color()));
+    ui.add_space(4.0);
+}
+
+/// One setting: label and ℹ on the left, control at the right edge. A value
+/// changed from its default tints the row and offers a reset.
+fn setting(ui: &mut Ui, label: &str, help: &str, changed: bool, control: impl FnOnce(&mut Ui)) -> bool {
+    let mut reset = false;
+    let fill = if changed { accent().gamma_multiply(if ui.visuals().dark_mode { 0.14 } else { 0.07 }) } else { Color32::TRANSPARENT };
+    Frame::new().fill(fill).corner_radius(CornerRadius::same(8)).inner_margin(Margin::symmetric(10, 6)).show(ui, |ui| {
+        ui.set_width(ui.available_width());
+        ui.horizontal(|ui| {
+            ui.set_min_height(30.0);
+            let color = if changed { accent() } else { ui.visuals().strong_text_color() };
+            ui.label(RichText::new(label).size(14.0).color(color));
+            if !help.is_empty() {
+                info(ui, help);
+            }
+            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                if changed && ui.add(egui::Button::new(RichText::new("↺").size(14.0)).frame_when_inactive(false)).on_hover_text("Back to default").clicked() {
+                    reset = true;
+                }
+                control(ui);
+            });
+        });
+    });
+    reset
+}
+
+fn note(ui: &mut Ui, text: &str) {
+    ui.horizontal_wrapped(|ui| {
+        ui.add_space(10.0);
+        ui.label(RichText::new(text).size(12.5).color(ui.visuals().weak_text_color()));
+    });
+}
+
+fn path_field(ui: &mut Ui, p: &mut PathBuf, ext: &[&str]) {
+    if ui.button("Browse…").clicked() {
+        let mut dlg = rfd::FileDialog::new();
+        if !ext.is_empty() {
+            dlg = dlg.add_filter("file", ext).add_filter("all", &["*"]);
+        }
+        if let Some(f) = dlg.pick_file() {
+            *p = f;
+        }
+    }
+    let mut s = p.to_string_lossy().into_owned();
+    if ui.add(egui::TextEdit::singleline(&mut s).desired_width(280.0)).changed() {
+        *p = PathBuf::from(&s);
+    }
+}
+
+// ----- the page --------------------------------------------------------------------
+
+impl App {
+    pub(super) fn open_settings(&mut self, page: SettingsPage) {
+        self.draft = Some(self.cfg.clone());
+        self.settings_page = page;
+        self.confirm = None;
+    }
+
+    /// Leaving settings applies everything, including model changes.
+    pub(super) fn close_settings(&mut self, ctx: &egui::Context) {
+        if let Some(d) = self.draft.take() {
+            self.apply_settings(d, ctx, true);
+        }
+        self.confirm = None;
+    }
+
+    fn apply_settings(&mut self, d: Config, ctx: &egui::Context, prune: bool) {
+        if d == self.cfg && !prune {
+            return;
+        }
+        let backend_changed = d.backend != self.cfg.backend;
+        let keys_changed = d.show_hotkey != self.cfg.show_hotkey || d.ignore_next_hotkey != self.cfg.ignore_next_hotkey;
+        if d.ocr_images && !self.cfg.ocr_images {
+            for it in &self.items {
+                if it.kind == Kind::Image && it.ocr.is_none() {
+                    self.worker.send(Job::Ocr(it.id));
+                }
+            }
+        }
+        let look_changed = d.accent != self.cfg.accent || d.theme != self.cfg.theme;
+        let search_changed = d.search_mode != self.cfg.search_mode || d.min_similarity != self.cfg.min_similarity;
+        self.cfg = d;
+        self.flags.enabled.store(self.cfg.monitor_clipboard, Ordering::SeqCst);
+        self.flags.skip_secrets.store(self.cfg.skip_secrets, Ordering::SeqCst);
+        if look_changed {
+            set_accent(self.cfg.accent);
+            style(ctx);
+            apply_theme(ctx, self.cfg.theme);
+        }
+        self.save_config();
+        if backend_changed {
+            self.set_backend(self.cfg.backend.clone());
+        }
+        if keys_changed {
+            self.register_hotkeys(ctx);
+        }
+        if search_changed {
+            self.query_changed = Some(Instant::now() - QUERY_DEBOUNCE);
+        }
+        if prune {
+            self.prune();
+        }
+        self.dirty = true;
+    }
+
+    pub(super) fn settings_ui(&mut self, ui: &mut Ui) {
+        let ctx = ui.ctx().clone();
+        let Some(mut d) = self.draft.take() else { return };
+        let mut close = false;
+        let mut apply_model = false;
+        let mut apply_keys = false;
+        let model_pending = d.backend != self.cfg.backend;
+
+        let panel = ui.visuals().panel_fill;
+        egui::Panel::top("settings_top")
+            .show_separator_line(false)
+            .frame(Frame::new().inner_margin(Margin { left: 12, right: 16, top: 12, bottom: 8 }).fill(panel))
+            .show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    if ui.add(egui::Button::new(RichText::new("←  Back").size(14.0)).frame_when_inactive(false)).on_hover_text("Esc").clicked() {
+                        close = true;
+                    }
+                    ui.add_space(8.0);
+                    ui.label(RichText::new("Settings").size(20.0).strong());
+                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                        if model_pending {
+                            if primary_button(ui, "  Apply model  ").clicked() {
+                                apply_model = true;
+                            }
+                            chip(ui, "Model changes not applied yet", AMBER);
+                        } else {
+                            ui.label(RichText::new("✔ Changes are saved automatically").size(12.5).color(ui.visuals().weak_text_color()));
+                        }
+                    });
+                });
+            });
+
+        egui::Panel::left("settings_nav")
+            .resizable(false)
+            .exact_size(220.0)
+            .show_separator_line(false)
+            .frame(Frame::new().inner_margin(Margin::symmetric(10, 8)).fill(panel))
+            .show(ui, |ui| {
+                for page in SettingsPage::ALL {
+                    let (icon, name) = page.label();
+                    let sel = self.settings_page == page;
+                    let text = RichText::new(format!("{icon}   {name}")).size(14.0).color(if sel { accent() } else { ui.visuals().text_color() });
+                    let b = egui::Button::new(text)
+                        .frame_when_inactive(sel)
+                        .fill(if sel { accent().gamma_multiply(0.13) } else { Color32::TRANSPARENT })
+                        .min_size(Vec2::new(ui.available_width(), 36.0));
+                    if ui.add(b).clicked() {
+                        self.settings_page = page;
+                        self.confirm = None;
+                    }
+                }
+            });
+
+        let content = ui.visuals().extreme_bg_color;
+        egui::CentralPanel::default().frame(Frame::new().inner_margin(Margin { left: 28, right: 20, top: 8, bottom: 16 }).fill(content)).show(ui, |ui| {
+            egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
+                ui.set_max_width(720.0);
+                match self.settings_page {
+                    SettingsPage::Search => self.search_page(ui, &mut d, &mut apply_model),
+                    SettingsPage::Clipboard => clipboard_page(ui, &mut d),
+                    SettingsPage::Shortcuts => self.shortcuts_page(ui, &mut d, &mut apply_keys),
+                    SettingsPage::Appearance => appearance_page(ui, &mut d),
+                    SettingsPage::Data => self.data_page(ui, &mut d),
+                }
+                ui.add_space(24.0);
+            });
+        });
+
+        if close {
+            self.draft = Some(d);
+            self.close_settings(&ctx);
+            return;
+        }
+        // Everything except the model and hotkeys applies immediately.
+        let mut live = d.clone();
+        live.backend = self.cfg.backend.clone();
+        live.show_hotkey = self.cfg.show_hotkey.clone();
+        live.ignore_next_hotkey = self.cfg.ignore_next_hotkey.clone();
+        if live != self.cfg {
+            self.apply_settings(live, &ctx, false);
+        }
+        if apply_keys {
+            let mut c = self.cfg.clone();
+            c.show_hotkey = d.show_hotkey.clone();
+            c.ignore_next_hotkey = d.ignore_next_hotkey.clone();
+            self.apply_settings(c, &ctx, false);
+        }
+        if apply_model {
+            let mut c = self.cfg.clone();
+            c.backend = d.backend.clone();
+            self.apply_settings(c, &ctx, false);
+        }
+        self.draft = Some(d);
+    }
+
+    fn search_page(&mut self, ui: &mut Ui, d: &mut Config, apply_model: &mut bool) {
+        let def = Config::default();
+        section(ui, "Search");
+        if setting(ui, "How search works", "Smart: finds items that contain your words and items that mean the same thing, merged into one list.\nMeaning: only by meaning (needs a search model).\nExact words: only items containing what you type.", d.search_mode != def.search_mode, |ui| {
+            segmented(ui, &mut d.search_mode, &[(SearchMode::Hybrid, "Smart"), (SearchMode::Semantic, "Meaning"), (SearchMode::Keyword, "Exact words")]);
+        }) {
+            d.search_mode = def.search_mode;
+        }
+        if setting(ui, "Meaning matches to show", "How closely an item has to match before it's listed. \"Show all\" ranks everything by closeness; stricter options hide weak matches. Exact word matches are always shown.", d.min_similarity != def.min_similarity, |ui| {
+            let current = STRICTNESS.iter().find(|(v, _)| (*v - d.min_similarity).abs() < 1e-4).map(|(_, l)| l.to_string()).unwrap_or_else(|| format!("Custom ({:.2})", d.min_similarity));
+            egui::ComboBox::from_id_salt("strict").selected_text(current).width(150.0).show_ui(ui, |ui| {
+                for (v, l) in STRICTNESS {
+                    ui.selectable_value(&mut d.min_similarity, v, l);
+                }
+            });
+        }) {
+            d.min_similarity = def.min_similarity;
+        }
+
+        section(ui, "Meaning search model");
+        let (dot, text) = self.model_status();
+        ui.horizontal(|ui| {
+            ui.add_space(10.0);
+            ui.label(RichText::new(format!("● {text}")).size(13.0).color(if dot == Color32::GRAY { ui.visuals().weak_text_color() } else { dot }));
+        });
+        ui.add_space(4.0);
+        let mut kind = match &d.backend {
+            EmbedBackend::None => 0,
+            EmbedBackend::SigLip { .. } => 1,
+            EmbedBackend::Server(_) => 2,
+        };
+        setting(ui, "Model", "Off: search by words only (plus text found in images).\nBuilt-in: a model inside this app that understands text and images, no other software needed (one-time download).\nYour server: use a model you already run, such as llama.cpp, Unsloth, Sentence Transformers, Ollama or LM Studio.", false, |ui| {
+            segmented(ui, &mut kind, &[(0, "Off"), (1, "Built-in"), (2, "Your server")]);
+        });
+        match (kind, &d.backend) {
+            (0, EmbedBackend::None) | (1, EmbedBackend::SigLip { .. }) | (2, EmbedBackend::Server(_)) => {}
+            (0, _) => d.backend = EmbedBackend::None,
+            (1, _) => d.backend = EmbedBackend::SigLip { repo: SIGLIP_MODELS[0].repo.into() },
+            _ => d.backend = EmbedBackend::Server(ServerConfig::embeddinggemma()),
+        }
+        match &mut d.backend {
+            EmbedBackend::None => note(ui, "Searching by words only. Turn on a model to also find items by meaning, e.g. “trip” finds “flight to Jeddah”."),
+            EmbedBackend::SigLip { repo } => self.builtin_models(ui, repo),
+            EmbedBackend::Server(s) => server_settings(ui, s, &mut self.model_list),
+        }
+        if d.backend != self.cfg.backend {
+            ui.add_space(8.0);
+            ui.horizontal(|ui| {
+                ui.add_space(10.0);
+                if primary_button(ui, "  Apply model  ").clicked() {
+                    *apply_model = true;
+                }
+                ui.label(RichText::new("Your items are indexed again in the background.").size(12.5).color(ui.visuals().weak_text_color()));
+            });
+        }
+    }
+
+    fn builtin_models(&mut self, ui: &mut Ui, repo: &mut String) {
+        note(ui, "Runs on this PC's processor. Finds photos and screenshots from a description, like “receipt from a restaurant”.");
+        let mut start: Option<String> = None;
+        for m in &SIGLIP_MODELS {
+            let ready = models::siglip_ready(&self.paths.models, m.repo);
+            let selected = *repo == m.repo;
+            setting(ui, m.label, &format!("{} · {:.1} GB download", m.repo, m.size_mb as f32 / 1000.0), selected, |ui| {
+                if ready {
+                    chip(ui, "✔ Downloaded", GREEN);
+                } else if let Some(dl) = self.download.as_ref().filter(|x| x.repo == m.repo) {
+                    let p = &dl.progress;
+                    if ui.small_button("Cancel").clicked() {
+                        p.cancel.store(true, Ordering::Relaxed);
+                    }
+                    let (done, total) = (p.done.load(Ordering::Relaxed), p.total.load(Ordering::Relaxed).max(1));
+                    ui.add(egui::ProgressBar::new(done as f32 / total as f32).desired_width(150.0).text(format!("{} / {} MB", done >> 20, total >> 20)));
+                    ui.ctx().request_repaint_after(Duration::from_millis(250));
+                } else if self.download.is_none() && ui.button(format!("⬇ Download {:.1} GB", m.size_mb as f32 / 1000.0)).clicked() {
+                    start = Some(m.repo.to_string());
+                }
+                if !selected && ui.add(egui::Button::new("Use").frame_when_inactive(false)).clicked() {
+                    *repo = m.repo.to_string();
+                }
+            });
+        }
+        if let Some(r) = start {
+            *repo = r.clone();
+            let progress = Arc::new(Progress::default());
+            let (p, dir, rr, c) = (progress.clone(), self.paths.models.clone(), r.clone(), ui.ctx().clone());
+            let handle = std::thread::spawn(move || {
+                let out = models::download_siglip(&dir, &rr, &p);
+                c.request_repaint();
+                out
+            });
+            self.download = Some(Download { repo: r, progress, handle });
+        }
+    }
+
+    fn shortcuts_page(&mut self, ui: &mut Ui, d: &mut Config, apply_keys: &mut bool) {
+        let def = Config::default();
+        section(ui, "Anywhere in Windows");
+        let mut key_row = |ui: &mut Ui, label: &str, help: &str, value: &mut String, default: &str| {
+            let changed = value != default;
+            let ok = value.trim().is_empty() || HotKey::from_str(value.trim()).is_ok();
+            if setting(ui, label, help, changed, |ui| {
+                if !ok {
+                    chip(ui, "⚠ Not a valid shortcut", RED);
+                } else if value.trim().is_empty() {
+                    chip(ui, "Off", Color32::GRAY);
+                }
+                let r = ui.add(egui::TextEdit::singleline(value).desired_width(150.0).hint_text("e.g. Alt+V"));
+                if r.lost_focus() && ok {
+                    *apply_keys = true;
+                }
+            }) {
+                *value = default.to_string();
+                *apply_keys = true;
+            }
+        };
+        key_row(ui, "Show or hide this window", "Opens the window over whatever you're doing; press again to hide it.", &mut d.show_hotkey, &def.show_hotkey);
+        key_row(ui, "Don't record the next copy", "Press before copying something private: the next copy is skipped.", &mut d.ignore_next_hotkey, &def.ignore_next_hotkey);
+        if let Some(e) = &self.hotkey_error {
+            ui.horizontal(|ui| {
+                ui.add_space(10.0);
+                ui.label(RichText::new(format!("⚠ {e}")).size(12.5).color(RED));
+            });
+        }
+        note(ui, "Type a shortcut like Alt+V, Ctrl+Shift+Space or Super+V and press Enter. Leave empty to turn it off.");
+
+        section(ui, "Inside the app");
+        for (keys, what) in [
+            ("↑  ↓", "Move through the list"),
+            ("Enter", "Copy the selected item and hide the window"),
+            ("Ctrl  P", "Pin or unpin"),
+            ("Shift  Del", "Delete"),
+            ("Esc", "Clear the search, or hide the window"),
+        ] {
+            ui.horizontal(|ui| {
+                ui.add_space(10.0);
+                ui.add_sized([110.0, 26.0], egui::Label::new(RichText::new(keys).monospace().size(13.0).color(accent())));
+                ui.label(RichText::new(what).size(14.0));
+            });
+        }
+    }
+
+    fn data_page(&mut self, ui: &mut Ui, d: &mut Config) {
+        section(ui, "Storage");
+        let root = self.paths.root.clone();
+        setting(ui, "Data folder", "History, images, models and settings are stored here, on this PC only.", false, |ui| {
+            if ui.button("Open").clicked() {
+                reveal(&root);
+            }
+            ui.add(egui::Label::new(RichText::new(root.display().to_string()).size(12.0).color(ui.visuals().weak_text_color())).truncate());
+        });
+        let log = root.join("clipboard-manager.log");
+        setting(ui, "Log file", "A record of what the app did in this session. Attach it when reporting a problem.", false, |ui| {
+            if ui.button("Show").clicked() {
+                reveal(&log);
+            }
+        });
+        let images = self.items.iter().filter(|i| i.kind == Kind::Image).count();
+        let pinned = self.items.iter().filter(|i| i.pinned).count();
+        let clip = self.items.iter().filter(|i| i.origin == Origin::Clipboard && !i.pinned).count();
+        setting(ui, "Stored", "", false, |ui| {
+            ui.label(RichText::new(format!("{} items · {images} images · {pinned} pinned", self.items.len())).size(13.0));
+        });
+
+        section(ui, "Clean up");
+        let mut clear = false;
+        let confirm = self.confirm;
+        setting(ui, "Clear clipboard history", "Deletes copied items. Pinned items and files you added stay.", false, |ui| {
+            if confirm == Some("clear") {
+                if ui.add(egui::Button::new(RichText::new(format!("Delete {clip} items")).color(Color32::WHITE)).fill(RED)).clicked() {
+                    clear = true;
+                }
+                if ui.button("Cancel").clicked() {
+                    self.confirm = None;
+                }
+            } else if ui.add_enabled(clip > 0, egui::Button::new(RichText::new("Clear…").color(RED))).clicked() {
+                self.confirm = Some("clear");
+            }
+        });
+        if clear {
+            self.confirm = None;
+            self.clear_history();
+        }
+        let mut reset = false;
+        let confirm = self.confirm;
+        setting(ui, "Reset all settings", "Puts every setting back to its default, including the search model.", false, |ui| {
+            if confirm == Some("reset") {
+                if ui.add(egui::Button::new(RichText::new("Reset everything").color(Color32::WHITE)).fill(RED)).clicked() {
+                    reset = true;
+                }
+                if ui.button("Cancel").clicked() {
+                    self.confirm = None;
+                }
+            } else if ui.add_enabled(*d != Config::default(), egui::Button::new("Reset…")).clicked() {
+                self.confirm = Some("reset");
+            }
+        });
+        if reset {
+            self.confirm = None;
+            *d = Config::default();
+        }
+        note(ui, "Nothing you copy is sent anywhere. Search models run on this PC or on a server you choose.");
+    }
+}
+
+fn clipboard_page(ui: &mut Ui, d: &mut Config) {
+    let def = Config::default();
+    section(ui, "Recording");
+    let flag = |ui: &mut Ui, label: &str, help: &str, v: &mut bool, default: bool| {
+        if setting(ui, label, help, *v != default, |ui| {
+            toggle(ui, v);
+        }) {
+            *v = default;
+        }
+    };
+    flag(ui, "Record clipboard history", "Save everything you copy. Turn off to pause; the ⏸ button in the main window does the same.", &mut d.monitor_clipboard, def.monitor_clipboard);
+    flag(ui, "Skip passwords and API keys", "Don't save copies that look like a password, API key, token or private key. You still can paste them normally.", &mut d.skip_secrets, def.skip_secrets);
+    flag(ui, "Merge duplicate copies", "Copying something you already have moves it to the top instead of adding it again.", &mut d.dedupe, def.dedupe);
+    flag(ui, "Read text in images", "Find screenshots and photos by the words in them. Runs on this PC.", &mut d.ocr_images, def.ocr_images);
+    section(ui, "After copying from the list");
+    flag(ui, "Hide the window", "After you copy an item, the window hides so you can paste right away.", &mut d.minimize_after_copy, def.minimize_after_copy);
+    section(ui, "History size");
+    if setting(ui, "Keep up to", "When there are more, the oldest are deleted. Pinned items and files you added are never deleted.", d.max_items != def.max_items, |ui| {
+        let label = |n: usize| format!("{} items", n.to_string().as_bytes().rchunks(3).rev().map(|c| std::str::from_utf8(c).unwrap()).collect::<Vec<_>>().join(","));
+        egui::ComboBox::from_id_salt("history").selected_text(label(d.max_items)).width(140.0).show_ui(ui, |ui| {
+            for n in HISTORY_SIZES {
+                ui.selectable_value(&mut d.max_items, n, label(n));
+            }
+        });
+    }) {
+        d.max_items = def.max_items;
+    }
+}
+
+fn appearance_page(ui: &mut Ui, d: &mut Config) {
+    let def = Config::default();
+    section(ui, "Look");
+    if setting(ui, "Theme", "System follows your Windows light/dark setting.", d.theme != def.theme, |ui| {
+        segmented(ui, &mut d.theme, &[(Theme::System, "🖥 System"), (Theme::Light, "☀ Light"), (Theme::Dark, "🌙 Dark")]);
+    }) {
+        d.theme = def.theme;
+    }
+    if setting(ui, "Accent colour", "Used for selection, buttons and highlights.", d.accent != def.accent, |ui| {
+        for (i, (name, c)) in ACCENTS.iter().enumerate().rev() {
+            let (rect, r) = ui.allocate_exact_size(Vec2::splat(24.0), Sense::click());
+            ui.painter().circle_filled(rect.center(), 10.0, *c);
+            if d.accent == i {
+                ui.painter().circle_stroke(rect.center(), 12.0, Stroke::new(2.0, *c));
+            }
+            if r.on_hover_text(*name).clicked() {
+                d.accent = i;
+            }
+        }
+    }) {
+        d.accent = def.accent;
+    }
+    section(ui, "List");
+    if setting(ui, "Density", "Compact fits more items on screen by hiding the second line.", d.density != def.density, |ui| {
+        segmented(ui, &mut d.density, &[(Density::Comfortable, "Comfortable"), (Density::Compact, "Compact")]);
+    }) {
+        d.density = def.density;
+    }
+    if setting(ui, "Group by day", "Show Pinned, Today, Yesterday… headers while browsing (not while searching).", d.group_by_date != def.group_by_date, |ui| {
+        toggle(ui, &mut d.group_by_date);
+    }) {
+        d.group_by_date = def.group_by_date;
+    }
+}
+
+fn server_settings(ui: &mut Ui, s: &mut ServerConfig, list: &mut ModelList) {
+    ui.horizontal_wrapped(|ui| {
+        ui.add_space(10.0);
+        ui.label(RichText::new("Quick setup:").size(12.5).color(ui.visuals().weak_text_color()));
+        for (name, url) in [
+            ("llama.cpp", "http://127.0.0.1:8080/v1"),
+            ("Unsloth", "http://127.0.0.1:8888/v1"),
+            ("Sentence Transformers", "http://127.0.0.1:8001/v1"),
+            ("Ollama", "http://127.0.0.1:11434/v1"),
+            ("LM Studio", "http://127.0.0.1:1234/v1"),
+        ] {
+            let current = s.base_url.trim_end_matches('/') == url;
+            let b = egui::Button::new(RichText::new(name).size(12.5).color(if current { accent() } else { ui.visuals().text_color() }))
+                .frame_when_inactive(current)
+                .fill(if current { accent().gamma_multiply(0.13) } else { Color32::TRANSPARENT })
+                .corner_radius(CornerRadius::same(12));
+            if ui.add(b).on_hover_text(url).clicked() {
+                let key = std::mem::take(&mut s.api_key);
+                *s = ServerConfig { api_key: key, ..ServerConfig::plain(url) };
+            }
+        }
+    });
+
+    list.poll();
+    let editable = s.launch.is_none();
+    if editable && list.pending.is_none() && list.url != ModelList::key(s) && !s.base_url.trim().is_empty() {
+        list.fetch(s, ui.ctx());
+    }
+    setting(ui, "Server address", "The address of the embeddings server, usually ending in /v1.", false, |ui| {
+        if editable && ui.add(egui::Button::new("⟳").frame_when_inactive(false)).on_hover_text("Check again").clicked() {
+            list.fetch(s, ui.ctx());
+        }
+        ui.add_enabled(editable, egui::TextEdit::singleline(&mut s.base_url).hint_text("http://127.0.0.1:8080/v1").desired_width(300.0));
+    });
+    setting(ui, "API key", "Only if your server asks for one. Sent as a Bearer token and stored only on this PC.", false, |ui| {
+        let eye = egui::Button::new(RichText::new("👁").size(15.0)).frame_when_inactive(list.show_key).fill(if list.show_key { accent().gamma_multiply(0.14) } else { Color32::TRANSPARENT });
+        if ui.add(eye).on_hover_text(if list.show_key { "Hide key" } else { "Show key" }).clicked() {
+            list.show_key = !list.show_key;
+        }
+        ui.add(egui::TextEdit::singleline(&mut s.api_key).password(!list.show_key).hint_text("optional").desired_width(300.0));
+    });
+    let default_name = list.found.default.clone();
+    setting(ui, "Model", "Leave empty to use the server's default embedding model. Pick from ▾ or type a name your server knows.", !s.model.trim().is_empty(), |ui| {
+        let any = default_name.is_some() || !list.found.listed.is_empty();
+        if editable && any {
+            let b = ui.add(egui::Button::new("▾").frame_when_inactive(false));
+            egui::Popup::menu(&b).show(|ui| {
+                ui.set_min_width(320.0);
+                if let Some(dn) = &default_name {
+                    let label = if dn.is_empty() { "Server default".to_string() } else { format!("Server default · {dn}") };
+                    if ui.selectable_label(s.model.is_empty(), label).clicked() {
+                        s.model.clear();
+                    }
+                }
+                if !list.found.listed.is_empty() {
+                    ui.label(RichText::new("LISTED BY THE SERVER (MAY INCLUDE CHAT MODELS)").size(10.5).weak());
+                    for m in &list.found.listed {
+                        if ui.selectable_label(s.model == *m, m).clicked() {
+                            s.model = m.clone();
+                        }
+                    }
+                }
+            });
+        }
+        let hint = match default_name.as_deref() {
+            Some(dn) if !dn.is_empty() => format!("default: {dn}"),
+            _ => "server default".to_string(),
+        };
+        ui.add_enabled(editable, egui::TextEdit::singleline(&mut s.model).hint_text(hint).desired_width(300.0));
+    });
+    ui.horizontal_wrapped(|ui| {
+        ui.add_space(10.0);
+        if list.pending.is_some() {
+            ui.add(egui::Spinner::new().size(12.0));
+            ui.label(RichText::new("Checking the server…").size(12.5).weak());
+        } else if let Some(e) = &list.error {
+            chip(ui, format!("⚠ {e}"), RED);
+        } else if s.model.trim().is_empty() {
+            match default_name.as_deref() {
+                Some(dn) => {
+                    chip(ui, format!("✔ Connected · uses {}", if dn.is_empty() { "the default model" } else { dn }), GREEN);
+                }
+                None if !list.found.listed.is_empty() => {
+                    chip(ui, "Connected, but no default embedding model: choose one", AMBER);
+                }
+                None => {}
+            }
+        } else if default_name.is_some() || !list.found.listed.is_empty() {
+            chip(ui, "✔ Connected", GREEN);
+        }
+        if !editable {
+            ui.label(RichText::new("The app starts llama-server itself; it connects after Apply.").size(12.5).weak());
+        }
+    });
+
+    let effective = if s.model.is_empty() { default_name.clone().unwrap_or_default() } else { s.model.clone() };
+    let gemma = effective.to_lowercase().contains("embeddinggemma");
+    let gemma_prompts = s.query_prefix == ServerConfig::GEMMA_QUERY && s.document_prefix == ServerConfig::GEMMA_DOCUMENT;
+    if gemma && !gemma_prompts {
+        ui.horizontal(|ui| {
+            ui.add_space(10.0);
+            chip(ui, "💡 EmbeddingGemma searches better with its own prompts", AMBER);
+            if ui.button("Use them").clicked() {
+                s.query_prefix = ServerConfig::GEMMA_QUERY.into();
+                s.document_prefix = ServerConfig::GEMMA_DOCUMENT.into();
+            }
+        });
+    }
+
+    ui.add_space(6.0);
+    egui::CollapsingHeader::new(RichText::new("Advanced").size(13.5)).id_salt("advanced").show(ui, |ui| {
+        setting(ui, "Query prompt", "Text put before what you search for. Some models need it (EmbeddingGemma: “task: search result | query: ”).", !s.query_prefix.is_empty(), |ui| {
+            ui.add(egui::TextEdit::singleline(&mut s.query_prefix).hint_text("none").desired_width(300.0));
+        });
+        setting(ui, "Item prompt", "Text put before each item when it's indexed (EmbeddingGemma: “title: none | text: ”).", !s.document_prefix.is_empty(), |ui| {
+            ui.add(egui::TextEdit::singleline(&mut s.document_prefix).hint_text("none").desired_width(300.0));
+        });
+        if setting(ui, "Vector size", "Smaller vectors use less memory and search faster, with slightly lower quality. Works with Matryoshka models such as EmbeddingGemma and UltraVBERT.", s.truncate_dims != 0, |ui| {
+            let current = VECTOR_SIZES.iter().find(|(v, _)| *v == s.truncate_dims).map(|(_, l)| l.to_string()).unwrap_or_else(|| format!("{} dims", s.truncate_dims));
+            egui::ComboBox::from_id_salt("dims").selected_text(current).width(170.0).show_ui(ui, |ui| {
+                for (v, l) in VECTOR_SIZES {
+                    ui.selectable_value(&mut s.truncate_dims, v, l);
+                }
+            });
+        }) {
+            s.truncate_dims = 0;
+        }
+        setting(ui, "Search images with this model", "Send images to the server too. Only for models that understand images (CLIP, SigLIP, BiUltraVBERT…). Otherwise images are found by the text in them.", s.images, |ui| {
+            toggle(ui, &mut s.images);
+        });
+        let mut launch = s.launch.is_some();
+        setting(ui, "Start llama-server for me", "The app starts llama-server with your .gguf file in the background and stops it when you quit.", launch, |ui| {
+            toggle(ui, &mut launch);
+        });
+        if launch && s.launch.is_none() {
+            s.launch = Some(LaunchConfig {
+                llama_server: PathBuf::from(if cfg!(windows) { "llama-server.exe" } else { "llama-server" }),
+                gguf: PathBuf::new(),
+                mmproj: None,
+                port: 8765,
+                extra_args: "--pooling mean -c 2048 -ub 2048".into(),
+            });
+        } else if !launch {
+            s.launch = None;
+        }
+        if let Some(l) = &mut s.launch {
+            setting(ui, "llama-server program", "llama-server.exe from a llama.cpp release.", false, |ui| path_field(ui, &mut l.llama_server, &["exe"]));
+            setting(ui, "Model file (.gguf)", "", false, |ui| path_field(ui, &mut l.gguf, &["gguf"]));
+            setting(ui, "Image projector (.gguf)", "Optional mmproj file, for models that embed images.", false, |ui| {
+                let mut p = l.mmproj.clone().unwrap_or_default();
+                path_field(ui, &mut p, &["gguf"]);
+                l.mmproj = if p.as_os_str().is_empty() { None } else { Some(p) };
+            });
+            setting(ui, "Port", "", false, |ui| {
+                ui.add(egui::DragValue::new(&mut l.port).range(1024..=65535));
+            });
+            setting(ui, "Extra arguments", "Passed to llama-server as-is.", false, |ui| {
+                ui.add(egui::TextEdit::singleline(&mut l.extra_args).desired_width(300.0));
+            });
+        }
+    });
+}

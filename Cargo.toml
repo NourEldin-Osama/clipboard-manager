@@ -1,0 +1,113 @@
+[package]
+name = "clipboard-manager"
+version = "0.1.0"
+edition = "2021"
+description = "Offline clipboard history with on-device OCR and semantic (embedding) search for text and images."
+license = "MIT OR Apache-2.0"
+readme = "README.md"
+
+[dependencies]
+anyhow = "1"
+arboard = "3.7"
+base64 = "0.22"
+candle-core = "0.11"
+candle-nn = "0.11"
+directories = "6"
+eframe = { version = "0.37", default-features = false, features = ["accesskit", "clipboard", "default_fonts", "links", "system_fonts", "glow", "persistence", "wayland", "x11"] }
+egui = { version = "0.37", features = ["monochrome_emoji_fonts"] }
+global-hotkey = "0.9"
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "bmp", "webp", "tiff"] }
+log = "0.4"
+env_logger = "0.11"
+ocrs = { version = "0.13", default-features = false, features = ["rten"] }
+redb = "4.4"
+rfd = "0.17"
+rten = { version = "0.26", default-features = false, features = ["rten_format"] }
+serde = { version = "1", features = ["derive", "rc"] }
+serde_json = "1"
+time = { version = "0.3", features = ["local-offset", "formatting", "macros"] }
+tokenizers = { version = "0.23", default-features = false, features = ["unstable_wasm"] }
+ureq = { version = "3", features = ["json"] }
+walkdir = "2"
+
+[target.'cfg(windows)'.dependencies]
+clipboard-win = "5"
+
+# Everyday release builds: no LTO and many codegen units, so rebuilding after a
+# change takes a fraction of the time.
+[profile.release]
+opt-level = 3
+codegen-units = 16
+strip = true
+
+# Shipping build (smaller, slightly faster binary): cargo build --profile dist
+[profile.dist]
+inherits = "release"
+lto = "thin"
+codegen-units = 4
+
+[profile.dev]
+debug = "line-tables-only"
+
+# Dependencies get light optimisation in debug builds (quick to compile)...
+[profile.dev.package."*"]
+opt-level = 1
+
+# ...except the number-crunching ones: model inference, OCR and image decoding
+# are unusably slow without full optimisation.
+[profile.dev.package.candle-core]
+opt-level = 3
+
+[profile.dev.package.candle-nn]
+opt-level = 3
+
+[profile.dev.package.gemm]
+opt-level = 3
+
+[profile.dev.package.gemm-common]
+opt-level = 3
+
+[profile.dev.package.gemm-f16]
+opt-level = 3
+
+[profile.dev.package.gemm-f32]
+opt-level = 3
+
+[profile.dev.package.pulp]
+opt-level = 3
+
+[profile.dev.package.rten]
+opt-level = 3
+
+[profile.dev.package.rten-base]
+opt-level = 3
+
+[profile.dev.package.rten-gemm]
+opt-level = 3
+
+[profile.dev.package.rten-imageproc]
+opt-level = 3
+
+[profile.dev.package.rten-simd]
+opt-level = 3
+
+[profile.dev.package.rten-tensor]
+opt-level = 3
+
+[profile.dev.package.rten-vecmath]
+opt-level = 3
+
+[profile.dev.package.ocrs]
+opt-level = 3
+
+[profile.dev.package.image]
+opt-level = 3
+
+[profile.dev.package.png]
+opt-level = 3
+
+[profile.dev.package.fdeflate]
+opt-level = 3
+
+[profile.dev.package.zune-jpeg]
+opt-level = 3
