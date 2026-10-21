@@ -49,6 +49,9 @@ pub struct Hit {
     pub idx: usize,
     pub keyword: f32,
     pub semantic: Option<f32>,
+    /// What the list is ordered by when meaning is used (higher first); the
+    /// relevance bars are drawn from it, so they always read top-down.
+    pub relevance: Option<f32>,
 }
 
 pub struct Query<'a> {
@@ -78,7 +81,6 @@ pub fn keyword_score(haystack_lower: &str, query_lower: &str, terms: &[&str]) ->
     s
 }
 
-const RRF_K: f32 = 60.0;
 const SEMANTIC_DEPTH: usize = 200;
 
 /// `lower` caches each item's lower-cased searchable text by id; items missing
@@ -92,7 +94,7 @@ pub fn search(items: &[Item], lower: &HashMap<u64, String>, embeddings: &HashMap
         out.sort_by(|&a, &b| {
             (items[b].pinned, items[b].created, items[b].id).cmp(&(items[a].pinned, items[a].created, items[a].id))
         });
-        return out.into_iter().map(|idx| Hit { idx, keyword: 0.0, semantic: None }).collect();
+        return out.into_iter().map(|idx| Hit { idx, keyword: 0.0, semantic: None, relevance: None }).collect();
     }
 
     let terms: Vec<&str> = query_lower.split_whitespace().collect();
@@ -111,8 +113,8 @@ pub fn search(items: &[Item], lower: &HashMap<u64, String>, embeddings: &HashMap
     }
 
     // Text-to-image similarities are far lower than text-to-text ones (the
-    // "modality gap"), so each modality is ranked on its own and the lists are
-    // fused by rank rather than compared by raw score.
+    // "modality gap"), so each modality is collected on its own and scaled by
+    // its best match before they're merged.
     let mut sem_text: Vec<(usize, f32)> = Vec::new();
     let mut sem_image: Vec<(usize, f32)> = Vec::new();
     if q.mode != SearchMode::Keyword {
@@ -136,36 +138,37 @@ pub fn search(items: &[Item], lower: &HashMap<u64, String>, embeddings: &HashMap
         }
     }
 
-    let lists: Vec<(&[(usize, f32)], bool)> = match q.mode {
-        SearchMode::Keyword => vec![(&kw, false)],
-        SearchMode::Semantic => vec![(&sem_text, true), (&sem_image, true)],
-        SearchMode::Hybrid => vec![(&kw, false), (&sem_text, true), (&sem_image, true)],
-    };
-    if lists.iter().filter(|(l, _)| !l.is_empty()).count() == 1 {
-        // A single list keeps its own order and scores.
-        let (l, semantic) = lists.into_iter().find(|(l, _)| !l.is_empty()).unwrap();
-        return l
-            .iter()
-            .map(|&(idx, s)| Hit { idx, keyword: if semantic { 0.0 } else { s }, semantic: semantic.then_some(s) })
-            .collect();
+    let have_meaning = !sem_text.is_empty() || !sem_image.is_empty();
+    if q.mode == SearchMode::Keyword || !have_meaning {
+        // Words only (or no query vector yet): best word match first.
+        return kw.iter().map(|&(idx, s)| Hit { idx, keyword: s, semantic: None, relevance: None }).collect();
     }
-    // Reciprocal-rank fusion.
-    let mut fused: HashMap<usize, (f32, Hit)> = HashMap::new();
-    for (list, semantic) in lists {
-        for (rank, &(idx, s)) in list.iter().enumerate() {
-            let e = fused.entry(idx).or_insert((0.0, Hit { idx, keyword: 0.0, semantic: None }));
-            e.0 += 1.0 / (RRF_K + rank as f32 + 1.0);
-            if semantic {
-                e.1.semantic = Some(s);
-            } else {
-                e.1.keyword = s;
-            }
+
+    // Ordered by similarity. Each modality is scaled by its own best match, so
+    // a photo that is the best image match isn't buried under text matches.
+    let mut by_idx: HashMap<usize, Hit> = HashMap::new();
+    for list in [&sem_text, &sem_image] {
+        let best = list.first().map(|&(_, s)| s).unwrap_or(1.0).max(1e-6);
+        for &(idx, s) in list {
+            by_idx.insert(idx, Hit { idx, keyword: 0.0, semantic: Some(s), relevance: Some(s / best) });
         }
     }
-    let mut v: Vec<(f32, Hit)> = fused.into_values().collect();
-    v.sort_by(|a, b| b.0.total_cmp(&a.0).then(items[b.1.idx].created.cmp(&items[a.1.idx].created)));
-    v.into_iter().map(|(_, h)| h).collect()
+    if q.mode == SearchMode::Hybrid {
+        // Containing the words counts too, on the same scale.
+        let best_kw = kw.first().map(|&(_, s)| s).unwrap_or(1.0).max(1e-6);
+        for &(idx, s) in &kw {
+            let h = by_idx.entry(idx).or_insert(Hit { idx, keyword: 0.0, semantic: None, relevance: Some(0.0) });
+            h.keyword = s;
+            h.relevance = Some(h.relevance.unwrap_or(0.0) + KEYWORD_WEIGHT * s / best_kw);
+        }
+    }
+    let mut v: Vec<Hit> = by_idx.into_values().collect();
+    v.sort_by(|a, b| b.relevance.unwrap_or(0.0).total_cmp(&a.relevance.unwrap_or(0.0)).then(items[b.idx].created.cmp(&items[a.idx].created)));
+    v
 }
+
+/// How much containing all the query words adds to a similarity scaled to 0..1.
+const KEYWORD_WEIGHT: f32 = 0.25;
 
 #[cfg(test)]
 mod tests {
@@ -224,6 +227,25 @@ mod tests {
         let q = Query { text: "kitten", vector: Some(&qv), mode: SearchMode::Semantic, filter: Filter::All, min_similarity: 0.0, image_vectors: true };
         let ids: Vec<u64> = search(&items, &HashMap::new(), &embs, &q).iter().map(|h| items[h.idx].id).collect();
         assert!(ids[..2].contains(&3), "{ids:?}");
+    }
+
+    /// Smart results come back best first, so the relevance bars read top-down.
+    #[test]
+    fn hybrid_is_ordered_by_relevance() {
+        let items = vec![item(1, "time format", 1), item(2, "grid view list view time", 2), item(3, "clock", 3), item(4, "hello", 4)];
+        let mut embs = HashMap::new();
+        embs.insert(1, Embedding::dense(vec![1.0, 0.0], 0));
+        embs.insert(2, Embedding::dense(vec![0.3, 0.95], 0));
+        embs.insert(3, Embedding::dense(vec![0.95, 0.3], 0));
+        embs.insert(4, Embedding::dense(vec![0.6, 0.8], 0));
+        let qv = Embedding::dense(vec![1.0, 0.0], 0);
+        let q = Query { text: "time", vector: Some(&qv), mode: SearchMode::Hybrid, filter: Filter::All, min_similarity: 0.0, image_vectors: false };
+        let hits = search(&items, &HashMap::new(), &embs, &q);
+        let rel: Vec<f32> = hits.iter().map(|h| h.relevance.unwrap()).collect();
+        assert!(rel.windows(2).all(|w| w[0] >= w[1]), "{rel:?}");
+        // A close meaning match outranks a weak one that merely contains the word.
+        let ids: Vec<u64> = hits.iter().map(|h| items[h.idx].id).collect();
+        assert_eq!(&ids[..2], &[1, 3], "{ids:?}");
     }
 
     #[test]

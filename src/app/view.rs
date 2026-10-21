@@ -384,6 +384,9 @@ pub(super) fn chip(ui: &mut Ui, text: impl Into<String>, color: Color32) -> egui
         .response
 }
 
+/// Width of the small icon menus (add files, more tags).
+const MENU_W: f32 = 220.0;
+
 /// Wide enough for the longest help line, no wider.
 const MODE_MENU_W: f32 = 300.0;
 
@@ -625,6 +628,7 @@ impl App {
                         }
                         let import = icons::icon_button(ui, Icon::Add, "Add files or a folder to search (you can also drop them on the window)");
                         egui::Popup::menu(&import).show(|ui| {
+                            ui.set_width(MENU_W);
                             if icons::menu_item(ui, Icon::File, "Add files…").clicked() {
                                 if let Some(f) = rfd::FileDialog::new().pick_files() {
                                     self.import(f);
@@ -793,6 +797,7 @@ impl App {
         if !rest.is_empty() {
             let more = mode_button(ui, &trf("+{n} tags", &[("n", &rest.len())]), false);
             egui::Popup::menu(&more).show(|ui| {
+                ui.set_width(MENU_W);
                 egui::ScrollArea::vertical().max_height(320.0).show(ui, |ui| {
                     for (t, n) in rest {
                         if icons::menu_item(ui, Icon::Tag, &format!("{t}   {n}")).clicked() {
@@ -1069,7 +1074,7 @@ impl App {
             }
         }
 
-        let max_sem = self.results.iter().filter_map(|h| h.semantic).fold(f32::MIN, f32::max);
+        let max_sem = self.results.iter().filter_map(|h| h.relevance).fold(f32::MIN, f32::max);
         let terms: Vec<String> = if searching { self.query.to_lowercase().split_whitespace().map(String::from).collect() } else { vec![] };
         let mut actions = Vec::new();
         let (items, results, thumbs, loader, selected) = (&self.items, &self.results, &self.thumbs, &mut self.loader, self.selected);
@@ -1567,7 +1572,7 @@ fn paint_row(ui: &Ui, rect: Rect, hot: bool, it: &Item, hit: &Hit, thumb: Option
         icons::paint(&p, m(Rect::from_center_size(Pos2::new(ix - 6.5, iy), Vec2::splat(13.0))), Icon::PinFilled, a);
         ix -= 18.0;
     }
-    if let Some(s) = hit.semantic {
+    if let Some(s) = hit.relevance.filter(|_| hit.semantic.is_some()) {
         // Three bars: how close this match is to the best one.
         let ratio = if max_sem > 0.0 { s / max_sem } else { 0.0 };
         let level = if ratio > 0.93 { 3 } else if ratio > 0.8 { 2 } else { 1 };
@@ -1638,14 +1643,34 @@ fn paint_card(ui: &Ui, rect: Rect, hot: bool, it: &Item, thumb: Option<TextureHa
     if !it.tags.is_empty() {
         let row = Rect::from_min_max(Pos2::new(rect.left() + pad, tags_top), Pos2::new(rect.right() - pad, strip_top - 2.0));
         let tp = ui.painter_at(row);
+        let pill = |text: &str, c: Color32| ui.fonts_mut(|f| f.layout_job(bidi::job(text, FontId::proportional(11.5), c)));
+        let galleys: Vec<_> = it.tags.iter().map(|t| (pill(&format!("# {t}"), tag_color(t)), tag_color(t))).collect();
+        // As many tags as fit on the row; the rest become "+N tags".
+        let gap = 6.0;
+        let widths: Vec<f32> = galleys.iter().map(|(g, _)| g.size().x + 14.0).collect();
+        let more_w = |n: usize| pill(&trf("+{n} tags", &[("n", &n)]), weak).size().x + 14.0;
+        let mut shown = galleys.len();
+        while shown > 0 {
+            let used: f32 = widths[..shown].iter().sum::<f32>() + gap * shown.saturating_sub(1) as f32;
+            let extra = if shown < galleys.len() { gap + more_w(galleys.len() - shown) } else { 0.0 };
+            if used + extra <= row.width() {
+                break;
+            }
+            shown -= 1;
+        }
         let mut x = row.left();
-        for t in &it.tags {
-            let c = tag_color(t);
-            let g = ui.fonts_mut(|f| f.layout_job(bidi::job(&format!("# {t}"), FontId::proportional(11.5), c)));
+        let mut place = |g: Arc<egui::Galley>, c: Color32, fill: Color32| {
             let r = flip(rect, Rect::from_min_size(Pos2::new(x, row.center().y - (g.size().y + 6.0) / 2.0), g.size() + Vec2::new(14.0, 6.0)));
-            tp.rect_filled(r, CornerRadius::same(9), c.gamma_multiply(if v.dark_mode { 0.25 } else { 0.13 }));
-            x += r.width() + 6.0;
+            tp.rect_filled(r, CornerRadius::same(9), fill);
+            x += r.width() + gap;
             tp.galley(r.min + Vec2::new(7.0, 3.0), g, c);
+        };
+        for (g, c) in galleys.iter().take(shown) {
+            place(g.clone(), *c, c.gamma_multiply(if v.dark_mode { 0.25 } else { 0.13 }));
+        }
+        if shown < galleys.len() {
+            let rest = galleys.len() - shown;
+            place(pill(&trf("+{n} tags", &[("n", &rest)]), weak), weak, weak.gamma_multiply(0.15));
         }
     }
     let bottom = tags_top - 4.0;
