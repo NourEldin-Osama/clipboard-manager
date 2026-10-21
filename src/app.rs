@@ -15,6 +15,7 @@ use global_hotkey::{GlobalHotKeyEvent, GlobalHotKeyManager, HotKeyState};
 use crate::clipboard::{self, Captured, Flags};
 use crate::config::{Config, EmbedBackend, LaunchConfig, Paths, SearchMode, ServerConfig, Theme, ViewMode};
 use crate::embed::Embedding;
+use crate::i18n::{self, tr, trf};
 use crate::images::ImageLoader;
 use crate::import;
 use crate::models::{self, Progress, SIGLIP_MODELS};
@@ -213,6 +214,9 @@ impl App {
     pub fn new(cc: &eframe::CreationContext<'_>, paths: Paths) -> anyhow::Result<Self> {
         let ctx = cc.egui_ctx.clone();
         let cfg = Config::load(&paths.config);
+        i18n::set(cfg.language, cfg.time_format);
+        add_fonts(&ctx);
+        icons::register(&ctx);
         set_accent(cfg.accent);
         style(&ctx);
         apply_theme(&ctx, cfg.theme);
@@ -454,8 +458,10 @@ impl App {
         self.toast_for(s, Duration::from_millis(1400));
     }
 
+    /// Shows `s`, translated when it's one of the fixed messages.
     fn toast_for(&mut self, s: impl Into<String>, how_long: Duration) {
-        self.toast = Some((s.into(), Instant::now(), how_long));
+        let s = s.into();
+        self.toast = Some((tr(&s).to_string(), Instant::now(), how_long));
     }
 
     fn ready_key(&self) -> Option<&str> {
@@ -569,7 +575,7 @@ impl App {
         for it in new {
             self.add_item(it);
         }
-        self.toast(format!("Imported {n} file{}", if n == 1 { "" } else { "s" }));
+        self.toast(trf("Imported {n} files", &[("n", &n)]));
     }
 
     fn index_missing(&mut self) {
@@ -663,7 +669,7 @@ impl App {
                 let d = self.download.take().unwrap();
                 match d.handle.join() {
                     Ok(Ok(())) => {
-                        self.toast(format!("Downloaded {}", d.repo));
+                        self.toast(trf("Downloaded {name}", &[("name", &d.repo)]));
                         if matches!(&self.cfg.backend, EmbedBackend::SigLip { repo } if *repo == d.repo) {
                             self.set_backend(self.cfg.backend.clone());
                         }
@@ -823,7 +829,7 @@ impl App {
             self.save_item(*id);
         }
         self.drop_stale_tag_filter();
-        self.toast(format!("Removed #{tag} from {} item{}", ids.len(), if ids.len() == 1 { "" } else { "s" }));
+        self.toast(trf("Removed #{tag} from {n} items", &[("tag", &tag), ("n", &ids.len())]));
     }
 
     fn drop_stale_tag_filter(&mut self) {
@@ -911,14 +917,15 @@ impl App {
         let gone: HashSet<u64> = doomed.iter().map(|i| i.id).collect();
         self.items.retain(|i| !gone.contains(&i.id));
         self.dirty = true;
-        self.toast(format!("Cleared {} items", gone.len()));
+        self.toast(trf("Cleared {n} items", &[("n", &gone.len())]));
     }
 }
 
+mod bidi;
 mod icons;
 mod settings_page;
 mod shortcut;
 mod view;
 
 use settings_page::SettingsPage;
-use view::{apply_theme, looks_like_code, set_accent, style};
+use view::{add_fonts, apply_theme, looks_like_code, set_accent, style};

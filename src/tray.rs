@@ -8,6 +8,8 @@ use anyhow::Result;
 use tray_icon::menu::{Menu, MenuEvent, MenuItem, PredefinedMenuItem};
 use tray_icon::{MouseButton, MouseButtonState, TrayIcon, TrayIconBuilder, TrayIconEvent};
 
+use crate::i18n::tr;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TrayCmd {
     Show,
@@ -25,9 +27,9 @@ pub struct Tray {
 impl Tray {
     /// `wake` is called after each command is sent, so a hidden window still handles it.
     pub fn new(rgba: Vec<u8>, size: u32, paused: bool, tx: Sender<TrayCmd>, wake: impl Fn() + Send + Sync + Clone + 'static) -> Result<Self> {
-        let show = MenuItem::new("Show Clipboard Manager", true, None);
+        let show = MenuItem::new(tr("Show Clipboard Manager"), true, None);
         let pause = MenuItem::new(pause_label(paused), true, None);
-        let quit = MenuItem::new("Quit", true, None);
+        let quit = MenuItem::new(tr("Quit"), true, None);
         let menu = Menu::new();
         menu.append_items(&[&show, &PredefinedMenuItem::separator(), &pause, &PredefinedMenuItem::separator(), &quit])?;
 
@@ -53,7 +55,7 @@ impl Tray {
 
         let icon = TrayIconBuilder::new()
             .with_icon(tray_icon::Icon::from_rgba(rgba, size, size)?)
-            .with_tooltip("Clipboard Manager")
+            .with_tooltip(tr("Clipboard Manager"))
             .with_menu(Box::new(menu))
             .with_menu_on_left_click(false)
             .build()?;
@@ -70,9 +72,5 @@ impl Tray {
 }
 
 fn pause_label(paused: bool) -> &'static str {
-    if paused {
-        "Resume recording"
-    } else {
-        "Pause recording"
-    }
+    tr(if paused { "Resume recording" } else { "Pause recording" })
 }

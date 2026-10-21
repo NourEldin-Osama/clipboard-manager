@@ -9,6 +9,7 @@ mod autostart;
 mod clipboard;
 mod config;
 mod embed;
+mod i18n;
 mod images;
 mod import;
 mod models;
@@ -30,9 +31,12 @@ fn main() -> eframe::Result {
     };
     init_logging(&paths);
     log::info!("clipboard-manager {} starting, data in {}", env!("CARGO_PKG_VERSION"), paths.root.display());
+    // The window title is set before the app starts, so read the language now.
+    let cfg = config::Config::load(&paths.config);
+    i18n::set(cfg.language, cfg.time_format);
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
-            .with_title("Clipboard Manager")
+            .with_title(i18n::tr("Clipboard Manager"))
             .with_app_id("clipboard-manager")
             .with_inner_size([1040.0, 680.0])
             .with_min_inner_size([560.0, 380.0])
