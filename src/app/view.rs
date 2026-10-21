@@ -1271,7 +1271,7 @@ impl App {
         };
         // Header: what it is at the reading start, what you can do at the far end.
         row(ui, |ui| {
-            if closeable && icons::icon_button_ex(ui, Icon::Back, "Close details (Esc)", Vec2::splat(30.0), 14.0, None, None).clicked() {
+            if closeable && icons::icon_button_ex(ui, Icon::Back, "Close details (Esc)", Vec2::splat(30.0), 20.0, None, None).clicked() {
                 self.details_open = false;
             }
             icons::chip(ui, icons::kind(it.kind), it.kind.label(), kind_color(it.kind));
