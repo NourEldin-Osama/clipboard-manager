@@ -39,8 +39,11 @@ jobs:
       - name: Test
         run: cargo test --locked
 
+      # BUILD_NUMBER goes into the exe, so the app knows which release it is.
       - name: Build (dist profile)
         run: cargo build --locked --profile dist
+        env:
+          BUILD_NUMBER: ${{ github.run_number }}
 
       # e.g. v0.1.0-build.7: the crate version plus this workflow's run number.
       - name: Release name
@@ -51,6 +54,36 @@ jobs:
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "tag=v$version-build.${{ github.run_number }}" >> "$GITHUB_OUTPUT"
           cp target/dist/clipboard-manager.exe clipboard-manager-windows-x64.exe
+
+      # The app installs an update only if this Ed25519 signature checks out
+      # against the public key built into it. The private key is a repo secret.
+      - name: Sign and describe the update
+        shell: bash
+        env:
+          UPDATE_SIGNING_KEY: ${{ secrets.UPDATE_SIGNING_KEY }}
+        run: |
+          set -euo pipefail
+          test -n "$UPDATE_SIGNING_KEY" || { echo "UPDATE_SIGNING_KEY secret is missing"; exit 1; }
+          key="$RUNNER_TEMP/update-key.pem"
+          printf '%s\n' "$UPDATE_SIGNING_KEY" > "$key"
+          exe=clipboard-manager-windows-x64.exe
+          openssl pkeyutl -sign -rawin -inkey "$key" -in "$exe" -out "$RUNNER_TEMP/exe.sig"
+          rm -f "$key"
+          tag="${{ steps.version.outputs.tag }}"
+          base="https://github.com/${{ github.repository }}/releases"
+          cat > updater.json <<JSON
+          {
+            "version": "${{ steps.version.outputs.version }}",
+            "build": ${{ github.run_number }},
+            "pub_date": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+            "notes_url": "$base/tag/$tag",
+            "url": "$base/download/$tag/$exe",
+            "size": $(stat -c %s "$exe"),
+            "sha256": "$(sha256sum "$exe" | cut -d' ' -f1)",
+            "signature": "$(base64 -w0 "$RUNNER_TEMP/exe.sig")"
+          }
+          JSON
+          cat updater.json
 
       - name: Upload exe
         uses: actions/upload-artifact@v6
@@ -72,6 +105,9 @@ jobs:
             **Install:** download `clipboard-manager-windows-x64.exe` below and run it. No installer is needed; settings and history are kept in `%APPDATA%\clipboard-manager\data`.
           # Adds "What's Changed": the pull requests merged since the previous release.
           generate_release_notes: true
-          files: clipboard-manager-windows-x64.exe
+          # updater.json is what the app reads from releases/latest/download/.
+          files: |
+            clipboard-manager-windows-x64.exe
+            updater.json
           fail_on_unmatched_files: true
           make_latest: true

@@ -299,7 +299,7 @@ impl App {
                 let x = if i18n::rtl() { area.right() - w } else { area.left() };
                 let column = Rect::from_min_size(Pos2::new(x, area.top()), Vec2::new(w, area.height()));
                 ui.scope_builder(egui::UiBuilder::new().max_rect(column), |ui| match self.settings_page {
-                    SettingsPage::General => general_page(ui, &mut d),
+                    SettingsPage::General => self.general_page(ui, &mut d),
                     SettingsPage::Search => self.search_page(ui, &mut d, &mut apply_model),
                     SettingsPage::Clipboard => clipboard_page(ui, &mut d),
                     SettingsPage::Shortcuts => self.shortcuts_page(ui, &mut d, &mut apply_keys),
@@ -570,11 +570,60 @@ impl App {
             self.confirm = None;
             *d = Config::default();
         }
-        note(ui, "Nothing you copy is sent anywhere. Search models run on this PC or on a server you choose.");
+        note(ui, "Nothing you copy is sent anywhere. Search models run on this PC or on a server you choose. The update check only downloads the version file from GitHub.");
     }
 }
 
-fn general_page(ui: &mut Ui, d: &mut Config) {
+impl App {
+    fn general_page(&mut self, ui: &mut Ui, d: &mut Config) {
+        general_settings(ui, d);
+        self.updates_section(ui, d);
+    }
+
+    fn updates_section(&mut self, ui: &mut Ui, d: &mut Config) {
+        let def = Config::default();
+        section(ui, "Updates");
+        let release_build = crate::update::build().is_some();
+        if setting(ui, "Check for updates automatically", "Looks for a new version when the app starts and once a day. Only the version file on GitHub is fetched; nothing about you or your clipboard is sent.", d.update_check != def.update_check, |ui| {
+            toggle(ui, &mut d.update_check);
+        }) {
+            d.update_check = def.update_check;
+        }
+        if setting(ui, "Download updates automatically", "On: a new version downloads in the background and installs when you restart or quit. Off: you're asked before anything is downloaded.", d.update_download != def.update_download, |ui| {
+            toggle(ui, &mut d.update_download);
+        }) {
+            d.update_download = def.update_download;
+        }
+        let mut check = false;
+        setting(ui, "Version", "Every download is checked against this app's signing key before it's installed.", false, |ui| {
+            if release_build && ui.add_enabled(self.update_rx.is_none(), egui::Button::new(txt(tr("Check now"), 13.0, None))).clicked() {
+                check = true;
+            }
+            let weak = ui.visuals().weak_text_color();
+            let status = match &self.update {
+                UpdateState::Checking => tr("Checking…").to_string(),
+                UpdateState::UpToDate => tr("You're up to date").to_string(),
+                UpdateState::Available(r) => trf("Version {version} is available", &[("version", &r.label())]),
+                UpdateState::Downloading(r, _) => trf("Downloading version {version}…", &[("version", &r.label())]),
+                UpdateState::Ready(r, _) => trf("Version {version} is ready", &[("version", &r.label())]),
+                UpdateState::Failed { error, .. } => trf("Update failed: {error}", &[("error", error)]),
+                UpdateState::Idle if !release_build => tr("Updates are off in development builds").to_string(),
+                UpdateState::Idle => String::new(),
+            };
+            if !status.is_empty() {
+                ui.add(egui::Label::new(txt(&status, 12.5, Some(weak))).truncate());
+            }
+            ui.label(txt(&crate::update::current_label(), 13.0, None));
+        });
+        if check {
+            let ctx = ui.ctx().clone();
+            self.update_hidden = false;
+            self.check_for_update(true, &ctx);
+        }
+    }
+}
+
+fn general_settings(ui: &mut Ui, d: &mut Config) {
     let def = Config::default();
     section(ui, "Language and time");
     // Each language is named in itself, so it can be found whatever is showing.
