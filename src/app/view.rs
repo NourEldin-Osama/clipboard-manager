@@ -10,6 +10,7 @@ use eframe::egui::text::{LayoutJob, TextFormat, TextWrapping};
 use eframe::egui::{Align, Align2, Frame, Layout, Margin, Pos2, Rect, Ui};
 
 use super::icons::{self, icon_button_at, icon_button_ex, view_icon, Icon};
+use super::bidi;
 use super::shortcut;
 use super::*;
 use crate::config::Density;
@@ -70,7 +71,7 @@ fn filter_icon(f: Filter) -> Icon {
         Filter::Links => Icon::Link,
         Filter::Images => Icon::Image,
         Filter::Files => Icon::Folder,
-        Filter::Pinned => Icon::Star,
+        Filter::Pinned => Icon::PinFilled,
     }
 }
 
@@ -88,6 +89,14 @@ pub(super) fn mode_help(m: SearchMode) -> &'static str {
         SearchMode::Semantic => "Only by meaning: \"trip\" finds \"flight to Jeddah\"",
         SearchMode::Keyword => "Only items containing the words you type",
     }
+}
+
+/// Adds the bundled Arabic font after egui's own, so Latin text looks the same
+/// and Arabic always has glyphs, whatever fonts the PC has.
+pub(super) fn add_fonts(ctx: &egui::Context) {
+    use eframe::egui::{FontData, FontFamily, FontInsert, FontPriority, InsertFontFamily};
+    let families = [FontFamily::Proportional, FontFamily::Monospace].map(|family| InsertFontFamily { family, priority: FontPriority::Lowest }).to_vec();
+    ctx.add_font(FontInsert::new("noto-sans-arabic", FontData::from_static(include_bytes!("../../assets/fonts/NotoSansArabic-Regular.ttf")), families));
 }
 
 pub(super) fn style(ctx: &egui::Context) {
@@ -135,33 +144,30 @@ pub(super) fn looks_like_code(s: &str) -> bool {
 
 // ----- time --------------------------------------------------------------------
 
-fn local_offset() -> time::UtcOffset {
-    static OFFSET: std::sync::OnceLock<time::UtcOffset> = std::sync::OnceLock::new();
-    *OFFSET.get_or_init(|| time::UtcOffset::current_local_offset().unwrap_or(time::UtcOffset::UTC))
-}
-
-fn local(ts: i64) -> time::OffsetDateTime {
-    time::OffsetDateTime::from_unix_timestamp(ts).unwrap_or(time::OffsetDateTime::UNIX_EPOCH).to_offset(local_offset())
-}
+// Stored times are UTC seconds; `i18n::local` shows each in the user's zone.
 
 /// Whole days between the item's local date and today (0 = today).
 fn days_ago(ts: i64) -> i64 {
-    let today = local(now()).date();
-    (today - local(ts).date()).whole_days()
+    (i18n::local(now()).date_naive() - i18n::local(ts).date_naive()).num_days()
 }
 
-fn fmt(dt: time::OffsetDateTime, f: &[time::format_description::BorrowedFormatItem<'_>]) -> String {
-    dt.format(f).unwrap_or_default()
+fn day_month(dt: &chrono::DateTime<chrono::Local>, year: bool) -> String {
+    use chrono::Datelike;
+    let mut s = format!("{} {}", dt.day(), i18n::month(dt));
+    if year {
+        s.push_str(&format!(" {}", dt.year()));
+    }
+    s
 }
 
-/// Short time for the right edge of a row; the group header already gives the day.
+/// Short time for the edge of a row; the group header already gives the day.
 fn row_time(ts: i64) -> String {
-    let dt = local(ts);
+    use chrono::Datelike;
+    let dt = i18n::local(ts);
     match days_ago(ts) {
-        0 | 1 => fmt(dt, time::macros::format_description!("[hour]:[minute]")),
-        2..=6 => fmt(dt, time::macros::format_description!("[weekday repr:short]")),
-        _ if dt.year() == local(now()).year() => fmt(dt, time::macros::format_description!("[day padding:none] [month repr:short]")),
-        _ => fmt(dt, time::macros::format_description!("[day padding:none] [month repr:short] [year]")),
+        0 | 1 => i18n::clock(&dt),
+        2..=6 => i18n::weekday(&dt).to_string(),
+        _ => day_month(&dt, dt.year() != i18n::local(now()).year()),
     }
 }
 
@@ -169,26 +175,27 @@ fn row_time(ts: i64) -> String {
 /// have no day groups to lean on.
 fn ago(ts: i64) -> String {
     let secs = (now() - ts).max(0);
-    let plural = |n: i64, unit: &str| format!("{n} {unit}{} ago", if n == 1 { "" } else { "s" });
     match secs {
-        0..=44 => "just now".into(),
-        45..=3_599 => plural((secs / 60).max(1), "minute"),
-        3_600..=86_399 => plural(secs / 3_600, "hour"),
+        0..=44 => tr("just now").into(),
+        45..=119 => tr("1 minute ago").into(),
+        120..=3_599 => trf("{n} minutes ago", &[("n", &(secs / 60))]),
+        3_600..=7_199 => tr("1 hour ago").into(),
+        7_200..=86_399 => trf("{n} hours ago", &[("n", &(secs / 3_600))]),
         _ => match days_ago(ts) {
-            1 => "yesterday".into(),
+            1 => tr("yesterday").into(),
             _ => row_time(ts),
         },
     }
 }
 
-/// "Today at 09:59", "Yesterday at 18:20", "Mon 14 Oct at 10:00".
+/// "Today at 09:59", "Yesterday at 6:20 PM", "Mon 14 Oct 2026 at 10:00".
 pub(super) fn when(ts: i64) -> String {
-    let dt = local(ts);
-    let hm = fmt(dt, time::macros::format_description!("[hour]:[minute]"));
+    let dt = i18n::local(ts);
+    let time = i18n::clock(&dt);
     match days_ago(ts) {
-        0 => format!("Today at {hm}"),
-        1 => format!("Yesterday at {hm}"),
-        _ => format!("{} at {hm}", fmt(dt, time::macros::format_description!("[weekday repr:short] [day padding:none] [month repr:short] [year]"))),
+        0 => trf("Today at {time}", &[("time", &time)]),
+        1 => trf("Yesterday at {time}", &[("time", &time)]),
+        _ => trf("{date} at {time}", &[("date", &format!("{} {}", i18n::weekday(&dt), day_month(&dt, true))), ("time", &time)]),
     }
 }
 
@@ -211,12 +218,135 @@ fn search_id() -> egui::Id {
     egui::Id::unique("search")
 }
 
+// ----- language-aware text and layout ---------------------------------------------
+
+/// Text for a label or button in display order. `None` keeps the widget's own colour.
+pub(super) fn txt(text: &str, size: f32, color: Option<Color32>) -> egui::WidgetText {
+    if bidi::has_rtl(text) {
+        bidi::job(text, FontId::proportional(size), color.unwrap_or(Color32::PLACEHOLDER)).into()
+    } else {
+        let r = RichText::new(text).size(size);
+        match color {
+            Some(c) => r.color(c).into(),
+            None => r.into(),
+        }
+    }
+}
+
+/// `en`, translated, as a label.
+pub(super) fn lbl(ui: &mut Ui, en: &str, size: f32, color: Color32) -> egui::Response {
+    ui.label(txt(tr(en), size, Some(color)))
+}
+
+/// A hover tooltip that wraps Arabic in reading order.
+pub(super) fn tip(resp: egui::Response, text: &str) -> egui::Response {
+    if bidi::has_rtl(text) {
+        let text = text.to_string();
+        resp.on_hover_ui(move |ui| {
+            ui.set_max_width(340.0);
+            let c = ui.visuals().text_color();
+            bidi::paragraph(ui, &text, FontId::proportional(13.0), c);
+        })
+    } else {
+        resp.on_hover_text(text)
+    }
+}
+
+/// Main-axis direction for a row: right to left in Arabic.
+pub(super) fn row_layout() -> Layout {
+    if i18n::rtl() {
+        Layout::right_to_left(Align::Center)
+    } else {
+        Layout::left_to_right(Align::Center)
+    }
+}
+
+/// The opposite direction, for pushing controls to the far end of a row.
+pub(super) fn far_layout() -> Layout {
+    if i18n::rtl() {
+        Layout::left_to_right(Align::Center)
+    } else {
+        Layout::right_to_left(Align::Center)
+    }
+}
+
+/// Like `ui.horizontal_wrapped`, in reading direction.
+pub(super) fn row_wrapped<R>(ui: &mut Ui, add: impl FnOnce(&mut Ui) -> R) -> R {
+    let size = Vec2::new(ui.available_width(), ui.spacing().interact_size.y);
+    ui.allocate_ui_with_layout(size, row_layout().with_main_wrap(true), add).inner
+}
+
+/// Like `ui.horizontal`, in reading direction.
+pub(super) fn row<R>(ui: &mut Ui, add: impl FnOnce(&mut Ui) -> R) -> R {
+    let size = Vec2::new(ui.available_width(), ui.spacing().interact_size.y);
+    ui.allocate_ui_with_layout(size, row_layout(), add).inner
+}
+
+/// The rest of the row, filled from its far end.
+pub(super) fn far<R>(ui: &mut Ui, add: impl FnOnce(&mut Ui) -> R) -> R {
+    ui.with_layout(far_layout(), add).inner
+}
+
+/// A label plus an optional smaller count ("Text  5") for pills; the count
+/// trails the label in reading order.
+pub(super) fn pill_job(text: &str, size: f32, color: Color32, count: Option<(String, Color32)>) -> LayoutJob {
+    let mut job = if bidi::has_rtl(text) {
+        bidi::job(text, FontId::proportional(size), color)
+    } else {
+        let mut j = LayoutJob::default();
+        j.append(text, 0.0, TextFormat { font_id: FontId::proportional(size), color, ..Default::default() });
+        j
+    };
+    job.halign = egui::Align::LEFT;
+    if let Some((n, c)) = count {
+        let fmt = TextFormat { font_id: FontId::proportional(size - 1.5), color: c, ..Default::default() };
+        if i18n::rtl() {
+            let mut j = LayoutJob::default();
+            j.append(&format!("{n}  "), 0.0, fmt);
+            for s in job.sections.iter() {
+                j.append(&job.text[s.byte_range.start.0..s.byte_range.end.0], 0.0, s.format.clone());
+            }
+            job = j;
+        } else {
+            job.append(&format!("  {n}"), 0.0, fmt);
+        }
+    }
+    job
+}
+
+/// Paints one line of text anchored at `pos`, in display order. Returns its rect.
+pub(super) fn paint_text(ui: &Ui, p: &egui::Painter, pos: Pos2, anchor: Align2, text: &str, font: FontId, color: Color32) -> Rect {
+    let g = if bidi::has_rtl(text) {
+        ui.fonts_mut(|f| f.layout_job(bidi::job(text, font, color)))
+    } else {
+        ui.fonts_mut(|f| f.layout_no_wrap(text.to_string(), font, color))
+    };
+    let rect = anchor.anchor_size(pos, g.size());
+    p.galley(rect.min, g, color);
+    rect
+}
+
+/// The anchor on the reading-start side: left, or right in Arabic.
+pub(super) fn start_anchor(vertical: egui::Align) -> Align2 {
+    let h = if i18n::rtl() { egui::Align::Max } else { egui::Align::Min };
+    Align2([h, vertical])
+}
+
+/// Mirrors `r` inside `within` for right-to-left layout.
+pub(super) fn flip(within: Rect, r: Rect) -> Rect {
+    if i18n::rtl() {
+        Rect::from_min_max(Pos2::new(within.left() + within.right() - r.right(), r.top()), Pos2::new(within.left() + within.right() - r.left(), r.bottom()))
+    } else {
+        r
+    }
+}
+
 /// "Pin (Ctrl+P)", or just "Pin" when the shortcut is off.
 fn hint(what: &str, keys: &str) -> String {
     if keys.trim().is_empty() {
-        what.to_string()
+        tr(what).to_string()
     } else {
-        format!("{what} ({keys})")
+        format!("{} ({keys})", tr(what))
     }
 }
 
@@ -224,7 +354,7 @@ fn hint(what: &str, keys: &str) -> String {
 fn mode_button(ui: &mut Ui, label: &str, emphasised: bool) -> egui::Response {
     let v = ui.visuals();
     let color = if emphasised { accent() } else { v.weak_text_color() };
-    let g = ui.fonts_mut(|f| f.layout_no_wrap(label.to_string(), FontId::proportional(13.0), color));
+    let g = ui.fonts_mut(|f| f.layout_job(bidi::job(label, FontId::proportional(13.0), color)));
     let (rect, resp) = ui.allocate_exact_size(Vec2::new(g.size().x + 8.0 + 10.0 + 18.0, 28.0), Sense::click());
     let v = ui.visuals();
     if emphasised {
@@ -233,14 +363,16 @@ fn mode_button(ui: &mut Ui, label: &str, emphasised: bool) -> egui::Response {
         ui.painter().rect_filled(rect, CornerRadius::same(8), v.widgets.hovered.weak_bg_fill);
     }
     let color = if resp.hovered() && !emphasised { v.text_color() } else { color };
-    ui.painter().galley(Pos2::new(rect.left() + 9.0, rect.center().y - g.size().y / 2.0), g, color);
-    icons::paint(ui.painter(), Rect::from_center_size(Pos2::new(rect.right() - 14.0, rect.center().y), Vec2::splat(10.0)), Icon::ChevronDown, color);
+    let text_at = flip(rect, Rect::from_min_size(Pos2::new(rect.left() + 9.0, rect.center().y - g.size().y / 2.0), g.size())).min;
+    ui.painter().galley(text_at, g, color);
+    icons::paint(ui.painter(), flip(rect, Rect::from_center_size(Pos2::new(rect.right() - 14.0, rect.center().y), Vec2::splat(10.0))), Icon::Dropdown, color);
     resp
 }
 
 /// Rounded tinted label: kind, state or status.
 pub(super) fn chip(ui: &mut Ui, text: impl Into<String>, color: Color32) -> egui::Response {
     let text = text.into();
+    let text = tr(&text).to_string();
     if let Some((icon, rest)) = icons::from_prefix(&text) {
         return icons::chip(ui, icon, rest, color);
     }
@@ -248,42 +380,47 @@ pub(super) fn chip(ui: &mut Ui, text: impl Into<String>, color: Color32) -> egui
         .fill(color.gamma_multiply(0.14))
         .corner_radius(CornerRadius::same(10))
         .inner_margin(Margin::symmetric(8, 3))
-        .show(ui, |ui| ui.label(RichText::new(text).size(12.0).color(color)))
+        .show(ui, |ui| ui.label(txt(&text, 12.0, Some(color))))
         .response
 }
+
+/// Wide enough for the longest help line, no wider.
+const MODE_MENU_W: f32 = 300.0;
 
 /// One search-mode choice: name and help in a single full-width target, the
 /// active one tinted, edged and ticked.
 fn mode_option(ui: &mut Ui, m: SearchMode, active: bool) -> egui::Response {
-    let w = ui.available_width().max(340.0);
+    let w = MODE_MENU_W;
     let (rect, resp) = ui.allocate_exact_size(Vec2::new(w, 46.0), Sense::click());
-    resp.widget_info(|| egui::WidgetInfo::selected(egui::Role::RadioButton, true, active, mode_label(m)));
+    resp.widget_info(|| egui::WidgetInfo::selected(egui::Role::RadioButton, true, active, tr(mode_label(m))));
     let v = ui.visuals();
     let p = ui.painter();
     let a = accent();
     let r = CornerRadius::same(8);
     if active {
         p.rect_filled(rect, r, a.gamma_multiply(if v.dark_mode { 0.22 } else { 0.10 }));
-        p.rect_filled(Rect::from_min_size(rect.min + Vec2::new(0.0, 10.0), Vec2::new(3.0, rect.height() - 20.0)), CornerRadius::same(2), a);
+        p.rect_filled(flip(rect, Rect::from_min_size(rect.min + Vec2::new(0.0, 10.0), Vec2::new(3.0, rect.height() - 20.0))), CornerRadius::same(2), a);
     }
     if resp.hovered() {
         p.rect_filled(rect, r, if active { a.gamma_multiply(0.06) } else { v.widgets.hovered.weak_bg_fill });
     }
     let title = if active { a } else { v.strong_text_color() };
-    p.text(Pos2::new(rect.left() + 14.0, rect.top() + 8.0), Align2::LEFT_TOP, mode_label(m), FontId::proportional(14.0), title);
-    p.text(Pos2::new(rect.left() + 14.0, rect.top() + 27.0), Align2::LEFT_TOP, mode_help(m), FontId::proportional(11.5), v.weak_text_color());
+    let at = |y: f32| flip(rect, Rect::from_min_size(Pos2::new(rect.left() + 14.0, rect.top() + y), Vec2::ZERO)).min;
+    paint_text(ui, p, at(8.0), start_anchor(egui::Align::Min), tr(mode_label(m)), FontId::proportional(14.0), title);
+    paint_text(ui, p, at(27.0), start_anchor(egui::Align::Min), tr(mode_help(m)), FontId::proportional(11.5), v.weak_text_color());
     if active {
-        icons::paint(p, Rect::from_center_size(Pos2::new(rect.right() - 20.0, rect.center().y), Vec2::splat(14.0)), Icon::Check, a);
+        // Level with the title, clear of the longer help line.
+        icons::paint(p, flip(rect, Rect::from_center_size(Pos2::new(rect.right() - 18.0, rect.top() + 16.0), Vec2::splat(14.0))), Icon::Check, a);
     }
     resp
 }
 
-pub(super) fn primary_button(ui: &mut Ui, text: &str) -> egui::Response {
-    ui.add(
-        egui::Button::new(RichText::new(text).strong().color(Color32::WHITE))
-            .fill(accent())
-            .min_size(Vec2::new(0.0, 32.0)),
-    )
+pub(super) fn primary_button(ui: &mut Ui, en: &str) -> egui::Response {
+    ui.scope(|ui| {
+        ui.spacing_mut().button_padding.x = 16.0;
+        ui.add(egui::Button::new(txt(tr(en), 14.0, Some(Color32::WHITE))).fill(accent()).min_size(Vec2::new(0.0, 32.0)))
+    })
+    .inner
 }
 
 /// `text` with every occurrence of the query terms highlighted, cut to `max_rows`.
@@ -324,6 +461,7 @@ enum ItemAction {
     Select(u64),
     Copy(u64),
     Delete(u64),
+    Pin(u64),
     Open(u64),
 }
 
@@ -363,7 +501,7 @@ fn subtitle_detail(it: &Item) -> String {
             if n == 1 {
                 std::path::Path::new(it.text.trim()).parent().map(|p| p.display().to_string()).unwrap_or_default()
             } else {
-                format!("{n} files")
+                trf("{n} files", &[("n", &n)])
             }
         }
         Kind::Text => {
@@ -477,15 +615,15 @@ impl App {
             .show_separator_line(false)
             .frame(Frame::new().inner_margin(Margin { left: 16, right: 12, top: 12, bottom: 6 }).fill(fill))
             .show(ui, |ui| {
-                ui.horizontal(|ui| {
+                row(ui, |ui| {
                     let actions_w = 4.0 * 40.0;
                     let w = (ui.available_width() - actions_w).max(200.0);
                     self.search_field(ui, w);
-                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                        if icons::icon_button(ui, Icon::Gear, "Settings").clicked() {
+                    far(ui, |ui| {
+                        if icons::icon_button(ui, Icon::Settings, "Settings").clicked() {
                             self.open_settings(SettingsPage::General);
                         }
-                        let import = icons::icon_button(ui, Icon::Plus, "Add files or a folder to search (you can also drop them on the window)");
+                        let import = icons::icon_button(ui, Icon::Add, "Add files or a folder to search (you can also drop them on the window)");
                         egui::Popup::menu(&import).show(|ui| {
                             if icons::menu_item(ui, Icon::File, "Add files…").clicked() {
                                 if let Some(f) = rfd::FileDialog::new().pick_files() {
@@ -499,7 +637,7 @@ impl App {
                             }
                         });
                         let view = self.cfg.view;
-                        let tip = format!("View: {} · click for {}", view.label(), view.next().label());
+                        let tip = trf("View: {view} · click for {next}", &[("view", &tr(view.label())), ("next", &tr(view.next().label()))]);
                         if icons::icon_button(ui, view_icon(view), &tip).clicked() {
                             self.set_view(view.next());
                         }
@@ -523,22 +661,34 @@ impl App {
             .fill(bg)
             .corner_radius(CornerRadius::same(10))
             .stroke(if focused_before { Stroke::new(1.5, accent()) } else { Stroke::new(1.0, ui.visuals().widgets.noninteractive.bg_stroke.color.gamma_multiply(0.0)) })
-            .inner_margin(Margin { left: 12, right: 6, top: 0, bottom: 0 })
+            .inner_margin(if i18n::rtl() { Margin { left: 6, right: 12, top: 0, bottom: 0 } } else { Margin { left: 12, right: 6, top: 0, bottom: 0 } })
             .show(ui, |ui| {
                 ui.set_width(width - 18.0);
                 ui.set_height(40.0);
-                ui.horizontal_centered(|ui| {
+                ui.with_layout(row_layout(), |ui| {
                     icons::glyph(ui, Icon::Search, 16.0, ui.visuals().weak_text_color());
                     let hint = match &self.backend {
                         BackendState::Ready { images: true, .. } => "Search text and images by meaning…",
                         BackendState::Ready { .. } => "Search by words or meaning…",
                         _ => "Search your clipboard…",
                     };
+                    // Arabic is shown in reading order (the cursor still follows typing order).
+                    let mut layouter = |ui: &Ui, text: &dyn egui::TextBuffer, _wrap: f32| {
+                        let color = ui.visuals().text_color();
+                        let job = if bidi::has_rtl(text.as_str()) {
+                            bidi::job(text.as_str(), FontId::proportional(16.0), color)
+                        } else {
+                            LayoutJob::simple_singleline(text.as_str().to_string(), FontId::proportional(16.0), color)
+                        };
+                        ui.fonts_mut(|f| f.layout_job(job))
+                    };
                     let te = egui::TextEdit::singleline(&mut self.query)
                         .id(search_id())
                         .frame(Frame::NONE)
-                        .hint_text(hint)
+                        .hint_text(txt(tr(hint), 16.0, Some(ui.visuals().weak_text_color())))
                         .font(FontId::proportional(16.0))
+                        .align(if i18n::rtl() { Align2::RIGHT_CENTER } else { Align2::LEFT_CENTER })
+                        .layouter(&mut layouter)
                         .desired_width((ui.available_width() - 130.0).max(80.0));
                     let resp = ui.add(te);
                     if self.focus_search.swap(false, Ordering::SeqCst) {
@@ -548,13 +698,13 @@ impl App {
                         self.query_changed = Some(Instant::now());
                         self.dirty = true;
                     }
-                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                    far(ui, |ui| {
                         // Search mode, quiet until needed.
                         let mode = self.cfg.search_mode;
                         let non_default = mode != SearchMode::Hybrid;
-                        let b = mode_button(ui, mode_label(mode), non_default);
+                        let b = mode_button(ui, tr(mode_label(mode)), non_default);
                         egui::Popup::menu(&b).show(|ui| {
-                            ui.set_min_width(340.0);
+                            ui.set_width(MODE_MENU_W);
                             ui.spacing_mut().item_spacing.y = 2.0;
                             for m in [SearchMode::Hybrid, SearchMode::Semantic, SearchMode::Keyword] {
                                 if mode_option(ui, m, mode == m).clicked() {
@@ -577,7 +727,7 @@ impl App {
     }
 
     fn filter_chips(&mut self, ui: &mut Ui) {
-        ui.horizontal(|ui| {
+        row(ui, |ui| {
             ui.spacing_mut().item_spacing.x = 4.0;
             for f in Filter::ALL {
                 let n = self.items.iter().filter(|i| f.accepts(i)).count();
@@ -587,9 +737,7 @@ impl App {
                     continue;
                 }
                 let (fg, weak) = if selected { (accent(), accent().gamma_multiply(0.75)) } else { (ui.visuals().text_color(), ui.visuals().weak_text_color()) };
-                let mut job = LayoutJob::default();
-                job.append(f.label(), 0.0, TextFormat { font_id: FontId::proportional(13.5), color: fg, ..Default::default() });
-                job.append(&format!("  {n}"), 0.0, TextFormat { font_id: FontId::proportional(12.0), color: weak, ..Default::default() });
+                let job = pill_job(tr(f.label()), 13.5, fg, Some((n.to_string(), weak)));
                 if icons::pill(ui, filter_icon(f), job, accent(), selected).clicked() {
                     self.filter = f;
                     self.dirty = true;
@@ -597,10 +745,11 @@ impl App {
             }
             self.tag_chips(ui);
             if !self.query.trim().is_empty() {
-                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                far(ui, |ui| {
                     ui.add_space(4.0);
                     let n = self.results.len();
-                    ui.label(RichText::new(format!("{n} {}", if n == 1 { "result" } else { "results" })).size(12.5).color(ui.visuals().weak_text_color()));
+                    let text = if n == 1 { tr("1 result").to_string() } else { trf("{n} results", &[("n", &n)]) };
+                    ui.label(txt(&text, 12.5, Some(ui.visuals().weak_text_color())));
                 });
             }
         });
@@ -629,22 +778,20 @@ impl App {
         for (t, n) in &shown {
             let sel = is_active(t);
             let c = tag_color(t);
-            let mut job = LayoutJob::default();
-            job.append(t, 0.0, TextFormat { font_id: FontId::proportional(13.0), color: if sel { c } else { ui.visuals().text_color() }, ..Default::default() });
-            job.append(&format!("  {n}"), 0.0, TextFormat { font_id: FontId::proportional(11.5), color: if sel { c.gamma_multiply(0.75) } else { ui.visuals().weak_text_color() }, ..Default::default() });
-            let r = icons::pill(ui, Icon::Tag, job, c, sel).on_hover_text(if sel { "Show all tags again" } else { "Only items with this tag · right-click for more" });
+            let job = pill_job(t, 13.0, if sel { c } else { ui.visuals().text_color() }, Some((n.to_string(), if sel { c.gamma_multiply(0.75) } else { ui.visuals().weak_text_color() })));
+            let r = tip(icons::pill(ui, Icon::Tag, job, c, sel), tr(if sel { "Show all tags again" } else { "Only items with this tag · right-click for more" }));
             if r.clicked() {
                 clicked = Some(t.clone());
             }
             r.context_menu(|ui| {
-                if ui.button(format!("Remove #{t} from all {n} items")).clicked() {
+                if ui.button(txt(&trf("Remove #{tag} from all {n} items", &[("tag", t), ("n", n)]), 14.0, None)).clicked() {
                     delete = Some(t.clone());
                 }
             });
         }
         let rest: Vec<&(String, usize)> = tags.iter().skip(SHOWN).filter(|(t, _)| !is_active(t)).collect();
         if !rest.is_empty() {
-            let more = mode_button(ui, &format!("+{} tags", rest.len()), false);
+            let more = mode_button(ui, &trf("+{n} tags", &[("n", &rest.len())]), false);
             egui::Popup::menu(&more).show(|ui| {
                 egui::ScrollArea::vertical().max_height(320.0).show(ui, |ui| {
                     for (t, n) in rest {
@@ -670,13 +817,13 @@ impl App {
         let mut add: Option<String> = None;
         let mut filter: Option<String> = None;
         let mut close_input = false;
-        ui.horizontal_wrapped(|ui| {
+        row_wrapped(ui, |ui| {
             ui.spacing_mut().item_spacing = Vec2::new(6.0, 6.0);
             for t in &it.tags {
                 let c = tag_color(t);
                 Frame::new().fill(c.gamma_multiply(if ui.visuals().dark_mode { 0.25 } else { 0.13 })).corner_radius(CornerRadius::same(12)).inner_margin(Margin { left: 10, right: 4, top: 2, bottom: 2 }).show(ui, |ui| {
                     ui.spacing_mut().item_spacing.x = 2.0;
-                    if ui.add(egui::Label::new(RichText::new(format!("# {t}")).size(12.5).color(c)).sense(Sense::click())).on_hover_text("Show only items with this tag").clicked() {
+                    if tip(ui.add(egui::Label::new(txt(&format!("# {t}"), 12.5, Some(c))).sense(Sense::click())), tr("Show only items with this tag")).clicked() {
                         filter = Some(t.clone());
                     }
                     if icon_button_ex(ui, Icon::Close, "Remove tag", Vec2::splat(18.0), 8.0, None, Some(c)).clicked() {
@@ -692,7 +839,7 @@ impl App {
                 // lost focus a frame later, when the key is no longer "pressed".
                 let enter = ui.memory(|m| m.has_focus(id)) && ui.input(|i| i.key_pressed(Key::Enter));
                 let (_, text) = self.tag_input.as_mut().unwrap();
-                let r = ui.add(egui::TextEdit::singleline(text).id(id).hint_text("tag, another…").desired_width(150.0).font(FontId::proportional(13.0)));
+                let r = ui.add(egui::TextEdit::singleline(text).id(id).hint_text(txt(tr("tag, another…"), 13.0, None)).desired_width(150.0).font(FontId::proportional(13.0)));
                 if std::mem::take(&mut self.tag_focus) || enter {
                     r.request_focus();
                 }
@@ -709,15 +856,14 @@ impl App {
                 let mut suggestions = known.iter().filter(|(k, _)| !it.has_tag(k) && (typed.is_empty() || k.to_lowercase().starts_with(&typed))).take(5).peekable();
                 if suggestions.peek().is_some() {
                     for (k, _) in suggestions {
-                        if ui.add(egui::Button::new(RichText::new(format!("+ {k}")).size(12.0).color(tag_color(k))).frame_when_inactive(false)).clicked() {
+                        if ui.add(egui::Button::new(txt(&format!("+ {k}"), 12.0, Some(tag_color(k)))).frame_when_inactive(false)).clicked() {
                             add = Some(k.clone());
                         }
                     }
                 }
             } else {
-                let mut job = LayoutJob::default();
-                job.append(if it.tags.is_empty() { "Add tag" } else { "Tag" }, 0.0, TextFormat { font_id: FontId::proportional(12.5), color: ui.visuals().weak_text_color(), ..Default::default() });
-                if icons::pill(ui, Icon::Plus, job, accent(), false).on_hover_text(hint("Add a tag", &self.cfg.keys.tag)).clicked() {
+                let job = pill_job(tr(if it.tags.is_empty() { "Add tag" } else { "Tag" }), 12.5, ui.visuals().weak_text_color(), None);
+                if tip(icons::pill(ui, Icon::Add, job, accent(), false), &hint("Add a tag", &self.cfg.keys.tag)).clicked() {
                     self.tag_input = Some((it.id, String::new()));
                     self.tag_focus = true;
                 }
@@ -740,19 +886,19 @@ impl App {
 
     pub(super) fn model_status(&self) -> (Color32, String) {
         match (&self.backend, &self.cfg.backend) {
-            (BackendState::Loading, _) => (AMBER, "Loading search model…".into()),
-            (BackendState::Ready { .. }, EmbedBackend::SigLip { repo }) => (GREEN, format!("Built-in · {}", repo.rsplit('/').next().unwrap_or(repo))),
+            (BackendState::Loading, _) => (AMBER, tr("Loading search model…").into()),
+            (BackendState::Ready { .. }, EmbedBackend::SigLip { repo }) => (GREEN, trf("Built-in · {model}", &[("model", &repo.rsplit('/').next().unwrap_or(repo))])),
             (BackendState::Ready { .. }, EmbedBackend::Server(s)) => {
                 let name = if !s.model.trim().is_empty() {
                     s.model.trim().to_string()
                 } else {
-                    self.model_list.found.default.clone().filter(|d| !d.is_empty()).unwrap_or_else(|| format!("{} (default model)", domain(&s.base_url)))
+                    self.model_list.found.default.clone().filter(|d| !d.is_empty()).unwrap_or_else(|| trf("{server} (default model)", &[("server", &domain(&s.base_url))]))
                 };
                 (GREEN, name)
             }
-            (BackendState::Off, EmbedBackend::None) => (Color32::GRAY, "Words only · set up meaning search".into()),
-            (BackendState::Off, _) => (RED, "Search model unavailable · fix in Settings".into()),
-            (BackendState::Ready { .. }, EmbedBackend::None) => (Color32::GRAY, "Words only".into()),
+            (BackendState::Off, EmbedBackend::None) => (Color32::GRAY, tr("Words only · set up meaning search").into()),
+            (BackendState::Off, _) => (RED, tr("Search model unavailable · fix in Settings").into()),
+            (BackendState::Ready { .. }, EmbedBackend::None) => (Color32::GRAY, tr("Words only").into()),
         }
     }
 
@@ -762,22 +908,21 @@ impl App {
             .show_separator_line(false)
             .frame(Frame::new().inner_margin(Margin::symmetric(16, 6)).fill(fill))
             .show(ui, |ui| {
-                ui.horizontal(|ui| {
+                row(ui, |ui| {
                     let weak = ui.visuals().weak_text_color();
                     let (dot, text) = self.model_status();
                     let color = if dot == Color32::GRAY { weak } else { dot };
-                    let mut job = LayoutJob::default();
-                    job.append(&text, 0.0, TextFormat { font_id: FontId::proportional(12.0), color, ..Default::default() });
-                    let r = icons::pill(ui, Icon::Dot, job, color, false).on_hover_text("Search model: click to change");
+                    let job = pill_job(&text, 12.0, color, None);
+                    let r = tip(icons::pill(ui, Icon::Dot, job, color, false), tr("Search model: click to change"));
                     if r.clicked() {
                         self.open_settings(SettingsPage::Search);
                     }
                     if self.queue > 0 {
                         ui.add(egui::Spinner::new().size(11.0).color(weak));
-                        ui.label(RichText::new(format!("Indexing · {} left", self.queue)).size(12.0).color(weak));
+                        ui.label(txt(&trf("Indexing · {n} left", &[("n", &self.queue)]), 12.0, Some(weak)));
                     }
                     if !self.status.is_empty() {
-                        ui.label(RichText::new(&self.status).size(12.0).color(weak));
+                        ui.label(txt(tr(&self.status), 12.0, Some(weak)));
                     }
                     if !self.flags.enabled.load(Ordering::SeqCst) {
                         chip(ui, "⏸ Recording paused", AMBER);
@@ -785,17 +930,15 @@ impl App {
                     if let Some((e, _)) = &self.error {
                         icons::glyph(ui, Icon::Warning, 13.0, RED);
                         let r = ui.add(egui::Label::new(RichText::new(e.as_str()).size(12.0).color(RED)).truncate().sense(Sense::click()));
-                        if r.on_hover_text("Click to dismiss").clicked() {
+                        if tip(r, tr("Click to dismiss")).clicked() {
                             self.error = None;
                         }
                     }
-                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                    far(ui, |ui| {
                         let pinned = self.items.iter().filter(|i| i.pinned).count();
-                        let mut s = format!("{} items", self.items.len());
-                        if pinned > 0 {
-                            s.push_str(&format!(" · {pinned} pinned"));
-                        }
-                        ui.label(RichText::new(s).size(12.0).color(weak));
+                        let n = self.items.len();
+                        let s = if pinned > 0 { trf("{n} items · {p} pinned", &[("n", &n), ("p", &pinned)]) } else { trf("{n} items", &[("n", &n)]) };
+                        ui.label(txt(&s, 12.0, Some(weak)));
                     });
                 });
             });
@@ -804,8 +947,10 @@ impl App {
     /// Everything below the top bar: list, grid or list + details, per the view mode.
     fn main_area(&mut self, ui: &mut Ui) {
         let fill = ui.visuals().panel_fill;
+        // Panels swap sides right to left: the list starts on the reading side.
+        let (start, end) = if i18n::rtl() { (egui::Panel::right("list"), egui::Panel::left("details")) } else { (egui::Panel::left("list"), egui::Panel::right("details")) };
         if self.cfg.view == ViewMode::Detail {
-            egui::Panel::left("list")
+            start
                 .resizable(true)
                 .show_separator_line(false)
                 .default_size(ui.available_width() * 0.42)
@@ -820,7 +965,7 @@ impl App {
         }
         if self.details_open && self.selected.is_some() {
             let detail_fill = ui.visuals().extreme_bg_color;
-            egui::Panel::right("details")
+            end
                 .resizable(true)
                 .show_separator_line(false)
                 .default_size(ui.available_width() * 0.45)
@@ -854,6 +999,7 @@ impl App {
                     self.copy(id);
                 }
                 ItemAction::Delete(id) => self.delete(id),
+                ItemAction::Pin(id) => self.toggle_pin(id),
                 ItemAction::Open(id) => {
                     self.selected = Some(id);
                     self.details_open = true;
@@ -941,8 +1087,10 @@ impl App {
                     Line::Header(label, n) => {
                         let p = ui.painter();
                         let weak = ui.visuals().weak_text_color();
-                        p.text(Pos2::new(rect.left() + 12.0, rect.bottom() - 7.0), Align2::LEFT_BOTTOM, label.to_uppercase(), FontId::proportional(11.5), weak);
-                        p.text(Pos2::new(rect.right() - 12.0, rect.bottom() - 7.0), Align2::RIGHT_BOTTOM, n.to_string(), FontId::proportional(11.5), weak.gamma_multiply(0.7));
+                        let (label_x, count_x) = if i18n::rtl() { (rect.right() - 12.0, rect.left() + 12.0) } else { (rect.left() + 12.0, rect.right() - 12.0) };
+                        paint_text(ui, p, Pos2::new(label_x, rect.bottom() - 7.0), start_anchor(egui::Align::Max), &tr(label).to_uppercase(), FontId::proportional(11.5), weak);
+                        let end = if i18n::rtl() { Align2::LEFT_BOTTOM } else { Align2::RIGHT_BOTTOM };
+                        p.text(Pos2::new(count_x, rect.bottom() - 7.0), end, n.to_string(), FontId::proportional(11.5), weak.gamma_multiply(0.7));
                     }
                     Line::Row(r) => {
                         let hit = &results[*r];
@@ -959,14 +1107,19 @@ impl App {
                         }
                         if hot {
                             // Hover actions replace the time at the right edge.
-                            let mut buttons = vec![(Icon::Trash, "Delete", ItemAction::Delete(it.id)), (Icon::Copy, "Copy", ItemAction::Copy(it.id))];
+                            let pin = if it.pinned { (Icon::PinFilled, "Unpin") } else { (Icon::Pin, "Pin") };
+                            let mut buttons = vec![
+                                (Icon::Delete, "Delete", ItemAction::Delete(it.id)),
+                                (pin.0, pin.1, ItemAction::Pin(it.id)),
+                                (Icon::Copy, "Copy", ItemAction::Copy(it.id)),
+                            ];
                             if can_open {
-                                buttons.push((Icon::Expand, "Open details", ItemAction::Open(it.id)));
+                                buttons.push((Icon::Open, "Open details", ItemAction::Open(it.id)));
                             }
                             let size = 28.0;
                             let mut x = rect.right() - 8.0 - buttons.len() as f32 * (size + 2.0);
                             for (icon, tip, action) in buttons {
-                                let b = Rect::from_min_size(Pos2::new(x, rect.center().y - size / 2.0), Vec2::splat(size));
+                                let b = flip(rect, Rect::from_min_size(Pos2::new(x, rect.center().y - size / 2.0), Vec2::splat(size)));
                                 if icon_button_at(ui, b, egui::Id::unique(("row-action", it.id, tip)), icon, tip).clicked() {
                                     actions.push(action);
                                 }
@@ -1024,6 +1177,8 @@ impl App {
             let last = (((viewport.max.y / pitch).ceil() as usize + 1) * cols).min(results.len());
             for (r, hit) in results.iter().enumerate().take(last).skip(first) {
                 let (row, col) = (r / cols, r % cols);
+                // Cards fill from the reading-start side.
+                let col = if i18n::rtl() { cols - 1 - col } else { col };
                 let rect = Rect::from_min_size(Pos2::new(origin.x + col as f32 * (card_w + gap), origin.y + row as f32 * pitch + 2.0), Vec2::new(card_w, card_h));
                 let it = &items[hit.idx];
                 let thumb = thumb_for(it, thumbs, loader);
@@ -1039,11 +1194,13 @@ impl App {
                 if hot {
                     let size = 30.0;
                     let y = rect.bottom() - CARD_FOOTER / 2.0 - size / 2.0;
-                    let at = |x: f32| Rect::from_min_size(Pos2::new(x, y), Vec2::splat(size));
+                    let at = |x: f32| flip(rect, Rect::from_min_size(Pos2::new(x, y), Vec2::splat(size)));
+                    let pin = if it.pinned { (Icon::PinFilled, "Unpin") } else { (Icon::Pin, "Pin") };
                     for (b, icon, tip, action) in [
-                        (at(rect.left() + 8.0), Icon::Trash, "Delete", ItemAction::Delete(it.id)),
+                        (at(rect.left() + 8.0), Icon::Delete, "Delete", ItemAction::Delete(it.id)),
+                        (at(rect.right() - 8.0 - 3.0 * size - 8.0), pin.0, pin.1, ItemAction::Pin(it.id)),
                         (at(rect.right() - 8.0 - 2.0 * size - 4.0), Icon::Copy, "Copy", ItemAction::Copy(it.id)),
-                        (at(rect.right() - 8.0 - size), Icon::Expand, "Open details", ItemAction::Open(it.id)),
+                        (at(rect.right() - 8.0 - size), Icon::Open, "Open details", ItemAction::Open(it.id)),
                     ] {
                         if icon_button_at(ui, b, egui::Id::unique(("card-action", it.id, tip)), icon, tip).clicked() {
                             actions.push(action);
@@ -1058,28 +1215,32 @@ impl App {
 
     fn empty_list(&mut self, ui: &mut Ui) {
         ui.add_space(60.0);
+        // "text", "links"… in English; the Arabic nouns need no case change.
+        let kind = if i18n::rtl() { tr(self.filter.label()).to_string() } else { self.filter.label().to_lowercase() };
         ui.vertical_centered(|ui| {
             let weak = ui.visuals().weak_text_color();
+            let strong = ui.visuals().strong_text_color();
             if self.items.is_empty() {
                 icons::glyph(ui, Icon::Clipboard, 40.0, weak);
                 ui.add_space(8.0);
-                ui.label(RichText::new("Your clipboard history will appear here").size(16.0).strong());
+                lbl(ui, "Your clipboard history will appear here", 16.0, strong);
                 ui.add_space(4.0);
-                ui.label(RichText::new(format!("Copy anything, or drop files here.\nPress {} to open this window from anywhere.", self.cfg.show_hotkey)).color(weak));
+                let help = trf("Copy anything, or drop files here.\nPress {key} to open this window from anywhere.", &[("key", &self.cfg.show_hotkey)]);
+                ui.label(txt(&help, 14.0, Some(weak)));
             } else if !self.query.trim().is_empty() {
                 icons::glyph(ui, Icon::Search, 36.0, weak);
                 ui.add_space(8.0);
-                ui.label(RichText::new(format!("No matches for “{}”", self.query.trim())).size(15.0).strong());
+                ui.label(txt(&trf("No matches for “{q}”", &[("q", &self.query.trim())]), 15.0, Some(strong)));
                 ui.add_space(4.0);
                 match (&self.backend, self.cfg.search_mode) {
                     (BackendState::Off, _) => {
-                        ui.label(RichText::new("Searching by meaning finds related words too.").color(weak));
-                        if ui.link("Set up meaning search").clicked() {
+                        lbl(ui, "Searching by meaning finds related words too.", 14.0, weak);
+                        if ui.link(txt(tr("Set up meaning search"), 14.0, None)).clicked() {
                             self.open_settings(SettingsPage::Search);
                         }
                     }
                     (_, SearchMode::Keyword) => {
-                        if ui.link("Try “Smart” search instead").clicked() {
+                        if ui.link(txt(tr("Try “Smart” search instead"), 14.0, None)).clicked() {
                             self.cfg.search_mode = SearchMode::Hybrid;
                             self.save_config();
                             self.query_changed = Some(Instant::now() - QUERY_DEBOUNCE);
@@ -1087,15 +1248,15 @@ impl App {
                         }
                     }
                     _ => {
-                        ui.label(RichText::new("Try fewer or different words.").color(weak));
+                        lbl(ui, "Try fewer or different words.", 14.0, weak);
                     }
                 }
-                if self.filter != Filter::All && ui.link(format!("Search all items, not just {}", self.filter.label().to_lowercase())).clicked() {
+                if self.filter != Filter::All && ui.link(txt(&trf("Search all items, not just {kind}", &[("kind", &kind)]), 14.0, None)).clicked() {
                     self.filter = Filter::All;
                     self.dirty = true;
                 }
             } else {
-                ui.label(RichText::new(format!("No {} yet", self.filter.label().to_lowercase())).color(weak));
+                ui.label(txt(&trf("No {kind} yet", &[("kind", &kind)]), 14.0, Some(weak)));
             }
         });
     }
@@ -1108,24 +1269,24 @@ impl App {
             self.empty_details(ui);
             return;
         };
-        // Header: what it is on the left, what you can do on the right.
-        ui.horizontal(|ui| {
-            if closeable && icons::icon_button_ex(ui, Icon::Back, "Close details (Esc)", Vec2::splat(30.0), 14.0, None, None).clicked() {
+        // Header: what it is at the reading start, what you can do at the far end.
+        row(ui, |ui| {
+            if closeable && icons::icon_button_ex(ui, Icon::Back, "Close details (Esc)", Vec2::splat(30.0), 20.0, None, None).clicked() {
                 self.details_open = false;
             }
             icons::chip(ui, icons::kind(it.kind), it.kind.label(), kind_color(it.kind));
             if it.pinned {
-                chip(ui, "★ Pinned", accent());
+                icons::chip(ui, Icon::PinFilled, "Pinned", accent());
             }
             if it.origin == Origin::Imported {
                 chip(ui, "📂 From your files", Color32::GRAY);
             }
-            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+            far(ui, |ui| {
                 let keys = self.cfg.keys.clone();
-                if icons::icon_button(ui, Icon::Trash, &hint("Delete", &keys.delete)).clicked() {
+                if icons::icon_button(ui, Icon::Delete, &hint("Delete", &keys.delete)).clicked() {
                     self.delete(it.id);
                 }
-                let (pin, tip) = if it.pinned { (Icon::Star, hint("Unpin", &keys.pin)) } else { (Icon::StarOutline, hint("Pin: keep forever", &keys.pin)) };
+                let (pin, tip) = if it.pinned { (Icon::PinFilled, hint("Unpin", &keys.pin)) } else { (Icon::Pin, hint("Pin: keep forever", &keys.pin)) };
                 let pin_color = it.pinned.then(accent);
                 if icon_button_ex(ui, pin, &tip, Vec2::splat(34.0), 16.0, None, pin_color).clicked() {
                     self.toggle_pin(it.id);
@@ -1142,16 +1303,19 @@ impl App {
                         reveal(p);
                     }
                 }
-                if it.kind == Kind::Link && icons::icon_button(ui, Icon::Globe, "Open in browser").clicked() {
+                if it.kind == Kind::Link && icons::icon_button(ui, Icon::Browser, "Open in browser").clicked() {
                     ctx.open_url(egui::OpenUrl::new_tab(it.text.trim()));
                 }
-                if icon_button_ex(ui, Icon::Copy, &format!("{} · or double-click in the list", hint("Copy", &keys.copy)), Vec2::new(44.0, 34.0), 16.0, Some(accent()), Some(Color32::WHITE)).clicked() {
+                let copy_tip = trf("{action} · or double-click in the list", &[("action", &hint("Copy", &keys.copy))]);
+                if icon_button_ex(ui, Icon::Copy, &copy_tip, Vec2::new(44.0, 34.0), 16.0, Some(accent()), Some(Color32::WHITE)).clicked() {
                     self.copy(it.id);
                 }
             });
         });
         ui.add_space(2.0);
-        ui.label(RichText::new(self.meta_line(&it)).size(12.5).color(ui.visuals().weak_text_color()));
+        let meta = self.meta_line(&it);
+        let weak = ui.visuals().weak_text_color();
+        row(ui, |ui| ui.label(txt(&meta, 12.5, Some(weak))));
         ui.add_space(6.0);
         self.tag_editor(ui, &it);
         ui.add_space(10.0);
@@ -1161,13 +1325,14 @@ impl App {
             Kind::Files => {
                 for line in it.text.lines() {
                     let p = PathBuf::from(line);
-                    ui.horizontal(|ui| {
+                    row(ui, |ui| {
                         icons::glyph(ui, if p.is_dir() { Icon::Folder } else { Icon::File }, 15.0, ui.visuals().text_color());
                         let name = p.file_name().map(|f| f.to_string_lossy().into_owned()).unwrap_or_else(|| line.to_string());
-                        if ui.link(RichText::new(name).size(14.5)).on_hover_text(line).clicked() {
+                        if tip(ui.link(txt(&name, 14.5, None)), line).clicked() {
                             reveal(&p);
                         }
-                        ui.label(RichText::new(p.parent().map(|x| x.display().to_string()).unwrap_or_default()).size(12.0).weak());
+                        let parent = p.parent().map(|x| x.display().to_string()).unwrap_or_default();
+                        ui.label(txt(&parent, 12.0, Some(ui.visuals().weak_text_color())));
                     });
                 }
             }
@@ -1182,6 +1347,11 @@ impl App {
                         ui.set_width(ui.available_width());
                         ui.add(egui::Label::new(RichText::new(d.shown.as_str()).monospace().size(13.0)).selectable(true));
                     });
+                } else if bidi::has_rtl(&d.shown) {
+                    // Arabic: wrapped in reading order (not selectable; copy takes all of it).
+                    let shown = d.shown.clone();
+                    let c = ui.visuals().text_color();
+                    bidi::paragraph(ui, &shown, FontId::proportional(15.0), c);
                 } else {
                     ui.add(egui::Label::new(RichText::new(d.shown.as_str()).size(15.0)).selectable(true).wrap());
                 }
@@ -1196,22 +1366,22 @@ impl App {
                 let d = self.detail_text(it);
                 let (c, w, code) = (d.chars, d.words, d.monospace);
                 if code {
-                    parts.push(format!("{} lines of code", it.text.lines().count()));
+                    parts.push(trf("{n} lines of code", &[("n", &it.text.lines().count())]));
                 }
-                parts.push(format!("{c} characters"));
-                parts.push(format!("{w} {}", if w == 1 { "word" } else { "words" }));
+                parts.push(trf("{n} characters", &[("n", &c)]));
+                parts.push(if w == 1 { tr("1 word").to_string() } else { trf("{n} words", &[("n", &w)]) });
             }
             Kind::Image => {
                 parts.push(format!("{} × {} px", it.width, it.height));
                 match it.ocr.as_deref() {
-                    Some(o) if !o.trim().is_empty() => parts.push("contains text".into()),
-                    Some(_) => parts.push("no text found".into()),
-                    None if self.cfg.ocr_images => parts.push("reading text…".into()),
+                    Some(o) if !o.trim().is_empty() => parts.push(tr("contains text").into()),
+                    Some(_) => parts.push(tr("no text found").into()),
+                    None if self.cfg.ocr_images => parts.push(tr("reading text…").into()),
                     None => {}
                 }
             }
             Kind::Link => parts.push(domain(&it.text).to_string()),
-            Kind::Files => parts.push(format!("{} item(s)", it.text.lines().count())),
+            Kind::Files => parts.push(trf("{n} item(s)", &[("n", &it.text.lines().count())])),
         }
         if let Some(src) = &it.source {
             parts.push(src.display().to_string());
@@ -1232,20 +1402,25 @@ impl App {
                 ui.add(egui::Spinner::new().size(22.0));
             }
             Preview::Missing => {
-                ui.label(RichText::new("The image file is missing.").color(ui.visuals().weak_text_color()));
+                lbl(ui, "The image file is missing.", 14.0, ui.visuals().weak_text_color());
             }
         }
         if let Some(t) = it.ocr.as_deref().filter(|t| !t.trim().is_empty()) {
             ui.add_space(16.0);
-            ui.horizontal(|ui| {
-                ui.label(RichText::new("TEXT IN IMAGE").size(11.5).color(ui.visuals().weak_text_color()));
+            row(ui, |ui| {
+                lbl(ui, "TEXT IN IMAGE", 11.5, ui.visuals().weak_text_color());
                 if icon_button_ex(ui, Icon::Copy, "Copy text", Vec2::splat(26.0), 13.0, None, None).clicked() {
                     self.flags.ignore_next.store(true, Ordering::SeqCst);
                     let _ = clipboard::copy_text(t);
-                    self.toast("Copied text");
+                    self.toast(tr("Copied text"));
                 }
             });
-            ui.add(egui::Label::new(RichText::new(t).size(14.0)).selectable(true));
+            if bidi::has_rtl(t) {
+                let c = ui.visuals().text_color();
+                bidi::paragraph(ui, t, FontId::proportional(14.0), c);
+            } else {
+                ui.add(egui::Label::new(RichText::new(t).size(14.0)).selectable(true));
+            }
         }
     }
 
@@ -1253,21 +1428,21 @@ impl App {
         ui.add_space(80.0);
         ui.vertical_centered(|ui| {
             let weak = ui.visuals().weak_text_color();
-            ui.label(RichText::new("Select an item to see it here").color(weak));
+            lbl(ui, "Select an item to see it here", 14.0, weak);
             ui.add_space(18.0);
             let k = &self.cfg.keys;
             let rows = [("Up+Down", "move"), (k.copy.as_str(), "copy & hide"), (k.pin.as_str(), "pin"), (k.tag.as_str(), "tag"), (k.delete.as_str(), "delete"), ("Escape", "clear / hide")];
             for (keys, what) in rows.into_iter().filter(|(k, _)| !k.trim().is_empty()) {
-                ui.horizontal(|ui| {
-                    // Keys right-aligned against a shared centre line, actions left-aligned after it.
+                row(ui, |ui| {
+                    // Keys hug a shared centre line from one side, actions from the other.
                     let half = ui.available_width() / 2.0;
-                    let (left, _) = ui.allocate_exact_size(Vec2::new(half - 8.0, 28.0), Sense::hover());
-                    let mut caps = ui.new_child(egui::UiBuilder::new().max_rect(left).layout(Layout::right_to_left(Align::Center)));
-                    let parts: Vec<&str> = keys.split('+').collect();
-                    let reversed = parts.iter().rev().copied().collect::<Vec<_>>().join("+");
-                    shortcut::keycaps(&mut caps, &reversed, false);
+                    let (first, _) = ui.allocate_exact_size(Vec2::new(half - 8.0, 28.0), Sense::hover());
+                    let mut caps = ui.new_child(egui::UiBuilder::new().max_rect(first).layout(far_layout()));
+                    // A right-to-left child lays the caps out backwards; undo that.
+                    let keys = if i18n::rtl() { keys.to_string() } else { keys.split('+').rev().collect::<Vec<_>>().join("+") };
+                    shortcut::keycaps(&mut caps, &keys, false);
                     ui.add_space(8.0);
-                    ui.label(RichText::new(what).size(12.5).color(weak));
+                    lbl(ui, what, 12.5, weak);
                 });
             }
         });
@@ -1287,7 +1462,7 @@ impl App {
                         .fill(if dark { Color32::from_gray(235) } else { Color32::from_gray(40) })
                         .corner_radius(CornerRadius::same(18))
                         .inner_margin(Margin::symmetric(16, 8))
-                        .show(ui, |ui| ui.label(RichText::new(t.as_str()).color(if dark { Color32::from_gray(20) } else { Color32::WHITE })));
+                        .show(ui, |ui| ui.label(txt(t.as_str(), 14.0, Some(if dark { Color32::from_gray(20) } else { Color32::WHITE }))));
                 });
             ctx.request_repaint_after(Duration::from_millis(200));
         }
@@ -1318,15 +1493,18 @@ fn paint_row(ui: &Ui, rect: Rect, hot: bool, it: &Item, hit: &Hit, thumb: Option
     let v = ui.visuals();
     let p = ui.painter_at(rect);
     let a = accent();
+    // Laid out left to right, then mirrored for Arabic.
+    let m = |r: Rect| flip(rect, r);
+    let rtl = i18n::rtl();
     if selected {
         p.rect_filled(rect, CornerRadius::same(8), a.gamma_multiply(if v.dark_mode { 0.22 } else { 0.12 }));
-        p.rect_filled(Rect::from_min_size(rect.min + Vec2::new(0.0, 8.0), Vec2::new(3.0, rect.height() - 16.0)), CornerRadius::same(2), a);
+        p.rect_filled(m(Rect::from_min_size(rect.min + Vec2::new(0.0, 8.0), Vec2::new(3.0, rect.height() - 16.0))), CornerRadius::same(2), a);
     } else if hot {
         p.rect_filled(rect, CornerRadius::same(8), v.widgets.hovered.weak_bg_fill.gamma_multiply(0.6));
     }
 
     let av = if compact { 26.0 } else { 38.0 };
-    let av_rect = Rect::from_min_size(Pos2::new(rect.left() + 12.0, rect.center().y - av / 2.0), Vec2::splat(av));
+    let av_rect = m(Rect::from_min_size(Pos2::new(rect.left() + 12.0, rect.center().y - av / 2.0), Vec2::splat(av)));
     match thumb {
         Some(t) => {
             let s = t.size_vec2();
@@ -1349,41 +1527,44 @@ fn paint_row(ui: &Ui, rect: Rect, hot: bool, it: &Item, hit: &Hit, thumb: Option
         }
     }
 
-    let x = av_rect.right() + 12.0;
-    let right_w = if hot { 104.0 } else { 64.0 };
+    let x = rect.left() + 12.0 + av + 12.0;
+    let right_w = if hot { 134.0 } else { 64.0 };
     let text_w = (rect.right() - x - right_w - 8.0).max(40.0);
+    // The text column, mirrored with the rest; lines start at its reading edge.
+    let column = m(Rect::from_min_size(Pos2::new(x, rect.top()), Vec2::new(text_w, rect.height())));
     let title_color = v.strong_text_color();
     let weak = v.weak_text_color();
     let sub = if compact { String::new() } else { subtitle(it) };
     let title = row_title(it);
-    let title = if title.is_empty() { "(empty)".to_string() } else { title };
+    let title = if title.is_empty() { tr("(empty)").to_string() } else { title };
 
-    let title_job = highlighted(&title, terms, FontId::proportional(14.0), title_color, text_w, 1);
-    let tg = ui.fonts_mut(|f| f.layout_job(title_job));
+    let tg = one_line(ui, &title, terms, FontId::proportional(14.0), title_color, text_w);
     // One line sits on the row's midline, beside the icon; two lines share it.
     let title_y = if sub.is_empty() { rect.center().y - tg.size().y / 2.0 } else { rect.top() + 10.0 };
-    p.galley(Pos2::new(x, title_y), tg, title_color);
+    let line_x = |w: f32| if rtl { column.right() - w } else { column.left() };
+    p.galley(Pos2::new(line_x(tg.size().x), title_y), tg, title_color);
     if !sub.is_empty() {
-        let sg = ui.fonts_mut(|f| f.layout_job(highlighted(&sub, terms, FontId::proportional(12.5), weak, text_w, 1)));
-        p.galley(Pos2::new(x, rect.top() + 32.0), sg, weak);
+        let sg = one_line(ui, &sub, terms, FontId::proportional(12.5), weak, text_w);
+        p.galley(Pos2::new(line_x(sg.size().x), rect.top() + 32.0), sg, weak);
     }
 
     if hot {
         return;
     }
-    // Right edge: time, then pinned star and relevance.
-    let rx = rect.right() - 12.0;
-    let one_line = compact || sub.is_empty();
-    let time_y = if one_line { rect.center().y } else { rect.top() + 18.0 };
-    p.text(Pos2::new(rx, time_y), Align2::RIGHT_CENTER, row_time(it.created), FontId::proportional(11.5), weak);
-    let mut ix = rx;
-    // On one line the badges sit left of the time instead of under it.
-    let iy = if one_line { rect.center().y } else { rect.top() + 40.0 };
-    if one_line {
-        ix -= 46.0;
+    // Far edge: time, then pinned star and relevance.
+    let one_line_row = compact || sub.is_empty();
+    let time_y = if one_line_row { rect.center().y } else { rect.top() + 18.0 };
+    let time_at = m(Rect::from_min_size(Pos2::new(rect.right() - 12.0, time_y), Vec2::ZERO)).min;
+    let time_anchor = if rtl { Align2::LEFT_CENTER } else { Align2::RIGHT_CENTER };
+    paint_text(ui, &p, time_at, time_anchor, &row_time(it.created), FontId::proportional(11.5), weak);
+    let mut ix = rect.right() - 12.0;
+    // On one line the badges sit before the time instead of under it.
+    let iy = if one_line_row { rect.center().y } else { rect.top() + 40.0 };
+    if one_line_row {
+        ix -= 56.0;
     }
     if it.pinned {
-        icons::paint(&p, Rect::from_center_size(Pos2::new(ix - 6.5, iy), Vec2::splat(13.0)), Icon::Star, a);
+        icons::paint(&p, m(Rect::from_center_size(Pos2::new(ix - 6.5, iy), Vec2::splat(13.0))), Icon::PinFilled, a);
         ix -= 18.0;
     }
     if let Some(s) = hit.semantic {
@@ -1392,22 +1573,40 @@ fn paint_row(ui: &Ui, rect: Rect, hot: bool, it: &Item, hit: &Hit, thumb: Option
         let level = if ratio > 0.93 { 3 } else if ratio > 0.8 { 2 } else { 1 };
         for b in 0..3 {
             let h = 4.0 + b as f32 * 3.0;
-            let r = Rect::from_min_size(Pos2::new(ix - 18.0 + b as f32 * 6.0, iy + 6.0 - h), Vec2::new(4.0, h));
+            let r = m(Rect::from_min_size(Pos2::new(ix - 18.0 + b as f32 * 6.0, iy + 6.0 - h), Vec2::new(4.0, h)));
             p.rect_filled(r, CornerRadius::same(1), if b < level { a } else { weak.gamma_multiply(0.35) });
         }
     }
 }
 
+/// One line of item text cut to `width`, query terms highlighted; Arabic in
+/// reading order.
+fn one_line(ui: &Ui, text: &str, terms: &[String], font: FontId, color: Color32, width: f32) -> Arc<egui::Galley> {
+    if bidi::has_rtl(text) {
+        let first = text.lines().next().unwrap_or("");
+        // In the Arabic UI a line with Arabic in it reads right to left, even when
+        // it starts with a Latin tag or word.
+        let base = if i18n::rtl() { Some(true) } else { None };
+        bidi::lines(ui, first, terms, font, color, accent().gamma_multiply(0.28), width, 1, base).into_iter().next().map(|(g, _)| g).unwrap_or_else(|| ui.fonts_mut(|f| f.layout_no_wrap(String::new(), FontId::proportional(12.0), color)))
+    } else {
+        ui.fonts_mut(|f| f.layout_job(highlighted(text, terms, font, color, width, 1)))
+    }
+}
+
 /// Height of the action strip a card shows while hovered.
 const CARD_FOOTER: f32 = 42.0;
+/// Height of a card's tags row, above the action strip.
+const TAG_ROW: f32 = 28.0;
 
 /// A grid card: kind and age on top, as much of the content as fits below,
-/// and delete / copy / open buttons in a footer strip while hovered.
+/// and delete / pin / copy / open buttons in a footer strip while hovered.
 fn paint_card(ui: &Ui, rect: Rect, hot: bool, it: &Item, thumb: Option<TextureHandle>, selected: bool, terms: &[String]) {
     let v = ui.visuals();
     let a = accent();
     let radius = CornerRadius::same(10);
     let p = ui.painter();
+    let m = |r: Rect| flip(rect, r);
+    let rtl = i18n::rtl();
     let shadow = egui::epaint::Shadow { offset: [0, 2], blur: if hot { 14 } else { 8 }, spread: 0, color: Color32::from_black_alpha(match (v.dark_mode, hot) {
         (true, _) => 90,
         (false, true) => 34,
@@ -1416,49 +1615,53 @@ fn paint_card(ui: &Ui, rect: Rect, hot: bool, it: &Item, thumb: Option<TextureHa
     p.add(shadow.as_shape(rect, radius));
     p.rect_filled(rect, radius, v.extreme_bg_color);
 
-    // Header: kind chip on the left, pin and age on the right.
+    // Header: kind chip at the reading start, pin and age at the far end.
     let pad = 16.0;
     let c = kind_color(it.kind);
-    let cg = ui.fonts_mut(|f| f.layout_no_wrap(it.kind.label().to_string(), FontId::proportional(12.5), c));
-    let chip_rect = Rect::from_min_size(Pos2::new(rect.left() + pad, rect.top() + 14.0), Vec2::new(cg.size().x + 12.0 + 6.0 + 16.0, cg.size().y + 6.0));
+    let cg = ui.fonts_mut(|f| f.layout_job(bidi::job(tr(it.kind.label()), FontId::proportional(12.5), c)));
+    let chip_rect = m(Rect::from_min_size(Pos2::new(rect.left() + pad, rect.top() + 14.0), Vec2::new(cg.size().x + 12.0 + 6.0 + 16.0, cg.size().y + 6.0)));
     p.rect_filled(chip_rect, CornerRadius::same(7), c.gamma_multiply(if v.dark_mode { 0.25 } else { 0.13 }));
     icons::paint_icon_text(p, chip_rect.shrink2(Vec2::new(8.0, 3.0)), icons::kind(it.kind), 12.0, cg, c);
     let weak = v.weak_text_color();
-    let tr = p.text(Pos2::new(rect.right() - pad, chip_rect.center().y), Align2::RIGHT_CENTER, ago(it.created), FontId::proportional(12.0), weak);
+    let age_at = m(Rect::from_min_size(Pos2::new(rect.right() - pad, chip_rect.center().y), Vec2::ZERO)).min;
+    let age = paint_text(ui, p, age_at, if rtl { Align2::LEFT_CENTER } else { Align2::RIGHT_CENTER }, &ago(it.created), FontId::proportional(12.0), weak);
     if it.pinned {
-        let star = Rect::from_center_size(Pos2::new(tr.left() - 12.0, chip_rect.center().y), Vec2::splat(12.0));
-        icons::paint(p, star, Icon::Star, a);
+        let x = if rtl { age.right() + 12.0 } else { age.left() - 12.0 };
+        icons::paint(p, Rect::from_center_size(Pos2::new(x, chip_rect.center().y), Vec2::splat(12.0)), Icon::PinFilled, a);
     }
 
-    // Tags along the bottom edge, where the hover footer goes.
-    let tags_h = if it.tags.is_empty() || hot { 0.0 } else { 26.0 };
-    if tags_h > 0.0 {
-        let tp = ui.painter_at(Rect::from_min_max(Pos2::new(rect.left() + pad, rect.bottom() - 34.0), Pos2::new(rect.right() - pad, rect.bottom() - 8.0)));
-        let mut x = rect.left() + pad;
+    // Bottom up: the button strip (empty until hovered), the tags row above it
+    // when there are tags, then the content. Hovering only fills the strip,
+    // so nothing else moves, shrinks or hides.
+    let strip_top = rect.bottom() - CARD_FOOTER;
+    let tags_top = if it.tags.is_empty() { strip_top } else { strip_top - TAG_ROW };
+    if !it.tags.is_empty() {
+        let row = Rect::from_min_max(Pos2::new(rect.left() + pad, tags_top), Pos2::new(rect.right() - pad, strip_top - 2.0));
+        let tp = ui.painter_at(row);
+        let mut x = row.left();
         for t in &it.tags {
             let c = tag_color(t);
-            let g = ui.fonts_mut(|f| f.layout_no_wrap(format!("# {t}"), FontId::proportional(11.5), c));
-            let r = Rect::from_min_size(Pos2::new(x, rect.bottom() - 32.0), g.size() + Vec2::new(14.0, 6.0));
+            let g = ui.fonts_mut(|f| f.layout_job(bidi::job(&format!("# {t}"), FontId::proportional(11.5), c)));
+            let r = flip(rect, Rect::from_min_size(Pos2::new(x, row.center().y - (g.size().y + 6.0) / 2.0), g.size() + Vec2::new(14.0, 6.0)));
             tp.rect_filled(r, CornerRadius::same(9), c.gamma_multiply(if v.dark_mode { 0.25 } else { 0.13 }));
+            x += r.width() + 6.0;
             tp.galley(r.min + Vec2::new(7.0, 3.0), g, c);
-            x = r.right() + 6.0;
         }
     }
-
-    // Body, clipped above the footer (or tags) while they show.
-    let bottom = rect.bottom() - if hot { CARD_FOOTER } else { 12.0 + tags_h };
+    let bottom = tags_top - 4.0;
     let body = Rect::from_min_max(Pos2::new(rect.left() + pad, chip_rect.bottom() + 12.0), Pos2::new(rect.right() - pad, bottom));
     let bp = ui.painter_at(body);
     match (it.kind, thumb) {
         (Kind::Image, Some(t)) => {
             let s = t.size_vec2();
             let k = (body.width() / s.x).min(body.height() / s.y).min(2.0);
-            let img = Rect::from_min_size(body.min, s * k);
+            let img = flip(body, Rect::from_min_size(body.min, s * k));
             egui::Image::new((t.id(), s * k)).corner_radius(6.0).paint_at(ui, img);
             bp.rect_stroke(img, CornerRadius::same(6), Stroke::new(1.0, weak.gamma_multiply(0.25)), egui::StrokeKind::Inside);
         }
         (Kind::Image, None) => {
-            bp.text(body.left_top(), Align2::LEFT_TOP, format!("{} × {}", it.width, it.height), FontId::proportional(13.0), weak);
+            let at = flip(body, Rect::from_min_size(body.left_top(), Vec2::ZERO)).min;
+            bp.text(at, if rtl { Align2::RIGHT_TOP } else { Align2::LEFT_TOP }, format!("{} × {}", it.width, it.height), FontId::proportional(13.0), weak);
         }
         _ => {
             let code = it.kind == Kind::Text && looks_like_code(&it.text.chars().take(600).collect::<String>());
@@ -1468,10 +1671,16 @@ fn paint_card(ui: &Ui, rect: Rect, hot: bool, it: &Item, thumb: Option<TextureHa
                 Kind::Files => it.text.lines().map(|l| std::path::Path::new(l).file_name().map(|f| f.to_string_lossy().into_owned()).unwrap_or_else(|| l.to_string())).collect::<Vec<_>>().join("\n"),
                 _ => it.text.lines().take(14).collect::<Vec<_>>().join("\n").chars().take(900).collect(),
             };
-            let text = if text.trim().is_empty() { "(empty)".to_string() } else { text };
+            let text = if text.trim().is_empty() { tr("(empty)").to_string() } else { text };
             let rows = ((body.height() / line_h).floor() as usize).max(1);
-            let g = ui.fonts_mut(|f| f.layout_job(highlighted(text.trim_end(), terms, font, color, body.width(), rows)));
-            bp.galley(body.min, g, color);
+            if bidi::has_rtl(&text) {
+                // Each line lines up with its own reading edge.
+                let lines = bidi::lines(ui, text.trim_end(), terms, font, color, a.gamma_multiply(0.28), body.width(), rows, None);
+                bidi::paint(&bp, body, lines, color, None);
+            } else {
+                let g = ui.fonts_mut(|f| f.layout_job(highlighted(text.trim_end(), terms, font, color, body.width(), rows)));
+                bp.galley(body.min, g, color);
+            }
         }
     }
 
@@ -1548,7 +1757,7 @@ impl eframe::App for App {
             let r = ctx.content_rect();
             let p = ctx.layer_painter(egui::LayerId::new(egui::Order::Foreground, egui::Id::unique("drop")));
             p.rect_filled(r, 0.0, Color32::from_black_alpha(160));
-            let g = ctx.fonts_mut(|f| f.layout_no_wrap("Drop to add to your searchable library".into(), FontId::proportional(22.0), Color32::WHITE));
+            let g = ctx.fonts_mut(|f| f.layout_job(bidi::job(tr("Drop to add to your searchable library"), FontId::proportional(22.0), Color32::WHITE)));
             let row = Rect::from_center_size(r.center(), Vec2::new(26.0 + 6.0 + g.size().x, g.size().y.max(26.0)));
             icons::paint_icon_text(&p, row, Icon::Folder, 26.0, g, Color32::WHITE);
         }

@@ -96,6 +96,22 @@ pub enum Density {
     Compact,
 }
 
+/// Interface language. Arabic also lays the window out right to left.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum Language {
+    English,
+    Arabic,
+}
+
+/// How clock times are shown. Items are stored in UTC either way.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum TimeFormat {
+    /// 14:30
+    H24,
+    /// 2:30 PM
+    H12,
+}
+
 /// In-app shortcuts, spelled like "Ctrl+P".
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
@@ -171,6 +187,8 @@ pub struct Config {
     /// Launch (hidden) when the user signs in.
     pub start_at_login: bool,
     pub keys: Keys,
+    pub language: Language,
+    pub time_format: TimeFormat,
 }
 
 impl Default for Config {
@@ -195,6 +213,8 @@ impl Default for Config {
             tray: false,
             start_at_login: false,
             keys: Keys::default(),
+            language: Language::English,
+            time_format: TimeFormat::H24,
         }
     }
 }
