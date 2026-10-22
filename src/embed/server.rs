@@ -219,7 +219,7 @@ pub fn list_models(base_url: &str, api_key: &str) -> Result<ServerModels> {
     if !key.is_empty() {
         req = req.header("Authorization", format!("Bearer {key}"));
     }
-    let default = match req.send_json(&json!({ "input": ["ping"], "encoding_format": "float" })) {
+    let default = match req.send_json(json!({ "input": ["ping"], "encoding_format": "float" })) {
         Ok(mut r) if r.status().is_success() => {
             let v: Value =
                 serde_json::from_str(&r.body_mut().read_to_string()?).unwrap_or_default();

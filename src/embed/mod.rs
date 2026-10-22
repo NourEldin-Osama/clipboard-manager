@@ -86,8 +86,10 @@ impl Embedding {
             return None;
         }
         let floats: Vec<f32> = body
-            .chunks_exact(4)
-            .map(|c| f32::from_le_bytes(c.try_into().unwrap()))
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .map(|c| f32::from_le_bytes(*c))
             .collect();
         let mut vs: Vec<Vec<f32>> = floats.chunks(dims.max(1)).map(|c| c.to_vec()).collect();
         match b[0] {

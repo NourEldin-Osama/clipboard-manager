@@ -556,7 +556,7 @@ impl App {
                     repo: SIGLIP_MODELS[0].repo.into(),
                 }
             }
-            _ => d.backend = EmbedBackend::Server(ServerConfig::embeddinggemma()),
+            _ => d.backend = EmbedBackend::Server(Box::new(ServerConfig::embeddinggemma())),
         }
         match &mut d.backend {
             EmbedBackend::None => note(ui, "Searching by words only. Turn on a model to also find items by meaning, e.g. “trip” finds “flight to Jeddah”."),

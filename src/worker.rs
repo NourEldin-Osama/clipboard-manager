@@ -217,7 +217,7 @@ impl State {
                 } else {
                     trf("Connecting to {host}…", &[("host", &cfg.base_url)])
                 }));
-                ServerEmbedder::new(cfg.clone()).and_then(|mut s| {
+                ServerEmbedder::new(cfg.as_ref().clone()).and_then(|mut s| {
                     // Probe once so misconfiguration shows up immediately.
                     s.embed_texts(&["ping".into()], TextRole::Query)?;
                     Ok(Some(Box::new(s) as Box<dyn Embedder>))

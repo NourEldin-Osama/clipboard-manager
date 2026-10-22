@@ -28,7 +28,7 @@ pub enum EmbedBackend {
     SigLip { repo: String },
     /// Any OpenAI-compatible `/v1/embeddings` server on this machine
     /// (llama.cpp `llama-server --embeddings`, Ollama, LM Studio, vLLM, ...).
-    Server(ServerConfig),
+    Server(Box<ServerConfig>),
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
