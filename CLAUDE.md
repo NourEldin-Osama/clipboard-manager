@@ -13,6 +13,7 @@ cargo test --config ci/fast-build.toml      # what CI runs; much faster from a c
 cargo test search::tests::hybrid_is_ordered_by_relevance   # one test
 cargo clippy --all-targets --config ci/fast-build.toml
 cargo check --target x86_64-pc-windows-gnu  # Windows-only code paths from Linux (needs mingw-w64 for ring's build script)
+prek run --all-files                        # every git hook: file checks, fmt, clippy -D warnings (see CONTRIBUTING.md)
 ```
 
 - Three tests are `#[ignore]` and need local assets: `OCR_DIR=… cargo test -- --ignored ocr_reads_text`,
@@ -82,7 +83,7 @@ server client with optional `llama-server` launcher), `import.rs` (files/folders
   tinted at runtime via `icons::paint`. Never hand-draw an icon or use emoji/font glyphs; show options from popular
   icon sets and let the maintainer pick. The app icon (`assets/app-icon/app.ico`, embedded by `build.rs`) is not chosen yet.
 - Panel frames must use opaque fills (nothing is painted beneath a panel; translucent fills show black).
-- Commit messages: no `Co-Authored-By` trailers.
+- Commit messages: no `Co-Authored-By` trailers (the prek `commit-msg` hook rejects them).
 
 ## Releases and CI
 
