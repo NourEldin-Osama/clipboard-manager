@@ -1,6 +1,6 @@
 name: Checks
 
-# Tests and lint for pull requests; no exe and no release (those run on main only).
+# Format, tests and lint for pull requests; no exe and no release (those run on main only).
 # Pushes to main run it too, only so that main holds a warm build cache: GitHub
 # lets a pull request use caches saved on main, not ones from other pull requests.
 on:
@@ -26,7 +26,10 @@ jobs:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
         with:
-          components: clippy
+          components: clippy, rustfmt
+      # First, because it needs no build and fails in seconds.
+      - name: Format
+        run: cargo fmt --check
       - uses: Swatinem/rust-cache@v2
         with:
           # Only main saves the cache; pull requests just restore it.
