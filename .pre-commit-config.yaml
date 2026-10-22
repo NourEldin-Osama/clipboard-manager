@@ -1,0 +1,56 @@
+# Git hooks, run by prek (https://prek.j178.dev); upstream pre-commit also works.
+# Set up once per clone:
+#   uv tool install prek
+#   prek install
+# Run every hook on every file: prek run --all-files
+default_install_hook_types: [pre-commit, commit-msg, pre-push]
+# Hooks without their own `stages` run only before a commit, not on the
+# commit message or before a push.
+default_stages: [pre-commit]
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      # Fonts and icons are third-party files, kept exactly as published.
+      - id: trailing-whitespace
+        args: [--markdown-linebreak-ext=md]
+        exclude: '^assets/(fonts|icons)/'
+      - id: end-of-file-fixer
+        exclude: '^assets/(fonts|icons)/'
+      - id: check-yaml
+      - id: check-toml
+      - id: check-merge-conflict
+      - id: check-case-conflict
+      - id: check-added-large-files
+      # The update signing key must never be committed. clipboard.rs is
+      # skipped: its secret-detection test contains a fake key header.
+      - id: detect-private-key
+        exclude: '^src/clipboard\.rs$'
+
+  - repo: local
+    hooks:
+      - id: cargo-fmt
+        name: cargo fmt
+        language: system
+        entry: cargo fmt --check
+        types: [rust]
+        pass_filenames: false
+      - id: cargo-clippy
+        name: cargo clippy
+        language: system
+        entry: cargo clippy --locked --all-targets --config ci/fast-build.toml -- -D warnings
+        files: '(\.rs|^Cargo\.(toml|lock)|^ci/fast-build\.toml)$'
+        pass_filenames: false
+      - id: cargo-test
+        name: cargo test
+        language: system
+        entry: cargo test --locked --config ci/fast-build.toml
+        files: '(\.rs|^Cargo\.(toml|lock)|^ci/fast-build\.toml)$'
+        pass_filenames: false
+        stages: [pre-push]
+      - id: no-co-authored-by
+        name: no Co-Authored-By trailer
+        language: pygrep
+        entry: '(?i)^co-authored-by:'
+        stages: [commit-msg]

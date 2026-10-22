@@ -24,6 +24,23 @@ Builds made on your own PC have no build number and never update themselves. The
 GitHub Actions on every push to `main` (see the README for cross-compiling from Linux). If the repo lives on a synced
 drive, keep the build cache elsewhere: `CARGO_TARGET_DIR=/some/local/dir cargo build`.
 
+## Git hooks
+
+The repo has [prek](https://prek.j178.dev) hooks in `.pre-commit-config.yaml` (upstream pre-commit also works).
+Set them up once per clone:
+
+```bash
+uv tool install prek
+prek install
+```
+
+- **Before each commit:** trailing whitespace and final newlines, YAML and TOML syntax, merge markers, large files,
+  private keys, `cargo fmt --check`, and `cargo clippy` with warnings as errors.
+- **On the commit message:** a `Co-Authored-By` trailer is rejected.
+- **Before each push:** `cargo test`.
+
+Run every hook on every file with `prek run --all-files`.
+
 ## Pull requests
 
 - Branch from `main` and open a pull request against it; checks (tests, lint) run on every pull request.
