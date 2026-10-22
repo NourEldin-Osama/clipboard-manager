@@ -17,9 +17,9 @@ chrono = { version = "0.4", default-features = false, features = ["clock", "std"
 directories = "6"
 eframe = { version = "0.37", default-features = false, features = ["accesskit", "clipboard", "default_fonts", "links", "system_fonts", "glow", "persistence", "wayland", "x11"] }
 egui = { version = "0.37", features = ["monochrome_emoji_fonts"] }
-# Renders the SVG icons in assets/icons.
 # Verifying downloaded updates (signature and checksum).
 ed25519-dalek = { version = "3", default-features = false }
+# Renders the SVG icons in assets/icons.
 egui_extras = { version = "0.37", default-features = false, features = ["svg"] }
 global-hotkey = "0.9"
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "bmp", "webp", "tiff"] }
