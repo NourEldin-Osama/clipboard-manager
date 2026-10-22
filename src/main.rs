@@ -37,7 +37,11 @@ fn main() -> eframe::Result {
         std::thread::sleep(std::time::Duration::from_millis(1500));
     }
     update::clean_up();
-    log::info!("clipboard-manager {} starting, data in {}", env!("CARGO_PKG_VERSION"), paths.root.display());
+    log::info!(
+        "clipboard-manager {} starting, data in {}",
+        env!("CARGO_PKG_VERSION"),
+        paths.root.display()
+    );
     // The window title is set before the app starts, so read the language now.
     let cfg = config::Config::load(&paths.config);
     i18n::set(cfg.language, cfg.time_format);
@@ -64,7 +68,9 @@ fn main() -> eframe::Result {
 fn init_logging(paths: &config::Paths) {
     let log_path = paths.root.join("clipboard-manager.log");
     let _ = std::fs::rename(&log_path, paths.root.join("clipboard-manager.old.log"));
-    let mut builder = env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info,winit=warn,wgpu=warn,eframe=warn"));
+    let mut builder = env_logger::Builder::from_env(
+        env_logger::Env::default().default_filter_or("info,winit=warn,wgpu=warn,eframe=warn"),
+    );
     if let Ok(file) = std::fs::File::create(&log_path) {
         builder.target(env_logger::Target::Pipe(Box::new(file)));
     }
@@ -74,7 +80,11 @@ fn init_logging(paths: &config::Paths) {
 
 fn icon() -> egui::IconData {
     let (rgba, n) = icon_rgba();
-    egui::IconData { rgba, width: n, height: n }
+    egui::IconData {
+        rgba,
+        width: n,
+        height: n,
+    }
 }
 
 /// A simple generated icon: a rounded clipboard in the accent colour. Also
@@ -87,7 +97,8 @@ pub fn icon_rgba() -> (Vec<u8>, u32) {
             let (fx, fy) = (x as f32, y as f32);
             let board = rounded(fx, fy, 10.0, 8.0, 54.0, 60.0, 8.0);
             let clip = rounded(fx, fy, 22.0, 3.0, 42.0, 14.0, 4.0);
-            let line = (18.0..46.0).contains(&fx) && [26.0, 36.0, 46.0].iter().any(|l| (fy - l).abs() < 2.5);
+            let line = (18.0..46.0).contains(&fx)
+                && [26.0, 36.0, 46.0].iter().any(|l| (fy - l).abs() < 2.5);
             let px = &mut rgba[((y * n + x) * 4) as usize..][..4];
             if clip {
                 px.copy_from_slice(&[230, 232, 255, 255]);

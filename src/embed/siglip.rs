@@ -5,10 +5,10 @@
 
 use std::path::Path;
 
+use super::siglip_model as siglip;
 use anyhow::{anyhow, Context, Result};
 use candle_core::{DType, Device, Tensor};
 use candle_nn::VarBuilder;
-use super::siglip_model as siglip;
 use image::DynamicImage;
 use tokenizers::Tokenizer;
 
@@ -40,7 +40,11 @@ impl SigLip {
             .unwrap_or(cfg.text_config.pad_token_id);
         // SAFETY: the weights file is not modified while mapped.
         let vb = unsafe {
-            VarBuilder::from_mmaped_safetensors(&[dir.join("model.safetensors")], DType::F32, &device)?
+            VarBuilder::from_mmaped_safetensors(
+                &[dir.join("model.safetensors")],
+                DType::F32,
+                &device,
+            )?
         };
         let model = siglip::Model::new(&cfg, vb)?;
         Ok(Self {
@@ -75,10 +79,16 @@ impl SigLip {
         let rgb = img
             .resize_exact(s, s, image::imageops::FilterType::Triangle)
             .to_rgb8();
-        let data: Vec<f32> = rgb.into_raw().into_iter().map(|p| p as f32 / 127.5 - 1.0).collect();
-        Ok(Tensor::from_vec(data, (s as usize, s as usize, 3), &self.device)?
-            .permute((2, 0, 1))?
-            .unsqueeze(0)?)
+        let data: Vec<f32> = rgb
+            .into_raw()
+            .into_iter()
+            .map(|p| p as f32 / 127.5 - 1.0)
+            .collect();
+        Ok(
+            Tensor::from_vec(data, (s as usize, s as usize, 3), &self.device)?
+                .permute((2, 0, 1))?
+                .unsqueeze(0)?,
+        )
     }
 }
 
@@ -107,7 +117,10 @@ impl Embedder for SigLip {
     fn embed_image(&mut self, img: &DynamicImage) -> Result<Embedding> {
         let px = self.preprocess(img)?;
         let feats = self.model.get_image_features(&px)?.to_vec2::<f32>()?;
-        Ok(Embedding::dense(feats.into_iter().next().unwrap_or_default(), 0))
+        Ok(Embedding::dense(
+            feats.into_iter().next().unwrap_or_default(),
+            0,
+        ))
     }
 }
 
@@ -122,10 +135,17 @@ mod tests {
         let dir = std::env::var("SIGLIP_DIR").expect("SIGLIP_DIR");
         let imgs = std::path::PathBuf::from(std::env::var("SIGLIP_IMAGES").expect("SIGLIP_IMAGES"));
         let mut m = SigLip::load(Path::new(&dir), "test").unwrap();
-        let cat = m.embed_image(&image::open(imgs.join("cat.jpg")).unwrap()).unwrap();
-        let car = m.embed_image(&image::open(imgs.join("car.jpg")).unwrap()).unwrap();
+        let cat = m
+            .embed_image(&image::open(imgs.join("cat.jpg")).unwrap())
+            .unwrap();
+        let car = m
+            .embed_image(&image::open(imgs.join("car.jpg")).unwrap())
+            .unwrap();
         let q = m
-            .embed_texts(&["a photo of a cat".into(), "a photo of a car".into()], TextRole::Query)
+            .embed_texts(
+                &["a photo of a cat".into(), "a photo of a car".into()],
+                TextRole::Query,
+            )
             .unwrap();
         let (qc, qr) = (&q[0], &q[1]);
         println!("cat-q: cat {:.3} car {:.3}", qc.score(&cat), qc.score(&car));

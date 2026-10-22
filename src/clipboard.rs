@@ -20,7 +20,9 @@ impl Captured {
     pub fn hash(&self) -> u64 {
         match self {
             Captured::Text(t) => fnv1a(t.as_bytes()),
-            Captured::Image(i) => fnv1a(i.as_raw()) ^ ((i.width() as u64) << 32 | i.height() as u64),
+            Captured::Image(i) => {
+                fnv1a(i.as_raw()) ^ ((i.width() as u64) << 32 | i.height() as u64)
+            }
             Captured::Files(f) => fnv1a(join_paths(f).as_bytes()),
             Captured::Skipped(_) => 0,
         }
@@ -28,7 +30,10 @@ impl Captured {
 }
 
 pub fn join_paths(f: &[PathBuf]) -> String {
-    f.iter().map(|p| p.to_string_lossy()).collect::<Vec<_>>().join("\n")
+    f.iter()
+        .map(|p| p.to_string_lossy())
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 #[derive(Default)]
@@ -185,10 +190,13 @@ fn is_sensitive() -> bool {
         Ok(g) => g,
         Err(_) => return false,
     };
-    ["ExcludeClipboardContentFromMonitorProcessing", "Clipboard Viewer Ignore"]
-        .iter()
-        .filter_map(|n| raw::register_format(n))
-        .any(|f| raw::is_format_avail(f.get()))
+    [
+        "ExcludeClipboardContentFromMonitorProcessing",
+        "Clipboard Viewer Ignore",
+    ]
+    .iter()
+    .filter_map(|n| raw::register_format(n))
+    .any(|f| raw::is_format_avail(f.get()))
 }
 
 #[cfg(not(windows))]
@@ -211,8 +219,24 @@ pub fn looks_like_secret(text: &str) -> bool {
         return false;
     }
     const PREFIXES: [&str; 18] = [
-        "sk-", "sk_live_", "sk_test_", "pk_live_", "rk_live_", "ghp_", "gho_", "ghu_", "ghs_", "github_pat_",
-        "glpat-", "xoxb-", "xoxp-", "xapp-", "AKIA", "AIza", "hf_", "npm_",
+        "sk-",
+        "sk_live_",
+        "sk_test_",
+        "pk_live_",
+        "rk_live_",
+        "ghp_",
+        "gho_",
+        "ghu_",
+        "ghs_",
+        "github_pat_",
+        "glpat-",
+        "xoxb-",
+        "xoxp-",
+        "xapp-",
+        "AKIA",
+        "AIza",
+        "hf_",
+        "npm_",
     ];
     if PREFIXES.iter().any(|p| t.starts_with(p)) && t.len() >= 16 {
         return true;
@@ -228,7 +252,10 @@ pub fn looks_like_secret(text: &str) -> bool {
     let upper = t.chars().any(|c| c.is_ascii_uppercase());
     let digits = t.chars().filter(|c| c.is_ascii_digit()).count();
     let symbol = t.chars().any(|c| !c.is_ascii_alphanumeric());
-    let classes = [lower, upper, digits > 0, symbol].iter().filter(|x| **x).count();
+    let classes = [lower, upper, digits > 0, symbol]
+        .iter()
+        .filter(|x| **x)
+        .count();
     classes >= 3 && digits >= 2 && entropy(t) >= 3.5
 }
 
@@ -239,10 +266,13 @@ fn entropy(s: &str) -> f64 {
         *counts.entry(c).or_insert(0usize) += 1;
     }
     let n = s.chars().count() as f64;
-    counts.values().map(|&k| {
-        let p = k as f64 / n;
-        -p * p.log2()
-    }).sum()
+    counts
+        .values()
+        .map(|&k| {
+            let p = k as f64 / n;
+            -p * p.log2()
+        })
+        .sum()
 }
 
 /// One long-lived handle for writing. On Linux the copied data is served by
@@ -265,7 +295,9 @@ fn write(f: impl Fn(&mut arboard::Clipboard) -> Result<(), arboard::Error>) -> a
                 std::thread::sleep(delay);
                 delay = (delay * 2).min(Duration::from_millis(250));
             }
-            Err(arboard::Error::ClipboardOccupied) => anyhow::bail!("the clipboard is busy (another program is holding it open)"),
+            Err(arboard::Error::ClipboardOccupied) => {
+                anyhow::bail!("the clipboard is busy (another program is holding it open)")
+            }
             Err(e) => return Err(e.into()),
         }
     }
@@ -299,7 +331,9 @@ mod tests {
         assert!(secret("ghp_aBcDeF0123456789aBcDeF0123456789abcd"));
         assert!(secret("eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.c2lnbmF0dXJl"));
         assert!(secret("Xk9#mP2$vL7qR4tW8zN1"));
-        assert!(secret("-----BEGIN OPENSSH PRIVATE KEY-----\nabc\n-----END OPENSSH PRIVATE KEY-----"));
+        assert!(secret(
+            "-----BEGIN OPENSSH PRIVATE KEY-----\nabc\n-----END OPENSSH PRIVATE KEY-----"
+        ));
     }
 
     #[test]

@@ -22,7 +22,11 @@ impl Ocr {
 
     pub fn recognize(&self, img: &image::DynamicImage) -> Result<String> {
         // Very large screenshots are slow and gain little; cap the long side.
-        let img = if img.width().max(img.height()) > 2400 { img.thumbnail(2400, 2400) } else { img.clone() };
+        let img = if img.width().max(img.height()) > 2400 {
+            img.thumbnail(2400, 2400)
+        } else {
+            img.clone()
+        };
         let rgb = img.into_rgb8();
         let src = ImageSource::from_bytes(rgb.as_raw(), rgb.dimensions())?;
         let input = self.engine.prepare_input(src)?;
@@ -60,7 +64,10 @@ fn looks_like_words(line: &str) -> bool {
         let all_upper = letters.iter().all(|c| !c.is_lowercase());
         rest_lower || all_upper
     };
-    let is_number = |t: &str| t.chars().all(|c| c.is_ascii_digit() || ",.:/-%".contains(c));
+    let is_number = |t: &str| {
+        t.chars()
+            .all(|c| c.is_ascii_digit() || ",.:/-%".contains(c))
+    };
     let good = tokens.iter().filter(|t| is_word(t) || is_number(t)).count();
     let has_word = tokens.iter().any(|t| is_word(t) && t.chars().count() >= 3);
     has_word && good * 10 >= tokens.len() * 6
@@ -82,8 +89,11 @@ mod tests {
     #[test]
     #[ignore]
     fn ocr_reads_text() {
-        let ocr = super::Ocr::load(std::path::Path::new(&std::env::var("OCR_DIR").unwrap())).unwrap();
-        let text = ocr.recognize(&image::open(std::env::var("OCR_IMAGE").unwrap()).unwrap()).unwrap();
+        let ocr =
+            super::Ocr::load(std::path::Path::new(&std::env::var("OCR_DIR").unwrap())).unwrap();
+        let text = ocr
+            .recognize(&image::open(std::env::var("OCR_IMAGE").unwrap()).unwrap())
+            .unwrap();
         println!("{text}");
         assert!(text.to_lowercase().contains("clipboard"));
     }

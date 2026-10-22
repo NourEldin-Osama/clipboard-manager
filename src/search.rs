@@ -17,8 +17,14 @@ pub enum Filter {
 }
 
 impl Filter {
-    pub const ALL: [Filter; 6] =
-        [Filter::All, Filter::Text, Filter::Links, Filter::Images, Filter::Files, Filter::Pinned];
+    pub const ALL: [Filter; 6] = [
+        Filter::All,
+        Filter::Text,
+        Filter::Links,
+        Filter::Images,
+        Filter::Files,
+        Filter::Pinned,
+    ];
 
     pub fn label(self) -> &'static str {
         match self {
@@ -70,7 +76,10 @@ pub fn keyword_score(haystack_lower: &str, query_lower: &str, terms: &[&str]) ->
     if terms.is_empty() {
         return 0.0;
     }
-    let found = terms.iter().filter(|t| haystack_lower.contains(**t)).count();
+    let found = terms
+        .iter()
+        .filter(|t| haystack_lower.contains(**t))
+        .count();
     if found == 0 {
         return 0.0;
     }
@@ -85,16 +94,35 @@ const SEMANTIC_DEPTH: usize = 200;
 
 /// `lower` caches each item's lower-cased searchable text by id; items missing
 /// from it are lower-cased on the fly.
-pub fn search(items: &[Item], lower: &HashMap<u64, String>, embeddings: &HashMap<u64, Embedding>, q: &Query) -> Vec<Hit> {
+pub fn search(
+    items: &[Item],
+    lower: &HashMap<u64, String>,
+    embeddings: &HashMap<u64, Embedding>,
+    q: &Query,
+) -> Vec<Hit> {
     let query_lower = q.text.trim().to_lowercase();
-    let candidates: Vec<usize> = (0..items.len()).filter(|&i| q.filter.accepts(&items[i])).collect();
+    let candidates: Vec<usize> = (0..items.len())
+        .filter(|&i| q.filter.accepts(&items[i]))
+        .collect();
 
     if query_lower.is_empty() {
         let mut out: Vec<usize> = candidates;
         out.sort_by(|&a, &b| {
-            (items[b].pinned, items[b].created, items[b].id).cmp(&(items[a].pinned, items[a].created, items[a].id))
+            (items[b].pinned, items[b].created, items[b].id).cmp(&(
+                items[a].pinned,
+                items[a].created,
+                items[a].id,
+            ))
         });
-        return out.into_iter().map(|idx| Hit { idx, keyword: 0.0, semantic: None, relevance: None }).collect();
+        return out
+            .into_iter()
+            .map(|idx| Hit {
+                idx,
+                keyword: 0.0,
+                semantic: None,
+                relevance: None,
+            })
+            .collect();
     }
 
     let terms: Vec<&str> = query_lower.split_whitespace().collect();
@@ -103,13 +131,20 @@ pub fn search(items: &[Item], lower: &HashMap<u64, String>, embeddings: &HashMap
         for &i in &candidates {
             let s = match lower.get(&items[i].id) {
                 Some(l) => keyword_score(l, &query_lower, &terms),
-                None => keyword_score(&items[i].searchable_text().to_lowercase(), &query_lower, &terms),
+                None => keyword_score(
+                    &items[i].searchable_text().to_lowercase(),
+                    &query_lower,
+                    &terms,
+                ),
             };
             if s > 0.0 {
                 kw.push((i, s));
             }
         }
-        kw.sort_by(|a, b| b.1.total_cmp(&a.1).then(items[b.0].created.cmp(&items[a.0].created)));
+        kw.sort_by(|a, b| {
+            b.1.total_cmp(&a.1)
+                .then(items[b.0].created.cmp(&items[a.0].created))
+        });
     }
 
     // Text-to-image similarities are far lower than text-to-text ones (the
@@ -141,7 +176,15 @@ pub fn search(items: &[Item], lower: &HashMap<u64, String>, embeddings: &HashMap
     let have_meaning = !sem_text.is_empty() || !sem_image.is_empty();
     if q.mode == SearchMode::Keyword || !have_meaning {
         // Words only (or no query vector yet): best word match first.
-        return kw.iter().map(|&(idx, s)| Hit { idx, keyword: s, semantic: None, relevance: None }).collect();
+        return kw
+            .iter()
+            .map(|&(idx, s)| Hit {
+                idx,
+                keyword: s,
+                semantic: None,
+                relevance: None,
+            })
+            .collect();
     }
 
     // Ordered by similarity. Each modality is scaled by its own best match, so
@@ -150,20 +193,38 @@ pub fn search(items: &[Item], lower: &HashMap<u64, String>, embeddings: &HashMap
     for list in [&sem_text, &sem_image] {
         let best = list.first().map(|&(_, s)| s).unwrap_or(1.0).max(1e-6);
         for &(idx, s) in list {
-            by_idx.insert(idx, Hit { idx, keyword: 0.0, semantic: Some(s), relevance: Some(s / best) });
+            by_idx.insert(
+                idx,
+                Hit {
+                    idx,
+                    keyword: 0.0,
+                    semantic: Some(s),
+                    relevance: Some(s / best),
+                },
+            );
         }
     }
     if q.mode == SearchMode::Hybrid {
         // Containing the words counts too, on the same scale.
         let best_kw = kw.first().map(|&(_, s)| s).unwrap_or(1.0).max(1e-6);
         for &(idx, s) in &kw {
-            let h = by_idx.entry(idx).or_insert(Hit { idx, keyword: 0.0, semantic: None, relevance: Some(0.0) });
+            let h = by_idx.entry(idx).or_insert(Hit {
+                idx,
+                keyword: 0.0,
+                semantic: None,
+                relevance: Some(0.0),
+            });
             h.keyword = s;
             h.relevance = Some(h.relevance.unwrap_or(0.0) + KEYWORD_WEIGHT * s / best_kw);
         }
     }
     let mut v: Vec<Hit> = by_idx.into_values().collect();
-    v.sort_by(|a, b| b.relevance.unwrap_or(0.0).total_cmp(&a.relevance.unwrap_or(0.0)).then(items[b.idx].created.cmp(&items[a.idx].created)));
+    v.sort_by(|a, b| {
+        b.relevance
+            .unwrap_or(0.0)
+            .total_cmp(&a.relevance.unwrap_or(0.0))
+            .then(items[b.idx].created.cmp(&items[a.idx].created))
+    });
     v
 }
 
@@ -173,13 +234,25 @@ const KEYWORD_WEIGHT: f32 = 0.25;
 /// Puts `hits` in the chosen order. `BestMatch` keeps the ranking from
 /// `search`; pinned items move to the top (keeping their order) when asked.
 pub fn order(items: &[Item], hits: &mut [Hit], sort: SortOrder, pinned_first: bool) {
-    let newest = |a: &Hit, b: &Hit| (items[b.idx].created, items[b.idx].id).cmp(&(items[a.idx].created, items[a.idx].id));
+    let newest = |a: &Hit, b: &Hit| {
+        (items[b.idx].created, items[b.idx].id).cmp(&(items[a.idx].created, items[a.idx].id))
+    };
     match sort {
         SortOrder::BestMatch => {}
         SortOrder::Recent => hits.sort_by(newest),
         SortOrder::Oldest => hits.sort_by(|a, b| newest(b, a)),
-        SortOrder::AToZ => hits.sort_by_cached_key(|h| (items[h.idx].title().to_lowercase(), std::cmp::Reverse(items[h.idx].created))),
-        SortOrder::MostUsed => hits.sort_by(|a, b| items[b.idx].uses.cmp(&items[a.idx].uses).then_with(|| newest(a, b))),
+        SortOrder::AToZ => hits.sort_by_cached_key(|h| {
+            (
+                items[h.idx].title().to_lowercase(),
+                std::cmp::Reverse(items[h.idx].created),
+            )
+        }),
+        SortOrder::MostUsed => hits.sort_by(|a, b| {
+            items[b.idx]
+                .uses
+                .cmp(&items[a.idx].uses)
+                .then_with(|| newest(a, b))
+        }),
     }
     if pinned_first {
         hits.sort_by_key(|h| !items[h.idx].pinned);
@@ -212,19 +285,36 @@ mod tests {
 
     #[test]
     fn keyword_and_hybrid() {
-        let items = vec![item(1, "invoice for March", 1), item(2, "march madness tickets", 2), item(3, "hello", 3)];
+        let items = vec![
+            item(1, "invoice for March", 1),
+            item(2, "march madness tickets", 2),
+            item(3, "hello", 3),
+        ];
         let mut embs = HashMap::new();
         embs.insert(1, Embedding::dense(vec![1.0, 0.0], 0));
         embs.insert(2, Embedding::dense(vec![0.0, 1.0], 0));
         embs.insert(3, Embedding::dense(vec![0.9, 0.1], 0));
         let qv = Embedding::dense(vec![1.0, 0.0], 0);
-        let q = |mode| Query { text: "march invoice", vector: Some(&qv), mode, filter: Filter::All, min_similarity: 0.5, image_vectors: false };
+        let q = |mode| Query {
+            text: "march invoice",
+            vector: Some(&qv),
+            mode,
+            filter: Filter::All,
+            min_similarity: 0.5,
+            image_vectors: false,
+        };
 
         let k = search(&items, &HashMap::new(), &embs, &q(SearchMode::Keyword));
-        assert_eq!(k.iter().map(|h| items[h.idx].id).collect::<Vec<_>>(), vec![1, 2]);
+        assert_eq!(
+            k.iter().map(|h| items[h.idx].id).collect::<Vec<_>>(),
+            vec![1, 2]
+        );
 
         let s = search(&items, &HashMap::new(), &embs, &q(SearchMode::Semantic));
-        assert_eq!(s.iter().map(|h| items[h.idx].id).collect::<Vec<_>>(), vec![1, 3]);
+        assert_eq!(
+            s.iter().map(|h| items[h.idx].id).collect::<Vec<_>>(),
+            vec![1, 3]
+        );
 
         let h = search(&items, &HashMap::new(), &embs, &q(SearchMode::Hybrid));
         assert_eq!(items[h[0].idx].id, 1);
@@ -233,7 +323,11 @@ mod tests {
 
     #[test]
     fn modality_gap_does_not_bury_images() {
-        let mut items = vec![item(1, "some link", 1), item(2, "grocery list", 2), item(3, "", 3)];
+        let mut items = vec![
+            item(1, "some link", 1),
+            item(2, "grocery list", 2),
+            item(3, "", 3),
+        ];
         items[2].kind = Kind::Image;
         let mut embs = HashMap::new();
         // Text-text scores ~0.8, text-image ~0.2: the image is still the best image.
@@ -241,22 +335,44 @@ mod tests {
         embs.insert(2, Embedding::dense(vec![0.7, 0.71, 0.0], 0));
         embs.insert(3, Embedding::dense(vec![0.2, 0.0, 0.98], 0));
         let qv = Embedding::dense(vec![1.0, 0.0, 0.0], 0);
-        let q = Query { text: "kitten", vector: Some(&qv), mode: SearchMode::Semantic, filter: Filter::All, min_similarity: 0.0, image_vectors: true };
-        let ids: Vec<u64> = search(&items, &HashMap::new(), &embs, &q).iter().map(|h| items[h.idx].id).collect();
+        let q = Query {
+            text: "kitten",
+            vector: Some(&qv),
+            mode: SearchMode::Semantic,
+            filter: Filter::All,
+            min_similarity: 0.0,
+            image_vectors: true,
+        };
+        let ids: Vec<u64> = search(&items, &HashMap::new(), &embs, &q)
+            .iter()
+            .map(|h| items[h.idx].id)
+            .collect();
         assert!(ids[..2].contains(&3), "{ids:?}");
     }
 
     /// Smart results come back best first, so the relevance bars read top-down.
     #[test]
     fn hybrid_is_ordered_by_relevance() {
-        let items = vec![item(1, "time format", 1), item(2, "grid view list view time", 2), item(3, "clock", 3), item(4, "hello", 4)];
+        let items = vec![
+            item(1, "time format", 1),
+            item(2, "grid view list view time", 2),
+            item(3, "clock", 3),
+            item(4, "hello", 4),
+        ];
         let mut embs = HashMap::new();
         embs.insert(1, Embedding::dense(vec![1.0, 0.0], 0));
         embs.insert(2, Embedding::dense(vec![0.3, 0.95], 0));
         embs.insert(3, Embedding::dense(vec![0.95, 0.3], 0));
         embs.insert(4, Embedding::dense(vec![0.6, 0.8], 0));
         let qv = Embedding::dense(vec![1.0, 0.0], 0);
-        let q = Query { text: "time", vector: Some(&qv), mode: SearchMode::Hybrid, filter: Filter::All, min_similarity: 0.0, image_vectors: false };
+        let q = Query {
+            text: "time",
+            vector: Some(&qv),
+            mode: SearchMode::Hybrid,
+            filter: Filter::All,
+            min_similarity: 0.0,
+            image_vectors: false,
+        };
         let hits = search(&items, &HashMap::new(), &embs, &q);
         let rel: Vec<f32> = hits.iter().map(|h| h.relevance.unwrap()).collect();
         assert!(rel.windows(2).all(|w| w[0] >= w[1]), "{rel:?}");
@@ -267,11 +383,22 @@ mod tests {
 
     #[test]
     fn sort_orders_and_pinned_switch() {
-        let mut items = vec![item(1, "banana", 10), item(2, "apple", 30), item(3, "cherry", 20)];
+        let mut items = vec![
+            item(1, "banana", 10),
+            item(2, "apple", 30),
+            item(3, "cherry", 20),
+        ];
         items[2].pinned = true;
         items[0].uses = 5;
         let ids = |sort, pinned| {
-            let mut hits: Vec<Hit> = (0..items.len()).map(|idx| Hit { idx, keyword: 0.0, semantic: None, relevance: None }).collect();
+            let mut hits: Vec<Hit> = (0..items.len())
+                .map(|idx| Hit {
+                    idx,
+                    keyword: 0.0,
+                    semantic: None,
+                    relevance: None,
+                })
+                .collect();
             order(&items, &mut hits, sort, pinned);
             hits.iter().map(|h| items[h.idx].id).collect::<Vec<_>>()
         };
@@ -286,8 +413,18 @@ mod tests {
     fn empty_query_lists_pinned_then_newest() {
         let mut items = vec![item(1, "a", 1), item(2, "b", 2), item(3, "c", 3)];
         items[0].pinned = true;
-        let q = Query { text: " ", vector: None, mode: SearchMode::Hybrid, filter: Filter::All, min_similarity: 0.0, image_vectors: false };
-        let ids: Vec<u64> = search(&items, &HashMap::new(), &HashMap::new(), &q).iter().map(|h| items[h.idx].id).collect();
+        let q = Query {
+            text: " ",
+            vector: None,
+            mode: SearchMode::Hybrid,
+            filter: Filter::All,
+            min_similarity: 0.0,
+            image_vectors: false,
+        };
+        let ids: Vec<u64> = search(&items, &HashMap::new(), &HashMap::new(), &q)
+            .iter()
+            .map(|h| items[h.idx].id)
+            .collect();
         assert_eq!(ids, vec![1, 3, 2]);
     }
 }

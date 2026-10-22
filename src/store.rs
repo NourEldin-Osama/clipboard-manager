@@ -106,14 +106,24 @@ impl Item {
                 Some(o) if !o.trim().is_empty() => o,
                 _ => {
                     return match &self.source {
-                        Some(p) => p.file_name().map(|f| f.to_string_lossy().into_owned()).unwrap_or_default(),
-                        None => crate::i18n::trf("Image {w}×{h}", &[("w", &self.width), ("h", &self.height)]),
+                        Some(p) => p
+                            .file_name()
+                            .map(|f| f.to_string_lossy().into_owned())
+                            .unwrap_or_default(),
+                        None => crate::i18n::trf(
+                            "Image {w}×{h}",
+                            &[("w", &self.width), ("h", &self.height)],
+                        ),
                     }
                 }
             },
             _ => &self.text,
         };
-        let line = src.lines().map(str::trim).find(|l| !l.is_empty()).unwrap_or("");
+        let line = src
+            .lines()
+            .map(str::trim)
+            .find(|l| !l.is_empty())
+            .unwrap_or("");
         let mut out: String = line.chars().take(120).collect();
         if line.chars().nth(120).is_some() {
             out.push('…');
@@ -134,7 +144,10 @@ impl Store {
         txn.open_table(ITEMS)?;
         txn.open_table(EMBEDDINGS)?;
         txn.commit()?;
-        Ok(Self { db, images_dir: images_dir.to_path_buf() })
+        Ok(Self {
+            db,
+            images_dir: images_dir.to_path_buf(),
+        })
     }
 
     pub fn all_items(&self) -> Result<Vec<Item>> {
@@ -202,7 +215,8 @@ impl Store {
     pub fn put_embedding(&self, model: &str, id: u64, e: &Embedding) -> Result<()> {
         let bytes = e.to_bytes();
         let txn = self.db.begin_write()?;
-        txn.open_table(EMBEDDINGS)?.insert((model, id), bytes.as_slice())?;
+        txn.open_table(EMBEDDINGS)?
+            .insert((model, id), bytes.as_slice())?;
         txn.commit()?;
         Ok(())
     }
@@ -283,9 +297,15 @@ mod tests {
         store.put(&item(1, "hello")).unwrap();
         store.put(&item(2, "world")).unwrap();
         assert_eq!(store.next_id().unwrap(), 3);
-        store.put_embedding("m", 1, &Embedding::Dense(vec![1.0, 0.0])).unwrap();
-        store.put_embedding("m", 2, &Embedding::Multi(vec![vec![0.0, 1.0]; 3])).unwrap();
-        store.put_embedding("other", 2, &Embedding::Dense(vec![0.5])).unwrap();
+        store
+            .put_embedding("m", 1, &Embedding::Dense(vec![1.0, 0.0]))
+            .unwrap();
+        store
+            .put_embedding("m", 2, &Embedding::Multi(vec![vec![0.0, 1.0]; 3]))
+            .unwrap();
+        store
+            .put_embedding("other", 2, &Embedding::Dense(vec![0.5]))
+            .unwrap();
         assert_eq!(store.embeddings("m").unwrap().len(), 2);
         store.delete(&item(2, "world")).unwrap();
         assert_eq!(store.all_items().unwrap().len(), 1);

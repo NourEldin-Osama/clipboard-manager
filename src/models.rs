@@ -28,8 +28,14 @@ pub const SIGLIP_MODELS: [SigLipModel; 2] = [
 ];
 
 pub const OCR_FILES: [(&str, &str); 2] = [
-    ("text-detection.rten", "https://ocrs-models.s3-accelerate.amazonaws.com/text-detection.rten"),
-    ("text-recognition.rten", "https://ocrs-models.s3-accelerate.amazonaws.com/text-recognition.rten"),
+    (
+        "text-detection.rten",
+        "https://ocrs-models.s3-accelerate.amazonaws.com/text-detection.rten",
+    ),
+    (
+        "text-recognition.rten",
+        "https://ocrs-models.s3-accelerate.amazonaws.com/text-recognition.rten",
+    ),
 ];
 
 pub fn siglip_dir(models: &Path, repo: &str) -> PathBuf {
@@ -42,7 +48,9 @@ pub fn ocr_dir(models: &Path) -> PathBuf {
 
 pub fn siglip_ready(models: &Path, repo: &str) -> bool {
     let d = siglip_dir(models, repo);
-    crate::embed::siglip::FILES.iter().all(|f| d.join(f).is_file())
+    crate::embed::siglip::FILES
+        .iter()
+        .all(|f| d.join(f).is_file())
 }
 
 pub fn ocr_ready(models: &Path) -> bool {
@@ -81,7 +89,9 @@ pub fn download(url: &str, dest: &Path, p: &Arc<Progress>) -> Result<()> {
         return Ok(());
     }
     std::fs::create_dir_all(dest.parent().unwrap())?;
-    let mut resp = ureq::get(url).call().with_context(|| format!("downloading {url}"))?;
+    let mut resp = ureq::get(url)
+        .call()
+        .with_context(|| format!("downloading {url}"))?;
     let len: u64 = resp
         .headers()
         .get("content-length")

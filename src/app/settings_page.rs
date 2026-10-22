@@ -6,7 +6,10 @@ use eframe::egui::{Frame, Margin, Pos2, Rect, Ui};
 
 use super::icons::{self, Icon};
 use super::shortcut;
-use super::view::{accent, chip, far, flip, lbl, paint_text, primary_button, reveal, row, start_anchor, tip, txt, ACCENTS, AMBER, GREEN, RED};
+use super::view::{
+    accent, chip, far, flip, lbl, paint_text, primary_button, reveal, row, start_anchor, tip, txt,
+    ACCENTS, AMBER, GREEN, RED,
+};
 use super::*;
 use crate::config::{Density, Language, TimeFormat};
 
@@ -21,7 +24,14 @@ pub(super) enum SettingsPage {
 }
 
 impl SettingsPage {
-    const ALL: [SettingsPage; 6] = [Self::General, Self::Search, Self::Clipboard, Self::Shortcuts, Self::Appearance, Self::Data];
+    const ALL: [SettingsPage; 6] = [
+        Self::General,
+        Self::Search,
+        Self::Clipboard,
+        Self::Shortcuts,
+        Self::Appearance,
+        Self::Data,
+    ];
 
     fn label(self) -> (Icon, &'static str) {
         match self {
@@ -39,8 +49,17 @@ impl SettingsPage {
 type KeyField = fn(&mut Config) -> &mut String;
 
 const HISTORY_SIZES: [usize; 5] = [500, 1_000, 5_000, 20_000, 100_000];
-const VECTOR_SIZES: [(usize, &str); 4] = [(0, "Full · best quality"), (512, "512 · smaller"), (256, "256 · compact"), (128, "128 · tiny, fastest")];
-const STRICTNESS: [(f32, &str); 3] = [(0.0, "Show all"), (0.15, "Related only"), (0.3, "Close only")];
+const VECTOR_SIZES: [(usize, &str); 4] = [
+    (0, "Full · best quality"),
+    (512, "512 · smaller"),
+    (256, "256 · compact"),
+    (128, "128 · tiny, fastest"),
+];
+const STRICTNESS: [(f32, &str); 3] = [
+    (0.0, "Show all"),
+    (0.15, "Related only"),
+    (0.3, "Close only"),
+];
 
 // ----- widgets ---------------------------------------------------------------------
 
@@ -63,7 +82,11 @@ fn toggle(ui: &mut Ui, on: &mut bool) -> egui::Response {
     p.rect_filled(rect, CornerRadius::same(11), bg);
     // Right to left, "on" is to the left.
     let travel = t * (rect.width() - 22.0);
-    let x = if i18n::rtl() { rect.right() - 11.0 - travel } else { rect.left() + 11.0 + travel };
+    let x = if i18n::rtl() {
+        rect.right() - 11.0 - travel
+    } else {
+        rect.left() + 11.0 + travel
+    };
     p.circle_filled(egui::pos2(x, rect.center().y), 8.0, Color32::WHITE);
     resp
 }
@@ -75,8 +98,22 @@ fn segmented<T: PartialEq + Copy>(ui: &mut Ui, value: &mut T, options: &[(T, &st
     ui.spacing_mut().item_spacing.x = 2.0;
     for (v, label) in options.iter().rev() {
         let sel = *value == *v;
-        let text = txt(tr(label), 13.0, Some(if sel { accent() } else { ui.visuals().text_color() }));
-        let b = egui::Button::new(text).frame_when_inactive(sel).fill(if sel { accent().gamma_multiply(0.14) } else { Color32::TRANSPARENT });
+        let text = txt(
+            tr(label),
+            13.0,
+            Some(if sel {
+                accent()
+            } else {
+                ui.visuals().text_color()
+            }),
+        );
+        let b = egui::Button::new(text)
+            .frame_when_inactive(sel)
+            .fill(if sel {
+                accent().gamma_multiply(0.14)
+            } else {
+                Color32::TRANSPARENT
+            });
         if ui.add(b).clicked() && !sel {
             *value = *v;
             changed = true;
@@ -86,7 +123,10 @@ fn segmented<T: PartialEq + Copy>(ui: &mut Ui, value: &mut T, options: &[(T, &st
 }
 
 fn info(ui: &mut Ui, text: &str) {
-    tip(icons::glyph(ui, Icon::Info, 14.0, ui.visuals().weak_text_color()), tr(text));
+    tip(
+        icons::glyph(ui, Icon::Info, 14.0, ui.visuals().weak_text_color()),
+        tr(text),
+    );
 }
 
 fn section(ui: &mut Ui, title: &str) {
@@ -98,39 +138,69 @@ fn section(ui: &mut Ui, title: &str) {
 
 /// One setting: label and ℹ on the left, control at the right edge. A value
 /// changed from its default tints the row and offers a reset.
-fn setting(ui: &mut Ui, label: &str, help: &str, changed: bool, control: impl FnOnce(&mut Ui)) -> bool {
+fn setting(
+    ui: &mut Ui,
+    label: &str,
+    help: &str,
+    changed: bool,
+    control: impl FnOnce(&mut Ui),
+) -> bool {
     let mut reset = false;
-    let fill = if changed { accent().gamma_multiply(if ui.visuals().dark_mode { 0.14 } else { 0.07 }) } else { Color32::TRANSPARENT };
-    Frame::new().fill(fill).corner_radius(CornerRadius::same(8)).inner_margin(Margin::symmetric(10, 6)).show(ui, |ui| {
-        ui.set_width(ui.available_width());
-        row(ui, |ui| {
-            ui.set_min_height(30.0);
-            let color = if changed { accent() } else { ui.visuals().strong_text_color() };
-            lbl(ui, label, 14.0, color);
-            if !help.is_empty() {
-                info(ui, help);
-            }
-            far(ui, |ui| {
-                // The reset button's space is kept when it's hidden, so controls stay in one column.
-                if changed {
-                    if icons::icon_button_ex(ui, Icon::Reset, "Back to default", Vec2::splat(28.0), 14.0, None, None).clicked() {
-                        reset = true;
-                    }
+    let fill = if changed {
+        accent().gamma_multiply(if ui.visuals().dark_mode { 0.14 } else { 0.07 })
+    } else {
+        Color32::TRANSPARENT
+    };
+    Frame::new()
+        .fill(fill)
+        .corner_radius(CornerRadius::same(8))
+        .inner_margin(Margin::symmetric(10, 6))
+        .show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            row(ui, |ui| {
+                ui.set_min_height(30.0);
+                let color = if changed {
+                    accent()
                 } else {
-                    ui.add_space(28.0 + ui.spacing().item_spacing.x);
+                    ui.visuals().strong_text_color()
+                };
+                lbl(ui, label, 14.0, color);
+                if !help.is_empty() {
+                    info(ui, help);
                 }
-                control(ui);
+                far(ui, |ui| {
+                    // The reset button's space is kept when it's hidden, so controls stay in one column.
+                    if changed {
+                        if icons::icon_button_ex(
+                            ui,
+                            Icon::Reset,
+                            "Back to default",
+                            Vec2::splat(28.0),
+                            14.0,
+                            None,
+                            None,
+                        )
+                        .clicked()
+                        {
+                            reset = true;
+                        }
+                    } else {
+                        ui.add_space(28.0 + ui.spacing().item_spacing.x);
+                    }
+                    control(ui);
+                });
             });
         });
-    });
     reset
 }
 
 fn note(ui: &mut Ui, text: &str) {
     let weak = ui.visuals().weak_text_color();
-    Frame::new().inner_margin(Margin::symmetric(10, 0)).show(ui, |ui| {
-        super::bidi::paragraph(ui, tr(text), FontId::proportional(12.5), weak);
-    });
+    Frame::new()
+        .inner_margin(Margin::symmetric(10, 0))
+        .show(ui, |ui| {
+            super::bidi::paragraph(ui, tr(text), FontId::proportional(12.5), weak);
+        });
 }
 
 fn path_field(ui: &mut Ui, p: &mut PathBuf, ext: &[&str]) {
@@ -144,7 +214,10 @@ fn path_field(ui: &mut Ui, p: &mut PathBuf, ext: &[&str]) {
         }
     }
     let mut s = p.to_string_lossy().into_owned();
-    if ui.add(egui::TextEdit::singleline(&mut s).desired_width(280.0)).changed() {
+    if ui
+        .add(egui::TextEdit::singleline(&mut s).desired_width(280.0))
+        .changed()
+    {
         *p = PathBuf::from(&s);
     }
 }
@@ -172,7 +245,8 @@ impl App {
             return;
         }
         let backend_changed = d.backend != self.cfg.backend;
-        let keys_changed = d.show_hotkey != self.cfg.show_hotkey || d.ignore_next_hotkey != self.cfg.ignore_next_hotkey;
+        let keys_changed = d.show_hotkey != self.cfg.show_hotkey
+            || d.ignore_next_hotkey != self.cfg.ignore_next_hotkey;
         if d.ocr_images && !self.cfg.ocr_images {
             for it in &self.items {
                 if it.kind == Kind::Image && it.ocr.is_none() {
@@ -185,10 +259,15 @@ impl App {
         let look_changed = d.accent != self.cfg.accent || d.theme != self.cfg.theme;
         let language_changed = d.language != self.cfg.language;
         i18n::set(d.language, d.time_format);
-        let search_changed = d.search_mode != self.cfg.search_mode || d.min_similarity != self.cfg.min_similarity;
+        let search_changed =
+            d.search_mode != self.cfg.search_mode || d.min_similarity != self.cfg.min_similarity;
         self.cfg = d;
-        self.flags.enabled.store(self.cfg.monitor_clipboard, Ordering::SeqCst);
-        self.flags.skip_secrets.store(self.cfg.skip_secrets, Ordering::SeqCst);
+        self.flags
+            .enabled
+            .store(self.cfg.monitor_clipboard, Ordering::SeqCst);
+        self.flags
+            .skip_secrets
+            .store(self.cfg.skip_secrets, Ordering::SeqCst);
         if look_changed {
             set_accent(self.cfg.accent);
             style(ctx);
@@ -226,7 +305,9 @@ impl App {
 
     pub(super) fn settings_ui(&mut self, ui: &mut Ui) {
         let ctx = ui.ctx().clone();
-        let Some(mut d) = self.draft.take() else { return };
+        let Some(mut d) = self.draft.take() else {
+            return;
+        };
         let mut close = false;
         let mut apply_model = false;
         let mut apply_keys = false;
@@ -235,10 +316,29 @@ impl App {
         let panel = ui.visuals().panel_fill;
         egui::Panel::top("settings_top")
             .show_separator_line(false)
-            .frame(Frame::new().inner_margin(Margin { left: 12, right: 16, top: 12, bottom: 8 }).fill(panel))
+            .frame(
+                Frame::new()
+                    .inner_margin(Margin {
+                        left: 12,
+                        right: 16,
+                        top: 12,
+                        bottom: 8,
+                    })
+                    .fill(panel),
+            )
             .show(ui, |ui| {
                 row(ui, |ui| {
-                    if icons::icon_button_ex(ui, Icon::Back, "Back (Esc)", Vec2::splat(34.0), 22.0, None, None).clicked() {
+                    if icons::icon_button_ex(
+                        ui,
+                        Icon::Back,
+                        "Back (Esc)",
+                        Vec2::splat(34.0),
+                        22.0,
+                        None,
+                        None,
+                    )
+                    .clicked()
+                    {
                         close = true;
                     }
                     ui.add_space(8.0);
@@ -260,28 +360,71 @@ impl App {
             });
 
         // The page list sits on the reading-start side.
-        let nav = if i18n::rtl() { egui::Panel::right("settings_nav") } else { egui::Panel::left("settings_nav") };
-        nav
-            .resizable(false)
+        let nav = if i18n::rtl() {
+            egui::Panel::right("settings_nav")
+        } else {
+            egui::Panel::left("settings_nav")
+        };
+        nav.resizable(false)
             .exact_size(220.0)
             .show_separator_line(false)
-            .frame(Frame::new().inner_margin(Margin::symmetric(10, 8)).fill(panel))
+            .frame(
+                Frame::new()
+                    .inner_margin(Margin::symmetric(10, 8))
+                    .fill(panel),
+            )
             .show(ui, |ui| {
                 for page in SettingsPage::ALL {
                     let (icon, name) = page.label();
                     let sel = self.settings_page == page;
-                    let (rect, r) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 36.0), Sense::click());
+                    let (rect, r) = ui
+                        .allocate_exact_size(Vec2::new(ui.available_width(), 36.0), Sense::click());
                     let v = ui.visuals();
-                    let color = if sel { accent() } else if r.hovered() { v.strong_text_color() } else { v.text_color() };
-                    if sel {
-                        ui.painter().rect_filled(rect, CornerRadius::same(8), accent().gamma_multiply(0.13));
+                    let color = if sel {
+                        accent()
                     } else if r.hovered() {
-                        ui.painter().rect_filled(rect, CornerRadius::same(8), v.widgets.hovered.weak_bg_fill);
+                        v.strong_text_color()
+                    } else {
+                        v.text_color()
+                    };
+                    if sel {
+                        ui.painter().rect_filled(
+                            rect,
+                            CornerRadius::same(8),
+                            accent().gamma_multiply(0.13),
+                        );
+                    } else if r.hovered() {
+                        ui.painter().rect_filled(
+                            rect,
+                            CornerRadius::same(8),
+                            v.widgets.hovered.weak_bg_fill,
+                        );
                     }
-                    let icon_rect = flip(rect, Rect::from_center_size(Pos2::new(rect.left() + 22.0, rect.center().y), Vec2::splat(16.0)));
+                    let icon_rect = flip(
+                        rect,
+                        Rect::from_center_size(
+                            Pos2::new(rect.left() + 22.0, rect.center().y),
+                            Vec2::splat(16.0),
+                        ),
+                    );
                     icons::paint(ui.painter(), icon_rect, icon, color);
-                    let at = flip(rect, Rect::from_min_size(Pos2::new(rect.left() + 42.0, rect.center().y), Vec2::ZERO)).min;
-                    paint_text(ui, ui.painter(), at, start_anchor(egui::Align::Center), tr(name), FontId::proportional(14.0), color);
+                    let at = flip(
+                        rect,
+                        Rect::from_min_size(
+                            Pos2::new(rect.left() + 42.0, rect.center().y),
+                            Vec2::ZERO,
+                        ),
+                    )
+                    .min;
+                    paint_text(
+                        ui,
+                        ui.painter(),
+                        at,
+                        start_anchor(egui::Align::Center),
+                        tr(name),
+                        FontId::proportional(14.0),
+                        color,
+                    );
                     if r.clicked() {
                         self.settings_page = page;
                         self.confirm = None;
@@ -291,24 +434,48 @@ impl App {
             });
 
         let content = ui.visuals().extreme_bg_color;
-        egui::CentralPanel::default().frame(Frame::new().inner_margin(Margin { left: 28, right: 20, top: 8, bottom: 16 }).fill(content)).show(ui, |ui| {
-            egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
-                // A readable column, next to the page list (on the right in Arabic).
-                let area = ui.available_rect_before_wrap();
-                let w = area.width().min(720.0);
-                let x = if i18n::rtl() { area.right() - w } else { area.left() };
-                let column = Rect::from_min_size(Pos2::new(x, area.top()), Vec2::new(w, area.height()));
-                ui.scope_builder(egui::UiBuilder::new().max_rect(column), |ui| match self.settings_page {
-                    SettingsPage::General => self.general_page(ui, &mut d),
-                    SettingsPage::Search => self.search_page(ui, &mut d, &mut apply_model),
-                    SettingsPage::Clipboard => clipboard_page(ui, &mut d),
-                    SettingsPage::Shortcuts => self.shortcuts_page(ui, &mut d, &mut apply_keys),
-                    SettingsPage::Appearance => appearance_page(ui, &mut d),
-                    SettingsPage::Data => self.data_page(ui, &mut d),
-                });
-                ui.add_space(24.0);
+        egui::CentralPanel::default()
+            .frame(
+                Frame::new()
+                    .inner_margin(Margin {
+                        left: 28,
+                        right: 20,
+                        top: 8,
+                        bottom: 16,
+                    })
+                    .fill(content),
+            )
+            .show(ui, |ui| {
+                egui::ScrollArea::vertical()
+                    .auto_shrink([false, false])
+                    .show(ui, |ui| {
+                        // A readable column, next to the page list (on the right in Arabic).
+                        let area = ui.available_rect_before_wrap();
+                        let w = area.width().min(720.0);
+                        let x = if i18n::rtl() {
+                            area.right() - w
+                        } else {
+                            area.left()
+                        };
+                        let column = Rect::from_min_size(
+                            Pos2::new(x, area.top()),
+                            Vec2::new(w, area.height()),
+                        );
+                        ui.scope_builder(egui::UiBuilder::new().max_rect(column), |ui| match self
+                            .settings_page
+                        {
+                            SettingsPage::General => self.general_page(ui, &mut d),
+                            SettingsPage::Search => self.search_page(ui, &mut d, &mut apply_model),
+                            SettingsPage::Clipboard => clipboard_page(ui, &mut d),
+                            SettingsPage::Shortcuts => {
+                                self.shortcuts_page(ui, &mut d, &mut apply_keys)
+                            }
+                            SettingsPage::Appearance => appearance_page(ui, &mut d),
+                            SettingsPage::Data => self.data_page(ui, &mut d),
+                        });
+                        ui.add_space(24.0);
+                    });
             });
-        });
 
         if close {
             self.draft = Some(d);
@@ -362,7 +529,11 @@ impl App {
         let (dot, text) = self.model_status();
         row(ui, |ui| {
             ui.add_space(10.0);
-            let color = if dot == Color32::GRAY { ui.visuals().weak_text_color() } else { dot };
+            let color = if dot == Color32::GRAY {
+                ui.visuals().weak_text_color()
+            } else {
+                dot
+            };
             icons::glyph(ui, Icon::Dot, 12.0, color);
             ui.label(txt(&text, 13.0, Some(color)));
         });
@@ -376,9 +547,15 @@ impl App {
             segmented(ui, &mut kind, &[(0, "Off"), (1, "Built-in"), (2, "Your server")]);
         });
         match (kind, &d.backend) {
-            (0, EmbedBackend::None) | (1, EmbedBackend::SigLip { .. }) | (2, EmbedBackend::Server(_)) => {}
+            (0, EmbedBackend::None)
+            | (1, EmbedBackend::SigLip { .. })
+            | (2, EmbedBackend::Server(_)) => {}
             (0, _) => d.backend = EmbedBackend::None,
-            (1, _) => d.backend = EmbedBackend::SigLip { repo: SIGLIP_MODELS[0].repo.into() },
+            (1, _) => {
+                d.backend = EmbedBackend::SigLip {
+                    repo: SIGLIP_MODELS[0].repo.into(),
+                }
+            }
             _ => d.backend = EmbedBackend::Server(ServerConfig::embeddinggemma()),
         }
         match &mut d.backend {
@@ -393,7 +570,12 @@ impl App {
                 if primary_button(ui, "Apply model").clicked() {
                     *apply_model = true;
                 }
-                lbl(ui, "Your items are indexed again in the background.", 12.5, ui.visuals().weak_text_color());
+                lbl(
+                    ui,
+                    "Your items are indexed again in the background.",
+                    12.5,
+                    ui.visuals().weak_text_color(),
+                );
             });
         }
     }
@@ -405,35 +587,75 @@ impl App {
             let ready = models::siglip_ready(&self.paths.models, m.repo);
             let selected = *repo == m.repo;
             let size = format!("{:.1}", m.size_mb as f32 / 1000.0);
-            setting(ui, m.label, &trf("{repo} · {size} GB download", &[("repo", &m.repo), ("size", &size)]), selected, |ui| {
-                if ready {
-                    chip(ui, "✔ Downloaded", GREEN);
-                } else if let Some(dl) = self.download.as_ref().filter(|x| x.repo == m.repo) {
-                    let p = &dl.progress;
-                    if ui.small_button(txt(tr("Cancel"), 12.0, None)).clicked() {
-                        p.cancel.store(true, Ordering::Relaxed);
+            setting(
+                ui,
+                m.label,
+                &trf(
+                    "{repo} · {size} GB download",
+                    &[("repo", &m.repo), ("size", &size)],
+                ),
+                selected,
+                |ui| {
+                    if ready {
+                        chip(ui, "✔ Downloaded", GREEN);
+                    } else if let Some(dl) = self.download.as_ref().filter(|x| x.repo == m.repo) {
+                        let p = &dl.progress;
+                        if ui.small_button(txt(tr("Cancel"), 12.0, None)).clicked() {
+                            p.cancel.store(true, Ordering::Relaxed);
+                        }
+                        let (done, total) = (
+                            p.done.load(Ordering::Relaxed),
+                            p.total.load(Ordering::Relaxed).max(1),
+                        );
+                        ui.add(
+                            egui::ProgressBar::new(done as f32 / total as f32)
+                                .desired_width(150.0)
+                                .text(format!("{} / {} MB", done >> 20, total >> 20)),
+                        );
+                        ui.ctx().request_repaint_after(Duration::from_millis(250));
+                    } else if self.download.is_none()
+                        && ui
+                            .button(txt(
+                                &trf("Download {size} GB", &[("size", &size)]),
+                                14.0,
+                                None,
+                            ))
+                            .clicked()
+                    {
+                        start = Some(m.repo.to_string());
                     }
-                    let (done, total) = (p.done.load(Ordering::Relaxed), p.total.load(Ordering::Relaxed).max(1));
-                    ui.add(egui::ProgressBar::new(done as f32 / total as f32).desired_width(150.0).text(format!("{} / {} MB", done >> 20, total >> 20)));
-                    ui.ctx().request_repaint_after(Duration::from_millis(250));
-                } else if self.download.is_none() && ui.button(txt(&trf("Download {size} GB", &[("size", &size)]), 14.0, None)).clicked() {
-                    start = Some(m.repo.to_string());
-                }
-                if !selected && ui.add(egui::Button::new(txt(tr("Use"), 14.0, None)).frame_when_inactive(false)).clicked() {
-                    *repo = m.repo.to_string();
-                }
-            });
+                    if !selected
+                        && ui
+                            .add(
+                                egui::Button::new(txt(tr("Use"), 14.0, None))
+                                    .frame_when_inactive(false),
+                            )
+                            .clicked()
+                    {
+                        *repo = m.repo.to_string();
+                    }
+                },
+            );
         }
         if let Some(r) = start {
             *repo = r.clone();
             let progress = Arc::new(Progress::default());
-            let (p, dir, rr, c) = (progress.clone(), self.paths.models.clone(), r.clone(), ui.ctx().clone());
+            let (p, dir, rr, c) = (
+                progress.clone(),
+                self.paths.models.clone(),
+                r.clone(),
+                ui.ctx().clone(),
+            );
             let handle = std::thread::spawn(move || {
                 let out = models::download_siglip(&dir, &rr, &p);
                 c.request_repaint();
                 out
             });
-            self.download = Some(Download { repo: r, progress, handle });
+            self.download = Some(Download {
+                repo: r,
+                progress,
+                handle,
+            });
         }
     }
 
@@ -441,8 +663,18 @@ impl App {
         let def = Config::default();
         section(ui, "Anywhere in Windows");
         let globals: [(&'static str, &str, &str, KeyField); 2] = [
-            ("show", "Show or hide this window", "Opens the window over whatever you're doing; press again to hide it.", |c| &mut c.show_hotkey),
-            ("ignore", "Don't record the next copy", "Press before copying something private: the next copy is skipped.", |c| &mut c.ignore_next_hotkey),
+            (
+                "show",
+                "Show or hide this window",
+                "Opens the window over whatever you're doing; press again to hide it.",
+                |c| &mut c.show_hotkey,
+            ),
+            (
+                "ignore",
+                "Don't record the next copy",
+                "Press before copying something private: the next copy is skipped.",
+                |c| &mut c.ignore_next_hotkey,
+            ),
         ];
         for (id, label, help, field) in globals {
             let default = field(&mut def.clone()).clone();
@@ -450,7 +682,13 @@ impl App {
             let invalid = !value.trim().is_empty() && HotKey::from_str(value.trim()).is_err();
             let mut result = shortcut::Recorded::Nothing;
             let reset = setting(ui, label, help, *value != default, |ui| {
-                result = shortcut::recorder(ui, value, self.recording == Some(id), true, &mut self.record_problem);
+                result = shortcut::recorder(
+                    ui,
+                    value,
+                    self.recording == Some(id),
+                    true,
+                    &mut self.record_problem,
+                );
                 if invalid {
                     chip(ui, "⚠ Not usable", RED);
                 }
@@ -478,20 +716,36 @@ impl App {
 
         section(ui, "Inside the app");
         let locals: [(&'static str, &str, KeyField); 5] = [
-            ("copy", "Copy the selected item and hide the window", |c| &mut c.keys.copy),
+            ("copy", "Copy the selected item and hide the window", |c| {
+                &mut c.keys.copy
+            }),
             ("pin", "Pin or unpin", |c| &mut c.keys.pin),
             ("delete", "Delete", |c| &mut c.keys.delete),
             ("tag", "Add a tag", |c| &mut c.keys.tag),
-            ("view", "Switch between Grid, List and Detail", |c| &mut c.keys.view),
+            ("view", "Switch between Grid, List and Detail", |c| {
+                &mut c.keys.view
+            }),
         ];
-        let current: Vec<(&str, String)> = locals.iter().map(|(id, _, f)| (*id, f(&mut d.clone()).clone())).collect();
+        let current: Vec<(&str, String)> = locals
+            .iter()
+            .map(|(id, _, f)| (*id, f(&mut d.clone()).clone()))
+            .collect();
         for (id, label, field) in locals {
             let default = field(&mut def.clone()).clone();
             let value = field(d);
-            let clash = !value.is_empty() && current.iter().any(|(other, v)| *other != id && v.eq_ignore_ascii_case(value));
+            let clash = !value.is_empty()
+                && current
+                    .iter()
+                    .any(|(other, v)| *other != id && v.eq_ignore_ascii_case(value));
             let mut result = shortcut::Recorded::Nothing;
             let reset = setting(ui, label, "", *value != default, |ui| {
-                result = shortcut::recorder(ui, value, self.recording == Some(id), false, &mut self.record_problem);
+                result = shortcut::recorder(
+                    ui,
+                    value,
+                    self.recording == Some(id),
+                    false,
+                    &mut self.record_problem,
+                );
                 if clash {
                     chip(ui, "Used twice", AMBER);
                 }
@@ -501,71 +755,156 @@ impl App {
             }
             match result {
                 shortcut::Recorded::Started => self.recording = Some(id),
-                shortcut::Recorded::Changed | shortcut::Recorded::Cancelled => self.recording = None,
+                shortcut::Recorded::Changed | shortcut::Recorded::Cancelled => {
+                    self.recording = None
+                }
                 shortcut::Recorded::Nothing => {}
             }
         }
-        for (label, keys) in [("Move through the list", "Up+Down"), ("Move between cards in the grid", "Left+Right"), ("Close details, clear the search, or hide", "Escape")] {
-            setting(ui, label, "Built in; can't be changed.", false, |ui| shortcut::fixed(ui, keys));
+        for (label, keys) in [
+            ("Move through the list", "Up+Down"),
+            ("Move between cards in the grid", "Left+Right"),
+            ("Close details, clear the search, or hide", "Escape"),
+        ] {
+            setting(ui, label, "Built in; can't be changed.", false, |ui| {
+                shortcut::fixed(ui, keys)
+            });
         }
-        note(ui, "Click a shortcut, then press the new keys. Backspace turns it off, Esc cancels.");
+        note(
+            ui,
+            "Click a shortcut, then press the new keys. Backspace turns it off, Esc cancels.",
+        );
     }
 
     fn data_page(&mut self, ui: &mut Ui, d: &mut Config) {
         section(ui, "Storage");
         let root = self.paths.root.clone();
-        setting(ui, "Data folder", "History, images, models and settings are stored here, on this PC only.", false, |ui| {
-            if ui.button(txt(tr("Open"), 14.0, None)).clicked() {
-                reveal(&root);
-            }
-            ui.add(egui::Label::new(RichText::new(root.display().to_string()).size(12.0).color(ui.visuals().weak_text_color())).truncate());
-        });
+        setting(
+            ui,
+            "Data folder",
+            "History, images, models and settings are stored here, on this PC only.",
+            false,
+            |ui| {
+                if ui.button(txt(tr("Open"), 14.0, None)).clicked() {
+                    reveal(&root);
+                }
+                ui.add(
+                    egui::Label::new(
+                        RichText::new(root.display().to_string())
+                            .size(12.0)
+                            .color(ui.visuals().weak_text_color()),
+                    )
+                    .truncate(),
+                );
+            },
+        );
         let log = root.join("clipboard-manager.log");
-        setting(ui, "Log file", "A record of what the app did in this session. Attach it when reporting a problem.", false, |ui| {
-            if ui.button(txt(tr("Show"), 14.0, None)).clicked() {
-                reveal(&log);
-            }
-        });
+        setting(
+            ui,
+            "Log file",
+            "A record of what the app did in this session. Attach it when reporting a problem.",
+            false,
+            |ui| {
+                if ui.button(txt(tr("Show"), 14.0, None)).clicked() {
+                    reveal(&log);
+                }
+            },
+        );
         let images = self.items.iter().filter(|i| i.kind == Kind::Image).count();
         let pinned = self.items.iter().filter(|i| i.pinned).count();
-        let clip = self.items.iter().filter(|i| i.origin == Origin::Clipboard && !i.pinned).count();
+        let clip = self
+            .items
+            .iter()
+            .filter(|i| i.origin == Origin::Clipboard && !i.pinned)
+            .count();
         setting(ui, "Stored", "", false, |ui| {
-            ui.label(txt(&trf("{n} items · {i} images · {p} pinned", &[("n", &self.items.len()), ("i", &images), ("p", &pinned)]), 13.0, None));
+            ui.label(txt(
+                &trf(
+                    "{n} items · {i} images · {p} pinned",
+                    &[("n", &self.items.len()), ("i", &images), ("p", &pinned)],
+                ),
+                13.0,
+                None,
+            ));
         });
 
         section(ui, "Clean up");
         let mut clear = false;
         let confirm = self.confirm;
-        setting(ui, "Clear clipboard history", "Deletes copied items. Pinned and tagged items, and files you added, stay.", false, |ui| {
-            if confirm == Some("clear") {
-                if ui.add(egui::Button::new(txt(&trf("Delete {n} items", &[("n", &clip)]), 14.0, Some(Color32::WHITE))).fill(RED)).clicked() {
-                    clear = true;
+        setting(
+            ui,
+            "Clear clipboard history",
+            "Deletes copied items. Pinned and tagged items, and files you added, stay.",
+            false,
+            |ui| {
+                if confirm == Some("clear") {
+                    if ui
+                        .add(
+                            egui::Button::new(txt(
+                                &trf("Delete {n} items", &[("n", &clip)]),
+                                14.0,
+                                Some(Color32::WHITE),
+                            ))
+                            .fill(RED),
+                        )
+                        .clicked()
+                    {
+                        clear = true;
+                    }
+                    if ui.button("Cancel").clicked() {
+                        self.confirm = None;
+                    }
+                } else if ui
+                    .add_enabled(
+                        clip > 0,
+                        egui::Button::new(txt(tr("Clear…"), 14.0, Some(RED))),
+                    )
+                    .clicked()
+                {
+                    self.confirm = Some("clear");
                 }
-                if ui.button("Cancel").clicked() {
-                    self.confirm = None;
-                }
-            } else if ui.add_enabled(clip > 0, egui::Button::new(txt(tr("Clear…"), 14.0, Some(RED)))).clicked() {
-                self.confirm = Some("clear");
-            }
-        });
+            },
+        );
         if clear {
             self.confirm = None;
             self.clear_history();
         }
         let mut reset = false;
         let confirm = self.confirm;
-        setting(ui, "Reset all settings", "Puts every setting back to its default, including the search model.", false, |ui| {
-            if confirm == Some("reset") {
-                if ui.add(egui::Button::new(txt(tr("Reset everything"), 14.0, Some(Color32::WHITE))).fill(RED)).clicked() {
-                    reset = true;
+        setting(
+            ui,
+            "Reset all settings",
+            "Puts every setting back to its default, including the search model.",
+            false,
+            |ui| {
+                if confirm == Some("reset") {
+                    if ui
+                        .add(
+                            egui::Button::new(txt(
+                                tr("Reset everything"),
+                                14.0,
+                                Some(Color32::WHITE),
+                            ))
+                            .fill(RED),
+                        )
+                        .clicked()
+                    {
+                        reset = true;
+                    }
+                    if ui.button("Cancel").clicked() {
+                        self.confirm = None;
+                    }
+                } else if ui
+                    .add_enabled(
+                        *d != Config::default(),
+                        egui::Button::new(txt(tr("Reset…"), 14.0, None)),
+                    )
+                    .clicked()
+                {
+                    self.confirm = Some("reset");
                 }
-                if ui.button("Cancel").clicked() {
-                    self.confirm = None;
-                }
-            } else if ui.add_enabled(*d != Config::default(), egui::Button::new(txt(tr("Reset…"), 14.0, None))).clicked() {
-                self.confirm = Some("reset");
-            }
-        });
+            },
+        );
         if reset {
             self.confirm = None;
             *d = Config::default();
@@ -595,26 +934,49 @@ impl App {
             d.update_download = def.update_download;
         }
         let mut check = false;
-        setting(ui, "Version", "Every download is checked against this app's signing key before it's installed.", false, |ui| {
-            if release_build && ui.add_enabled(self.update_rx.is_none(), egui::Button::new(txt(tr("Check now"), 13.0, None))).clicked() {
-                check = true;
-            }
-            let weak = ui.visuals().weak_text_color();
-            let status = match &self.update {
-                UpdateState::Checking => tr("Checking…").to_string(),
-                UpdateState::UpToDate => tr("You're up to date").to_string(),
-                UpdateState::Available(r) => trf("Version {version} is available", &[("version", &r.label())]),
-                UpdateState::Downloading(r, _) => trf("Downloading version {version}…", &[("version", &r.label())]),
-                UpdateState::Ready(r, _) => trf("Version {version} is ready", &[("version", &r.label())]),
-                UpdateState::Failed { error, .. } => trf("Update failed: {error}", &[("error", error)]),
-                UpdateState::Idle if !release_build => tr("Updates are off in development builds").to_string(),
-                UpdateState::Idle => String::new(),
-            };
-            if !status.is_empty() {
-                ui.add(egui::Label::new(txt(&status, 12.5, Some(weak))).truncate());
-            }
-            ui.label(txt(&crate::update::current_label(), 13.0, None));
-        });
+        setting(
+            ui,
+            "Version",
+            "Every download is checked against this app's signing key before it's installed.",
+            false,
+            |ui| {
+                if release_build
+                    && ui
+                        .add_enabled(
+                            self.update_rx.is_none(),
+                            egui::Button::new(txt(tr("Check now"), 13.0, None)),
+                        )
+                        .clicked()
+                {
+                    check = true;
+                }
+                let weak = ui.visuals().weak_text_color();
+                let status = match &self.update {
+                    UpdateState::Checking => tr("Checking…").to_string(),
+                    UpdateState::UpToDate => tr("You're up to date").to_string(),
+                    UpdateState::Available(r) => {
+                        trf("Version {version} is available", &[("version", &r.label())])
+                    }
+                    UpdateState::Downloading(r, _) => {
+                        trf("Downloading version {version}…", &[("version", &r.label())])
+                    }
+                    UpdateState::Ready(r, _) => {
+                        trf("Version {version} is ready", &[("version", &r.label())])
+                    }
+                    UpdateState::Failed { error, .. } => {
+                        trf("Update failed: {error}", &[("error", error)])
+                    }
+                    UpdateState::Idle if !release_build => {
+                        tr("Updates are off in development builds").to_string()
+                    }
+                    UpdateState::Idle => String::new(),
+                };
+                if !status.is_empty() {
+                    ui.add(egui::Label::new(txt(&status, 12.5, Some(weak))).truncate());
+                }
+                ui.label(txt(&crate::update::current_label(), 13.0, None));
+            },
+        );
         if check {
             let ctx = ui.ctx().clone();
             self.update_hidden = false;
@@ -627,14 +989,37 @@ fn general_settings(ui: &mut Ui, d: &mut Config) {
     let def = Config::default();
     section(ui, "Language and time");
     // Each language is named in itself, so it can be found whatever is showing.
-    if setting(ui, "Language", "The language of the app. Arabic also lays the window out right to left.", d.language != def.language, |ui| {
-        segmented(ui, &mut d.language, &[(Language::English, "English"), (Language::Arabic, "العربية")]);
-    }) {
+    if setting(
+        ui,
+        "Language",
+        "The language of the app. Arabic also lays the window out right to left.",
+        d.language != def.language,
+        |ui| {
+            segmented(
+                ui,
+                &mut d.language,
+                &[
+                    (Language::English, "English"),
+                    (Language::Arabic, "العربية"),
+                ],
+            );
+        },
+    ) {
         d.language = def.language;
     }
-    if setting(ui, "Time format", "How times are shown. They're stored in UTC and shown in your time zone.", d.time_format != def.time_format, |ui| {
-        segmented(ui, &mut d.time_format, &[(TimeFormat::H24, "24-hour"), (TimeFormat::H12, "12-hour")]);
-    }) {
+    if setting(
+        ui,
+        "Time format",
+        "How times are shown. They're stored in UTC and shown in your time zone.",
+        d.time_format != def.time_format,
+        |ui| {
+            segmented(
+                ui,
+                &mut d.time_format,
+                &[(TimeFormat::H24, "24-hour"), (TimeFormat::H12, "12-hour")],
+            );
+        },
+    ) {
         d.time_format = def.time_format;
     }
     section(ui, "Startup");
@@ -649,7 +1034,10 @@ fn general_settings(ui: &mut Ui, d: &mut Config) {
     }) {
         d.tray = def.tray;
     }
-    note(ui, "With both on, the app starts quietly in the tray each time you sign in.");
+    note(
+        ui,
+        "With both on, the app starts quietly in the tray each time you sign in.",
+    );
 }
 
 fn clipboard_page(ui: &mut Ui, d: &mut Config) {
@@ -664,10 +1052,28 @@ fn clipboard_page(ui: &mut Ui, d: &mut Config) {
     };
     flag(ui, "Record clipboard history", "Save everything you copy. Turn off to pause; the pause button in the main window does the same.", &mut d.monitor_clipboard, def.monitor_clipboard);
     flag(ui, "Skip passwords and API keys", "Don't save copies that look like a password, API key, token or private key. You still can paste them normally.", &mut d.skip_secrets, def.skip_secrets);
-    flag(ui, "Merge duplicate copies", "Copying something you already have moves it to the top instead of adding it again.", &mut d.dedupe, def.dedupe);
-    flag(ui, "Read text in images", "Find screenshots and photos by the words in them. Runs on this PC.", &mut d.ocr_images, def.ocr_images);
+    flag(
+        ui,
+        "Merge duplicate copies",
+        "Copying something you already have moves it to the top instead of adding it again.",
+        &mut d.dedupe,
+        def.dedupe,
+    );
+    flag(
+        ui,
+        "Read text in images",
+        "Find screenshots and photos by the words in them. Runs on this PC.",
+        &mut d.ocr_images,
+        def.ocr_images,
+    );
     section(ui, "After copying from the list");
-    flag(ui, "Hide the window", "After you copy an item, the window hides so you can paste right away.", &mut d.minimize_after_copy, def.minimize_after_copy);
+    flag(
+        ui,
+        "Hide the window",
+        "After you copy an item, the window hides so you can paste right away.",
+        &mut d.minimize_after_copy,
+        def.minimize_after_copy,
+    );
     section(ui, "History size");
     if setting(ui, "Keep up to", "When there are more, the oldest are deleted. Pinned and tagged items, and files you added, are never deleted.", d.max_items != def.max_items, |ui| {
         let label = |n: usize| trf("{n} items", &[("n", &n.to_string().as_bytes().rchunks(3).rev().map(|c| std::str::from_utf8(c).unwrap()).collect::<Vec<_>>().join(","))]);
@@ -684,23 +1090,44 @@ fn clipboard_page(ui: &mut Ui, d: &mut Config) {
 fn appearance_page(ui: &mut Ui, d: &mut Config) {
     let def = Config::default();
     section(ui, "Look");
-    if setting(ui, "Theme", "System follows your Windows light/dark setting.", d.theme != def.theme, |ui| {
-        segmented(ui, &mut d.theme, &[(Theme::System, "System"), (Theme::Light, "Light"), (Theme::Dark, "Dark")]);
-    }) {
+    if setting(
+        ui,
+        "Theme",
+        "System follows your Windows light/dark setting.",
+        d.theme != def.theme,
+        |ui| {
+            segmented(
+                ui,
+                &mut d.theme,
+                &[
+                    (Theme::System, "System"),
+                    (Theme::Light, "Light"),
+                    (Theme::Dark, "Dark"),
+                ],
+            );
+        },
+    ) {
         d.theme = def.theme;
     }
-    if setting(ui, "Accent colour", "Used for selection, buttons and highlights.", d.accent != def.accent, |ui| {
-        for (i, (name, c)) in ACCENTS.iter().enumerate().rev() {
-            let (rect, r) = ui.allocate_exact_size(Vec2::splat(24.0), Sense::click());
-            ui.painter().circle_filled(rect.center(), 10.0, *c);
-            if d.accent == i {
-                ui.painter().circle_stroke(rect.center(), 12.0, Stroke::new(2.0, *c));
+    if setting(
+        ui,
+        "Accent colour",
+        "Used for selection, buttons and highlights.",
+        d.accent != def.accent,
+        |ui| {
+            for (i, (name, c)) in ACCENTS.iter().enumerate().rev() {
+                let (rect, r) = ui.allocate_exact_size(Vec2::splat(24.0), Sense::click());
+                ui.painter().circle_filled(rect.center(), 10.0, *c);
+                if d.accent == i {
+                    ui.painter()
+                        .circle_stroke(rect.center(), 12.0, Stroke::new(2.0, *c));
+                }
+                if tip(r, tr(name)).clicked() {
+                    d.accent = i;
+                }
             }
-            if tip(r, tr(name)).clicked() {
-                d.accent = i;
-            }
-        }
-    }) {
+        },
+    ) {
         d.accent = def.accent;
     }
     section(ui, "List");
@@ -710,9 +1137,22 @@ fn appearance_page(ui: &mut Ui, d: &mut Config) {
     }) {
         d.view = def.view;
     }
-    if setting(ui, "Density", "Compact fits more items on screen by hiding the second line.", d.density != def.density, |ui| {
-        segmented(ui, &mut d.density, &[(Density::Comfortable, "Comfortable"), (Density::Compact, "Compact")]);
-    }) {
+    if setting(
+        ui,
+        "Density",
+        "Compact fits more items on screen by hiding the second line.",
+        d.density != def.density,
+        |ui| {
+            segmented(
+                ui,
+                &mut d.density,
+                &[
+                    (Density::Comfortable, "Comfortable"),
+                    (Density::Compact, "Compact"),
+                ],
+            );
+        },
+    ) {
         d.density = def.density;
     }
     if setting(ui, "Pinned on top", "Pinned items come first while you browse, whatever the order. Search results are ordered by your sort choice only.", d.pinned_first != def.pinned_first, |ui| {
@@ -720,9 +1160,15 @@ fn appearance_page(ui: &mut Ui, d: &mut Config) {
     }) {
         d.pinned_first = def.pinned_first;
     }
-    if setting(ui, "Group by day", "Show Pinned, Today, Yesterday… headers while browsing (not while searching).", d.group_by_date != def.group_by_date, |ui| {
-        toggle(ui, &mut d.group_by_date);
-    }) {
+    if setting(
+        ui,
+        "Group by day",
+        "Show Pinned, Today, Yesterday… headers while browsing (not while searching).",
+        d.group_by_date != def.group_by_date,
+        |ui| {
+            toggle(ui, &mut d.group_by_date);
+        },
+    ) {
         d.group_by_date = def.group_by_date;
     }
 }
@@ -739,35 +1185,88 @@ fn server_settings(ui: &mut Ui, s: &mut ServerConfig, list: &mut ModelList) {
             ("LM Studio", "http://127.0.0.1:1234/v1"),
         ] {
             let current = s.base_url.trim_end_matches('/') == url;
-            let b = egui::Button::new(RichText::new(name).size(12.5).color(if current { accent() } else { ui.visuals().text_color() }))
-                .frame_when_inactive(current)
-                .fill(if current { accent().gamma_multiply(0.13) } else { Color32::TRANSPARENT })
-                .corner_radius(CornerRadius::same(12));
+            let b = egui::Button::new(RichText::new(name).size(12.5).color(if current {
+                accent()
+            } else {
+                ui.visuals().text_color()
+            }))
+            .frame_when_inactive(current)
+            .fill(if current {
+                accent().gamma_multiply(0.13)
+            } else {
+                Color32::TRANSPARENT
+            })
+            .corner_radius(CornerRadius::same(12));
             if ui.add(b).on_hover_text(url).clicked() {
                 let key = std::mem::take(&mut s.api_key);
-                *s = ServerConfig { api_key: key, ..ServerConfig::plain(url) };
+                *s = ServerConfig {
+                    api_key: key,
+                    ..ServerConfig::plain(url)
+                };
             }
         }
     });
 
     list.poll();
     let editable = s.launch.is_none();
-    if editable && list.pending.is_none() && list.url != ModelList::key(s) && !s.base_url.trim().is_empty() {
+    if editable
+        && list.pending.is_none()
+        && list.url != ModelList::key(s)
+        && !s.base_url.trim().is_empty()
+    {
         list.fetch(s, ui.ctx());
     }
-    setting(ui, "Server address", "The address of the embeddings server, usually ending in /v1.", false, |ui| {
-        if editable && icons::icon_button_ex(ui, Icon::Refresh, "Check again", Vec2::splat(28.0), 16.0, None, None).clicked() {
-            list.fetch(s, ui.ctx());
-        }
-        ui.add_enabled(editable, egui::TextEdit::singleline(&mut s.base_url).hint_text("http://127.0.0.1:8080/v1").desired_width(300.0));
-    });
-    setting(ui, "API key", "Only if your server asks for one. Sent as a Bearer token and stored only on this PC.", false, |ui| {
-        let (eye, label) = if list.show_key { (Icon::EyeOff, "Hide key") } else { (Icon::Eye, "Show key") };
-        if icons::icon_button_ex(ui, eye, label, Vec2::splat(28.0), 16.0, None, None).clicked() {
-            list.show_key = !list.show_key;
-        }
-        ui.add(egui::TextEdit::singleline(&mut s.api_key).password(!list.show_key).hint_text("optional").desired_width(300.0));
-    });
+    setting(
+        ui,
+        "Server address",
+        "The address of the embeddings server, usually ending in /v1.",
+        false,
+        |ui| {
+            if editable
+                && icons::icon_button_ex(
+                    ui,
+                    Icon::Refresh,
+                    "Check again",
+                    Vec2::splat(28.0),
+                    16.0,
+                    None,
+                    None,
+                )
+                .clicked()
+            {
+                list.fetch(s, ui.ctx());
+            }
+            ui.add_enabled(
+                editable,
+                egui::TextEdit::singleline(&mut s.base_url)
+                    .hint_text("http://127.0.0.1:8080/v1")
+                    .desired_width(300.0),
+            );
+        },
+    );
+    setting(
+        ui,
+        "API key",
+        "Only if your server asks for one. Sent as a Bearer token and stored only on this PC.",
+        false,
+        |ui| {
+            let (eye, label) = if list.show_key {
+                (Icon::EyeOff, "Hide key")
+            } else {
+                (Icon::Eye, "Show key")
+            };
+            if icons::icon_button_ex(ui, eye, label, Vec2::splat(28.0), 16.0, None, None).clicked()
+            {
+                list.show_key = !list.show_key;
+            }
+            ui.add(
+                egui::TextEdit::singleline(&mut s.api_key)
+                    .password(!list.show_key)
+                    .hint_text("optional")
+                    .desired_width(300.0),
+            );
+        },
+    );
     let default_name = list.found.default.clone();
     setting(ui, "Model", "Leave empty to use the server's default embedding model. Pick from ▾ or type a name your server knows.", !s.model.trim().is_empty(), |ui| {
         let any = default_name.is_some() || !list.found.listed.is_empty();
@@ -801,17 +1300,34 @@ fn server_settings(ui: &mut Ui, s: &mut ServerConfig, list: &mut ModelList) {
         ui.add_space(10.0);
         if list.pending.is_some() {
             ui.add(egui::Spinner::new().size(12.0));
-            lbl(ui, "Checking the server…", 12.5, ui.visuals().weak_text_color());
+            lbl(
+                ui,
+                "Checking the server…",
+                12.5,
+                ui.visuals().weak_text_color(),
+            );
         } else if let Some(e) = &list.error {
             chip(ui, format!("⚠ {e}"), RED);
         } else if s.model.trim().is_empty() {
             match default_name.as_deref() {
                 Some(dn) => {
-                    let model = if dn.is_empty() { tr("the default model") } else { dn };
-                    chip(ui, trf("✔ Connected · uses {model}", &[("model", &model)]), GREEN);
+                    let model = if dn.is_empty() {
+                        tr("the default model")
+                    } else {
+                        dn
+                    };
+                    chip(
+                        ui,
+                        trf("✔ Connected · uses {model}", &[("model", &model)]),
+                        GREEN,
+                    );
                 }
                 None if !list.found.listed.is_empty() => {
-                    chip(ui, "Connected, but no default embedding model: choose one", AMBER);
+                    chip(
+                        ui,
+                        "Connected, but no default embedding model: choose one",
+                        AMBER,
+                    );
                 }
                 None => {}
             }
@@ -819,17 +1335,31 @@ fn server_settings(ui: &mut Ui, s: &mut ServerConfig, list: &mut ModelList) {
             chip(ui, "✔ Connected", GREEN);
         }
         if !editable {
-            lbl(ui, "The app starts llama-server itself; it connects after Apply.", 12.5, ui.visuals().weak_text_color());
+            lbl(
+                ui,
+                "The app starts llama-server itself; it connects after Apply.",
+                12.5,
+                ui.visuals().weak_text_color(),
+            );
         }
     });
 
-    let effective = if s.model.is_empty() { default_name.clone().unwrap_or_default() } else { s.model.clone() };
+    let effective = if s.model.is_empty() {
+        default_name.clone().unwrap_or_default()
+    } else {
+        s.model.clone()
+    };
     let gemma = effective.to_lowercase().contains("embeddinggemma");
-    let gemma_prompts = s.query_prefix == ServerConfig::GEMMA_QUERY && s.document_prefix == ServerConfig::GEMMA_DOCUMENT;
+    let gemma_prompts = s.query_prefix == ServerConfig::GEMMA_QUERY
+        && s.document_prefix == ServerConfig::GEMMA_DOCUMENT;
     if gemma && !gemma_prompts {
         row(ui, |ui| {
             ui.add_space(10.0);
-            chip(ui, "💡 EmbeddingGemma searches better with its own prompts", AMBER);
+            chip(
+                ui,
+                "💡 EmbeddingGemma searches better with its own prompts",
+                AMBER,
+            );
             if ui.button(txt(tr("Use them"), 14.0, None)).clicked() {
                 s.query_prefix = ServerConfig::GEMMA_QUERY.into();
                 s.document_prefix = ServerConfig::GEMMA_DOCUMENT.into();

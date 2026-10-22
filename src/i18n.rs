@@ -57,14 +57,21 @@ pub fn trf(en: &str, args: &[(&str, &dyn Display)]) -> String {
 
 /// A stored UTC timestamp in the user's time zone.
 pub fn local(ts: i64) -> DateTime<Local> {
-    Local.timestamp_opt(ts, 0).single().unwrap_or_else(|| Local.timestamp_opt(0, 0).unwrap())
+    Local
+        .timestamp_opt(ts, 0)
+        .single()
+        .unwrap_or_else(|| Local.timestamp_opt(0, 0).unwrap())
 }
 
 /// "14:05", or "2:05 PM" with the 12-hour clock.
 pub fn clock(dt: &DateTime<Local>) -> String {
     if H12.load(Ordering::Relaxed) {
         let (pm, h) = dt.hour12();
-        format!("{h}:{:02} {}", dt.minute(), tr(if pm { "PM" } else { "AM" }))
+        format!(
+            "{h}:{:02} {}",
+            dt.minute(),
+            tr(if pm { "PM" } else { "AM" })
+        )
     } else {
         format!("{:02}:{:02}", dt.hour(), dt.minute())
     }
@@ -72,7 +79,15 @@ pub fn clock(dt: &DateTime<Local>) -> String {
 
 pub fn weekday(dt: &DateTime<Local>) -> &'static str {
     const EN: [&str; 7] = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
-    const AR: [&str; 7] = ["الإثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة", "السبت", "الأحد"];
+    const AR: [&str; 7] = [
+        "الإثنين",
+        "الثلاثاء",
+        "الأربعاء",
+        "الخميس",
+        "الجمعة",
+        "السبت",
+        "الأحد",
+    ];
     let i = dt.weekday().num_days_from_monday() as usize;
     if rtl() {
         AR[i]
@@ -82,8 +97,23 @@ pub fn weekday(dt: &DateTime<Local>) -> &'static str {
 }
 
 pub fn month(dt: &DateTime<Local>) -> &'static str {
-    const EN: [&str; 12] = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-    const AR: [&str; 12] = ["يناير", "فبراير", "مارس", "أبريل", "مايو", "يونيو", "يوليو", "أغسطس", "سبتمبر", "أكتوبر", "نوفمبر", "ديسمبر"];
+    const EN: [&str; 12] = [
+        "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+    ];
+    const AR: [&str; 12] = [
+        "يناير",
+        "فبراير",
+        "مارس",
+        "أبريل",
+        "مايو",
+        "يونيو",
+        "يوليو",
+        "أغسطس",
+        "سبتمبر",
+        "أكتوبر",
+        "نوفمبر",
+        "ديسمبر",
+    ];
     let i = dt.month0() as usize;
     if rtl() {
         AR[i]
@@ -100,7 +130,11 @@ mod tests {
     #[test]
     fn placeholders_match() {
         let names = |s: &str| {
-            let mut v: Vec<String> = s.split('{').skip(1).filter_map(|p| p.split_once('}').map(|(n, _)| n.to_string())).collect();
+            let mut v: Vec<String> = s
+                .split('{')
+                .skip(1)
+                .filter_map(|p| p.split_once('}').map(|(n, _)| n.to_string()))
+                .collect();
             v.sort();
             v
         };

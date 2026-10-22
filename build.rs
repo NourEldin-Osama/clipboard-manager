@@ -8,7 +8,9 @@ fn main() {
         return;
     }
     let mut res = winresource::WindowsResource::new();
-    res.set("ProductName", "Clipboard Manager").set("FileDescription", "Clipboard Manager").set("LegalCopyright", "MIT or Apache-2.0");
+    res.set("ProductName", "Clipboard Manager")
+        .set("FileDescription", "Clipboard Manager")
+        .set("LegalCopyright", "MIT or Apache-2.0");
     if std::path::Path::new(ICON).exists() {
         res.set_icon(ICON);
     }

@@ -52,7 +52,14 @@ fn mirror(c: char) -> char {
 }
 
 /// Appends one line (no newlines) in display order. `marks` are highlighted byte ranges.
-fn append_line(job: &mut LayoutJob, line: &str, rtl: bool, plain: &TextFormat, hl: &TextFormat, marks: &[(usize, usize)]) {
+fn append_line(
+    job: &mut LayoutJob,
+    line: &str,
+    rtl: bool,
+    plain: &TextFormat,
+    hl: &TextFormat,
+    marks: &[(usize, usize)],
+) {
     if line.is_empty() {
         return;
     }
@@ -80,7 +87,10 @@ fn append_line(job: &mut LayoutJob, line: &str, rtl: bool, plain: &TextFormat, h
         let mut pieces: Vec<(usize, String)> = Vec::new();
         let mut word = String::new();
         let mut word_at = run.start;
-        for (i, c) in line[run.clone()].char_indices().map(|(i, c)| (i + run.start, c)) {
+        for (i, c) in line[run.clone()]
+            .char_indices()
+            .map(|(i, c)| (i + run.start, c))
+        {
             let joins = is_rtl_char(c) || unicode_bidi::bidi_class(c) == BidiClass::NSM;
             if joins {
                 if word.is_empty() {
@@ -105,7 +115,13 @@ fn append_line(job: &mut LayoutJob, line: &str, rtl: bool, plain: &TextFormat, h
 
 /// Greedy word wrap of one paragraph into lines that fit `width`.
 fn wrap(ui: &Ui, text: &str, font: &FontId, width: f32) -> Vec<String> {
-    let measure = |s: &str| ui.fonts_mut(|f| f.layout_no_wrap(s.to_string(), font.clone(), Color32::WHITE).size().x);
+    let measure = |s: &str| {
+        ui.fonts_mut(|f| {
+            f.layout_no_wrap(s.to_string(), font.clone(), Color32::WHITE)
+                .size()
+                .x
+        })
+    };
     let mut lines = Vec::new();
     let mut line = String::new();
     for word in text.split_inclusive(' ') {
@@ -116,7 +132,11 @@ fn wrap(ui: &Ui, text: &str, font: &FontId, width: f32) -> Vec<String> {
             while measure(line.trim_end()) > width && line.chars().count() > 1 {
                 let mut cut = line.len();
                 while cut > 0 && measure(&line[..cut]) > width {
-                    cut = line[..cut].char_indices().last().map(|(i, _)| i).unwrap_or(0);
+                    cut = line[..cut]
+                        .char_indices()
+                        .last()
+                        .map(|(i, _)| i)
+                        .unwrap_or(0);
                 }
                 let cut = cut.max(line.chars().next().map(char::len_utf8).unwrap_or(1));
                 lines.push(line[..cut].to_string());
@@ -136,9 +156,26 @@ fn wrap(ui: &Ui, text: &str, font: &FontId, width: f32) -> Vec<String> {
 #[allow(clippy::too_many_arguments)]
 /// `rtl` fixes the direction of every paragraph; `None` takes each one's from
 /// its first letter.
-pub(super) fn lines(ui: &Ui, text: &str, terms: &[String], font: FontId, color: Color32, highlight: Color32, width: f32, max_rows: usize, rtl: Option<bool>) -> Vec<(Arc<Galley>, bool)> {
-    let plain = TextFormat { font_id: font.clone(), color, ..Default::default() };
-    let hl = TextFormat { background: highlight, ..plain.clone() };
+pub(super) fn lines(
+    ui: &Ui,
+    text: &str,
+    terms: &[String],
+    font: FontId,
+    color: Color32,
+    highlight: Color32,
+    width: f32,
+    max_rows: usize,
+    rtl: Option<bool>,
+) -> Vec<(Arc<Galley>, bool)> {
+    let plain = TextFormat {
+        font_id: font.clone(),
+        color,
+        ..Default::default()
+    };
+    let hl = TextFormat {
+        background: highlight,
+        ..plain.clone()
+    };
     let mut out: Vec<(String, bool)> = Vec::new();
     for para in text.split('\n') {
         let rtl = rtl.unwrap_or_else(|| starts_rtl(para, crate::i18n::rtl()));
@@ -151,7 +188,13 @@ pub(super) fn lines(ui: &Ui, text: &str, terms: &[String], font: FontId, color: 
         out.truncate(max_rows.max(1));
         // Shorten the last line until it fits with an ellipsis.
         if let Some((last, _)) = out.last_mut() {
-            let fits = |s: &str| ui.fonts_mut(|f| f.layout_no_wrap(format!("{s}…"), font.clone(), color).size().x) <= width;
+            let fits = |s: &str| {
+                ui.fonts_mut(|f| {
+                    f.layout_no_wrap(format!("{s}…"), font.clone(), color)
+                        .size()
+                        .x
+                }) <= width
+            };
             while !last.is_empty() && !fits(last) {
                 last.pop();
             }
@@ -173,7 +216,10 @@ pub(super) fn lines(ui: &Ui, text: &str, terms: &[String], font: FontId, color: 
             }
             let mut job = LayoutJob::default();
             append_line(&mut job, &l, rtl, &plain, &hl, &marks);
-            job.wrap = TextWrapping { max_width: f32::INFINITY, ..Default::default() };
+            job.wrap = TextWrapping {
+                max_width: f32::INFINITY,
+                ..Default::default()
+            };
             (ui.fonts_mut(|f| f.layout_job(job)), rtl)
         })
         .collect()
@@ -181,11 +227,21 @@ pub(super) fn lines(ui: &Ui, text: &str, terms: &[String], font: FontId, color: 
 
 /// Paints lines from `lines` from the top of `rect`, each against its own edge
 /// (right for right-to-left), or all against the right edge when `right` is set.
-pub(super) fn paint(p: &egui::Painter, rect: Rect, lines: Vec<(Arc<Galley>, bool)>, color: Color32, right: Option<bool>) {
+pub(super) fn paint(
+    p: &egui::Painter,
+    rect: Rect,
+    lines: Vec<(Arc<Galley>, bool)>,
+    color: Color32,
+    right: Option<bool>,
+) {
     let mut y = rect.top();
     for (g, rtl) in lines {
         let h = g.size().y;
-        let x = if right.unwrap_or(rtl) { rect.right() - g.size().x } else { rect.left() };
+        let x = if right.unwrap_or(rtl) {
+            rect.right() - g.size().x
+        } else {
+            rect.left()
+        };
         p.galley(Pos2::new(x, y), g, color);
         y += h;
     }
@@ -193,14 +249,25 @@ pub(super) fn paint(p: &egui::Painter, rect: Rect, lines: Vec<(Arc<Galley>, bool
 
 /// Single-line (or newline-separated) text in display order, for labels and buttons.
 pub(super) fn job(text: &str, font: FontId, color: Color32) -> LayoutJob {
-    let plain = TextFormat { font_id: font, color, ..Default::default() };
+    let plain = TextFormat {
+        font_id: font,
+        color,
+        ..Default::default()
+    };
     let mut job = LayoutJob::default();
     let ui_rtl = crate::i18n::rtl();
     for (i, line) in text.split('\n').enumerate() {
         if i > 0 {
             job.append("\n", 0.0, plain.clone());
         }
-        append_line(&mut job, line, starts_rtl(line, ui_rtl), &plain, &plain, &[]);
+        append_line(
+            &mut job,
+            line,
+            starts_rtl(line, ui_rtl),
+            &plain,
+            &plain,
+            &[],
+        );
     }
     job
 }
@@ -210,7 +277,17 @@ pub(super) fn job(text: &str, font: FontId, color: Color32) -> LayoutJob {
 pub(super) fn paragraph(ui: &mut Ui, text: &str, font: FontId, color: Color32) -> egui::Response {
     let width = ui.available_width();
     let rtl = crate::i18n::rtl();
-    let lines = lines(ui, text, &[], font, color, Color32::TRANSPARENT, width, usize::MAX, None);
+    let lines = lines(
+        ui,
+        text,
+        &[],
+        font,
+        color,
+        Color32::TRANSPARENT,
+        width,
+        usize::MAX,
+        None,
+    );
     let h: f32 = lines.iter().map(|(g, _)| g.size().y).sum();
     let (rect, resp) = ui.allocate_exact_size(Vec2::new(width, h), Sense::hover());
     paint(ui.painter(), rect, lines, color, Some(rtl));

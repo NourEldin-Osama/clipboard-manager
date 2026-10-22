@@ -24,7 +24,8 @@ use crate::models::Progress;
 /// Verifies release signatures. Its private half is the `UPDATE_SIGNING_KEY` repo secret.
 const PUBLIC_KEY: &str = "87vyKkh1uUjEosXCDL+KH0+9XjQ6xu+MrlCB9ETs9TM=";
 
-const MANIFEST_URL: &str = "https://github.com/NourEldin-Osama/clipboard-manager/releases/latest/download/updater.json";
+const MANIFEST_URL: &str =
+    "https://github.com/NourEldin-Osama/clipboard-manager/releases/latest/download/updater.json";
 
 /// Passed to the new exe after an update, so it waits for this one to exit.
 pub const AFTER_UPDATE_ARG: &str = "--after-update";
@@ -73,19 +74,31 @@ impl Release {
 }
 
 fn numbers(v: &str) -> Vec<u64> {
-    v.split(['.', '-', '+']).map_while(|p| p.parse().ok()).collect()
+    v.split(['.', '-', '+'])
+        .map_while(|p| p.parse().ok())
+        .collect()
 }
 
 fn agent() -> ureq::Agent {
-    ureq::Agent::config_builder().timeout_connect(Some(Duration::from_secs(15))).build().into()
+    ureq::Agent::config_builder()
+        .timeout_connect(Some(Duration::from_secs(15)))
+        .build()
+        .into()
 }
 
 /// The latest release's manifest. `CLIPBOARD_MANAGER_UPDATE_URL` points
 /// elsewhere for testing; the signature check still applies.
 pub fn check() -> Result<Release> {
-    let url = std::env::var("CLIPBOARD_MANAGER_UPDATE_URL").unwrap_or_else(|_| MANIFEST_URL.to_string());
-    let mut resp = agent().get(&url).call().with_context(|| format!("checking {url}"))?;
-    let release: Release = resp.body_mut().read_json().context("reading the update manifest")?;
+    let url =
+        std::env::var("CLIPBOARD_MANAGER_UPDATE_URL").unwrap_or_else(|_| MANIFEST_URL.to_string());
+    let mut resp = agent()
+        .get(&url)
+        .call()
+        .with_context(|| format!("checking {url}"))?;
+    let release: Release = resp
+        .body_mut()
+        .read_json()
+        .context("reading the update manifest")?;
     Ok(release)
 }
 
@@ -98,7 +111,10 @@ fn staged_path() -> Result<PathBuf> {
 pub fn download(r: &Release, p: &Arc<Progress>) -> Result<PathBuf> {
     let staged = staged_path()?;
     let part = staged.with_extension("part");
-    let mut resp = agent().get(&r.url).call().with_context(|| format!("downloading {}", r.url))?;
+    let mut resp = agent()
+        .get(&r.url)
+        .call()
+        .with_context(|| format!("downloading {}", r.url))?;
     p.total.store(r.size, Ordering::Relaxed);
     let mut reader = resp.body_mut().with_config().limit(u64::MAX).reader();
     let mut bytes = Vec::with_capacity(r.size as usize);
@@ -115,7 +131,8 @@ pub fn download(r: &Release, p: &Arc<Progress>) -> Result<PathBuf> {
         p.done.store(bytes.len() as u64, Ordering::Relaxed);
     }
     verify(&bytes, r)?;
-    let mut out = std::fs::File::create(&part).with_context(|| format!("writing {}", part.display()))?;
+    let mut out =
+        std::fs::File::create(&part).with_context(|| format!("writing {}", part.display()))?;
     out.write_all(&bytes)?;
     out.sync_all()?;
     drop(out);
@@ -126,15 +143,25 @@ pub fn download(r: &Release, p: &Arc<Progress>) -> Result<PathBuf> {
 /// The download is the one the release workflow signed, byte for byte.
 fn verify(bytes: &[u8], r: &Release) -> Result<()> {
     use sha2::{Digest, Sha256};
-    let sum: String = Sha256::digest(bytes).iter().map(|b| format!("{b:02x}")).collect();
+    let sum: String = Sha256::digest(bytes)
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect();
     if !sum.eq_ignore_ascii_case(r.sha256.trim()) {
         bail!("the download is damaged (checksum mismatch)");
     }
     let b64 = base64::engine::general_purpose::STANDARD;
-    let key: [u8; 32] = b64.decode(PUBLIC_KEY)?.try_into().map_err(|_| anyhow::anyhow!("bad public key"))?;
-    let sig: [u8; 64] = b64.decode(r.signature.trim())?.try_into().map_err(|_| anyhow::anyhow!("bad signature"))?;
+    let key: [u8; 32] = b64
+        .decode(PUBLIC_KEY)?
+        .try_into()
+        .map_err(|_| anyhow::anyhow!("bad public key"))?;
+    let sig: [u8; 64] = b64
+        .decode(r.signature.trim())?
+        .try_into()
+        .map_err(|_| anyhow::anyhow!("bad signature"))?;
     let key = ed25519_dalek::VerifyingKey::from_bytes(&key)?;
-    key.verify_strict(bytes, &ed25519_dalek::Signature::from_bytes(&sig)).map_err(|_| anyhow::anyhow!("the download isn't signed by this app's releases"))?;
+    key.verify_strict(bytes, &ed25519_dalek::Signature::from_bytes(&sig))
+        .map_err(|_| anyhow::anyhow!("the download isn't signed by this app's releases"))?;
     Ok(())
 }
 
@@ -163,7 +190,10 @@ pub fn roll_back() -> Result<()> {
 
 /// Starts the updated app; the caller then quits.
 pub fn relaunch(exe: &Path) -> Result<()> {
-    std::process::Command::new(exe).arg(AFTER_UPDATE_ARG).spawn().context("starting the new version")?;
+    std::process::Command::new(exe)
+        .arg(AFTER_UPDATE_ARG)
+        .spawn()
+        .context("starting the new version")?;
     Ok(())
 }
 
@@ -207,7 +237,10 @@ mod tests {
         assert!(verify(&bytes, &r).is_err(), "changed bytes");
         // Even with a matching checksum, the signature must hold.
         use sha2::{Digest, Sha256};
-        r.sha256 = Sha256::digest(&bytes).iter().map(|b| format!("{b:02x}")).collect();
+        r.sha256 = Sha256::digest(&bytes)
+            .iter()
+            .map(|b| format!("{b:02x}"))
+            .collect();
         assert!(verify(&bytes, &r).is_err(), "re-hashed but unsigned");
     }
 

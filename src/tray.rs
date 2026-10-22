@@ -26,14 +26,30 @@ pub struct Tray {
 
 impl Tray {
     /// `wake` is called after each command is sent, so a hidden window still handles it.
-    pub fn new(rgba: Vec<u8>, size: u32, paused: bool, tx: Sender<TrayCmd>, wake: impl Fn() + Send + Sync + Clone + 'static) -> Result<Self> {
+    pub fn new(
+        rgba: Vec<u8>,
+        size: u32,
+        paused: bool,
+        tx: Sender<TrayCmd>,
+        wake: impl Fn() + Send + Sync + Clone + 'static,
+    ) -> Result<Self> {
         let show = MenuItem::new(tr("Show Clipboard Manager"), true, None);
         let pause = MenuItem::new(pause_label(paused), true, None);
         let quit = MenuItem::new(tr("Quit"), true, None);
         let menu = Menu::new();
-        menu.append_items(&[&show, &PredefinedMenuItem::separator(), &pause, &PredefinedMenuItem::separator(), &quit])?;
+        menu.append_items(&[
+            &show,
+            &PredefinedMenuItem::separator(),
+            &pause,
+            &PredefinedMenuItem::separator(),
+            &quit,
+        ])?;
 
-        let ids = [(show.id().clone(), TrayCmd::Show), (pause.id().clone(), TrayCmd::TogglePause), (quit.id().clone(), TrayCmd::Quit)];
+        let ids = [
+            (show.id().clone(), TrayCmd::Show),
+            (pause.id().clone(), TrayCmd::TogglePause),
+            (quit.id().clone(), TrayCmd::Quit),
+        ];
         let (menu_tx, menu_wake) = (tx.clone(), wake.clone());
         MenuEvent::set_event_handler(Some(move |e: MenuEvent| {
             if let Some((_, cmd)) = ids.iter().find(|(id, _)| *id == e.id) {
@@ -44,8 +60,14 @@ impl Tray {
         TrayIconEvent::set_event_handler(Some(move |e: TrayIconEvent| {
             let show = matches!(
                 e,
-                TrayIconEvent::Click { button: MouseButton::Left, button_state: MouseButtonState::Up, .. }
-                    | TrayIconEvent::DoubleClick { button: MouseButton::Left, .. }
+                TrayIconEvent::Click {
+                    button: MouseButton::Left,
+                    button_state: MouseButtonState::Up,
+                    ..
+                } | TrayIconEvent::DoubleClick {
+                    button: MouseButton::Left,
+                    ..
+                }
             );
             if show {
                 let _ = tx.send(TrayCmd::Show);
@@ -59,7 +81,11 @@ impl Tray {
             .with_menu(Box::new(menu))
             .with_menu_on_left_click(false)
             .build()?;
-        Ok(Self { _icon: icon, pause, paused })
+        Ok(Self {
+            _icon: icon,
+            pause,
+            paused,
+        })
     }
 
     /// Keeps the menu's pause item in step with the recording state.
@@ -72,5 +98,9 @@ impl Tray {
 }
 
 fn pause_label(paused: bool) -> &'static str {
-    tr(if paused { "Resume recording" } else { "Pause recording" })
+    tr(if paused {
+        "Resume recording"
+    } else {
+        "Pause recording"
+    })
 }

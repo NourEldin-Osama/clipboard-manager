@@ -6,9 +6,10 @@ use crate::store::{fnv1a, now, Item, Kind, Origin};
 
 const IMAGE_EXT: &[&str] = &["png", "jpg", "jpeg", "gif", "bmp", "webp", "tif", "tiff"];
 const TEXT_EXT: &[&str] = &[
-    "txt", "md", "markdown", "rst", "csv", "tsv", "json", "jsonl", "yaml", "yml", "toml", "xml", "html", "htm",
-    "css", "js", "ts", "tsx", "jsx", "py", "rs", "go", "java", "kt", "c", "h", "cpp", "hpp", "cs", "rb", "php",
-    "sh", "ps1", "bat", "sql", "log", "ini", "cfg", "tex", "srt", "vtt",
+    "txt", "md", "markdown", "rst", "csv", "tsv", "json", "jsonl", "yaml", "yml", "toml", "xml",
+    "html", "htm", "css", "js", "ts", "tsx", "jsx", "py", "rs", "go", "java", "kt", "c", "h",
+    "cpp", "hpp", "cs", "rb", "php", "sh", "ps1", "bat", "sql", "log", "ini", "cfg", "tex", "srt",
+    "vtt",
 ];
 const MAX_TEXT_BYTES: u64 = 1 << 20;
 pub const MAX_FILES: usize = 20_000;
@@ -33,11 +34,16 @@ pub fn collect(paths: &[PathBuf], next_id: &mut u64) -> Vec<Item> {
         }
     }
     files.truncate(MAX_FILES);
-    files.into_iter().filter_map(|f| file_item(&f, next_id)).collect()
+    files
+        .into_iter()
+        .filter_map(|f| file_item(&f, next_id))
+        .collect()
 }
 
 fn ext(p: &Path) -> String {
-    p.extension().map(|e| e.to_string_lossy().to_lowercase()).unwrap_or_default()
+    p.extension()
+        .map(|e| e.to_string_lossy().to_lowercase())
+        .unwrap_or_default()
 }
 
 fn file_item(path: &Path, next_id: &mut u64) -> Option<Item> {

@@ -33,13 +33,22 @@ impl ImageLoader {
         // Separate threads, so a long queue of thumbnails never delays the preview.
         let thumbs = spawn("thumbnails", THUMB_PX, false, done_tx.clone(), wake.clone());
         let previews = spawn("preview", PREVIEW_PX, true, done_tx, wake);
-        Self { thumbs, previews, done, requested: HashSet::new() }
+        Self {
+            thumbs,
+            previews,
+            done,
+            requested: HashSet::new(),
+        }
     }
 
     /// Queues a decode unless one was already requested for this item.
     pub fn request(&mut self, id: u64, path: &Path, preview: bool) {
         if self.requested.insert((id, preview)) {
-            let tx = if preview { &self.previews } else { &self.thumbs };
+            let tx = if preview {
+                &self.previews
+            } else {
+                &self.thumbs
+            };
             let _ = tx.send((id, path.to_path_buf()));
         }
     }
@@ -53,7 +62,13 @@ impl ImageLoader {
     }
 }
 
-fn spawn(name: &str, max: u32, preview: bool, done: Sender<Loaded>, wake: impl Fn() + Send + 'static) -> Sender<(u64, PathBuf)> {
+fn spawn(
+    name: &str,
+    max: u32,
+    preview: bool,
+    done: Sender<Loaded>,
+    wake: impl Fn() + Send + 'static,
+) -> Sender<(u64, PathBuf)> {
     let (tx, rx) = channel::<(u64, PathBuf)>();
     std::thread::Builder::new()
         .name(name.into())
@@ -62,13 +77,26 @@ fn spawn(name: &str, max: u32, preview: bool, done: Sender<Loaded>, wake: impl F
                 if preview {
                     // Only the latest selection matters; skip ones the user moved past.
                     while let Ok((i, p)) = rx.try_recv() {
-                        let _ = done.send(Loaded { id, preview, image: None, skipped: true });
+                        let _ = done.send(Loaded {
+                            id,
+                            preview,
+                            image: None,
+                            skipped: true,
+                        });
                         id = i;
                         path = p;
                     }
                 }
                 let image = decode(&path, max);
-                if done.send(Loaded { id, preview, image, skipped: false }).is_err() {
+                if done
+                    .send(Loaded {
+                        id,
+                        preview,
+                        image,
+                        skipped: false,
+                    })
+                    .is_err()
+                {
                     return;
                 }
                 wake();
@@ -80,7 +108,14 @@ fn spawn(name: &str, max: u32, preview: bool, done: Sender<Loaded>, wake: impl F
 
 fn decode(path: &Path, max: u32) -> Option<ColorImage> {
     let img = image::open(path).ok()?;
-    let img = if img.width() > max || img.height() > max { img.thumbnail(max, max) } else { img };
+    let img = if img.width() > max || img.height() > max {
+        img.thumbnail(max, max)
+    } else {
+        img
+    };
     let rgba = img.into_rgba8();
-    Some(ColorImage::from_rgba_unmultiplied([rgba.width() as usize, rgba.height() as usize], rgba.as_raw()))
+    Some(ColorImage::from_rgba_unmultiplied(
+        [rgba.width() as usize, rgba.height() as usize],
+        rgba.as_raw(),
+    ))
 }

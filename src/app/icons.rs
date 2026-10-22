@@ -76,7 +76,10 @@ pub(super) fn view_icon(v: ViewMode) -> Icon {
 
 macro_rules! svg {
     ($name:literal) => {
-        (concat!("bytes://icons/", $name, ".svg"), include_bytes!(concat!("../../assets/icons/", $name, ".svg")) as &[u8])
+        (
+            concat!("bytes://icons/", $name, ".svg"),
+            include_bytes!(concat!("../../assets/icons/", $name, ".svg")) as &[u8],
+        )
     };
 }
 
@@ -127,11 +130,46 @@ fn source(icon: Icon) -> Option<(&'static str, &'static [u8])> {
 }
 
 const ALL: [Icon; 40] = [
-    Icon::Refresh, Icon::Eye, Icon::EyeOff,
-    Icon::Grid, Icon::List, Icon::Detail, Icon::Copy, Icon::Open, Icon::Delete, Icon::Pin, Icon::PinFilled, Icon::Pause, Icon::Play,
-    Icon::Add, Icon::Settings, Icon::Back, Icon::Check, Icon::Edit, Icon::General, Icon::Search, Icon::Clipboard,
-    Icon::Keyboard, Icon::Palette, Icon::Lock, Icon::Close, Icon::Dropdown, Icon::Text, Icon::Link, Icon::Image, Icon::Folder,
-    Icon::File, Icon::Save, Icon::Browser, Icon::Info, Icon::Tag, Icon::Reset, Icon::Warning, Icon::Time, Icon::Language, Icon::Dot,
+    Icon::Refresh,
+    Icon::Eye,
+    Icon::EyeOff,
+    Icon::Grid,
+    Icon::List,
+    Icon::Detail,
+    Icon::Copy,
+    Icon::Open,
+    Icon::Delete,
+    Icon::Pin,
+    Icon::PinFilled,
+    Icon::Pause,
+    Icon::Play,
+    Icon::Add,
+    Icon::Settings,
+    Icon::Back,
+    Icon::Check,
+    Icon::Edit,
+    Icon::General,
+    Icon::Search,
+    Icon::Clipboard,
+    Icon::Keyboard,
+    Icon::Palette,
+    Icon::Lock,
+    Icon::Close,
+    Icon::Dropdown,
+    Icon::Text,
+    Icon::Link,
+    Icon::Image,
+    Icon::Folder,
+    Icon::File,
+    Icon::Save,
+    Icon::Browser,
+    Icon::Info,
+    Icon::Tag,
+    Icon::Reset,
+    Icon::Warning,
+    Icon::Time,
+    Icon::Language,
+    Icon::Dot,
 ];
 
 /// Installs the SVG loader and hands it the bundled icons.
@@ -159,7 +197,11 @@ pub(super) fn paint(p: &Painter, rect: Rect, icon: Icon, color: Color32) {
     let ctx = p.ctx();
     // Rasterised at the pixel size it's shown at, so edges stay sharp.
     let px = (side * ctx.pixels_per_point()).round().max(1.0) as u32;
-    let hint = SizeHint::Size { width: px, height: px, maintain_aspect_ratio: true };
+    let hint = SizeHint::Size {
+        width: px,
+        height: px,
+        maintain_aspect_ratio: true,
+    };
     match ctx.try_load_texture(uri, TextureOptions::LINEAR, hint) {
         Ok(TexturePoll::Ready { texture }) => {
             let uv = if mirrored(icon) && i18n::rtl() {
@@ -180,7 +222,15 @@ fn paint_shape(p: &Painter, rect: Rect, _icon: Icon, color: Color32) {
 }
 
 /// A flat icon button: background only on hover, or `fill` when given.
-pub(super) fn icon_button_ex(ui: &mut Ui, icon: Icon, tip: &str, size: Vec2, glyph: f32, fill: Option<Color32>, fg: Option<Color32>) -> egui::Response {
+pub(super) fn icon_button_ex(
+    ui: &mut Ui,
+    icon: Icon,
+    tip: &str,
+    size: Vec2,
+    glyph: f32,
+    fill: Option<Color32>,
+    fg: Option<Color32>,
+) -> egui::Response {
     let (rect, resp) = ui.allocate_exact_size(size, Sense::click());
     let tip = tr(tip);
     resp.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, ui.is_enabled(), tip));
@@ -193,13 +243,27 @@ pub(super) fn icon_button(ui: &mut Ui, icon: Icon, tip: &str) -> egui::Response 
 }
 
 /// An icon button at a fixed spot, for actions drawn over a row or card.
-pub(super) fn icon_button_at(ui: &Ui, rect: Rect, id: egui::Id, icon: Icon, tip: &str) -> egui::Response {
+pub(super) fn icon_button_at(
+    ui: &Ui,
+    rect: Rect,
+    id: egui::Id,
+    icon: Icon,
+    tip: &str,
+) -> egui::Response {
     let resp = ui.interact(rect, id, Sense::click());
     paint_button(ui, rect, &resp, icon, 15.0, None, None);
     view::tip(resp, tr(tip))
 }
 
-fn paint_button(ui: &Ui, rect: Rect, resp: &egui::Response, icon: Icon, glyph: f32, fill: Option<Color32>, fg: Option<Color32>) {
+fn paint_button(
+    ui: &Ui,
+    rect: Rect,
+    resp: &egui::Response,
+    icon: Icon,
+    glyph: f32,
+    fill: Option<Color32>,
+    fg: Option<Color32>,
+) {
     let v = ui.visuals();
     let p = ui.painter();
     let pressed = resp.is_pointer_button_down_on();
@@ -207,7 +271,11 @@ fn paint_button(ui: &Ui, rect: Rect, resp: &egui::Response, icon: Icon, glyph: f
         Some(f) => {
             p.rect_filled(rect, CornerRadius::same(8), f);
             if resp.hovered() {
-                p.rect_filled(rect, CornerRadius::same(8), Color32::from_white_alpha(if pressed { 10 } else { 28 }));
+                p.rect_filled(
+                    rect,
+                    CornerRadius::same(8),
+                    Color32::from_white_alpha(if pressed { 10 } else { 28 }),
+                );
             }
         }
         None if pressed => {
@@ -218,14 +286,33 @@ fn paint_button(ui: &Ui, rect: Rect, resp: &egui::Response, icon: Icon, glyph: f
         }
         None => {}
     }
-    let color = fg.unwrap_or(if resp.hovered() { v.strong_text_color() } else { v.text_color() });
-    paint(p, Rect::from_center_size(rect.center(), Vec2::splat(glyph)), icon, color);
+    let color = fg.unwrap_or(if resp.hovered() {
+        v.strong_text_color()
+    } else {
+        v.text_color()
+    });
+    paint(
+        p,
+        Rect::from_center_size(rect.center(), Vec2::splat(glyph)),
+        icon,
+        color,
+    );
 }
 
 /// An icon and a label side by side, both centred on the row's midline.
 /// Font glyphs can't do this: each font puts its symbols at its own height.
-pub(super) fn icon_text_size(ui: &Ui, text: &egui::WidgetText, size: f32, icon: f32) -> (std::sync::Arc<egui::Galley>, Vec2) {
-    let g = text.clone().into_galley(ui, Some(egui::TextWrapMode::Extend), f32::INFINITY, FontId::proportional(size));
+pub(super) fn icon_text_size(
+    ui: &Ui,
+    text: &egui::WidgetText,
+    size: f32,
+    icon: f32,
+) -> (std::sync::Arc<egui::Galley>, Vec2) {
+    let g = text.clone().into_galley(
+        ui,
+        Some(egui::TextWrapMode::Extend),
+        f32::INFINITY,
+        FontId::proportional(size),
+    );
     let gap = if g.size().x > 0.0 { 6.0 } else { 0.0 };
     let w = icon + gap + g.size().x;
     let size = Vec2::new(w, g.size().y.max(icon));
@@ -233,10 +320,27 @@ pub(super) fn icon_text_size(ui: &Ui, text: &egui::WidgetText, size: f32, icon: 
 }
 
 /// The icon goes on the reading-start side: left, or right in Arabic.
-pub(super) fn paint_icon_text(p: &Painter, rect: Rect, icon: Icon, icon_size: f32, g: std::sync::Arc<egui::Galley>, color: Color32) {
-    let ic = view::flip(rect, Rect::from_center_size(Pos2::new(rect.left() + icon_size / 2.0, rect.center().y), Vec2::splat(icon_size)));
+pub(super) fn paint_icon_text(
+    p: &Painter,
+    rect: Rect,
+    icon: Icon,
+    icon_size: f32,
+    g: std::sync::Arc<egui::Galley>,
+    color: Color32,
+) {
+    let ic = view::flip(
+        rect,
+        Rect::from_center_size(
+            Pos2::new(rect.left() + icon_size / 2.0, rect.center().y),
+            Vec2::splat(icon_size),
+        ),
+    );
     paint(p, ic, icon, color);
-    let x = if i18n::rtl() { ic.left() - 6.0 - g.size().x } else { ic.right() + 6.0 };
+    let x = if i18n::rtl() {
+        ic.left() - 6.0 - g.size().x
+    } else {
+        ic.right() + 6.0
+    };
     p.galley(Pos2::new(x, rect.center().y - g.size().y / 2.0), g, color);
 }
 
@@ -244,23 +348,33 @@ pub(super) fn paint_icon_text(p: &Painter, rect: Rect, icon: Icon, icon_size: f3
 pub(super) fn chip(ui: &mut Ui, icon: Icon, text: &str, color: Color32) -> egui::Response {
     let (g, size) = icon_text_size(ui, &view::txt(tr(text), 12.0, Some(color)), 12.0, 12.0);
     let pad = Vec2::new(8.0, 3.0);
-    let (rect, resp) = ui.allocate_exact_size(size + pad * 2.0 + Vec2::new(0.0, 2.0), Sense::hover());
-    ui.painter().rect_filled(rect, CornerRadius::same(10), color.gamma_multiply(0.14));
+    let (rect, resp) =
+        ui.allocate_exact_size(size + pad * 2.0 + Vec2::new(0.0, 2.0), Sense::hover());
+    ui.painter()
+        .rect_filled(rect, CornerRadius::same(10), color.gamma_multiply(0.14));
     paint_icon_text(ui.painter(), rect.shrink2(pad), icon, 12.0, g, color);
     resp
 }
 
 /// A pill button with an icon and a label; tinted while `selected`.
-pub(super) fn pill(ui: &mut Ui, icon: Icon, job: egui::text::LayoutJob, color: Color32, selected: bool) -> egui::Response {
+pub(super) fn pill(
+    ui: &mut Ui,
+    icon: Icon,
+    job: egui::text::LayoutJob,
+    color: Color32,
+    selected: bool,
+) -> egui::Response {
     let g = ui.fonts_mut(|f| f.layout_job(job));
     let pad = Vec2::new(10.0, 5.0);
     let size = Vec2::new(14.0 + 6.0 + g.size().x, g.size().y.max(14.0)) + pad * 2.0;
     let (rect, resp) = ui.allocate_exact_size(size, Sense::click());
     let v = ui.visuals();
     if selected {
-        ui.painter().rect_filled(rect, CornerRadius::same(14), color.gamma_multiply(0.13));
+        ui.painter()
+            .rect_filled(rect, CornerRadius::same(14), color.gamma_multiply(0.13));
     } else if resp.hovered() {
-        ui.painter().rect_filled(rect, CornerRadius::same(14), v.widgets.hovered.weak_bg_fill);
+        ui.painter()
+            .rect_filled(rect, CornerRadius::same(14), v.widgets.hovered.weak_bg_fill);
     }
     let icon_color = if selected { color } else { v.text_color() };
     paint_icon_text(ui.painter(), rect.shrink2(pad), icon, 14.0, g, icon_color);
@@ -280,17 +394,55 @@ pub(super) fn menu_item(ui: &mut Ui, icon: Icon, text: &str) -> egui::Response {
     let (rect, resp) = ui.allocate_exact_size(Vec2::new(w, 30.0), Sense::click());
     let v = ui.visuals();
     if resp.hovered() {
-        ui.painter().rect_filled(rect, CornerRadius::same(6), v.widgets.hovered.weak_bg_fill);
+        ui.painter()
+            .rect_filled(rect, CornerRadius::same(6), v.widgets.hovered.weak_bg_fill);
     }
-    let color = if resp.hovered() { v.strong_text_color() } else { v.text_color() };
-    paint(ui.painter(), view::flip(rect, Rect::from_center_size(Pos2::new(rect.left() + 16.0, rect.center().y), Vec2::splat(15.0))), icon, color);
-    let at = view::flip(rect, Rect::from_min_size(Pos2::new(rect.left() + 34.0, rect.center().y), Vec2::ZERO)).min;
-    view::paint_text(ui, ui.painter(), at, view::start_anchor(egui::Align::Center), tr(text), FontId::proportional(14.0), color);
+    let color = if resp.hovered() {
+        v.strong_text_color()
+    } else {
+        v.text_color()
+    };
+    paint(
+        ui.painter(),
+        view::flip(
+            rect,
+            Rect::from_center_size(
+                Pos2::new(rect.left() + 16.0, rect.center().y),
+                Vec2::splat(15.0),
+            ),
+        ),
+        icon,
+        color,
+    );
+    let at = view::flip(
+        rect,
+        Rect::from_min_size(Pos2::new(rect.left() + 34.0, rect.center().y), Vec2::ZERO),
+    )
+    .min;
+    view::paint_text(
+        ui,
+        ui.painter(),
+        at,
+        view::start_anchor(egui::Align::Center),
+        tr(text),
+        FontId::proportional(14.0),
+        color,
+    );
     resp
 }
 
 /// The painted icon for a leading glyph in older label text ("✔ Done").
 pub(super) fn from_prefix(text: &str) -> Option<(Icon, &str)> {
-    const MAP: [(&str, Icon); 8] = [("✔", Icon::Check), ("⚠", Icon::Warning), ("★", Icon::PinFilled), ("📂", Icon::Folder), ("⏸", Icon::Pause), ("💡", Icon::Info), ("🔍", Icon::Search), ("●", Icon::Dot)];
-    MAP.iter().find_map(|(g, i)| text.strip_prefix(g).map(|rest| (*i, rest.trim_start())))
+    const MAP: [(&str, Icon); 8] = [
+        ("✔", Icon::Check),
+        ("⚠", Icon::Warning),
+        ("★", Icon::PinFilled),
+        ("📂", Icon::Folder),
+        ("⏸", Icon::Pause),
+        ("💡", Icon::Info),
+        ("🔍", Icon::Search),
+        ("●", Icon::Dot),
+    ];
+    MAP.iter()
+        .find_map(|(g, i)| text.strip_prefix(g).map(|rest| (*i, rest.trim_start())))
 }

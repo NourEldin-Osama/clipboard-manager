@@ -125,7 +125,13 @@ pub struct Keys {
 
 impl Default for Keys {
     fn default() -> Self {
-        Self { copy: "Enter".into(), pin: "Ctrl+P".into(), delete: "Shift+Delete".into(), tag: "Ctrl+T".into(), view: "Ctrl+L".into() }
+        Self {
+            copy: "Enter".into(),
+            pin: "Ctrl+P".into(),
+            delete: "Shift+Delete".into(),
+            tag: "Ctrl+T".into(),
+            view: "Ctrl+L".into(),
+        }
     }
 }
 
@@ -143,7 +149,13 @@ pub enum SortOrder {
 }
 
 impl SortOrder {
-    pub const ALL: [SortOrder; 5] = [Self::BestMatch, Self::Recent, Self::Oldest, Self::AToZ, Self::MostUsed];
+    pub const ALL: [SortOrder; 5] = [
+        Self::BestMatch,
+        Self::Recent,
+        Self::Oldest,
+        Self::AToZ,
+        Self::MostUsed,
+    ];
 
     pub fn label(self) -> &'static str {
         match self {

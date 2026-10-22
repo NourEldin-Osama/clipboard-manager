@@ -4,8 +4,6 @@
 //! Changes: import paths, and `div_l2_norm` inlined from the CLIP module.
 #![allow(dead_code)]
 
-
-
 use candle_core::{IndexOp, Module, Result, Tensor, D};
 use candle_nn::{layer_norm, linear, LayerNorm, Linear, VarBuilder};
 
