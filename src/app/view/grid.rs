@@ -312,7 +312,10 @@ impl App {
     /// Cards in as many columns as fit, like a pinboard.
     pub(super) fn grid(&mut self, ui: &mut Ui) {
         if self.results.is_empty() {
-            self.empty_list(ui);
+            // Until the first results come, show nothing rather than "no matches".
+            if !self.searching {
+                self.empty_list(ui);
+            }
             return;
         }
         let compact = self.cfg.density == Density::Compact;
@@ -330,11 +333,10 @@ impl App {
         let mut sa = egui::ScrollArea::vertical().auto_shrink([false, false]);
         if self.scroll_to_selected {
             self.scroll_to_selected = false;
-            if let Some(i) = self.selected.and_then(|id| {
-                self.results
-                    .iter()
-                    .position(|h| self.library.items()[h.idx].id == id)
-            }) {
+            if let Some(i) = self
+                .selected
+                .and_then(|id| self.results.iter().position(|h| h.id == id))
+            {
                 let (off, view_h) = self.list_view;
                 let top = (i / cols) as f32 * pitch;
                 if top < off {
@@ -356,8 +358,8 @@ impl App {
             vec![]
         };
         let mut actions = Vec::new();
-        let (items, results, thumbs, loader, selected) = (
-            self.library.items(),
+        let (library, results, thumbs, loader, selected) = (
+            &self.library,
             &self.results,
             &self.thumbs,
             &mut self.loader,
@@ -379,7 +381,9 @@ impl App {
                     ),
                     Vec2::new(card_w, card_h),
                 );
-                let it = &items[hit.idx];
+                let Some(it) = library.get(hit.id) else {
+                    continue;
+                };
                 let thumb = thumb_for(it, thumbs, loader);
                 let resp = ui.interact(rect, egui::Id::unique(("card", it.id)), Sense::click());
                 let hot = ui.rect_contains_pointer(rect);

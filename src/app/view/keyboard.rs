@@ -89,6 +89,10 @@ impl App {
         if view {
             self.set_view(self.cfg.view.next());
         }
+        if enter || del || pin || tag {
+            // These act on the selected item: let it follow what was just typed.
+            self.finish_search();
+        }
         // In the grid ↑ ↓ move a whole row; ← → move one card, unless they
         // would be moving the cursor in a typed query.
         let grid = self.cfg.view == ViewMode::Grid;

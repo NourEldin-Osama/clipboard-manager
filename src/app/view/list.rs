@@ -301,7 +301,10 @@ pub(super) fn one_line(
 impl App {
     pub(super) fn list(&mut self, ui: &mut Ui) {
         if self.results.is_empty() {
-            self.empty_list(ui);
+            // Until the first results come, show nothing rather than "no matches".
+            if !self.searching {
+                self.empty_list(ui);
+            }
             return;
         }
         let compact = self.cfg.density == Density::Compact;
@@ -317,11 +320,11 @@ impl App {
         // Day headers only make sense in date order.
         if !searching && self.cfg.group_by_date && self.sort() == SortOrder::Recent {
             let pinned_first = self.cfg.pinned_first;
-            lines = with_headers(
-                self.results
-                    .iter()
-                    .map(|h| group_label(&self.library.items()[h.idx], pinned_first)),
-            );
+            lines = with_headers(self.results.iter().map(|h| {
+                self.library
+                    .get(h.id)
+                    .map_or("", |it| group_label(it, pinned_first))
+            }));
         } else {
             lines.extend((0..self.results.len()).map(Line::Row));
         }
@@ -339,9 +342,16 @@ impl App {
         let mut sa = egui::ScrollArea::vertical().auto_shrink([false, false]);
         if self.scroll_to_selected {
             self.scroll_to_selected = false;
-            if let Some(i) = lines.iter().position(|l| matches!(l, Line::Row(r) if Some(self.library.items()[self.results[*r].idx].id) == self.selected)) {
+            if let Some(i) = lines.iter().position(
+                |l| matches!(l, Line::Row(r) if Some(self.results[*r].id) == self.selected),
+            ) {
                 let (off, view_h) = self.list_view;
-                let top = ys[i] - if i > 0 && matches!(lines[i - 1], Line::Header(..)) { header_h } else { 0.0 };
+                let top = ys[i]
+                    - if i > 0 && matches!(lines[i - 1], Line::Header(..)) {
+                        header_h
+                    } else {
+                        0.0
+                    };
                 if top < off {
                     sa = sa.vertical_scroll_offset(top);
                 } else if ys[i] + row_h > off + view_h {
@@ -365,8 +375,8 @@ impl App {
             vec![]
         };
         let mut actions = Vec::new();
-        let (items, results, thumbs, loader, selected) = (
-            self.library.items(),
+        let (library, results, thumbs, loader, selected) = (
+            &self.library,
             &self.results,
             &self.thumbs,
             &mut self.loader,
@@ -420,7 +430,9 @@ impl App {
                     }
                     Line::Row(r) => {
                         let hit = &results[*r];
-                        let it = &items[hit.idx];
+                        let Some(it) = library.get(hit.id) else {
+                            continue;
+                        };
                         let thumb = thumb_for(it, thumbs, loader);
                         let resp =
                             ui.interact(rect, egui::Id::unique(("row", it.id)), Sense::click());

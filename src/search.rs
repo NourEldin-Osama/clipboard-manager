@@ -1,6 +1,11 @@
-//! Keyword, semantic and hybrid ranking over the in-memory history.
+//! Keyword, semantic and hybrid ranking over the in-memory history, on a
+//! thread of its own (`Searcher`).
 
 use std::collections::HashMap;
+use std::panic::{catch_unwind, AssertUnwindSafe};
+use std::sync::mpsc::{channel, Receiver, Sender};
+use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 use crate::config::{SearchMode, SortOrder};
 use crate::embed::Embedding;
@@ -49,28 +54,50 @@ impl Filter {
     }
 }
 
+/// One search result. By id, not by position: the history can change while
+/// the search runs.
 #[derive(Clone, Debug)]
 pub struct Hit {
-    /// Index into the item slice that was searched.
-    pub idx: usize,
-    pub keyword: f32,
+    pub id: u64,
     pub semantic: Option<f32>,
     /// What the list is ordered by when meaning is used (higher first); the
     /// relevance bars are drawn from it, so they always read top-down.
     pub relevance: Option<f32>,
 }
 
-pub struct Query<'a> {
-    pub text: &'a str,
-    pub vector: Option<&'a Embedding>,
+/// A result while ranking: `idx` points into the items searched.
+struct Ranked {
+    idx: usize,
+    keyword: f32,
+    semantic: Option<f32>,
+    relevance: Option<f32>,
+}
+
+/// What a search reads. Made by `Library::snapshot`; cloning it copies
+/// pointers, not texts or vectors.
+#[derive(Clone, Default)]
+pub struct Snapshot {
+    pub items: Vec<Arc<Item>>,
+    /// Each item's lower-cased searchable text; items missing here are
+    /// lower-cased on the fly.
+    pub lower: HashMap<u64, Arc<str>>,
+    pub embeddings: HashMap<u64, Arc<Embedding>>,
+}
+
+pub struct Query {
+    pub text: String,
+    pub vector: Option<Arc<Embedding>>,
     pub mode: SearchMode,
     pub filter: Filter,
     /// Only items with this tag. Applied before results are cut to the best
     /// matches, so tagged items further down are not lost.
-    pub tag: Option<&'a str>,
+    pub tag: Option<String>,
     pub min_similarity: f32,
     /// Image items carry image vectors (not OCR-text vectors).
     pub image_vectors: bool,
+    pub sort: SortOrder,
+    /// Pinned items first, whatever the sort order.
+    pub pinned_first: bool,
 }
 
 /// Fraction of query terms present (case-insensitive), plus a bonus for the
@@ -95,17 +122,27 @@ pub fn keyword_score(haystack_lower: &str, query_lower: &str, terms: &[&str]) ->
 
 const SEMANTIC_DEPTH: usize = 200;
 
-/// `lower` caches each item's lower-cased searchable text by id; items missing
-/// from it are lower-cased on the fly.
-pub fn search(
-    items: &[Item],
-    lower: &HashMap<u64, String>,
-    embeddings: &HashMap<u64, Embedding>,
-    q: &Query,
-) -> Vec<Hit> {
+/// The items matching `q`, in the order to show them.
+pub fn search(s: &Snapshot, q: &Query) -> Vec<Hit> {
+    let mut ranked = rank(s, q);
+    order(&s.items, &mut ranked, q.sort, q.pinned_first);
+    ranked
+        .into_iter()
+        .map(|r| Hit {
+            id: s.items[r.idx].id,
+            semantic: r.semantic,
+            relevance: r.relevance,
+        })
+        .collect()
+}
+
+fn rank(s: &Snapshot, q: &Query) -> Vec<Ranked> {
+    let (items, lower, embeddings) = (&s.items, &s.lower, &s.embeddings);
     let query_lower = q.text.trim().to_lowercase();
     let candidates: Vec<usize> = (0..items.len())
-        .filter(|&i| q.filter.accepts(&items[i]) && q.tag.is_none_or(|t| items[i].has_tag(t)))
+        .filter(|&i| {
+            q.filter.accepts(&items[i]) && q.tag.as_ref().is_none_or(|t| items[i].has_tag(t))
+        })
         .collect();
 
     if query_lower.is_empty() {
@@ -119,7 +156,7 @@ pub fn search(
         });
         return out
             .into_iter()
-            .map(|idx| Hit {
+            .map(|idx| Ranked {
                 idx,
                 keyword: 0.0,
                 semantic: None,
@@ -156,7 +193,7 @@ pub fn search(
     let mut sem_text: Vec<(usize, f32)> = Vec::new();
     let mut sem_image: Vec<(usize, f32)> = Vec::new();
     if q.mode != SearchMode::Keyword {
-        if let Some(v) = q.vector {
+        if let Some(v) = &q.vector {
             for &i in &candidates {
                 if let Some(e) = embeddings.get(&items[i].id) {
                     let s = v.score(e);
@@ -181,7 +218,7 @@ pub fn search(
         // Words only (or no query vector yet): best word match first.
         return kw
             .iter()
-            .map(|&(idx, s)| Hit {
+            .map(|&(idx, s)| Ranked {
                 idx,
                 keyword: s,
                 semantic: None,
@@ -192,13 +229,13 @@ pub fn search(
 
     // Ordered by similarity. Each modality is scaled by its own best match, so
     // a photo that is the best image match isn't buried under text matches.
-    let mut by_idx: HashMap<usize, Hit> = HashMap::new();
+    let mut by_idx: HashMap<usize, Ranked> = HashMap::new();
     for list in [&sem_text, &sem_image] {
         let best = list.first().map(|&(_, s)| s).unwrap_or(1.0).max(1e-6);
         for &(idx, s) in list {
             by_idx.insert(
                 idx,
-                Hit {
+                Ranked {
                     idx,
                     keyword: 0.0,
                     semantic: Some(s),
@@ -211,7 +248,7 @@ pub fn search(
         // Containing the words counts too, on the same scale.
         let best_kw = kw.first().map(|&(_, s)| s).unwrap_or(1.0).max(1e-6);
         for &(idx, s) in &kw {
-            let h = by_idx.entry(idx).or_insert(Hit {
+            let h = by_idx.entry(idx).or_insert(Ranked {
                 idx,
                 keyword: 0.0,
                 semantic: None,
@@ -221,7 +258,7 @@ pub fn search(
             h.relevance = Some(h.relevance.unwrap_or(0.0) + KEYWORD_WEIGHT * s / best_kw);
         }
     }
-    let mut v: Vec<Hit> = by_idx.into_values().collect();
+    let mut v: Vec<Ranked> = by_idx.into_values().collect();
     v.sort_by(|a, b| {
         b.relevance
             .unwrap_or(0.0)
@@ -235,9 +272,9 @@ pub fn search(
 const KEYWORD_WEIGHT: f32 = 0.25;
 
 /// Puts `hits` in the chosen order. `BestMatch` keeps the ranking from
-/// `search`; pinned items move to the top (keeping their order) when asked.
-pub fn order(items: &[Item], hits: &mut [Hit], sort: SortOrder, pinned_first: bool) {
-    let newest = |a: &Hit, b: &Hit| {
+/// `rank`; pinned items move to the top (keeping their order) when asked.
+fn order(items: &[Arc<Item>], hits: &mut [Ranked], sort: SortOrder, pinned_first: bool) {
+    let newest = |a: &Ranked, b: &Ranked| {
         (items[b.idx].created, items[b.idx].id).cmp(&(items[a.idx].created, items[a.idx].id))
     };
     match sort {
@@ -259,6 +296,72 @@ pub fn order(items: &[Item], hits: &mut [Hit], sort: SortOrder, pinned_first: bo
     }
     if pinned_first {
         hits.sort_by_key(|h| !items[h.idx].pinned);
+    }
+}
+
+/// Runs searches on a thread of its own: with a big history or a slow model
+/// a search takes long enough to stall typing. Only the newest request
+/// counts; requests still waiting when a newer one comes are skipped.
+pub struct Searcher {
+    requests: Sender<(u64, Snapshot, Query)>,
+    results: Receiver<(u64, Vec<Hit>)>,
+}
+
+impl Searcher {
+    pub fn spawn(wake: impl Fn() + Send + 'static) -> Self {
+        let (requests, inbox) = channel::<(u64, Snapshot, Query)>();
+        let (outbox, results) = channel();
+        std::thread::Builder::new()
+            .name("search".into())
+            .spawn(move || {
+                while let Ok(mut request) = inbox.recv() {
+                    while let Ok(newer) = inbox.try_recv() {
+                        request = newer;
+                    }
+                    let (seq, snapshot, query) = request;
+                    match catch_unwind(AssertUnwindSafe(|| search(&snapshot, &query))) {
+                        Ok(hits) => {
+                            if outbox.send((seq, hits)).is_err() {
+                                return;
+                            }
+                            wake();
+                        }
+                        Err(_) => log::error!("a search crashed; the list keeps the last results"),
+                    }
+                }
+            })
+            .expect("spawn search thread");
+        Self { requests, results }
+    }
+
+    /// Starts search number `seq`; `results_for(seq)` returns its results.
+    pub fn search(&self, seq: u64, snapshot: Snapshot, query: Query) {
+        let _ = self.requests.send((seq, snapshot, query));
+    }
+
+    /// The results of search `seq` once they are ready. Results of older
+    /// searches are dropped: they may show items deleted since.
+    pub fn results_for(&self, seq: u64) -> Option<Vec<Hit>> {
+        let mut found = None;
+        while let Ok((done, hits)) = self.results.try_recv() {
+            if done == seq {
+                found = Some(hits);
+            }
+        }
+        found
+    }
+
+    /// Like `results_for`, but waits up to `timeout` for them.
+    pub fn wait_for(&self, seq: u64, timeout: Duration) -> Option<Vec<Hit>> {
+        let deadline = Instant::now() + timeout;
+        loop {
+            let left = deadline.saturating_duration_since(Instant::now());
+            match self.results.recv_timeout(left) {
+                Ok((done, hits)) if done == seq => return Some(hits),
+                Ok(_) => continue,
+                Err(_) => return None,
+            }
+        }
     }
 }
 
@@ -286,42 +389,63 @@ mod tests {
         }
     }
 
-    #[test]
-    fn keyword_and_hybrid() {
-        let items = vec![
-            item(1, "invoice for March", 1),
-            item(2, "march madness tickets", 2),
-            item(3, "hello", 3),
-        ];
-        let mut embs = HashMap::new();
-        embs.insert(1, Embedding::dense(vec![1.0, 0.0], 0));
-        embs.insert(2, Embedding::dense(vec![0.0, 1.0], 0));
-        embs.insert(3, Embedding::dense(vec![0.9, 0.1], 0));
-        let qv = Embedding::dense(vec![1.0, 0.0], 0);
-        let q = |mode| Query {
-            text: "march invoice",
-            vector: Some(&qv),
+    /// No lower-cased texts: search lower-cases them on the fly.
+    fn snapshot(items: Vec<Item>, embeddings: Vec<(u64, Embedding)>) -> Snapshot {
+        Snapshot {
+            items: items.into_iter().map(Arc::new).collect(),
+            lower: HashMap::new(),
+            embeddings: embeddings
+                .into_iter()
+                .map(|(id, e)| (id, Arc::new(e)))
+                .collect(),
+        }
+    }
+
+    /// In ranking order (BestMatch), nothing pinned first, no limits.
+    fn query(text: &str, vector: Option<Embedding>, mode: SearchMode) -> Query {
+        Query {
+            text: text.into(),
+            vector: vector.map(Arc::new),
             mode,
             filter: Filter::All,
-            min_similarity: 0.5,
             tag: None,
+            min_similarity: 0.0,
             image_vectors: false,
+            sort: SortOrder::BestMatch,
+            pinned_first: false,
+        }
+    }
+
+    fn ids(hits: &[Hit]) -> Vec<u64> {
+        hits.iter().map(|h| h.id).collect()
+    }
+
+    #[test]
+    fn keyword_and_hybrid() {
+        let s = snapshot(
+            vec![
+                item(1, "invoice for March", 1),
+                item(2, "march madness tickets", 2),
+                item(3, "hello", 3),
+            ],
+            vec![
+                (1, Embedding::dense(vec![1.0, 0.0], 0)),
+                (2, Embedding::dense(vec![0.0, 1.0], 0)),
+                (3, Embedding::dense(vec![0.9, 0.1], 0)),
+            ],
+        );
+        let q = |mode| Query {
+            min_similarity: 0.5,
+            ..query(
+                "march invoice",
+                Some(Embedding::dense(vec![1.0, 0.0], 0)),
+                mode,
+            )
         };
-
-        let k = search(&items, &HashMap::new(), &embs, &q(SearchMode::Keyword));
-        assert_eq!(
-            k.iter().map(|h| items[h.idx].id).collect::<Vec<_>>(),
-            vec![1, 2]
-        );
-
-        let s = search(&items, &HashMap::new(), &embs, &q(SearchMode::Semantic));
-        assert_eq!(
-            s.iter().map(|h| items[h.idx].id).collect::<Vec<_>>(),
-            vec![1, 3]
-        );
-
-        let h = search(&items, &HashMap::new(), &embs, &q(SearchMode::Hybrid));
-        assert_eq!(items[h[0].idx].id, 1);
+        assert_eq!(ids(&search(&s, &q(SearchMode::Keyword))), vec![1, 2]);
+        assert_eq!(ids(&search(&s, &q(SearchMode::Semantic))), vec![1, 3]);
+        let h = search(&s, &q(SearchMode::Hybrid));
+        assert_eq!(h[0].id, 1);
         assert_eq!(h.len(), 3);
     }
 
@@ -333,58 +457,55 @@ mod tests {
             item(3, "", 3),
         ];
         items[2].kind = Kind::Image;
-        let mut embs = HashMap::new();
         // Text-text scores ~0.8, text-image ~0.2: the image is still the best image.
-        embs.insert(1, Embedding::dense(vec![0.8, 0.6, 0.0], 0));
-        embs.insert(2, Embedding::dense(vec![0.7, 0.71, 0.0], 0));
-        embs.insert(3, Embedding::dense(vec![0.2, 0.0, 0.98], 0));
-        let qv = Embedding::dense(vec![1.0, 0.0, 0.0], 0);
+        let s = snapshot(
+            items,
+            vec![
+                (1, Embedding::dense(vec![0.8, 0.6, 0.0], 0)),
+                (2, Embedding::dense(vec![0.7, 0.71, 0.0], 0)),
+                (3, Embedding::dense(vec![0.2, 0.0, 0.98], 0)),
+            ],
+        );
         let q = Query {
-            text: "kitten",
-            vector: Some(&qv),
-            mode: SearchMode::Semantic,
-            filter: Filter::All,
-            min_similarity: 0.0,
-            tag: None,
             image_vectors: true,
+            ..query(
+                "kitten",
+                Some(Embedding::dense(vec![1.0, 0.0, 0.0], 0)),
+                SearchMode::Semantic,
+            )
         };
-        let ids: Vec<u64> = search(&items, &HashMap::new(), &embs, &q)
-            .iter()
-            .map(|h| items[h.idx].id)
-            .collect();
-        assert!(ids[..2].contains(&3), "{ids:?}");
+        let found = ids(&search(&s, &q));
+        assert!(found[..2].contains(&3), "{found:?}");
     }
 
     /// Smart results come back best first, so the relevance bars read top-down.
     #[test]
     fn hybrid_is_ordered_by_relevance() {
-        let items = vec![
-            item(1, "time format", 1),
-            item(2, "grid view list view time", 2),
-            item(3, "clock", 3),
-            item(4, "hello", 4),
-        ];
-        let mut embs = HashMap::new();
-        embs.insert(1, Embedding::dense(vec![1.0, 0.0], 0));
-        embs.insert(2, Embedding::dense(vec![0.3, 0.95], 0));
-        embs.insert(3, Embedding::dense(vec![0.95, 0.3], 0));
-        embs.insert(4, Embedding::dense(vec![0.6, 0.8], 0));
-        let qv = Embedding::dense(vec![1.0, 0.0], 0);
-        let q = Query {
-            text: "time",
-            vector: Some(&qv),
-            mode: SearchMode::Hybrid,
-            filter: Filter::All,
-            min_similarity: 0.0,
-            tag: None,
-            image_vectors: false,
-        };
-        let hits = search(&items, &HashMap::new(), &embs, &q);
+        let s = snapshot(
+            vec![
+                item(1, "time format", 1),
+                item(2, "grid view list view time", 2),
+                item(3, "clock", 3),
+                item(4, "hello", 4),
+            ],
+            vec![
+                (1, Embedding::dense(vec![1.0, 0.0], 0)),
+                (2, Embedding::dense(vec![0.3, 0.95], 0)),
+                (3, Embedding::dense(vec![0.95, 0.3], 0)),
+                (4, Embedding::dense(vec![0.6, 0.8], 0)),
+            ],
+        );
+        let q = query(
+            "time",
+            Some(Embedding::dense(vec![1.0, 0.0], 0)),
+            SearchMode::Hybrid,
+        );
+        let hits = search(&s, &q);
         let rel: Vec<f32> = hits.iter().map(|h| h.relevance.unwrap()).collect();
         assert!(rel.windows(2).all(|w| w[0] >= w[1]), "{rel:?}");
         // A close meaning match outranks a weak one that merely contains the word.
-        let ids: Vec<u64> = hits.iter().map(|h| items[h.idx].id).collect();
-        assert_eq!(&ids[..2], &[1, 3], "{ids:?}");
+        let found = ids(&hits);
+        assert_eq!(&found[..2], &[1, 3], "{found:?}");
     }
 
     #[test]
@@ -396,43 +517,31 @@ mod tests {
         ];
         items[2].pinned = true;
         items[0].uses = 5;
-        let ids = |sort, pinned| {
-            let mut hits: Vec<Hit> = (0..items.len())
-                .map(|idx| Hit {
-                    idx,
-                    keyword: 0.0,
-                    semantic: None,
-                    relevance: None,
-                })
-                .collect();
-            order(&items, &mut hits, sort, pinned);
-            hits.iter().map(|h| items[h.idx].id).collect::<Vec<_>>()
+        let s = snapshot(items, vec![]);
+        let order_of = |sort, pinned_first| {
+            ids(&search(
+                &s,
+                &Query {
+                    sort,
+                    pinned_first,
+                    ..query(" ", None, SearchMode::Hybrid)
+                },
+            ))
         };
-        assert_eq!(ids(SortOrder::Recent, false), vec![2, 3, 1]);
-        assert_eq!(ids(SortOrder::Oldest, false), vec![1, 3, 2]);
-        assert_eq!(ids(SortOrder::AToZ, false), vec![2, 1, 3]);
-        assert_eq!(ids(SortOrder::MostUsed, false), vec![1, 2, 3]);
-        assert_eq!(ids(SortOrder::AToZ, true), vec![3, 2, 1]);
+        assert_eq!(order_of(SortOrder::Recent, false), vec![2, 3, 1]);
+        assert_eq!(order_of(SortOrder::Oldest, false), vec![1, 3, 2]);
+        assert_eq!(order_of(SortOrder::AToZ, false), vec![2, 1, 3]);
+        assert_eq!(order_of(SortOrder::MostUsed, false), vec![1, 2, 3]);
+        assert_eq!(order_of(SortOrder::AToZ, true), vec![3, 2, 1]);
     }
 
     #[test]
     fn empty_query_lists_pinned_then_newest() {
         let mut items = vec![item(1, "a", 1), item(2, "b", 2), item(3, "c", 3)];
         items[0].pinned = true;
-        let q = Query {
-            text: " ",
-            vector: None,
-            mode: SearchMode::Hybrid,
-            filter: Filter::All,
-            min_similarity: 0.0,
-            tag: None,
-            image_vectors: false,
-        };
-        let ids: Vec<u64> = search(&items, &HashMap::new(), &HashMap::new(), &q)
-            .iter()
-            .map(|h| items[h.idx].id)
-            .collect();
-        assert_eq!(ids, vec![1, 3, 2]);
+        let s = snapshot(items, vec![]);
+        let found = ids(&search(&s, &query(" ", None, SearchMode::Hybrid)));
+        assert_eq!(found, vec![1, 3, 2]);
     }
 
     #[test]
@@ -441,25 +550,38 @@ mod tests {
         // the 200 best that meaning search keeps.
         let mut items: Vec<Item> = (1..=250).map(|id| item(id, "note", id as i64)).collect();
         items[249].tags = vec!["work".into()];
-        let mut embs = HashMap::new();
-        for it in &items {
-            let s = 1.0 - it.id as f32 / 1000.0;
-            embs.insert(it.id, Embedding::dense(vec![s, (1.0 - s * s).sqrt()], 0));
-        }
-        let qv = Embedding::dense(vec![1.0, 0.0], 0);
-        let q = Query {
-            text: "anything",
-            vector: Some(&qv),
-            mode: SearchMode::Semantic,
-            filter: Filter::All,
-            tag: Some("WORK"),
-            min_similarity: 0.0,
-            image_vectors: false,
-        };
-        let ids: Vec<u64> = search(&items, &HashMap::new(), &embs, &q)
+        let embeddings = items
             .iter()
-            .map(|h| items[h.idx].id)
+            .map(|it| {
+                let s = 1.0 - it.id as f32 / 1000.0;
+                (it.id, Embedding::dense(vec![s, (1.0 - s * s).sqrt()], 0))
+            })
             .collect();
-        assert_eq!(ids, vec![250]);
+        let s = snapshot(items, embeddings);
+        let q = Query {
+            tag: Some("WORK".into()),
+            ..query(
+                "anything",
+                Some(Embedding::dense(vec![1.0, 0.0], 0)),
+                SearchMode::Semantic,
+            )
+        };
+        assert_eq!(ids(&search(&s, &q)), vec![250]);
+    }
+
+    #[test]
+    fn the_searcher_answers_the_newest_request() {
+        let searcher = Searcher::spawn(|| {});
+        let s = snapshot(vec![item(1, "alpha", 1), item(2, "beta", 2)], vec![]);
+        searcher.search(1, s.clone(), query("alpha", None, SearchMode::Keyword));
+        searcher.search(2, s, query("beta", None, SearchMode::Keyword));
+        let hits = searcher
+            .wait_for(2, Duration::from_secs(10))
+            .expect("results within 10 s");
+        assert_eq!(ids(&hits), vec![2]);
+        assert!(
+            searcher.results_for(1).is_none(),
+            "older results never come back"
+        );
     }
 }

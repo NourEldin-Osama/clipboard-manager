@@ -60,9 +60,11 @@ One egui `App` (`src/app.rs`) owns all state; background threads talk to it over
 - **Store** (`store.rs`): redb; items as JSON (new fields need `#[serde(default)]`), images as PNG files beside it.
 - **Library** (`library.rs`): the history in memory (items, their lower-cased search text, the current model's vectors)
   kept in step with the store. Every change to the history goes through it; it has no UI code and its own tests.
+  Items sit behind `Arc`, so `snapshot()` hands a search the whole history without copying texts or vectors.
 - **Search** (`search.rs`): keyword score plus cosine similarity; text and image similarities are each scaled by their
   best match before merging (the "modality gap"), Smart adds a keyword boost, and `order()` applies the Sort by choice.
-  Results are `Hit`s indexing into `Library::items()`.
+  It runs on the `Searcher` thread; only the newest search's results are shown. Results are `Hit`s by item id, so
+  after removing items `App` also takes them out of `results` (`drop_removed`).
 
 `App::logic` runs every frame **even while the window is hidden** (tray mode), so channel draining, tray commands,
 hide/show and update checks live there (`window_logic`, `update_logic`, `handle_events`); `App::ui` only draws.

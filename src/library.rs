@@ -8,6 +8,7 @@ use std::sync::Arc;
 use anyhow::Result;
 
 use crate::embed::Embedding;
+use crate::search::Snapshot;
 use crate::store::{now, Item, Kind, Origin, Store};
 
 /// Longest tag kept, in characters.
@@ -15,39 +16,41 @@ const MAX_TAG_CHARS: usize = 40;
 
 pub struct Library {
     store: Arc<Store>,
-    /// Every item, in the order it was added.
-    items: Vec<Item>,
+    /// Every item, in the order it was added. A running search may share them
+    /// (see `snapshot`); a change then copies only the item it changes.
+    items: Vec<Arc<Item>>,
+    /// Where each item is in `items`, by id.
+    positions: HashMap<u64, usize>,
     /// Each item's searchable text, lower-cased, for keyword search.
-    lower: HashMap<u64, String>,
+    lower: HashMap<u64, Arc<str>>,
     /// The current model's vector for each item that has one.
-    embeddings: HashMap<u64, Embedding>,
+    embeddings: HashMap<u64, Arc<Embedding>>,
     next_id: u64,
 }
 
 /// An item taken out of the history but not yet deleted from the disk, so it
 /// can still be put back ("Undo").
 pub struct Removed {
-    pub item: Item,
+    pub item: Arc<Item>,
     /// Where it was in `items()`, so it comes back in the same place.
-    pub position: usize,
-    embedding: Option<Embedding>,
+    position: usize,
+    embedding: Option<Arc<Embedding>>,
 }
 
 impl Library {
     pub fn open(store: Arc<Store>) -> Result<Self> {
-        let items = store.all_items()?;
-        let next_id = store.next_id()?;
-        let lower = items
-            .iter()
-            .map(|i| (i.id, i.searchable_text().to_lowercase()))
-            .collect();
-        Ok(Self {
+        let items: Vec<Arc<Item>> = store.all_items()?.into_iter().map(Arc::new).collect();
+        let lower = items.iter().map(|i| (i.id, lowered(i))).collect();
+        let mut library = Self {
+            next_id: store.next_id()?,
             store,
             items,
+            positions: HashMap::new(),
             lower,
             embeddings: HashMap::new(),
-            next_id,
-        })
+        };
+        library.reindex_from(0);
+        Ok(library)
     }
 
     /// For the worker and the image files; history rows change only here.
@@ -55,20 +58,21 @@ impl Library {
         &self.store
     }
 
-    pub fn items(&self) -> &[Item] {
+    pub fn items(&self) -> &[Arc<Item>] {
         &self.items
     }
 
-    pub fn lower(&self) -> &HashMap<u64, String> {
-        &self.lower
-    }
-
-    pub fn embeddings(&self) -> &HashMap<u64, Embedding> {
-        &self.embeddings
-    }
-
     pub fn get(&self, id: u64) -> Option<&Item> {
-        self.items.iter().find(|i| i.id == id)
+        self.positions.get(&id).map(|&p| &*self.items[p])
+    }
+
+    /// What a search reads. Quick: texts and vectors are shared, not copied.
+    pub fn snapshot(&self) -> Snapshot {
+        Snapshot {
+            items: self.items.clone(),
+            lower: self.lower.clone(),
+            embeddings: self.embeddings.clone(),
+        }
     }
 
     /// An id no item has used in this session.
@@ -111,21 +115,28 @@ impl Library {
     }
 
     fn push(&mut self, item: Item) {
-        self.lower
-            .insert(item.id, item.searchable_text().to_lowercase());
-        self.items.push(item);
+        self.lower.insert(item.id, lowered(&item));
+        self.positions.insert(item.id, self.items.len());
+        self.items.push(Arc::new(item));
+    }
+
+    /// The item to change; copied first if a search still reads it.
+    fn get_mut(&mut self, id: u64) -> Option<&mut Item> {
+        let p = *self.positions.get(&id)?;
+        Some(Arc::make_mut(&mut self.items[p]))
     }
 
     /// A repeated copy: the clipboard item with the same content counts as
     /// new again (it moves to the top). Returns whether there was one.
     pub fn touch_duplicate(&mut self, hash: u64) -> Result<bool> {
-        let Some(it) = self
+        let Some(p) = self
             .items
-            .iter_mut()
-            .find(|i| i.hash == hash && i.origin == Origin::Clipboard)
+            .iter()
+            .position(|i| i.hash == hash && i.origin == Origin::Clipboard)
         else {
             return Ok(false);
         };
+        let it = Arc::make_mut(&mut self.items[p]);
         it.created = now();
         let (id, created) = (it.id, it.created);
         self.store.update(id, |stored| stored.created = created)?;
@@ -135,7 +146,7 @@ impl Library {
     /// Copying an item from the list counts as a use ("Most used"), and makes
     /// a clipboard item recent.
     pub fn record_use(&mut self, id: u64) -> Result<()> {
-        let Some(it) = self.items.iter_mut().find(|i| i.id == id) else {
+        let Some(it) = self.get_mut(id) else {
             return Ok(());
         };
         it.uses = it.uses.saturating_add(1);
@@ -151,7 +162,7 @@ impl Library {
     }
 
     pub fn toggle_pin(&mut self, id: u64) -> Result<()> {
-        let Some(it) = self.items.iter_mut().find(|i| i.id == id) else {
+        let Some(it) = self.get_mut(id) else {
             return Ok(());
         };
         it.pinned = !it.pinned;
@@ -162,9 +173,10 @@ impl Library {
 
     /// Text the OCR worker found and already saved.
     pub fn set_ocr(&mut self, id: u64, text: &str) {
-        if let Some(it) = self.items.iter_mut().find(|i| i.id == id) {
+        if let Some(it) = self.get_mut(id) {
             it.ocr = Some(text.into());
-            self.lower.insert(id, it.searchable_text().to_lowercase());
+            let lower = lowered(it);
+            self.lower.insert(id, lower);
         }
     }
 
@@ -202,7 +214,7 @@ impl Library {
     /// Adds comma-separated tags, keeping the spelling of a tag already in use.
     pub fn add_tags(&mut self, id: u64, input: &str) -> Result<()> {
         let known = self.all_tags();
-        let Some(it) = self.items.iter_mut().find(|i| i.id == id) else {
+        let Some(it) = self.get_mut(id) else {
             return Ok(());
         };
         for t in input
@@ -225,7 +237,7 @@ impl Library {
     }
 
     pub fn remove_tag(&mut self, id: u64, tag: &str) -> Result<()> {
-        if let Some(it) = self.items.iter_mut().find(|i| i.id == id) {
+        if let Some(it) = self.get_mut(id) {
             it.tags.retain(|t| !t.eq_ignore_ascii_case(tag));
         }
         self.save_tags(id)
@@ -247,10 +259,10 @@ impl Library {
 
     /// Saves an item's tags, and only them, so OCR text saved meanwhile stays.
     fn save_tags(&mut self, id: u64) -> Result<()> {
-        let Some(it) = self.items.iter().find(|i| i.id == id) else {
+        let Some(it) = self.get(id) else {
             return Ok(());
         };
-        let (tags, lower) = (it.tags.clone(), it.searchable_text().to_lowercase());
+        let (tags, lower) = (it.tags.clone(), lowered(it));
         self.store.update(id, |stored| stored.tags = tags)?;
         self.lower.insert(id, lower);
         Ok(())
@@ -260,11 +272,14 @@ impl Library {
 
     /// A newly loaded model's stored vectors replace the old model's.
     pub fn set_embeddings(&mut self, stored: Vec<(u64, Embedding)>) {
-        self.embeddings = stored.into_iter().collect();
+        self.embeddings = stored
+            .into_iter()
+            .map(|(id, e)| (id, Arc::new(e)))
+            .collect();
     }
 
     pub fn set_embedding(&mut self, id: u64, e: Embedding) {
-        self.embeddings.insert(id, e);
+        self.embeddings.insert(id, Arc::new(e));
     }
 
     /// Another model is loading: the vectors in memory no longer match it.
@@ -285,8 +300,9 @@ impl Library {
     /// Takes an item out of the history in memory only: `forget` then deletes
     /// it from the disk, and `put_back` undoes the removal.
     pub fn take(&mut self, id: u64) -> Option<Removed> {
-        let position = self.items.iter().position(|i| i.id == id)?;
+        let position = self.positions.remove(&id)?;
         let item = self.items.remove(position);
+        self.reindex_from(position);
         self.lower.remove(&id);
         let embedding = self.embeddings.remove(&id);
         Some(Removed {
@@ -302,13 +318,13 @@ impl Library {
             position,
             embedding,
         } = removed;
-        self.lower
-            .insert(item.id, item.searchable_text().to_lowercase());
+        self.lower.insert(item.id, lowered(&item));
         if let Some(e) = embedding {
             self.embeddings.insert(item.id, e);
         }
         let position = position.min(self.items.len());
         self.items.insert(position, item);
+        self.reindex_from(position);
     }
 
     /// Deletes a taken item from the disk: its row, vectors and image file.
@@ -346,16 +362,36 @@ impl Library {
     /// Deletes the matching items from the disk in one transaction, then from
     /// memory. If the disk part fails, nothing changes.
     fn remove_where(&mut self, doomed: impl Fn(&Item) -> bool) -> Result<Vec<u64>> {
-        let removed: Vec<Item> = self.items.iter().filter(|i| doomed(i)).cloned().collect();
+        let removed: Vec<Item> = self
+            .items
+            .iter()
+            .filter(|i| doomed(i))
+            .map(|i| Item::clone(i))
+            .collect();
         self.store.delete_many(&removed)?;
         let ids: Vec<u64> = removed.iter().map(|i| i.id).collect();
         for id in &ids {
             self.lower.remove(id);
             self.embeddings.remove(id);
+            self.positions.remove(id);
         }
         self.items.retain(|i| !doomed(i));
+        self.reindex_from(0);
         Ok(ids)
     }
+
+    /// Brings `positions` up to date for the items from `start` on, after an
+    /// item was inserted or removed there.
+    fn reindex_from(&mut self, start: usize) {
+        for (p, item) in self.items.iter().enumerate().skip(start) {
+            self.positions.insert(item.id, p);
+        }
+    }
+}
+
+/// What keyword search looks in: the searchable text, lower-cased once.
+fn lowered(item: &Item) -> Arc<str> {
+    item.searchable_text().to_lowercase().into()
 }
 
 /// What the history limit and Clear history may delete: copied items the
@@ -367,7 +403,6 @@ fn is_clearable(item: &Item) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::store::Kind;
 
     fn open(name: &str) -> (std::path::PathBuf, Library) {
         let dir = std::env::temp_dir().join(format!("cbm-library-{name}-{}", std::process::id()));
@@ -398,7 +433,7 @@ mod tests {
         assert!(it.pinned);
         assert_eq!(it.tags, ["work", "Taxes"]);
         assert_eq!(it.uses, 1);
-        assert!(lib.lower()[&a].contains("#taxes"), "tags are searchable");
+        assert!(lib.lower[&a].contains("#taxes"), "tags are searchable");
         drop(lib);
         std::fs::remove_dir_all(dir).ok();
     }
@@ -434,6 +469,12 @@ mod tests {
         assert_eq!(lib.clearable_count(), 0);
         let left: Vec<u64> = lib.items().iter().map(|i| i.id).collect();
         assert_eq!(left, [pinned, tagged]);
+        assert_eq!(
+            lib.get(tagged).unwrap().id,
+            tagged,
+            "found by id after removals"
+        );
+        assert!(lib.get(old).is_none() && lib.get(new).is_none());
         assert_eq!(lib.store.all_items().unwrap().len(), 2);
         drop(lib);
         std::fs::remove_dir_all(dir).ok();
@@ -446,13 +487,31 @@ mod tests {
         let b = add(&mut lib, "second", 2);
         lib.set_embedding(a, Embedding::Dense(vec![1.0]));
         let removed = lib.take(a).unwrap();
-        assert!(lib.get(a).is_none() && lib.embeddings().is_empty());
+        assert!(lib.get(a).is_none() && lib.embeddings.is_empty());
+        assert_eq!(lib.get(b).unwrap().id, b, "found by id after a removal");
         lib.put_back(removed);
         assert_eq!(lib.items()[0].id, a, "it comes back in its place");
-        assert!(lib.embeddings().contains_key(&a));
+        assert_eq!(lib.get(a).unwrap().id, a);
+        assert_eq!(lib.get(b).unwrap().id, b);
+        assert!(lib.embeddings.contains_key(&a));
         let removed = lib.take(b).unwrap();
         lib.forget(removed).unwrap();
         assert!(lib.store.get(b).unwrap().is_none());
+        drop(lib);
+        std::fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn a_search_snapshot_keeps_what_it_saw() {
+        let (dir, mut lib) = open("snapshot");
+        let a = add(&mut lib, "draft", 1);
+        let seen = lib.snapshot();
+        lib.toggle_pin(a).unwrap();
+        lib.add_tags(a, "final").unwrap();
+        assert!(!seen.items[0].pinned, "the search reads the item as it was");
+        assert!(!seen.lower[&a].contains("final"));
+        assert!(lib.get(a).unwrap().pinned);
+        assert!(lib.lower[&a].contains("final"));
         drop(lib);
         std::fs::remove_dir_all(dir).ok();
     }
@@ -502,7 +561,7 @@ mod tests {
             .unwrap();
         assert_eq!(lib.images_without_ocr().collect::<Vec<_>>(), [id]);
         lib.set_ocr(id, "Total Due");
-        assert!(lib.lower()[&id].contains("total due"));
+        assert!(lib.lower[&id].contains("total due"));
         assert_eq!(lib.images_without_ocr().count(), 0);
         drop(lib);
         std::fs::remove_dir_all(dir).ok();

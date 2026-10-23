@@ -1,6 +1,6 @@
 //! The egui user interface.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -23,7 +23,7 @@ use crate::i18n::{self, tr, trf};
 use crate::images::ImageLoader;
 use crate::library::{Library, Removed};
 use crate::models::{self, Progress, SIGLIP_MODELS};
-use crate::search::{self, Filter, Hit};
+use crate::search::{self, Filter, Hit, Searcher};
 use crate::store::{looks_like_link, Item, Kind, Origin, Store};
 use crate::tray::{Tray, TrayCmd};
 use crate::update::{self, Release};
@@ -273,10 +273,15 @@ pub struct App {
     query: String,
     query_changed: Option<Instant>,
     query_seq: u64,
-    query_vec: Option<(String, Embedding)>,
+    query_vec: Option<(String, Arc<Embedding>)>,
     filter: Filter,
     results: Vec<Hit>,
+    /// The history or the query changed: search again.
     dirty: bool,
+    searcher: Searcher,
+    /// The newest search sent, and whether its results are still to come.
+    search_seq: u64,
+    searching: bool,
     selected: Option<u64>,
     scroll_to_selected: bool,
     focus_search: Arc<AtomicBool>,
@@ -412,6 +417,12 @@ impl App {
             filter: Filter::All,
             results: Vec::new(),
             dirty: true,
+            searcher: {
+                let c = ctx.clone();
+                Searcher::spawn(move || c.request_repaint())
+            },
+            search_seq: 0,
+            searching: false,
             selected: None,
             scroll_to_selected: false,
             focus_search,
@@ -944,13 +955,7 @@ impl App {
 
     fn prune(&mut self) {
         match self.library.prune(self.cfg.max_items) {
-            Ok(removed) if removed.is_empty() => {}
-            Ok(removed) => {
-                for id in &removed {
-                    self.thumbs.remove(id);
-                }
-                self.dirty = true;
-            }
+            Ok(removed) => self.drop_removed(&removed),
             Err(e) => self.set_error(format!("delete failed: {e}")),
         }
     }
@@ -1079,7 +1084,7 @@ impl App {
                     embedding,
                 } => {
                     if seq == self.query_seq && self.ready_key() == Some(key.as_str()) {
-                        self.query_vec = Some((self.query.clone(), embedding));
+                        self.query_vec = Some((self.query.clone(), Arc::new(embedding)));
                         self.dirty = true;
                     }
                 }
@@ -1154,42 +1159,78 @@ impl App {
             self.research_pending = false;
             self.dirty = true;
         }
-        if !self.dirty {
-            return;
-        }
-        self.dirty = false;
-        self.last_search = Instant::now();
-        let vector = self
-            .query_vec
-            .as_ref()
-            .filter(|(q, _)| *q == self.query)
-            .map(|(_, v)| v);
-        self.results = search::search(
-            self.library.items(),
-            self.library.lower(),
-            self.library.embeddings(),
-            &search::Query {
-                text: &self.query,
+        if self.dirty {
+            self.dirty = false;
+            self.last_search = Instant::now();
+            let vector = self
+                .query_vec
+                .as_ref()
+                .filter(|(q, _)| *q == self.query)
+                .map(|(_, v)| v.clone());
+            let query = search::Query {
+                text: self.query.clone(),
                 vector,
                 mode: self.cfg.search_mode,
                 filter: self.filter,
-                tag: self.tag_filter.as_deref(),
+                tag: self.tag_filter.clone(),
                 min_similarity: self.cfg.min_similarity,
                 image_vectors: matches!(self.backend, BackendState::Ready { images: true, .. }),
-            },
-        );
-        let sort = self.sort();
-        // While searching, the best matches lead even when pinned items don't match as well.
-        let pinned_first = self.cfg.pinned_first && self.query.trim().is_empty();
-        let items = self.library.items();
-        search::order(items, &mut self.results, sort, pinned_first);
+                sort: self.sort(),
+                // While searching, the best matches lead even when pinned items
+                // don't match as well.
+                pinned_first: self.cfg.pinned_first && self.query.trim().is_empty(),
+            };
+            self.search_seq += 1;
+            self.searching = true;
+            self.searcher
+                .search(self.search_seq, self.library.snapshot(), query);
+        }
+        // Looked for after sending, so results from before a change never show.
+        if let Some(hits) = self.searcher.results_for(self.search_seq) {
+            self.show_results(hits);
+        }
+    }
+
+    /// Before a key acts on the selected item, the list must match what was
+    /// just typed: waits for the search still running, if any.
+    fn finish_search(&mut self) {
+        self.refresh_results();
+        if self.searching {
+            let waited = self
+                .searcher
+                .wait_for(self.search_seq, Duration::from_secs(3));
+            match waited {
+                Some(hits) => self.show_results(hits),
+                // Act on the list as shown. Without this, a search that crashed
+                // would make every key wait again.
+                None => self.searching = false,
+            }
+        }
+    }
+
+    fn show_results(&mut self, hits: Vec<Hit>) {
+        self.searching = false;
+        self.results = hits;
         let still_there = self
             .selected
-            .map(|id| self.results.iter().any(|h| items[h.idx].id == id))
-            .unwrap_or(false);
+            .is_some_and(|id| self.results.iter().any(|h| h.id == id));
         if !still_there {
-            self.selected = self.results.first().map(|h| items[h.idx].id);
+            self.selected = self.results.first().map(|h| h.id);
         }
+    }
+
+    /// Takes removed items out of the list at once, before the next search
+    /// confirms it, and drops their thumbnails.
+    fn drop_removed(&mut self, ids: &[u64]) {
+        if ids.is_empty() {
+            return;
+        }
+        let gone: HashSet<u64> = ids.iter().copied().collect();
+        self.results.retain(|h| !gone.contains(&h.id));
+        for id in ids {
+            self.thumbs.remove(id);
+        }
+        self.dirty = true;
     }
 
     /// The order in effect: searching and browsing each remember their own.
@@ -1286,18 +1327,16 @@ impl App {
         let Some(removed) = self.library.take(id) else {
             return;
         };
-        self.thumbs.remove(&id);
         self.loader.forget(id, false);
         self.drop_stale_tag_filter();
-        // Keep the selection on a neighbour.
-        let idx = self.results.iter().position(|h| h.idx == removed.position);
-        self.dirty = true;
-        self.refresh_results();
-        if let Some(i) = idx {
+        // Keep the selection on a neighbour: the row that takes its place.
+        let row = self.results.iter().position(|h| h.id == id);
+        self.drop_removed(&[id]);
+        if let Some(i) = row {
             self.selected = self
                 .results
                 .get(i.min(self.results.len().saturating_sub(1)))
-                .map(|h| self.library.items()[h.idx].id);
+                .map(|h| h.id);
         }
         self.pending_delete = Some(PendingDelete {
             removed,
@@ -1325,22 +1364,20 @@ impl App {
         self.selected = Some(pending.removed.item.id);
         self.library.put_back(pending.removed);
         self.dirty = true;
-        self.refresh_results();
     }
 
     fn move_selection(&mut self, delta: i32) {
         if self.results.is_empty() {
             return;
         }
-        let items = self.library.items();
         let cur = self
             .selected
-            .and_then(|id| self.results.iter().position(|h| items[h.idx].id == id));
+            .and_then(|id| self.results.iter().position(|h| h.id == id));
         let next = match cur {
             Some(c) => (c as i32 + delta).clamp(0, self.results.len() as i32 - 1) as usize,
             None => 0,
         };
-        self.selected = Some(items[self.results[next].idx].id);
+        self.selected = Some(self.results[next].id);
         self.scroll_to_selected = true;
     }
 
@@ -1377,14 +1414,11 @@ impl App {
     fn clear_history(&mut self) {
         match self.library.clear() {
             Ok(removed) => {
-                for id in &removed {
-                    self.thumbs.remove(id);
-                }
+                self.drop_removed(&removed);
                 self.toast(trf("Cleared {n} items", &[("n", &removed.len())]));
             }
             Err(e) => self.set_error(format!("delete failed: {e}")),
         }
-        self.dirty = true;
     }
 }
 
