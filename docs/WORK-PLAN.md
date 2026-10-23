@@ -108,3 +108,4 @@ Status: `[ ]` to do, `[~]` in progress, `[x]` done, `[!]` waiting for a decision
 |---|---|---|
 | 2026-10-23 | `e2813c5` to `8b0c5d8` | Before this plan: rustfmt, clippy fixes, dependency updates, format check in CI, prek hooks |
 | 2026-10-23 | `ff0e6aa`, `c7ff1e4`, `8138797`, merge `67c3b1e` | Phase 1: this plan, prek built-in hooks, pipelines skip non-code changes |
+| 2026-10-23 | `a12e456` to `c564da8` (19 commits), merge `8bcf88d` | Phase 2: all 13 bugs and the 6 checked agent findings, one commit each |
