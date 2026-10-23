@@ -137,12 +137,42 @@ fn section(ui: &mut Ui, title: &str) {
 }
 
 /// One setting: label and ℹ on the left, control at the right edge. A value
-/// changed from its default tints the row and offers a reset.
+/// changed from its default tints the row and offers a reset; the caller must
+/// act on the returned click.
+#[must_use = "a changed row shows a reset button; act on its click"]
 fn setting(
     ui: &mut Ui,
     label: &str,
     help: &str,
     changed: bool,
+    control: impl FnOnce(&mut Ui),
+) -> bool {
+    setting_row(ui, label, help, changed, changed, control)
+}
+
+/// A row with nothing to reset: an action, a path, or a fixed value.
+fn plain_setting(ui: &mut Ui, label: &str, help: &str, control: impl FnOnce(&mut Ui)) {
+    setting_row(ui, label, help, false, false, control);
+}
+
+/// A row that marks the current choice in a list (a built-in model): tinted,
+/// but with no reset, since there's no default to go back to.
+fn choice_setting(
+    ui: &mut Ui,
+    label: &str,
+    help: &str,
+    chosen: bool,
+    control: impl FnOnce(&mut Ui),
+) {
+    setting_row(ui, label, help, chosen, false, control);
+}
+
+fn setting_row(
+    ui: &mut Ui,
+    label: &str,
+    help: &str,
+    changed: bool,
+    resettable: bool,
     control: impl FnOnce(&mut Ui),
 ) -> bool {
     let mut reset = false;
@@ -170,7 +200,7 @@ fn setting(
                 }
                 far(ui, |ui| {
                     // The reset button's space is kept when it's hidden, so controls stay in one column.
-                    if changed {
+                    if resettable {
                         if icons::icon_button_ex(
                             ui,
                             Icon::Reset,
@@ -547,7 +577,7 @@ impl App {
         });
         ui.add_space(4.0);
         let mut kind = d.backend.kind();
-        setting(ui, "Model", "Off: search by words only (plus text found in images).\nBuilt-in: a model inside this app that understands text and images, no other software needed (one-time download).\nYour server: use a model you already run, such as llama.cpp, Unsloth, Sentence Transformers, Ollama or LM Studio.", false, |ui| {
+        plain_setting(ui, "Model", "Off: search by words only (plus text found in images).\nBuilt-in: a model inside this app that understands text and images, no other software needed (one-time download).\nYour server: use a model you already run, such as llama.cpp, Unsloth, Sentence Transformers, Ollama or LM Studio.", |ui| {
             segmented(ui, &mut kind, &[(BackendKind::Off, "Off"), (BackendKind::BuiltIn, "Built-in"), (BackendKind::Server, "Your server")]);
         });
         d.choose_backend(kind);
@@ -582,7 +612,7 @@ impl App {
             let ready = models::siglip_ready(&self.paths.models, m.repo);
             let selected = *repo == m.repo;
             let size = format!("{:.1}", m.size_mb as f32 / 1000.0);
-            setting(
+            choice_setting(
                 ui,
                 m.label,
                 &trf(
@@ -762,7 +792,7 @@ impl App {
             ("Move between cards in the grid", "Left+Right"),
             ("Close details, clear the search, or hide", "Escape"),
         ] {
-            setting(ui, label, "Built in; can't be changed.", false, |ui| {
+            plain_setting(ui, label, "Built in; can't be changed.", |ui| {
                 shortcut::fixed(ui, keys)
             });
         }
@@ -775,11 +805,10 @@ impl App {
     fn data_page(&mut self, ui: &mut Ui, d: &mut Config) {
         section(ui, "Storage");
         let root = self.paths.root.clone();
-        setting(
+        plain_setting(
             ui,
             "Data folder",
             "History, images, models and settings are stored here, on this PC only.",
-            false,
             |ui| {
                 if ui.button(txt(tr("Open"), 14.0, None)).clicked() {
                     reveal(&root);
@@ -795,11 +824,10 @@ impl App {
             },
         );
         let log = root.join("clipboard-manager.log");
-        setting(
+        plain_setting(
             ui,
             "Log file",
             "A record of what the app did in this session. Attach it when reporting a problem.",
-            false,
             |ui| {
                 if ui.button(txt(tr("Show"), 14.0, None)).clicked() {
                     reveal(&log);
@@ -813,7 +841,7 @@ impl App {
             .iter()
             .filter(|i| i.origin == Origin::Clipboard && !i.pinned)
             .count();
-        setting(ui, "Stored", "", false, |ui| {
+        plain_setting(ui, "Stored", "", |ui| {
             ui.label(txt(
                 &trf(
                     "{n} items · {i} images · {p} pinned",
@@ -827,11 +855,10 @@ impl App {
         section(ui, "Clean up");
         let mut clear = false;
         let confirm = self.confirm;
-        setting(
+        plain_setting(
             ui,
             "Clear clipboard history",
             "Deletes copied items. Pinned and tagged items, and files you added, stay.",
-            false,
             |ui| {
                 if confirm == Some("clear") {
                     if ui
@@ -867,11 +894,10 @@ impl App {
         }
         let mut reset = false;
         let confirm = self.confirm;
-        setting(
+        plain_setting(
             ui,
             "Reset all settings",
             "Puts every setting back to its default, including the search model.",
-            false,
             |ui| {
                 if confirm == Some("reset") {
                     if ui
@@ -930,11 +956,10 @@ impl App {
             d.update_download = def.update_download;
         }
         let mut check = false;
-        setting(
+        plain_setting(
             ui,
             "Version",
             "Every download is checked against this app's signing key before it's installed.",
-            false,
             |ui| {
                 if release_build
                     && ui
@@ -1213,11 +1238,10 @@ fn server_settings(
     {
         list.fetch(s, ui.ctx());
     }
-    setting(
+    plain_setting(
         ui,
         "Server address",
         "The address of the embeddings server, usually ending in /v1.",
-        false,
         |ui| {
             if editable
                 && icons::icon_button_ex(
@@ -1241,11 +1265,10 @@ fn server_settings(
             );
         },
     );
-    setting(
+    plain_setting(
         ui,
         "API key",
         "Only if your server asks for one. Sent as a Bearer token and stored only on this PC.",
-        false,
         |ui| {
             let (eye, label) = if list.show_key {
                 (Icon::EyeOff, "Hide key")
@@ -1265,7 +1288,7 @@ fn server_settings(
         },
     );
     let default_name = list.found.default.clone();
-    setting(ui, "Model", "Leave empty to use the server's default embedding model. Pick from ▾ or type a name your server knows.", !s.model.trim().is_empty(), |ui| {
+    let reset_model = setting(ui, "Model", "Leave empty to use the server's default embedding model. Pick from ▾ or type a name your server knows.", !s.model.trim().is_empty(), |ui| {
         let any = default_name.is_some() || !list.found.listed.is_empty();
         if editable && any {
             let b = icons::icon_button_ex(ui, Icon::Dropdown, "Models on this server", Vec2::splat(28.0), 11.0, None, None);
@@ -1293,6 +1316,9 @@ fn server_settings(
         };
         ui.add_enabled(editable, egui::TextEdit::singleline(&mut s.model).hint_text(hint).desired_width(300.0));
     });
+    if reset_model {
+        s.model.clear();
+    }
     super::view::row_wrapped(ui, |ui| {
         ui.add_space(10.0);
         if list.pending.is_some() {
@@ -1366,12 +1392,16 @@ fn server_settings(
 
     ui.add_space(6.0);
     egui::CollapsingHeader::new(txt(tr("Advanced"), 13.5, None)).id_salt("advanced").show(ui, |ui| {
-        setting(ui, "Query prompt", "Text put before what you search for. Some models need it (EmbeddingGemma: “task: search result | query: ”).", !s.query_prefix.is_empty(), |ui| {
+        if setting(ui, "Query prompt", "Text put before what you search for. Some models need it (EmbeddingGemma: “task: search result | query: ”).", !s.query_prefix.is_empty(), |ui| {
             ui.add(egui::TextEdit::singleline(&mut s.query_prefix).hint_text("none").desired_width(300.0));
-        });
-        setting(ui, "Item prompt", "Text put before each item when it's indexed (EmbeddingGemma: “title: none | text: ”).", !s.document_prefix.is_empty(), |ui| {
+        }) {
+            s.query_prefix.clear();
+        }
+        if setting(ui, "Item prompt", "Text put before each item when it's indexed (EmbeddingGemma: “title: none | text: ”).", !s.document_prefix.is_empty(), |ui| {
             ui.add(egui::TextEdit::singleline(&mut s.document_prefix).hint_text("none").desired_width(300.0));
-        });
+        }) {
+            s.document_prefix.clear();
+        }
         if setting(ui, "Vector size", "Smaller vectors use less memory and search faster, with slightly lower quality. Works with Matryoshka models such as EmbeddingGemma and UltraVBERT.", s.truncate_dims != 0, |ui| {
             let current = VECTOR_SIZES.iter().find(|(v, _)| *v == s.truncate_dims).map(|(_, l)| l.to_string()).unwrap_or_else(|| format!("{} dims", s.truncate_dims));
             egui::ComboBox::from_id_salt("dims").selected_text(current).width(170.0).show_ui(ui, |ui| {
@@ -1382,13 +1412,17 @@ fn server_settings(
         }) {
             s.truncate_dims = 0;
         }
-        setting(ui, "Search images with this model", "Send images to the server too. Only for models that understand images (CLIP, SigLIP, BiUltraVBERT…). Otherwise images are found by the text in them.", s.images, |ui| {
+        if setting(ui, "Search images with this model", "Send images to the server too. Only for models that understand images (CLIP, SigLIP, BiUltraVBERT…). Otherwise images are found by the text in them.", s.images, |ui| {
             toggle(ui, &mut s.images);
-        });
+        }) {
+            s.images = false;
+        }
         let mut launch = s.launch.is_some();
-        setting(ui, "Start llama-server for me", "The app starts llama-server with your .gguf file in the background and stops it when you quit.", launch, |ui| {
+        if setting(ui, "Start llama-server for me", "The app starts llama-server with your .gguf file in the background and stops it when you quit.", launch, |ui| {
             toggle(ui, &mut launch);
-        });
+        }) {
+            launch = false;
+        }
         if launch && s.launch.is_none() {
             s.launch = Some(LaunchConfig {
                 llama_server: PathBuf::from(if cfg!(windows) { "llama-server.exe" } else { "llama-server" }),
@@ -1401,17 +1435,17 @@ fn server_settings(
             s.launch = None;
         }
         if let Some(l) = &mut s.launch {
-            setting(ui, "llama-server program", "llama-server.exe from a llama.cpp release.", false, |ui| path_field(ui, &mut l.llama_server, &["exe"]));
-            setting(ui, "Model file (.gguf)", "", false, |ui| path_field(ui, &mut l.gguf, &["gguf"]));
-            setting(ui, "Image projector (.gguf)", "Optional mmproj file, for models that embed images.", false, |ui| {
+            plain_setting(ui, "llama-server program", "llama-server.exe from a llama.cpp release.", |ui| path_field(ui, &mut l.llama_server, &["exe"]));
+            plain_setting(ui, "Model file (.gguf)", "", |ui| path_field(ui, &mut l.gguf, &["gguf"]));
+            plain_setting(ui, "Image projector (.gguf)", "Optional mmproj file, for models that embed images.", |ui| {
                 let mut p = l.mmproj.clone().unwrap_or_default();
                 path_field(ui, &mut p, &["gguf"]);
                 l.mmproj = if p.as_os_str().is_empty() { None } else { Some(p) };
             });
-            setting(ui, "Port", "", false, |ui| {
+            plain_setting(ui, "Port", "", |ui| {
                 ui.add(egui::DragValue::new(&mut l.port).range(1024..=65535));
             });
-            setting(ui, "Extra arguments", "Passed to llama-server as-is.", false, |ui| {
+            plain_setting(ui, "Extra arguments", "Passed to llama-server as-is.", |ui| {
                 ui.add(egui::TextEdit::singleline(&mut l.extra_args).desired_width(300.0));
             });
         }

@@ -50,7 +50,7 @@ Status: `[ ]` to do, `[~]` in progress, `[x]` done, `[!]` waiting for a decision
 - [x] 2.11 Sign-in entry: quoted path, not re-enabled at every start
 - [x] 2.12 A settings file that fails to load is kept as `.bad` and logged
 - [x] 2.13 A second start shows the first window instead of quitting silently
-- [ ] 2.14 Check, then fix: "Back to default" buttons that do nothing
+- [x] 2.14 Check, then fix: "Back to default" buttons that do nothing (confirmed: 6 rows)
 - [ ] 2.15 Check, then fix: a server request for every key press in the server settings
 - [ ] 2.16 Check, then fix: no network timeouts
 - [ ] 2.17 Check, then fix: an update that never installs when Windows shuts down
