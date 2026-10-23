@@ -150,11 +150,14 @@ struct WindowCtl {
     tray: Arc<AtomicBool>,
     hidden: Arc<AtomicBool>,
     focus_search: Arc<AtomicBool>,
+    /// Set by `show`: the next frame selects the top item.
+    opened: Arc<AtomicBool>,
 }
 
 impl WindowCtl {
     fn show(&self) {
         self.hidden.store(false, Ordering::SeqCst);
+        self.opened.store(true, Ordering::SeqCst);
         self.ctx
             .send_viewport_cmd(egui::ViewportCommand::Visible(true));
         self.ctx
@@ -402,6 +405,7 @@ impl App {
             tray: Arc::new(AtomicBool::new(false)),
             hidden: Arc::new(AtomicBool::new(false)),
             focus_search: focus_search.clone(),
+            opened: Arc::new(AtomicBool::new(false)),
         };
         let (tray_tx, tray_rx) = channel();
         let mut app = Self {
@@ -636,6 +640,12 @@ impl App {
         }
         if let Some(t) = &mut self.tray {
             t.set_paused(!self.flags.enabled.load(Ordering::SeqCst));
+        }
+        // Opening the window starts at the top: the newest item, or the best
+        // match for the search. The next results select it.
+        if self.win.opened.swap(false, Ordering::SeqCst) {
+            self.selected = None;
+            self.dirty = true;
         }
         if self.start_hidden > 0 {
             self.start_hidden -= 1;
@@ -1251,6 +1261,7 @@ impl App {
             .is_some_and(|id| self.results.iter().any(|h| h.id == id));
         if !still_there {
             self.selected = self.results.first().map(|h| h.id);
+            self.scroll_to_selected = true;
         }
     }
 
