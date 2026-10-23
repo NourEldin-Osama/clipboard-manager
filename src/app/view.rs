@@ -3048,7 +3048,47 @@ pub(super) fn reveal(p: &std::path::Path) {
     }
 }
 
+/// Splits one fractional wheel-line scroll into point steps that egui applies
+/// at once: it eases every line step and point steps of 8 or more over
+/// several frames. Windows reports touchpad scrolling as fractions of a line,
+/// so with that easing a fast swipe kept the list moving after the fingers
+/// stopped. A whole mouse-wheel notch (one line or more) keeps the easing.
+fn touchpad_scroll(event: egui::Event, line_points: f32) -> Vec<egui::Event> {
+    match event {
+        egui::Event::MouseWheel {
+            unit: egui::MouseWheelUnit::Line,
+            delta,
+            phase,
+            source,
+            modifiers,
+        } if delta != Vec2::ZERO && delta.x.abs() < 1.0 && delta.y.abs() < 1.0 => {
+            let points = delta * line_points;
+            let steps = (points.length() / 7.0).ceil().max(1.0);
+            let step = points / steps;
+            (0..steps as usize)
+                .map(|_| egui::Event::MouseWheel {
+                    unit: egui::MouseWheelUnit::Point,
+                    delta: step,
+                    phase,
+                    source,
+                    modifiers,
+                })
+                .collect()
+        }
+        other => vec![other],
+    }
+}
+
 impl eframe::App for App {
+    fn raw_input_hook(&mut self, ctx: &egui::Context, raw_input: &mut egui::RawInput) {
+        let line_points = ctx.options(|o| o.input_options.line_scroll_speed);
+        let events = std::mem::take(&mut raw_input.events);
+        raw_input.events = events
+            .into_iter()
+            .flat_map(|e| touchpad_scroll(e, line_points))
+            .collect();
+    }
+
     fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
         self.finish_delete();
         self.install_on_exit();
@@ -3154,6 +3194,43 @@ mod tests {
                 Line::Row(3),
             ]
         );
+    }
+
+    fn wheel(unit: egui::MouseWheelUnit, delta: Vec2) -> egui::Event {
+        egui::Event::MouseWheel {
+            unit,
+            delta,
+            phase: egui::TouchPhase::Move,
+            source: egui::MouseWheelSource::Unknown,
+            modifiers: egui::Modifiers::NONE,
+        }
+    }
+
+    #[test]
+    fn touchpad_lines_become_small_immediate_steps() {
+        // A fast swipe: 0.9 of a line, 36 points at 40 points per line.
+        let out = touchpad_scroll(
+            wheel(egui::MouseWheelUnit::Line, Vec2::new(0.0, -0.9)),
+            40.0,
+        );
+        let mut total = Vec2::ZERO;
+        for e in &out {
+            let egui::Event::MouseWheel { unit, delta, .. } = e else {
+                panic!("not a wheel event");
+            };
+            assert_eq!(*unit, egui::MouseWheelUnit::Point);
+            assert!(delta.length() < 8.0, "egui would ease a step of {delta:?}");
+            total += *delta;
+        }
+        assert!((total.y + 36.0).abs() < 1e-3, "{total:?}");
+    }
+
+    #[test]
+    fn mouse_wheel_notches_are_left_alone() {
+        let notch = wheel(egui::MouseWheelUnit::Line, Vec2::new(0.0, 1.0));
+        assert_eq!(touchpad_scroll(notch.clone(), 40.0), vec![notch]);
+        let key = egui::Event::Text("a".into());
+        assert_eq!(touchpad_scroll(key.clone(), 40.0), vec![key]);
     }
 
     #[test]
