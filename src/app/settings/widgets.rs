@@ -94,6 +94,23 @@ pub(super) fn setting(
     setting_row(ui, label, help, changed, changed, control)
 }
 
+/// A row for one value with a default: tinted while the value differs, and
+/// "Back to default" puts the default back. The control edits the value.
+pub(super) fn setting_for<T: PartialEq, R>(
+    ui: &mut Ui,
+    label: &str,
+    help: &str,
+    value: &mut T,
+    default: T,
+    control: impl FnOnce(&mut Ui, &mut T) -> R,
+) {
+    if setting(ui, label, help, *value != default, |ui| {
+        control(ui, value);
+    }) {
+        *value = default;
+    }
+}
+
 /// A row with nothing to reset: an action, a path, or a fixed value.
 pub(super) fn plain_setting(ui: &mut Ui, label: &str, help: &str, control: impl FnOnce(&mut Ui)) {
     setting_row(ui, label, help, false, false, control);

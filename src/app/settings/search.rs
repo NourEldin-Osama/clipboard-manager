@@ -12,21 +12,17 @@ impl App {
     pub(super) fn search_page(&mut self, ui: &mut Ui, d: &mut Config, apply_model: &mut bool) {
         let def = Config::default();
         section(ui, "Search");
-        if setting(ui, "How search works", "Smart: finds items that contain your words and items that mean the same thing, merged into one list.\nMeaning: only by meaning (needs a search model).\nExact words: only items containing what you type.", d.search_mode != def.search_mode, |ui| {
-            segmented(ui, &mut d.search_mode, &[(SearchMode::Hybrid, "Smart"), (SearchMode::Semantic, "Meaning"), (SearchMode::Keyword, "Exact words")]);
-        }) {
-            d.search_mode = def.search_mode;
-        }
-        if setting(ui, "Meaning matches to show", "How closely an item has to match before it's listed. \"Show all\" ranks everything by closeness; stricter options hide weak matches. Exact word matches are always shown.", d.min_similarity != def.min_similarity, |ui| {
-            let current = STRICTNESS.iter().find(|(v, _)| (*v - d.min_similarity).abs() < 1e-4).map(|(_, l)| tr(l).to_string()).unwrap_or_else(|| trf("Custom ({v})", &[("v", &format!("{:.2}", d.min_similarity))]));
+        setting_for(ui, "How search works", "Smart: finds items that contain your words and items that mean the same thing, merged into one list.\nMeaning: only by meaning (needs a search model).\nExact words: only items containing what you type.", &mut d.search_mode, def.search_mode, |ui, mode| {
+            segmented(ui, mode, &[(SearchMode::Hybrid, "Smart"), (SearchMode::Semantic, "Meaning"), (SearchMode::Keyword, "Exact words")])
+        });
+        setting_for(ui, "Meaning matches to show", "How closely an item has to match before it's listed. \"Show all\" ranks everything by closeness; stricter options hide weak matches. Exact word matches are always shown.", &mut d.min_similarity, def.min_similarity, |ui, min_similarity| {
+            let current = STRICTNESS.iter().find(|(v, _)| (*v - *min_similarity).abs() < 1e-4).map(|(_, l)| tr(l).to_string()).unwrap_or_else(|| trf("Custom ({v})", &[("v", &format!("{:.2}", min_similarity))]));
             egui::ComboBox::from_id_salt("strict").selected_text(txt(&current, 14.0, None)).width(150.0).show_ui(ui, |ui| {
                 for (v, l) in STRICTNESS {
-                    ui.selectable_value(&mut d.min_similarity, v, txt(tr(l), 14.0, None));
+                    ui.selectable_value(min_similarity, v, txt(tr(l), 14.0, None));
                 }
             });
-        }) {
-            d.min_similarity = def.min_similarity;
-        }
+        });
 
         section(ui, "Meaning search model");
         let (dot, text) = self.model_status();

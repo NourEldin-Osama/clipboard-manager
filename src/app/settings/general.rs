@@ -6,51 +6,41 @@ pub(super) fn general_settings(ui: &mut Ui, d: &mut Config) {
     let def = Config::default();
     section(ui, "Language and time");
     // Each language is named in itself, so it can be found whatever is showing.
-    if setting(
+    setting_for(
         ui,
         "Language",
         "The language of the app. Arabic also lays the window out right to left.",
-        d.language != def.language,
-        |ui| {
+        &mut d.language,
+        def.language,
+        |ui, language| {
             segmented(
                 ui,
-                &mut d.language,
+                language,
                 &[
                     (Language::English, "English"),
                     (Language::Arabic, "العربية"),
                 ],
-            );
+            )
         },
-    ) {
-        d.language = def.language;
-    }
-    if setting(
+    );
+    setting_for(
         ui,
         "Time format",
         "How times are shown. They're stored in UTC and shown in your time zone.",
-        d.time_format != def.time_format,
-        |ui| {
+        &mut d.time_format,
+        def.time_format,
+        |ui, time_format| {
             segmented(
                 ui,
-                &mut d.time_format,
+                time_format,
                 &[(TimeFormat::H24, "24-hour"), (TimeFormat::H12, "12-hour")],
-            );
+            )
         },
-    ) {
-        d.time_format = def.time_format;
-    }
+    );
     section(ui, "Startup");
-    if setting(ui, "Start when you sign in", "Opens the app each time you sign in to Windows. It starts hidden: in the system tray when that's on, otherwise minimised.", d.start_at_login != def.start_at_login, |ui| {
-        toggle(ui, &mut d.start_at_login);
-    }) {
-        d.start_at_login = def.start_at_login;
-    }
+    setting_for(ui, "Start when you sign in", "Opens the app each time you sign in to Windows. It starts hidden: in the system tray when that's on, otherwise minimised.", &mut d.start_at_login, def.start_at_login, toggle);
     section(ui, "System tray");
-    if setting(ui, "Keep running in the system tray", "Shows an icon in the notification area. Closing or minimising the window hides it there and history keeps recording. Click the icon to open; right-click it to quit.", d.tray != def.tray, |ui| {
-        toggle(ui, &mut d.tray);
-    }) {
-        d.tray = def.tray;
-    }
+    setting_for(ui, "Keep running in the system tray", "Shows an icon in the notification area. Closing or minimising the window hides it there and history keeps recording. Click the icon to open; right-click it to quit.", &mut d.tray, def.tray, toggle);
     note(
         ui,
         "With both on, the app starts quietly in the tray each time you sign in.",
@@ -67,16 +57,8 @@ impl App {
         let def = Config::default();
         section(ui, "Updates");
         let release_build = crate::update::build().is_some();
-        if setting(ui, "Check for updates automatically", "Looks for a new version when the app starts and once a day. Only the version file on GitHub is fetched; nothing about you or your clipboard is sent.", d.update_check != def.update_check, |ui| {
-            toggle(ui, &mut d.update_check);
-        }) {
-            d.update_check = def.update_check;
-        }
-        if setting(ui, "Download updates automatically", "On: a new version downloads in the background and installs when you restart or quit. Off: you're asked before anything is downloaded.", d.update_download != def.update_download, |ui| {
-            toggle(ui, &mut d.update_download);
-        }) {
-            d.update_download = def.update_download;
-        }
+        setting_for(ui, "Check for updates automatically", "Looks for a new version when the app starts and once a day. Only the version file on GitHub is fetched; nothing about you or your clipboard is sent.", &mut d.update_check, def.update_check, toggle);
+        setting_for(ui, "Download updates automatically", "On: a new version downloads in the background and installs when you restart or quit. Off: you're asked before anything is downloaded.", &mut d.update_download, def.update_download, toggle);
         let mut check = false;
         plain_setting(
             ui,

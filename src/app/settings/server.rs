@@ -203,37 +203,23 @@ pub(super) fn server_settings(
 
     ui.add_space(6.0);
     egui::CollapsingHeader::new(txt(tr("Advanced"), 13.5, None)).id_salt("advanced").show(ui, |ui| {
-        if setting(ui, "Query prompt", "Text put before what you search for. Some models need it (EmbeddingGemma: “task: search result | query: ”).", !s.query_prefix.is_empty(), |ui| {
-            ui.add(egui::TextEdit::singleline(&mut s.query_prefix).hint_text("none").desired_width(300.0));
-        }) {
-            s.query_prefix.clear();
-        }
-        if setting(ui, "Item prompt", "Text put before each item when it's indexed (EmbeddingGemma: “title: none | text: ”).", !s.document_prefix.is_empty(), |ui| {
-            ui.add(egui::TextEdit::singleline(&mut s.document_prefix).hint_text("none").desired_width(300.0));
-        }) {
-            s.document_prefix.clear();
-        }
-        if setting(ui, "Vector size", "Smaller vectors use less memory and search faster, with slightly lower quality. Works with Matryoshka models such as EmbeddingGemma and UltraVBERT.", s.truncate_dims != 0, |ui| {
-            let current = VECTOR_SIZES.iter().find(|(v, _)| *v == s.truncate_dims).map(|(_, l)| l.to_string()).unwrap_or_else(|| format!("{} dims", s.truncate_dims));
+        setting_for(ui, "Query prompt", "Text put before what you search for. Some models need it (EmbeddingGemma: “task: search result | query: ”).", &mut s.query_prefix, String::new(), |ui, prefix| {
+            ui.add(egui::TextEdit::singleline(prefix).hint_text("none").desired_width(300.0))
+        });
+        setting_for(ui, "Item prompt", "Text put before each item when it's indexed (EmbeddingGemma: “title: none | text: ”).", &mut s.document_prefix, String::new(), |ui, prefix| {
+            ui.add(egui::TextEdit::singleline(prefix).hint_text("none").desired_width(300.0))
+        });
+        setting_for(ui, "Vector size", "Smaller vectors use less memory and search faster, with slightly lower quality. Works with Matryoshka models such as EmbeddingGemma and UltraVBERT.", &mut s.truncate_dims, 0, |ui, dims| {
+            let current = VECTOR_SIZES.iter().find(|(v, _)| v == dims).map(|(_, l)| l.to_string()).unwrap_or_else(|| format!("{dims} dims"));
             egui::ComboBox::from_id_salt("dims").selected_text(current).width(170.0).show_ui(ui, |ui| {
                 for (v, l) in VECTOR_SIZES {
-                    ui.selectable_value(&mut s.truncate_dims, v, l);
+                    ui.selectable_value(dims, v, l);
                 }
             });
-        }) {
-            s.truncate_dims = 0;
-        }
-        if setting(ui, "Search images with this model", "Send images to the server too. Only for models that understand images (CLIP, SigLIP, BiUltraVBERT…). Otherwise images are found by the text in them.", s.images, |ui| {
-            toggle(ui, &mut s.images);
-        }) {
-            s.images = false;
-        }
+        });
+        setting_for(ui, "Search images with this model", "Send images to the server too. Only for models that understand images (CLIP, SigLIP, BiUltraVBERT…). Otherwise images are found by the text in them.", &mut s.images, false, toggle);
         let mut launch = s.launch.is_some();
-        if setting(ui, "Start llama-server for me", "The app starts llama-server with your .gguf file in the background and stops it when you quit.", launch, |ui| {
-            toggle(ui, &mut launch);
-        }) {
-            launch = false;
-        }
+        setting_for(ui, "Start llama-server for me", "The app starts llama-server with your .gguf file in the background and stops it when you quit.", &mut launch, false, toggle);
         if launch && s.launch.is_none() {
             s.launch = Some(LaunchConfig {
                 llama_server: PathBuf::from(if cfg!(windows) { "llama-server.exe" } else { "llama-server" }),
