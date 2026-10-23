@@ -188,6 +188,29 @@ impl Store {
         Ok(())
     }
 
+    /// Changes fields of a stored item in one transaction. The UI and the OCR
+    /// worker both write items; with whole-item writes, one could undo the
+    /// other's change (a pin lost to an OCR result). Returns the saved item, or
+    /// `None` if it was deleted meanwhile, which then stays deleted.
+    pub fn update(&self, id: u64, change: impl FnOnce(&mut Item)) -> Result<Option<Item>> {
+        let txn = self.db.begin_write()?;
+        let saved = {
+            let mut table = txn.open_table(ITEMS)?;
+            let stored: Option<Item> = table
+                .get(id)?
+                .map(|v| serde_json::from_slice(v.value()))
+                .transpose()?;
+            let Some(mut item) = stored else {
+                return Ok(None);
+            };
+            change(&mut item);
+            table.insert(id, serde_json::to_vec(&item)?.as_slice())?;
+            item
+        };
+        txn.commit()?;
+        Ok(Some(saved))
+    }
+
     pub fn delete(&self, item: &Item) -> Result<()> {
         let txn = self.db.begin_write()?;
         txn.open_table(ITEMS)?.remove(item.id)?;
@@ -311,6 +334,27 @@ mod tests {
         assert_eq!(store.all_items().unwrap().len(), 1);
         assert_eq!(store.embeddings("m").unwrap().len(), 1);
         assert!(store.embeddings("other").unwrap().is_empty());
+        std::fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn updates_change_only_their_own_fields() {
+        let dir = std::env::temp_dir().join(format!("cbm-update-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let store = Store::open(&dir.join("t.redb"), &dir).unwrap();
+        store.put(&item(1, "screenshot")).unwrap();
+        // The UI pins while OCR runs; the OCR result then saves only its text.
+        store.update(1, |it| it.pinned = true).unwrap();
+        store
+            .update(1, |it| it.ocr = Some("found text".into()))
+            .unwrap();
+        let it = store.get(1).unwrap().unwrap();
+        assert!(it.pinned);
+        assert_eq!(it.ocr.as_deref(), Some("found text"));
+        // An item deleted meanwhile is not brought back.
+        assert!(store.update(2, |it| it.pinned = true).unwrap().is_none());
+        assert!(store.get(2).unwrap().is_none());
+        drop(store);
         std::fs::remove_dir_all(dir).ok();
     }
 }

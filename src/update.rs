@@ -17,7 +17,7 @@ use std::time::Duration;
 
 use anyhow::{bail, Context, Result};
 use base64::Engine as _;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use crate::models::Progress;
 
@@ -46,7 +46,7 @@ pub fn current_label() -> String {
     }
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct Release {
     pub version: String,
     pub build: u32,
@@ -79,19 +79,12 @@ fn numbers(v: &str) -> Vec<u64> {
         .collect()
 }
 
-fn agent() -> ureq::Agent {
-    ureq::Agent::config_builder()
-        .timeout_connect(Some(Duration::from_secs(15)))
-        .build()
-        .into()
-}
-
 /// The latest release's manifest. `CLIPBOARD_MANAGER_UPDATE_URL` points
 /// elsewhere for testing; the signature check still applies.
 pub fn check() -> Result<Release> {
     let url =
         std::env::var("CLIPBOARD_MANAGER_UPDATE_URL").unwrap_or_else(|_| MANIFEST_URL.to_string());
-    let mut resp = agent()
+    let mut resp = crate::net::quick()
         .get(&url)
         .call()
         .with_context(|| format!("checking {url}"))?;
@@ -107,11 +100,26 @@ fn staged_path() -> Result<PathBuf> {
     Ok(std::env::current_exe()?.with_extension("new"))
 }
 
+/// The manifest of the staged exe, so it can be checked again before a
+/// later start installs it.
+fn staged_manifest_path() -> Result<PathBuf> {
+    Ok(std::env::current_exe()?.with_extension("new.json"))
+}
+
 /// Downloads and verifies the release. Returns the verified exe, ready to install.
 pub fn download(r: &Release, p: &Arc<Progress>) -> Result<PathBuf> {
     let staged = staged_path()?;
     let part = staged.with_extension("part");
-    let mut resp = agent()
+    // A folder the app can't write to (Program Files, say) fails here, before
+    // the download, instead of after it, again every day.
+    let mut out = std::fs::File::create(&part).with_context(|| {
+        format!(
+            "the app's folder can't be written ({}); download the new version by hand",
+            part.display()
+        )
+    })?;
+    // The exe is about 30 MB: half an hour covers a very slow line.
+    let mut resp = crate::net::download(Duration::from_secs(30 * 60))
         .get(&r.url)
         .call()
         .with_context(|| format!("downloading {}", r.url))?;
@@ -131,13 +139,32 @@ pub fn download(r: &Release, p: &Arc<Progress>) -> Result<PathBuf> {
         p.done.store(bytes.len() as u64, Ordering::Relaxed);
     }
     verify(&bytes, r)?;
-    let mut out =
-        std::fs::File::create(&part).with_context(|| format!("writing {}", part.display()))?;
-    out.write_all(&bytes)?;
+    out.write_all(&bytes)
+        .with_context(|| format!("writing {}", part.display()))?;
     out.sync_all()?;
     drop(out);
     std::fs::rename(&part, &staged)?;
+    std::fs::write(staged_manifest_path()?, serde_json::to_vec(r)?)?;
     Ok(staged)
+}
+
+/// An update downloaded earlier but never installed (a Windows shutdown ends
+/// the app without the install on quit): checked again against its signed
+/// manifest, then put in place. Returns the exe to start, or `None` when
+/// there is nothing newer to install.
+pub fn install_staged() -> Result<Option<PathBuf>> {
+    let staged = staged_path()?;
+    if !staged.is_file() {
+        return Ok(None);
+    }
+    let manifest =
+        std::fs::read(staged_manifest_path()?).context("reading the staged update's manifest")?;
+    let release: Release = serde_json::from_slice(&manifest)?;
+    if !release.is_newer() {
+        return Ok(None);
+    }
+    verify(&std::fs::read(&staged)?, &release)?;
+    install(&staged).map(Some)
 }
 
 /// The download is the one the release workflow signed, byte for byte.
@@ -200,7 +227,7 @@ pub fn relaunch(exe: &Path) -> Result<()> {
 /// Removes what a finished or abandoned update leaves behind.
 pub fn clean_up() {
     if let Ok(exe) = std::env::current_exe() {
-        for ext in ["old", "new", "part"] {
+        for ext in ["old", "new", "new.json", "part"] {
             let _ = std::fs::remove_file(exe.with_extension(ext));
         }
     }
@@ -249,5 +276,15 @@ mod tests {
         assert!(numbers("0.10.0") > numbers("0.9.9"));
         assert!((numbers("0.1.0"), 13) > (numbers("0.1.0"), 12));
         assert!((numbers("0.2.0"), 1) > (numbers("0.1.0"), 99));
+    }
+
+    #[test]
+    fn a_saved_manifest_still_verifies_its_download() {
+        let (bytes, r) = fixture();
+        let saved: Release = serde_json::from_slice(&serde_json::to_vec(&r).unwrap()).unwrap();
+        verify(&bytes, &saved).unwrap();
+        let mut tampered = bytes.clone();
+        tampered[0] ^= 1;
+        assert!(verify(&tampered, &saved).is_err());
     }
 }

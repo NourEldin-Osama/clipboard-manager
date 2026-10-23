@@ -4,7 +4,7 @@ use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::mpsc::{channel, Receiver};
+use std::sync::mpsc::{channel, Receiver, TryRecvError};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -71,6 +71,8 @@ struct ModelList {
     error: Option<String>,
     pending: Option<Receiver<Result<crate::embed::server::ServerModels, String>>>,
     show_key: bool,
+    /// The address and key as typed, and when they last changed.
+    typed: Option<(String, Instant)>,
 }
 
 impl ModelList {
@@ -106,6 +108,37 @@ impl ModelList {
         });
         self.url = Self::key(s);
         self.pending = Some(rx);
+    }
+
+    /// Checks the server once its address and key have stayed the same for a
+    /// moment, so a half-typed address or key is never sent. The first check
+    /// after opening Settings runs at once.
+    fn fetch_when_settled(&mut self, s: &ServerConfig, ctx: &egui::Context) {
+        const SETTLE: Duration = Duration::from_millis(700);
+        let key = Self::key(s);
+        if self.url == key || s.base_url.trim().is_empty() {
+            self.typed = None;
+            return;
+        }
+        if self.url.is_empty() && self.pending.is_none() {
+            self.fetch(s, ctx);
+            return;
+        }
+        let since = match &self.typed {
+            Some((typed, since)) if *typed == key => *since,
+            _ => {
+                let now = Instant::now();
+                self.typed = Some((key, now));
+                now
+            }
+        };
+        let waited = since.elapsed();
+        if waited < SETTLE {
+            ctx.request_repaint_after(SETTLE - waited);
+        } else if self.pending.is_none() {
+            self.typed = None;
+            self.fetch(s, ctx);
+        }
     }
 }
 
@@ -169,6 +202,46 @@ enum UpdateMsg {
 
 /// How often a running app looks for a new release.
 const UPDATE_EVERY: Duration = Duration::from_secs(24 * 3600);
+/// After a failed background check (offline, say), try again sooner.
+const UPDATE_RETRY: Duration = Duration::from_secs(3600);
+
+/// A short message at the bottom of the window, with an optional button.
+struct Toast {
+    text: String,
+    shown: Instant,
+    how_long: Duration,
+    action: Option<ToastAction>,
+}
+
+/// What a toast's button does.
+enum ToastAction {
+    /// Records a copy the secret filter held back.
+    SaveSkipped(String),
+    /// Brings back the item just deleted.
+    UndoDelete,
+}
+
+impl ToastAction {
+    fn label(&self) -> &'static str {
+        match self {
+            Self::SaveSkipped(_) => "Save anyway",
+            Self::UndoDelete => "Undo",
+        }
+    }
+}
+
+/// How long a deleted item can still be brought back.
+const UNDO_FOR: Duration = Duration::from_secs(8);
+
+/// The last deleted item, kept for "Undo" until its toast ends; only then is
+/// it removed from the database, with its vectors and image file.
+struct PendingDelete {
+    item: Item,
+    /// Where it was in `App::items`, so it comes back in the same place.
+    position: usize,
+    embedding: Option<Embedding>,
+    since: Instant,
+}
 
 /// Keeps the registrations alive; dropping the manager unregisters them.
 struct Hotkeys {
@@ -192,7 +265,8 @@ pub struct App {
     queue: usize,
     status: String,
     error: Option<(String, Instant)>,
-    toast: Option<(String, Instant, Duration)>,
+    toast: Option<Toast>,
+    pending_delete: Option<PendingDelete>,
 
     query: String,
     query_changed: Option<Instant>,
@@ -216,6 +290,8 @@ pub struct App {
     last_search: Instant,
     download: Option<Download>,
     hotkeys: Option<Hotkeys>,
+    /// Global shortcuts are off while one is being recorded in Settings.
+    hotkeys_paused: bool,
     hotkey_error: Option<String>,
     model_list: ModelList,
     settings_page: SettingsPage,
@@ -228,6 +304,8 @@ pub struct App {
     /// Cards per row in the grid, from the last frame, for ↑ ↓ navigation.
     grid_cols: usize,
     win: WindowCtl,
+    /// Marks this as the running copy; another start shows this window.
+    instance: crate::single_instance::Guard,
     tray: Option<Tray>,
     tray_tx: std::sync::mpsc::Sender<TrayCmd>,
     tray_rx: Receiver<TrayCmd>,
@@ -253,9 +331,13 @@ pub struct App {
 }
 
 impl App {
-    pub fn new(cc: &eframe::CreationContext<'_>, paths: Paths) -> anyhow::Result<Self> {
+    pub fn new(
+        cc: &eframe::CreationContext<'_>,
+        paths: Paths,
+        instance: crate::single_instance::Guard,
+    ) -> anyhow::Result<Self> {
         let ctx = cc.egui_ctx.clone();
-        let cfg = Config::load(&paths.config);
+        let (cfg, settings_problem) = Config::load(&paths.config);
         i18n::set(cfg.language, cfg.time_format);
         add_fonts(&ctx);
         icons::register(&ctx);
@@ -290,6 +372,7 @@ impl App {
         let (tray_tx, tray_rx) = channel();
         let mut app = Self {
             win,
+            instance,
             tray: None,
             tray_tx,
             tray_rx,
@@ -315,6 +398,7 @@ impl App {
             status: String::new(),
             error: None,
             toast: None,
+            pending_delete: None,
             query: String::new(),
             query_changed: None,
             query_seq: 0,
@@ -338,6 +422,7 @@ impl App {
             last_search: Instant::now(),
             download: None,
             hotkeys: None,
+            hotkeys_paused: false,
             hotkey_error: None,
             model_list: ModelList::default(),
             settings_page: SettingsPage::Search,
@@ -374,12 +459,18 @@ impl App {
         if app.cfg.tray {
             app.set_tray(true);
         }
-        if app.cfg.start_at_login {
-            // Refreshes the stored path in case the app was moved.
-            if let Err(e) = crate::autostart::set(true) {
+        // Only a release build fixes the entry's path at start: a dev build
+        // would otherwise point the installed app's entry at itself.
+        if app.cfg.start_at_login && update::build().is_some() {
+            if let Err(e) = crate::autostart::refresh() {
                 log::warn!("{e:#}");
             }
         }
+        if let Some(problem) = settings_problem {
+            app.set_error(problem);
+        }
+        let win = app.win.clone();
+        app.instance.on_show_request(move || win.show());
         Ok(app)
     }
 
@@ -399,6 +490,7 @@ impl App {
 
     fn register_hotkeys(&mut self, ctx: &egui::Context) {
         self.hotkeys = None;
+        self.hotkeys_paused = false;
         self.hotkey_error = None;
         let manager = match GlobalHotKeyManager::new() {
             Ok(m) => m,
@@ -474,6 +566,10 @@ impl App {
 
     fn set_recording(&mut self, on: bool) {
         self.cfg.monitor_clipboard = on;
+        // Open Settings applies its draft every frame, which would undo this.
+        if let Some(draft) = &mut self.draft {
+            draft.monitor_clipboard = on;
+        }
         self.flags.enabled.store(on, Ordering::SeqCst);
         self.save_config();
     }
@@ -566,11 +662,23 @@ impl App {
             self.check_for_update(false, ctx);
         }
         let Some(rx) = &self.update_rx else { return };
-        let Ok(msg) = rx.try_recv() else {
-            if matches!(self.update, UpdateState::Downloading(..)) {
-                ctx.request_repaint_after(Duration::from_millis(250));
+        let msg = match rx.try_recv() {
+            Ok(msg) => msg,
+            Err(TryRecvError::Empty) => {
+                if matches!(self.update, UpdateState::Downloading(..)) {
+                    ctx.request_repaint_after(Duration::from_millis(250));
+                }
+                return;
             }
-            return;
+            // The check or download thread died (a panic): without this the
+            // channel stays "busy" and no later check would ever start.
+            Err(TryRecvError::Disconnected) => {
+                log::warn!("the update thread stopped without an answer");
+                self.update_rx = None;
+                self.update = UpdateState::Idle;
+                self.next_update_check = Instant::now() + UPDATE_RETRY;
+                return;
+            }
         };
         self.update_rx = None;
         match msg {
@@ -604,6 +712,9 @@ impl App {
                 manual,
             } => {
                 log::warn!("update check: {e}");
+                if !manual {
+                    self.next_update_check = Instant::now() + UPDATE_RETRY;
+                }
                 // A failed background check (offline, say) isn't worth a bar.
                 self.update = if manual {
                     UpdateState::Failed {
@@ -690,7 +801,22 @@ impl App {
     /// Shows `s`, translated when it's one of the fixed messages.
     fn toast_for(&mut self, s: impl Into<String>, how_long: Duration) {
         let s = s.into();
-        self.toast = Some((tr(&s).to_string(), Instant::now(), how_long));
+        self.toast = Some(Toast {
+            text: tr(&s).to_string(),
+            shown: Instant::now(),
+            how_long,
+            action: None,
+        });
+    }
+
+    fn run_toast_action(&mut self, action: ToastAction) {
+        match action {
+            ToastAction::SaveSkipped(text) => {
+                self.on_capture(Captured::Text(text));
+                self.toast("Saved");
+            }
+            ToastAction::UndoDelete => self.undo_delete(),
+        }
     }
 
     fn ready_key(&self) -> Option<&str> {
@@ -718,8 +844,13 @@ impl App {
     }
 
     fn on_capture(&mut self, c: Captured) {
-        if let Captured::Skipped(reason) = c {
-            self.toast_for(reason, Duration::from_secs(4));
+        if let Captured::Skipped { reason, text } = c {
+            // Longer when there is a button to reach.
+            let how_long = Duration::from_secs(if text.is_some() { 8 } else { 4 });
+            self.toast_for(reason, how_long);
+            if let Some(toast) = &mut self.toast {
+                toast.action = text.map(ToastAction::SaveSkipped);
+            }
             return;
         }
         let hash = c.hash();
@@ -730,8 +861,10 @@ impl App {
                 .find(|i| i.hash == hash && i.origin == Origin::Clipboard)
             {
                 it.created = now();
-                let it = it.clone();
-                let _ = self.store.put(&it);
+                let (id, created) = (it.id, it.created);
+                if let Err(e) = self.store.update(id, |stored| stored.created = created) {
+                    self.set_error(format!("saving item: {e}"));
+                }
                 self.dirty = true;
                 return;
             }
@@ -767,7 +900,7 @@ impl App {
                 item.kind = Kind::Files;
                 item.text = clipboard::join_paths(&f).into();
             }
-            Captured::Skipped(_) => unreachable!(),
+            Captured::Skipped { .. } => unreachable!(),
             Captured::Image(img) => {
                 item.kind = Kind::Image;
                 item.width = img.width();
@@ -992,14 +1125,11 @@ impl App {
                 vector,
                 mode: self.cfg.search_mode,
                 filter: self.filter,
+                tag: self.tag_filter.as_deref(),
                 min_similarity: self.cfg.min_similarity,
                 image_vectors: matches!(self.backend, BackendState::Ready { images: true, .. }),
             },
         );
-        if let Some(tag) = &self.tag_filter {
-            let items = &self.items;
-            self.results.retain(|h| items[h.idx].has_tag(tag));
-        }
         let sort = self.sort();
         // While searching, the best matches lead even when pinned items don't match as well.
         let pinned_first = self.cfg.pinned_first && self.query.trim().is_empty();
@@ -1064,8 +1194,14 @@ impl App {
                     if x.origin == Origin::Clipboard {
                         x.created = now();
                     }
-                    let x = x.clone();
-                    let _ = self.store.put(&x);
+                    let (uses, created) = (x.uses, x.created);
+                    let saved = self.store.update(id, |stored| {
+                        stored.uses = uses;
+                        stored.created = created;
+                    });
+                    if let Err(e) = saved {
+                        self.set_error(format!("saving item: {e}"));
+                    }
                     self.dirty = true;
                 }
                 self.toast("Copied");
@@ -1083,8 +1219,10 @@ impl App {
     fn toggle_pin(&mut self, id: u64) {
         if let Some(it) = self.items.iter_mut().find(|i| i.id == id) {
             it.pinned = !it.pinned;
-            let it = it.clone();
-            let _ = self.store.put(&it);
+            let pinned = it.pinned;
+            if let Err(e) = self.store.update(id, |stored| stored.pinned = pinned) {
+                self.set_error(format!("saving item: {e}"));
+            }
             self.dirty = true;
         }
     }
@@ -1106,15 +1244,17 @@ impl App {
         v
     }
 
-    fn save_item(&mut self, id: u64) {
-        if let Some(it) = self.items.iter().find(|i| i.id == id) {
-            if let Err(e) = self.store.put(it) {
-                let e = format!("saving item: {e}");
-                self.set_error(e);
-                return;
-            }
-            self.lower.insert(id, it.searchable_text().to_lowercase());
+    /// Saves an item's tags, and only them, so OCR text saved meanwhile stays.
+    fn save_tags(&mut self, id: u64) {
+        let Some(it) = self.items.iter().find(|i| i.id == id) else {
+            return;
+        };
+        let (tags, lower) = (it.tags.clone(), it.searchable_text().to_lowercase());
+        if let Err(e) = self.store.update(id, |stored| stored.tags = tags) {
+            self.set_error(format!("saving item: {e}"));
+            return;
         }
+        self.lower.insert(id, lower);
         self.dirty = true;
     }
 
@@ -1140,14 +1280,14 @@ impl App {
                 .unwrap_or(t);
             it.tags.push(t);
         }
-        self.save_item(id);
+        self.save_tags(id);
     }
 
     fn remove_tag(&mut self, id: u64, tag: &str) {
         if let Some(it) = self.items.iter_mut().find(|i| i.id == id) {
             it.tags.retain(|t| !t.eq_ignore_ascii_case(tag));
         }
-        self.save_item(id);
+        self.save_tags(id);
         self.drop_stale_tag_filter();
     }
 
@@ -1163,7 +1303,7 @@ impl App {
             if let Some(it) = self.items.iter_mut().find(|i| i.id == *id) {
                 it.tags.retain(|t| !t.eq_ignore_ascii_case(tag));
             }
-            self.save_item(*id);
+            self.save_tags(*id);
         }
         self.drop_stale_tag_filter();
         self.toast(trf(
@@ -1180,13 +1320,14 @@ impl App {
         }
     }
 
+    /// Takes the item out of the list at once; the database follows when the
+    /// "Undo" toast ends (see `finish_delete`).
     fn delete(&mut self, id: u64) {
+        // One undo at a time: an earlier delete becomes final now.
+        self.finish_delete();
         if let Some(pos) = self.items.iter().position(|i| i.id == id) {
-            let it = self.items.remove(pos);
-            if let Err(e) = self.store.delete(&it) {
-                self.set_error(format!("delete failed: {e}"));
-            }
-            self.embeddings.remove(&id);
+            let item = self.items.remove(pos);
+            let embedding = self.embeddings.remove(&id);
             self.thumbs.remove(&id);
             self.lower.remove(&id);
             self.loader.forget(id, false);
@@ -1201,7 +1342,43 @@ impl App {
                     .get(i.min(self.results.len().saturating_sub(1)))
                     .map(|h| self.items[h.idx].id);
             }
+            self.pending_delete = Some(PendingDelete {
+                item,
+                position: pos,
+                embedding,
+                since: Instant::now(),
+            });
+            self.toast_for("Deleted", UNDO_FOR);
+            if let Some(toast) = &mut self.toast {
+                toast.action = Some(ToastAction::UndoDelete);
+            }
         }
+    }
+
+    /// Makes the pending delete final: database row, vectors and image file.
+    pub(super) fn finish_delete(&mut self) {
+        if let Some(pending) = self.pending_delete.take() {
+            if let Err(e) = self.store.delete(&pending.item) {
+                self.set_error(format!("delete failed: {e}"));
+            }
+        }
+    }
+
+    fn undo_delete(&mut self) {
+        let Some(pending) = self.pending_delete.take() else {
+            return;
+        };
+        let id = pending.item.id;
+        self.lower
+            .insert(id, pending.item.searchable_text().to_lowercase());
+        if let Some(e) = pending.embedding {
+            self.embeddings.insert(id, e);
+        }
+        let position = pending.position.min(self.items.len());
+        self.items.insert(position, pending.item);
+        self.selected = Some(id);
+        self.dirty = true;
+        self.refresh_results();
     }
 
     fn move_selection(&mut self, delta: i32) {

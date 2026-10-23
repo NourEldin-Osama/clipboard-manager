@@ -37,25 +37,25 @@ Status: `[ ]` to do, `[~]` in progress, `[x]` done, `[!]` waiting for a decision
 - [x] 1.2 The pipelines skip changes to unrelated files (docs, README, templates, hook config)
 
 ### Phase 2. Bugs
-- [ ] 2.1 Global shortcuts stay off after a cancelled or unchanged shortcut recording
-- [ ] 2.2 Embedding server settings are remembered per server address (the Unsloth report)
-- [ ] 2.3 API keys are encrypted with Windows DPAPI
-- [ ] 2.4 OCR no longer overwrites pins and tags
-- [ ] 2.5 Secret filter: no false alarms on file names, catches more real secrets, "Save anyway"
-- [ ] 2.6 Tag filter works with meaning search
-- [ ] 2.7 The tag field no longer freezes the keyboard
-- [ ] 2.8 Tray "Pause recording" works while Settings is open
-- [ ] 2.9 Grid arrow keys go the right way in Arabic
-- [ ] 2.10 Day headers without O(n squared) work every frame
-- [ ] 2.11 Sign-in entry: quoted path, not re-enabled at every start
-- [ ] 2.12 A settings file that fails to load is kept as `.bad` and logged
-- [ ] 2.13 A second start shows the first window instead of quitting silently
-- [ ] 2.14 Check, then fix: "Back to default" buttons that do nothing
-- [ ] 2.15 Check, then fix: a server request for every key press in the server settings
-- [ ] 2.16 Check, then fix: no network timeouts
-- [ ] 2.17 Check, then fix: an update that never installs when Windows shuts down
-- [ ] 2.18 Check, then fix: Esc in Settings applies a half-typed model
-- [ ] 2.19 Check, then fix: delete has no undo
+- [x] 2.1 Global shortcuts stay off after a cancelled or unchanged shortcut recording
+- [x] 2.2 Embedding server settings are remembered per server address (the Unsloth report)
+- [x] 2.3 API keys are encrypted with Windows DPAPI
+- [x] 2.4 OCR no longer overwrites pins and tags
+- [x] 2.5 Secret filter: no false alarms on file names, catches more real secrets, "Save anyway"
+- [x] 2.6 Tag filter works with meaning search
+- [x] 2.7 The tag field no longer freezes the keyboard
+- [x] 2.8 Tray "Pause recording" works while Settings is open
+- [x] 2.9 Grid arrow keys go the right way in Arabic
+- [x] 2.10 Day headers without O(n squared) work every frame
+- [x] 2.11 Sign-in entry: quoted path, not re-enabled at every start
+- [x] 2.12 A settings file that fails to load is kept as `.bad` and logged
+- [x] 2.13 A second start shows the first window instead of quitting silently
+- [x] 2.14 Check, then fix: "Back to default" buttons that do nothing (confirmed: 6 rows)
+- [x] 2.15 Check, then fix: a server request for every key press in the server settings (confirmed)
+- [x] 2.16 Check, then fix: no network timeouts (confirmed; also cut-off downloads)
+- [x] 2.17 Check, then fix: an update that never installs when Windows shuts down (confirmed in code; shutdown not run)
+- [x] 2.18 Check, then fix: Esc in Settings applies a half-typed model (confirmed)
+- [x] 2.19 Check, then fix: delete has no undo (confirmed)
 
 ### Phase 3. Structure (no behavior change)
 - [ ] 3.1 Split `view.rs` (theme, widgets, time format, top bar, list, grid, details, status bar, keyboard)
@@ -107,3 +107,4 @@ Status: `[ ]` to do, `[~]` in progress, `[x]` done, `[!]` waiting for a decision
 | Date | Commits | Change |
 |---|---|---|
 | 2026-10-23 | `e2813c5` to `8b0c5d8` | Before this plan: rustfmt, clippy fixes, dependency updates, format check in CI, prek hooks |
+| 2026-10-23 | `ff0e6aa`, `c7ff1e4`, `8138797`, merge `67c3b1e` | Phase 1: this plan, prek built-in hooks, pipelines skip non-code changes |

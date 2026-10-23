@@ -31,11 +31,15 @@ pub enum EmbedBackend {
     Server(Box<ServerConfig>),
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+/// Fields missing from an older settings file take the defaults, so adding a
+/// field never makes saved server settings unreadable.
+#[derive(Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
 pub struct ServerConfig {
     pub base_url: String,
-    /// Sent as `Authorization: Bearer <key>` when not empty.
-    #[serde(default)]
+    /// Sent as `Authorization: Bearer <key>` when not empty. Encrypted in the
+    /// settings file (see secure.rs).
+    #[serde(default, with = "crate::secure::string")]
     pub api_key: String,
     pub model: String,
     pub query_prefix: String,
@@ -48,7 +52,8 @@ pub struct ServerConfig {
     pub launch: Option<LaunchConfig>,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
 pub struct LaunchConfig {
     pub llama_server: PathBuf,
     pub gguf: PathBuf,
@@ -56,6 +61,33 @@ pub struct LaunchConfig {
     pub mmproj: Option<PathBuf>,
     pub port: u16,
     pub extra_args: String,
+}
+
+impl Default for ServerConfig {
+    fn default() -> Self {
+        Self::plain("")
+    }
+}
+
+/// Written by hand so the API key never reaches a log.
+impl std::fmt::Debug for ServerConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let key = if self.api_key.is_empty() {
+            ""
+        } else {
+            "<hidden>"
+        };
+        f.debug_struct("ServerConfig")
+            .field("base_url", &self.base_url)
+            .field("api_key", &key)
+            .field("model", &self.model)
+            .field("query_prefix", &self.query_prefix)
+            .field("document_prefix", &self.document_prefix)
+            .field("images", &self.images)
+            .field("truncate_dims", &self.truncate_dims)
+            .field("launch", &self.launch)
+            .finish()
+    }
 }
 
 impl ServerConfig {
@@ -88,6 +120,74 @@ impl ServerConfig {
             launch: None,
         }
     }
+}
+
+/// The three choices for meaning search in Settings.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BackendKind {
+    Off,
+    BuiltIn,
+    Server,
+}
+
+impl EmbedBackend {
+    pub fn kind(&self) -> BackendKind {
+        match self {
+            Self::None => BackendKind::Off,
+            Self::SigLip { .. } => BackendKind::BuiltIn,
+            Self::Server(_) => BackendKind::Server,
+        }
+    }
+}
+
+/// The last settings used with each embedding server address, newest first,
+/// so going back to a server restores its key, model and prompts.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct ServerProfiles(Vec<ServerConfig>);
+
+impl ServerProfiles {
+    /// More addresses than anyone switches between; keeps the file small.
+    const MAX: usize = 20;
+
+    /// Saves `server` as the newest settings for its address.
+    pub fn remember(&mut self, server: &ServerConfig) {
+        if server.base_url.trim().is_empty() {
+            return;
+        }
+        let key = address_key(&server.base_url);
+        self.0.retain(|p| address_key(&p.base_url) != key);
+        self.0.insert(0, server.clone());
+        self.0.truncate(Self::MAX);
+    }
+
+    pub fn get(&self, url: &str) -> Option<&ServerConfig> {
+        let key = address_key(url);
+        self.0.iter().find(|p| address_key(&p.base_url) == key)
+    }
+
+    pub fn latest(&self) -> Option<&ServerConfig> {
+        self.0.first()
+    }
+
+    /// Moves `current` to the server at `url`: its settings are remembered,
+    /// then the saved settings for `url` are loaded, or empty ones. A key is
+    /// never carried over to a different server.
+    pub fn switch_to(&mut self, current: &mut ServerConfig, url: &str) {
+        if address_key(&current.base_url) == address_key(url) {
+            return;
+        }
+        self.remember(current);
+        *current = self
+            .get(url)
+            .cloned()
+            .unwrap_or_else(|| ServerConfig::plain(url));
+    }
+}
+
+/// Addresses that differ only in case or a trailing slash are the same server.
+fn address_key(url: &str) -> String {
+    url.trim().trim_end_matches('/').to_ascii_lowercase()
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -240,6 +340,11 @@ pub struct Config {
     pub update_download: bool,
     /// The release "Skip this version" was used on (`version+build`).
     pub skipped_update: String,
+    /// Each embedding server's last settings, so leaving a server and coming
+    /// back keeps its key, model and prompts.
+    pub server_profiles: ServerProfiles,
+    /// The built-in model last used, picked again when "Built-in" is chosen.
+    pub builtin_repo: Option<String>,
 }
 
 impl Default for Config {
@@ -272,16 +377,64 @@ impl Default for Config {
             update_check: true,
             update_download: true,
             skipped_update: String::new(),
+            server_profiles: ServerProfiles::default(),
+            builtin_repo: None,
         }
     }
 }
 
 impl Config {
-    pub fn load(path: &Path) -> Self {
-        std::fs::read_to_string(path)
-            .ok()
-            .and_then(|s| serde_json::from_str(&s).ok())
-            .unwrap_or_default()
+    /// Switches meaning search to `kind`. The settings of the backend being
+    /// left are kept, so choosing it again restores them.
+    pub fn choose_backend(&mut self, kind: BackendKind) {
+        if self.backend.kind() == kind {
+            return;
+        }
+        match &self.backend {
+            EmbedBackend::Server(s) => self.server_profiles.remember(s),
+            EmbedBackend::SigLip { repo } => self.builtin_repo = Some(repo.clone()),
+            EmbedBackend::None => {}
+        }
+        self.backend = match kind {
+            BackendKind::Off => EmbedBackend::None,
+            BackendKind::BuiltIn => EmbedBackend::SigLip {
+                repo: self
+                    .builtin_repo
+                    .clone()
+                    .unwrap_or_else(|| crate::models::SIGLIP_MODELS[0].repo.into()),
+            },
+            BackendKind::Server => EmbedBackend::Server(Box::new(
+                self.server_profiles
+                    .latest()
+                    .cloned()
+                    .unwrap_or_else(ServerConfig::embeddinggemma),
+            )),
+        };
+    }
+
+    /// Reads the settings; a missing file means defaults. A file that can't be
+    /// read is copied to `config.json.bad` before the defaults are used, so
+    /// the next save doesn't silently destroy it, and the problem is returned
+    /// for the user.
+    pub fn load(path: &Path) -> (Self, Option<String>) {
+        let parsed = match std::fs::read_to_string(path) {
+            Ok(text) => serde_json::from_str(&text).map_err(anyhow::Error::from),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return (Self::default(), None),
+            Err(e) => Err(e.into()),
+        };
+        match parsed {
+            Ok(cfg) => (cfg, None),
+            Err(e) => {
+                let bad = path.with_extension("json.bad");
+                let kept = match std::fs::copy(path, &bad) {
+                    Ok(_) => format!("a copy is in {}", bad.display()),
+                    Err(copy) => format!("it could not be copied either: {copy}"),
+                };
+                let problem = format!("settings could not be read ({e}); using defaults, {kept}");
+                log::error!("{problem}");
+                (Self::default(), Some(problem))
+            }
+        }
     }
 
     pub fn save(&self, path: &Path) -> anyhow::Result<()> {
@@ -325,5 +478,136 @@ impl Paths {
         std::fs::create_dir_all(&p.images)?;
         std::fs::create_dir_all(&p.models)?;
         Ok(p)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const UNSLOTH: &str = "http://127.0.0.1:8888/v1";
+    const LLAMA: &str = "http://127.0.0.1:8080/v1";
+
+    fn unsloth() -> ServerConfig {
+        ServerConfig {
+            api_key: "unsloth-key".into(),
+            model: "embed-a".into(),
+            ..ServerConfig::plain(UNSLOTH)
+        }
+    }
+
+    #[test]
+    fn quick_setup_switch_keeps_each_servers_settings() {
+        let mut profiles = ServerProfiles::default();
+        let mut current = unsloth();
+        profiles.switch_to(&mut current, LLAMA);
+        assert_eq!(current.base_url, LLAMA);
+        assert!(
+            current.api_key.is_empty(),
+            "a key is never carried to another server"
+        );
+        profiles.switch_to(&mut current, &format!("{UNSLOTH}/"));
+        assert_eq!(current, unsloth());
+    }
+
+    #[test]
+    fn leaving_the_server_backend_and_coming_back_restores_it() {
+        let mut cfg = Config {
+            backend: EmbedBackend::Server(Box::new(unsloth())),
+            ..Config::default()
+        };
+        cfg.choose_backend(BackendKind::BuiltIn);
+        cfg.choose_backend(BackendKind::Off);
+        cfg.choose_backend(BackendKind::Server);
+        assert_eq!(cfg.backend, EmbedBackend::Server(Box::new(unsloth())));
+    }
+
+    #[test]
+    fn the_built_in_model_choice_is_restored_too() {
+        let mut cfg = Config {
+            backend: EmbedBackend::SigLip {
+                repo: "some/other-model".into(),
+            },
+            ..Config::default()
+        };
+        cfg.choose_backend(BackendKind::Off);
+        cfg.choose_backend(BackendKind::BuiltIn);
+        assert!(
+            matches!(&cfg.backend, EmbedBackend::SigLip { repo } if repo == "some/other-model")
+        );
+    }
+
+    #[test]
+    fn profiles_survive_a_save_and_old_files_still_load() {
+        let mut cfg = Config::default();
+        cfg.server_profiles.remember(&unsloth());
+        let json = serde_json::to_string(&cfg).unwrap();
+        let back: Config = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.server_profiles.get(UNSLOTH), Some(&unsloth()));
+
+        let old = r#"{"max_items":100,"backend":"None"}"#;
+        let cfg: Config = serde_json::from_str(old).unwrap();
+        assert_eq!(cfg.max_items, 100);
+        assert!(cfg.server_profiles.latest().is_none());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn api_keys_are_encrypted_in_the_settings_file() {
+        let mut cfg = Config {
+            backend: EmbedBackend::Server(Box::new(unsloth())),
+            ..Config::default()
+        };
+        cfg.server_profiles.remember(&unsloth());
+        let json = serde_json::to_string(&cfg).unwrap();
+        assert!(!json.contains("unsloth-key"));
+        let back: Config = serde_json::from_str(&json).unwrap();
+        assert_eq!(back, cfg);
+    }
+
+    #[test]
+    fn server_settings_missing_newer_fields_still_load() {
+        let json = r#"{"base_url":"http://x/v1","model":"m"}"#;
+        let s: ServerConfig = serde_json::from_str(json).unwrap();
+        assert_eq!(
+            (s.base_url.as_str(), s.model.as_str()),
+            ("http://x/v1", "m")
+        );
+        assert_eq!(s.launch, None);
+    }
+
+    #[test]
+    fn a_plain_key_from_an_older_version_still_loads() {
+        let json = r#"{"base_url":"http://x/v1","api_key":"old-key","model":"","query_prefix":"","document_prefix":"","images":false,"truncate_dims":0,"launch":null}"#;
+        let s: ServerConfig = serde_json::from_str(json).unwrap();
+        assert_eq!(s.api_key, "old-key");
+    }
+
+    #[test]
+    fn a_damaged_settings_file_is_kept_and_reported() {
+        let dir = std::env::temp_dir().join(format!("cbm-config-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("config.json");
+
+        let (cfg, problem) = Config::load(&path);
+        assert_eq!(cfg, Config::default());
+        assert!(problem.is_none(), "a missing file is not a problem");
+
+        std::fs::write(&path, r#"{"max_items": "not a number"}"#).unwrap();
+        let (cfg, problem) = Config::load(&path);
+        assert_eq!(cfg, Config::default());
+        assert!(problem.is_some());
+        let kept = std::fs::read_to_string(dir.join("config.json.bad")).unwrap();
+        assert_eq!(kept, r#"{"max_items": "not a number"}"#);
+
+        std::fs::write(&path, r#"{"max_items": 7}"#).unwrap();
+        let (cfg, problem) = Config::load(&path);
+        assert_eq!((cfg.max_items, problem), (7, None));
+        std::fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn debug_output_hides_the_api_key() {
+        assert!(!format!("{:?}", unsloth()).contains("unsloth-key"));
     }
 }

@@ -782,9 +782,30 @@ fn row_title(it: &Item) -> String {
     }
 }
 
+#[derive(Debug, PartialEq)]
 enum Line {
     Header(&'static str, usize),
     Row(usize),
+}
+
+/// One row per label, with a header above each run of equal labels that
+/// counts its rows. Runs once per frame, so it stays linear.
+fn with_headers(labels: impl Iterator<Item = &'static str>) -> Vec<Line> {
+    let mut lines = Vec::new();
+    let mut header_at = None;
+    let mut last = None;
+    for (r, label) in labels.enumerate() {
+        if last != Some(label) {
+            header_at = Some(lines.len());
+            lines.push(Line::Header(label, 0));
+            last = Some(label);
+        }
+        if let Some(Line::Header(_, n)) = header_at.map(|i| &mut lines[i]) {
+            *n += 1;
+        }
+        lines.push(Line::Row(r));
+    }
+    lines
 }
 
 // ----- the window ------------------------------------------------------------------
@@ -792,11 +813,27 @@ enum Line {
 impl App {
     fn keyboard(&mut self, ctx: &egui::Context) {
         if self.draft.is_some() {
-            // While a shortcut field listens, Esc is its "cancel".
-            if self.recording.is_none() && ctx.input(|i| i.key_pressed(Key::Escape)) {
+            // Esc first closes what is open inside Settings: a shortcut field
+            // listening (its "cancel"), a menu, or a text field being typed
+            // in. Only an Esc with none of these leaves (and applies) Settings.
+            let busy = self.recording.is_some()
+                || egui::Popup::is_any_open(ctx)
+                || ctx.memory(|m| m.focused().is_some());
+            if !busy && ctx.input(|i| i.key_pressed(Key::Escape)) {
                 self.close_settings(ctx);
             }
             return;
+        }
+        // The tag field belongs to the item in the details pane: selecting
+        // another item or closing the pane closes it. Left open, it would
+        // keep every shortcut off below.
+        let pane_shown = self.details_open || self.cfg.view == ViewMode::Detail;
+        if self
+            .tag_input
+            .as_ref()
+            .is_some_and(|(id, _)| Some(*id) != self.selected || !pane_shown)
+        {
+            self.tag_input = None;
         }
         // Typing in a field other than search (a tag, say) isn't a command.
         // The tag field counts even before egui has moved focus to it.
@@ -844,11 +881,14 @@ impl App {
             self.move_selection(-step);
         }
         if grid && self.query.is_empty() {
+            // Cards fill from the reading start, so in Arabic the next card is
+            // to the left.
+            let forward = if i18n::rtl() { -1 } else { 1 };
             if right {
-                self.move_selection(1);
+                self.move_selection(forward);
             }
             if left {
-                self.move_selection(-1);
+                self.move_selection(-forward);
             }
         }
         if let Some(id) = self.selected {
@@ -1701,22 +1741,12 @@ impl App {
         let mut lines: Vec<Line> = Vec::with_capacity(self.results.len() + 8);
         // Day headers only make sense in date order.
         if !searching && self.cfg.group_by_date && self.sort() == SortOrder::Recent {
-            let mut last: Option<&'static str> = None;
-            for (r, h) in self.results.iter().enumerate() {
-                let g = group_label(&self.items[h.idx], self.cfg.pinned_first);
-                if last != Some(g) {
-                    lines.push(Line::Header(g, 0));
-                    last = Some(g);
-                }
-                if let Some(Line::Header(_, n)) = lines
-                    .iter_mut()
-                    .rev()
-                    .find(|l| matches!(l, Line::Header(..)))
-                {
-                    *n += 1;
-                }
-                lines.push(Line::Row(r));
-            }
+            let pinned_first = self.cfg.pinned_first;
+            lines = with_headers(
+                self.results
+                    .iter()
+                    .map(|h| group_label(&self.items[h.idx], pinned_first)),
+            );
         } else {
             lines.extend((0..self.results.len()).map(Line::Row));
         }
@@ -2365,12 +2395,18 @@ impl App {
     }
 
     fn toasts(&mut self, ctx: &egui::Context) {
-        if let Some((t, at, how_long)) = &self.toast {
-            if at.elapsed() > *how_long {
+        let mut clicked = false;
+        if let Some(toast) = &self.toast {
+            if toast.shown.elapsed() > toast.how_long {
                 self.toast = None;
                 return;
             }
             let dark = ctx.theme() == egui::Theme::Dark;
+            let fg = if dark {
+                Color32::from_gray(20)
+            } else {
+                Color32::WHITE
+            };
             egui::Area::new(egui::Id::unique("toast"))
                 .anchor(Align2::CENTER_BOTTOM, Vec2::new(0.0, -48.0))
                 .show(ctx, |ui| {
@@ -2383,18 +2419,25 @@ impl App {
                         .corner_radius(CornerRadius::same(18))
                         .inner_margin(Margin::symmetric(16, 8))
                         .show(ui, |ui| {
-                            ui.label(txt(
-                                t.as_str(),
-                                14.0,
-                                Some(if dark {
-                                    Color32::from_gray(20)
-                                } else {
-                                    Color32::WHITE
-                                }),
-                            ))
+                            row(ui, |ui| {
+                                ui.label(txt(toast.text.as_str(), 14.0, Some(fg)));
+                                if let Some(action) = &toast.action {
+                                    let button =
+                                        egui::Button::new(txt(tr(action.label()), 13.0, Some(fg)))
+                                            .fill(Color32::TRANSPARENT)
+                                            .stroke(Stroke::new(1.0, fg))
+                                            .corner_radius(CornerRadius::same(12));
+                                    clicked = ui.add(button).clicked();
+                                }
+                            });
                         });
                 });
             ctx.request_repaint_after(Duration::from_millis(200));
+        }
+        if clicked {
+            if let Some(action) = self.toast.take().and_then(|t| t.action) {
+                self.run_toast_action(action);
+            }
         }
         if let Some((_, at)) = &self.error {
             if at.elapsed() > Duration::from_secs(20) {
@@ -3007,11 +3050,27 @@ pub(super) fn reveal(p: &std::path::Path) {
 
 impl eframe::App for App {
     fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
+        self.finish_delete();
         self.install_on_exit();
         crate::embed::server::stop_launched_server();
     }
 
     fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        // However a shortcut recording ended (new keys, the same keys, Esc, another
+        // settings page, or leaving Settings), the global shortcuts come back.
+        // New keys are already registered by apply_settings, which clears the flag.
+        if self.hotkeys_paused && self.recording.is_none() {
+            self.register_hotkeys(ctx);
+        }
+        // A delete becomes final when its undo time is over, also while hidden.
+        if let Some(pending) = &self.pending_delete {
+            let left = UNDO_FOR.saturating_sub(pending.since.elapsed());
+            if left.is_zero() {
+                self.finish_delete();
+            } else {
+                ctx.request_repaint_after(left);
+            }
+        }
         self.window_logic(ctx);
         self.handle_events(ctx);
         self.focused.store(
@@ -3073,5 +3132,34 @@ impl eframe::App for App {
             );
             icons::paint_icon_text(&p, row, Icon::Folder, 26.0, g, Color32::WHITE);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn headers_count_their_rows() {
+        let lines = with_headers(["Today", "Today", "Yesterday", "Today"].into_iter());
+        assert_eq!(
+            lines,
+            vec![
+                Line::Header("Today", 2),
+                Line::Row(0),
+                Line::Row(1),
+                Line::Header("Yesterday", 1),
+                Line::Row(2),
+                Line::Header("Today", 1),
+                Line::Row(3),
+            ]
+        );
+    }
+
+    #[test]
+    fn one_big_group_stays_linear() {
+        let lines = with_headers(std::iter::repeat_n("Today", 100_000));
+        assert_eq!(lines[0], Line::Header("Today", 100_000));
+        assert_eq!(lines.len(), 100_001);
     }
 }

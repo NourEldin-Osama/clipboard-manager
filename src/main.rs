@@ -13,8 +13,11 @@ mod i18n;
 mod images;
 mod import;
 mod models;
+mod net;
 mod ocr;
 mod search;
+mod secure;
+mod single_instance;
 mod store;
 mod tray;
 mod update;
@@ -30,11 +33,32 @@ fn main() -> eframe::Result {
             std::process::exit(1);
         }
     };
+    // One copy per data folder, checked before logging so a second start
+    // doesn't touch the running copy's log. Right after an update the
+    // previous version is still closing: wait for it to go, so its hotkeys
+    // are free and its exe can be removed.
+    let after_update = std::env::args().any(|a| a == update::AFTER_UPDATE_ARG);
+    let instance = match single_instance::claim(&paths.root, after_update) {
+        single_instance::Claim::First(guard) => guard,
+        single_instance::Claim::AlreadyRunning => return Ok(()),
+    };
     init_logging(&paths);
-    // After an update, the previous version is still closing; let it go first
-    // so its hotkeys are free and its exe can be removed.
-    if std::env::args().any(|a| a == update::AFTER_UPDATE_ARG) {
-        std::thread::sleep(std::time::Duration::from_millis(1500));
+    // An update downloaded last time but never installed (a Windows shutdown
+    // ends the app without the install on quit) goes in now.
+    if !after_update {
+        match update::install_staged() {
+            Ok(Some(exe)) => match update::relaunch(&exe) {
+                Ok(()) => return Ok(()),
+                Err(e) => {
+                    log::warn!("{e:#}");
+                    if let Err(e) = update::roll_back() {
+                        log::error!("{e:#}");
+                    }
+                }
+            },
+            Ok(None) => {}
+            Err(e) => log::warn!("installing the downloaded update: {e:#}"),
+        }
     }
     update::clean_up();
     log::info!(
@@ -43,7 +67,7 @@ fn main() -> eframe::Result {
         paths.root.display()
     );
     // The window title is set before the app starts, so read the language now.
-    let cfg = config::Config::load(&paths.config);
+    let (cfg, _) = config::Config::load(&paths.config);
     i18n::set(cfg.language, cfg.time_format);
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
@@ -56,11 +80,24 @@ fn main() -> eframe::Result {
         persist_window: true,
         ..Default::default()
     };
-    eframe::run_native(
+    let result = eframe::run_native(
         "clipboard-manager",
         options,
-        Box::new(move |cc| Ok(Box::new(app::App::new(cc, paths)?))),
-    )
+        Box::new(move |cc| Ok(Box::new(app::App::new(cc, paths, instance)?))),
+    );
+    // A release build has no console, so a failed start needs a visible message.
+    if let Err(e) = &result {
+        log::error!("could not start: {e}");
+        rfd::MessageDialog::new()
+            .set_title(i18n::tr("Clipboard Manager"))
+            .set_description(format!(
+                "{}\n\n{e}",
+                i18n::tr("Clipboard Manager could not start.")
+            ))
+            .set_level(rfd::MessageLevel::Error)
+            .show();
+    }
+    result
 }
 
 /// Logs to `clipboard-manager.log` in the data folder (release builds on
