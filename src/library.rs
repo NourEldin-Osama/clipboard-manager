@@ -296,13 +296,17 @@ impl Library {
         self.store.delete(&removed.item)
     }
 
-    /// Deletes the oldest clipboard items beyond `max`. Pinned, tagged and
-    /// imported items are never counted or removed. Returns the removed ids.
+    /// How many items Clear history would delete.
+    pub fn clearable_count(&self) -> usize {
+        self.items.iter().filter(|i| is_clearable(i)).count()
+    }
+
+    /// Deletes the oldest clearable items beyond `max`. Returns the removed ids.
     pub fn prune(&mut self, max: usize) -> Result<Vec<u64>> {
         let mut history: Vec<(i64, u64)> = self
             .items
             .iter()
-            .filter(|i| i.origin == Origin::Clipboard && !i.is_kept())
+            .filter(|i| is_clearable(i))
             .map(|i| (i.created, i.id))
             .collect();
         if history.len() <= max {
@@ -314,10 +318,9 @@ impl Library {
         self.remove_where(|i| doomed.contains(&i.id))
     }
 
-    /// Deletes every clipboard item that isn't pinned or tagged; imported
-    /// items stay too. Returns the removed ids.
+    /// Deletes every clearable item. Returns the removed ids.
     pub fn clear(&mut self) -> Result<Vec<u64>> {
-        self.remove_where(|i| i.origin == Origin::Clipboard && !i.is_kept())
+        self.remove_where(is_clearable)
     }
 
     /// Deletes the matching items from the disk in one transaction, then from
@@ -333,6 +336,12 @@ impl Library {
         self.items.retain(|i| !doomed(i));
         Ok(ids)
     }
+}
+
+/// What the history limit and Clear history may delete: copied items the
+/// user did not pin or tag. Imported files stay too.
+fn is_clearable(item: &Item) -> bool {
+    item.origin == Origin::Clipboard && !item.is_kept()
 }
 
 #[cfg(test)]
@@ -398,8 +407,11 @@ mod tests {
         let new = add(&mut lib, "new", 4);
         lib.toggle_pin(pinned).unwrap();
         lib.add_tags(tagged, "keep").unwrap();
+        assert_eq!(lib.clearable_count(), 2);
         assert_eq!(lib.prune(1).unwrap(), [old]);
+        assert_eq!(lib.clearable_count(), 1);
         assert_eq!(lib.clear().unwrap(), [new]);
+        assert_eq!(lib.clearable_count(), 0);
         let left: Vec<u64> = lib.items().iter().map(|i| i.id).collect();
         assert_eq!(left, [pinned, tagged]);
         assert_eq!(lib.store.all_items().unwrap().len(), 2);

@@ -38,10 +38,7 @@ impl App {
         let items = self.library.items();
         let images = items.iter().filter(|i| i.kind == Kind::Image).count();
         let pinned = items.iter().filter(|i| i.pinned).count();
-        let clip = items
-            .iter()
-            .filter(|i| i.origin == Origin::Clipboard && !i.pinned)
-            .count();
+        let clip = self.library.clearable_count();
         plain_setting(ui, "Stored", "", |ui| {
             ui.label(txt(
                 &trf(
