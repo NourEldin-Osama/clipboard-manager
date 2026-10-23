@@ -217,14 +217,30 @@ struct Toast {
 enum ToastAction {
     /// Records a copy the secret filter held back.
     SaveSkipped(String),
+    /// Brings back the item just deleted.
+    UndoDelete,
 }
 
 impl ToastAction {
     fn label(&self) -> &'static str {
         match self {
             Self::SaveSkipped(_) => "Save anyway",
+            Self::UndoDelete => "Undo",
         }
     }
+}
+
+/// How long a deleted item can still be brought back.
+const UNDO_FOR: Duration = Duration::from_secs(8);
+
+/// The last deleted item, kept for "Undo" until its toast ends; only then is
+/// it removed from the database, with its vectors and image file.
+struct PendingDelete {
+    item: Item,
+    /// Where it was in `App::items`, so it comes back in the same place.
+    position: usize,
+    embedding: Option<Embedding>,
+    since: Instant,
 }
 
 /// Keeps the registrations alive; dropping the manager unregisters them.
@@ -250,6 +266,7 @@ pub struct App {
     status: String,
     error: Option<(String, Instant)>,
     toast: Option<Toast>,
+    pending_delete: Option<PendingDelete>,
 
     query: String,
     query_changed: Option<Instant>,
@@ -381,6 +398,7 @@ impl App {
             status: String::new(),
             error: None,
             toast: None,
+            pending_delete: None,
             query: String::new(),
             query_changed: None,
             query_seq: 0,
@@ -797,6 +815,7 @@ impl App {
                 self.on_capture(Captured::Text(text));
                 self.toast("Saved");
             }
+            ToastAction::UndoDelete => self.undo_delete(),
         }
     }
 
@@ -1301,13 +1320,14 @@ impl App {
         }
     }
 
+    /// Takes the item out of the list at once; the database follows when the
+    /// "Undo" toast ends (see `finish_delete`).
     fn delete(&mut self, id: u64) {
+        // One undo at a time: an earlier delete becomes final now.
+        self.finish_delete();
         if let Some(pos) = self.items.iter().position(|i| i.id == id) {
-            let it = self.items.remove(pos);
-            if let Err(e) = self.store.delete(&it) {
-                self.set_error(format!("delete failed: {e}"));
-            }
-            self.embeddings.remove(&id);
+            let item = self.items.remove(pos);
+            let embedding = self.embeddings.remove(&id);
             self.thumbs.remove(&id);
             self.lower.remove(&id);
             self.loader.forget(id, false);
@@ -1322,7 +1342,43 @@ impl App {
                     .get(i.min(self.results.len().saturating_sub(1)))
                     .map(|h| self.items[h.idx].id);
             }
+            self.pending_delete = Some(PendingDelete {
+                item,
+                position: pos,
+                embedding,
+                since: Instant::now(),
+            });
+            self.toast_for("Deleted", UNDO_FOR);
+            if let Some(toast) = &mut self.toast {
+                toast.action = Some(ToastAction::UndoDelete);
+            }
         }
+    }
+
+    /// Makes the pending delete final: database row, vectors and image file.
+    pub(super) fn finish_delete(&mut self) {
+        if let Some(pending) = self.pending_delete.take() {
+            if let Err(e) = self.store.delete(&pending.item) {
+                self.set_error(format!("delete failed: {e}"));
+            }
+        }
+    }
+
+    fn undo_delete(&mut self) {
+        let Some(pending) = self.pending_delete.take() else {
+            return;
+        };
+        let id = pending.item.id;
+        self.lower
+            .insert(id, pending.item.searchable_text().to_lowercase());
+        if let Some(e) = pending.embedding {
+            self.embeddings.insert(id, e);
+        }
+        let position = pending.position.min(self.items.len());
+        self.items.insert(position, pending.item);
+        self.selected = Some(id);
+        self.dirty = true;
+        self.refresh_results();
     }
 
     fn move_selection(&mut self, delta: i32) {

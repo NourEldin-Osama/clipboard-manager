@@ -55,7 +55,7 @@ Status: `[ ]` to do, `[~]` in progress, `[x]` done, `[!]` waiting for a decision
 - [x] 2.16 Check, then fix: no network timeouts (confirmed; also cut-off downloads)
 - [x] 2.17 Check, then fix: an update that never installs when Windows shuts down (confirmed in code; shutdown not run)
 - [x] 2.18 Check, then fix: Esc in Settings applies a half-typed model (confirmed)
-- [ ] 2.19 Check, then fix: delete has no undo
+- [x] 2.19 Check, then fix: delete has no undo (confirmed)
 
 ### Phase 3. Structure (no behavior change)
 - [ ] 3.1 Split `view.rs` (theme, widgets, time format, top bar, list, grid, details, status bar, keyboard)

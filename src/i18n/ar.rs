@@ -85,6 +85,8 @@ pub const TABLE: &[(&str, &str)] = &[
     ("Pin", "تثبيت"),
     ("Unpin", "إلغاء التثبيت"),
     ("Delete", "حذف"),
+    ("Deleted", "تم الحذف"),
+    ("Undo", "تراجع"),
     ("Copy", "نسخ"),
     ("Open details", "فتح التفاصيل"),
     ("Close details (Esc)", "إغلاق التفاصيل (Esc)"),

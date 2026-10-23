@@ -3050,6 +3050,7 @@ pub(super) fn reveal(p: &std::path::Path) {
 
 impl eframe::App for App {
     fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
+        self.finish_delete();
         self.install_on_exit();
         crate::embed::server::stop_launched_server();
     }
@@ -3060,6 +3061,15 @@ impl eframe::App for App {
         // New keys are already registered by apply_settings, which clears the flag.
         if self.hotkeys_paused && self.recording.is_none() {
             self.register_hotkeys(ctx);
+        }
+        // A delete becomes final when its undo time is over, also while hidden.
+        if let Some(pending) = &self.pending_delete {
+            let left = UNDO_FOR.saturating_sub(pending.since.elapsed());
+            if left.is_zero() {
+                self.finish_delete();
+            } else {
+                ctx.request_repaint_after(left);
+            }
         }
         self.window_logic(ctx);
         self.handle_events(ctx);
