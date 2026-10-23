@@ -237,6 +237,10 @@ impl App {
         if let Some(d) = self.draft.take() {
             self.apply_settings(d, ctx, true);
         }
+        self.recording = None;
+        if self.hotkeys_paused {
+            ctx.request_repaint();
+        }
         self.confirm = None;
     }
 
@@ -503,6 +507,10 @@ impl App {
             c.backend = d.backend.clone();
             self.apply_settings(c, &ctx, false);
         }
+        // App::logic turns the global shortcuts back on in the next frame.
+        if self.hotkeys_paused && self.recording.is_none() {
+            ctx.request_repaint();
+        }
         self.draft = Some(d);
     }
 
@@ -701,6 +709,7 @@ impl App {
                 shortcut::Recorded::Started => {
                     // Off while recording, so pressing the current keys doesn't hide the window.
                     self.hotkeys = None;
+                    self.hotkeys_paused = true;
                     self.recording = Some(id);
                 }
                 shortcut::Recorded::Changed | shortcut::Recorded::Cancelled => {

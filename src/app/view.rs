@@ -3012,6 +3012,12 @@ impl eframe::App for App {
     }
 
     fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        // However a shortcut recording ended (new keys, the same keys, Esc, another
+        // settings page, or leaving Settings), the global shortcuts come back.
+        // New keys are already registered by apply_settings, which clears the flag.
+        if self.hotkeys_paused && self.recording.is_none() {
+            self.register_hotkeys(ctx);
+        }
         self.window_logic(ctx);
         self.handle_events(ctx);
         self.focused.store(

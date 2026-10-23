@@ -37,7 +37,7 @@ Status: `[ ]` to do, `[~]` in progress, `[x]` done, `[!]` waiting for a decision
 - [x] 1.2 The pipelines skip changes to unrelated files (docs, README, templates, hook config)
 
 ### Phase 2. Bugs
-- [ ] 2.1 Global shortcuts stay off after a cancelled or unchanged shortcut recording
+- [x] 2.1 Global shortcuts stay off after a cancelled or unchanged shortcut recording
 - [ ] 2.2 Embedding server settings are remembered per server address (the Unsloth report)
 - [ ] 2.3 API keys are encrypted with Windows DPAPI
 - [ ] 2.4 OCR no longer overwrites pins and tags
@@ -107,3 +107,4 @@ Status: `[ ]` to do, `[~]` in progress, `[x]` done, `[!]` waiting for a decision
 | Date | Commits | Change |
 |---|---|---|
 | 2026-10-23 | `e2813c5` to `8b0c5d8` | Before this plan: rustfmt, clippy fixes, dependency updates, format check in CI, prek hooks |
+| 2026-10-23 | `ff0e6aa`, `c7ff1e4`, `8138797`, merge `67c3b1e` | Phase 1: this plan, prek built-in hooks, pipelines skip non-code changes |

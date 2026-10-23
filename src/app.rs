@@ -216,6 +216,8 @@ pub struct App {
     last_search: Instant,
     download: Option<Download>,
     hotkeys: Option<Hotkeys>,
+    /// Global shortcuts are off while one is being recorded in Settings.
+    hotkeys_paused: bool,
     hotkey_error: Option<String>,
     model_list: ModelList,
     settings_page: SettingsPage,
@@ -338,6 +340,7 @@ impl App {
             last_search: Instant::now(),
             download: None,
             hotkeys: None,
+            hotkeys_paused: false,
             hotkey_error: None,
             model_list: ModelList::default(),
             settings_page: SettingsPage::Search,
@@ -399,6 +402,7 @@ impl App {
 
     fn register_hotkeys(&mut self, ctx: &egui::Context) {
         self.hotkeys = None;
+        self.hotkeys_paused = false;
         self.hotkey_error = None;
         let manager = match GlobalHotKeyManager::new() {
             Ok(m) => m,
