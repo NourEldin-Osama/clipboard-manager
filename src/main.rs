@@ -13,6 +13,7 @@ mod i18n;
 mod images;
 mod import;
 mod models;
+mod net;
 mod ocr;
 mod search;
 mod secure;

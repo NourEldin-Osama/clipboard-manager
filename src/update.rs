@@ -79,19 +79,12 @@ fn numbers(v: &str) -> Vec<u64> {
         .collect()
 }
 
-fn agent() -> ureq::Agent {
-    ureq::Agent::config_builder()
-        .timeout_connect(Some(Duration::from_secs(15)))
-        .build()
-        .into()
-}
-
 /// The latest release's manifest. `CLIPBOARD_MANAGER_UPDATE_URL` points
 /// elsewhere for testing; the signature check still applies.
 pub fn check() -> Result<Release> {
     let url =
         std::env::var("CLIPBOARD_MANAGER_UPDATE_URL").unwrap_or_else(|_| MANIFEST_URL.to_string());
-    let mut resp = agent()
+    let mut resp = crate::net::quick()
         .get(&url)
         .call()
         .with_context(|| format!("checking {url}"))?;
@@ -111,7 +104,8 @@ fn staged_path() -> Result<PathBuf> {
 pub fn download(r: &Release, p: &Arc<Progress>) -> Result<PathBuf> {
     let staged = staged_path()?;
     let part = staged.with_extension("part");
-    let mut resp = agent()
+    // The exe is about 30 MB: half an hour covers a very slow line.
+    let mut resp = crate::net::download(Duration::from_secs(30 * 60))
         .get(&r.url)
         .call()
         .with_context(|| format!("downloading {}", r.url))?;
