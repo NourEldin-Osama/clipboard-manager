@@ -32,20 +32,15 @@ prek run --all-files                        # every git hook: file checks, fmt, 
   `$env:OCR_DIR = "..."; cargo test -- --ignored ocr_reads_text`.
 - If the released app is installed on the same PC, a dev build can disturb it:
   - Without `CLIPBOARD_MANAGER_HOME`, it opens the installed app's data folder (`%APPDATA%\clipboard-manager\data`).
-  - Start at sign-in is one per-user `Run` registry value named "Clipboard Manager". While the setting is on (the
-    default), the app writes its own exe path there at every start, so a dev build takes over the installed app's
-    entry. Starting the installed app once writes its path back.
+  - Start at sign-in is one per-user `Run` registry value named "Clipboard Manager". A release build corrects its
+    path at start (`autostart::refresh`, which never turns it back on); a dev build leaves it alone. Switching the
+    setting in a dev build's Settings still points it at the dev exe; starting the installed app once fixes that.
   - Two apps can't register the same global shortcut. Quit the installed app before testing shortcuts.
 
-A throwaway data folder with start at sign-in off. A `config.json` that fails to parse falls back to the defaults, so
-write it without a byte order mark; `Set-Content` does that in both PowerShell 5.1 and 7:
+A throwaway data folder for a dev build:
 
 ```powershell
 $env:CLIPBOARD_MANAGER_HOME = "$env:TEMP\clipboard-manager-dev"
-if (-not (Test-Path "$env:CLIPBOARD_MANAGER_HOME\config.json")) {
-    New-Item -ItemType Directory -Force $env:CLIPBOARD_MANAGER_HOME | Out-Null
-    Set-Content "$env:CLIPBOARD_MANAGER_HOME\config.json" '{"start_at_login": false}'
-}
 cargo run
 ```
 

@@ -399,9 +399,10 @@ impl App {
         if app.cfg.tray {
             app.set_tray(true);
         }
-        if app.cfg.start_at_login {
-            // Refreshes the stored path in case the app was moved.
-            if let Err(e) = crate::autostart::set(true) {
+        // Only a release build fixes the entry's path at start: a dev build
+        // would otherwise point the installed app's entry at itself.
+        if app.cfg.start_at_login && update::build().is_some() {
+            if let Err(e) = crate::autostart::refresh() {
                 log::warn!("{e:#}");
             }
         }
