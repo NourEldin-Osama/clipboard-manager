@@ -329,9 +329,8 @@ impl State {
             let inputs: Vec<String> = texts.iter().map(|(_, t)| t.clone()).collect();
             match emb.embed_texts(&inputs, TextRole::Document) {
                 Ok(vs) => {
-                    for ((id, _), e) in texts.iter().zip(vs) {
-                        self.finish(&key, *id, Ok(e));
-                    }
+                    let done = texts.iter().map(|(id, _)| *id).zip(vs).collect();
+                    self.finish_all(&key, done);
                 }
                 // One bad input fails the whole request; retry individually to isolate it.
                 Err(_) if texts.len() > 1 => {
@@ -348,6 +347,21 @@ impl State {
             }
         }
         self.embedder = Some(emb);
+    }
+
+    /// Saves a whole batch's vectors in one transaction, then reports each one.
+    fn finish_all(&self, key: &str, done: Vec<(u64, Embedding)>) {
+        let rows: Vec<(u64, &Embedding)> = done.iter().map(|(id, e)| (*id, e)).collect();
+        if let Err(err) = self.store.put_embeddings(key, &rows) {
+            log::warn!("saving embeddings failed: {err:#}");
+        }
+        for (id, embedding) in done {
+            self.emit(Event::Embedded {
+                id,
+                key: key.to_string(),
+                embedding: Some(embedding),
+            });
+        }
     }
 
     fn finish(&self, key: &str, id: u64, r: Result<Embedding>) {

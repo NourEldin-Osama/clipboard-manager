@@ -71,7 +71,7 @@ Status: `[ ]` to do, `[~]` in progress, `[x]` done, `[!]` waiting for a decision
 - [x] 3.2 Split `settings_page.rs` (one file per page, plus the server settings)
 - [x] 3.3 Move secret detection into `privacy.rs`
 - [ ] 3.4 A `Library` that owns items, store, tags, pins and pruning; one `Command` enum for user actions
-- [ ] 3.5 Store: `update` in one transaction, batch writes, `delete_many`, smaller cache, relative image paths, schema version
+- [x] 3.5 Store: `update` in one transaction, batch writes, `delete_many`, smaller cache, schema version (relative image paths: in 5.1, D15)
 - [ ] 3.6 A background store thread for delete, prune, clear, import and PNG work
 - [ ] 3.7 Worker queue: priorities, survives panics, restarts
 - [ ] 3.8 Search runs on a background thread

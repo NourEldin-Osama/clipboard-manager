@@ -942,8 +942,18 @@ impl App {
         history.sort();
         let excess = history.len() - self.cfg.max_items;
         let doomed: HashSet<u64> = history.into_iter().take(excess).map(|(_, id)| id).collect();
-        for it in self.items.iter().filter(|i| doomed.contains(&i.id)) {
-            let _ = self.store.delete(it);
+        let removed: Vec<Item> = self
+            .items
+            .iter()
+            .filter(|i| doomed.contains(&i.id))
+            .cloned()
+            .collect();
+        // One transaction for all of them: lowering the limit by thousands
+        // used to cost one disk sync per item.
+        if let Err(e) = self.store.delete_many(&removed) {
+            self.set_error(format!("delete failed: {e}"));
+        }
+        for it in &removed {
             self.lower.remove(&it.id);
             self.embeddings.remove(&it.id);
             self.thumbs.remove(&it.id);
@@ -1447,10 +1457,10 @@ impl App {
             .filter(|i| i.origin == Origin::Clipboard && !i.is_kept())
             .cloned()
             .collect();
+        if let Err(e) = self.store.delete_many(&doomed) {
+            self.set_error(format!("delete failed: {e}"));
+        }
         for it in &doomed {
-            if let Err(e) = self.store.delete(it) {
-                self.set_error(format!("delete failed: {e}"));
-            }
             self.lower.remove(&it.id);
             self.embeddings.remove(&it.id);
             self.thumbs.remove(&it.id);
