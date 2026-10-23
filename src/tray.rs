@@ -33,9 +33,12 @@ impl Tray {
         tx: Sender<TrayCmd>,
         wake: impl Fn() + Send + Sync + Clone + 'static,
     ) -> Result<Self> {
-        let show = MenuItem::new(t!("tray-show"), true, None);
-        let pause = MenuItem::new(pause_label(paused), true, None);
-        let quit = MenuItem::new(t!("tray-quit"), true, None);
+        // Fixed ids: muda and tray-icon keep only the first event handler they
+        // are given, so a menu built again (for a new language, or after the
+        // tray was turned off and on) must use the ids that handler knows.
+        let show = MenuItem::with_id("show", t!("tray-show"), true, None);
+        let pause = MenuItem::with_id("pause", pause_label(paused), true, None);
+        let quit = MenuItem::with_id("quit", t!("tray-quit"), true, None);
         let menu = Menu::new();
         menu.append_items(&[
             &show,
