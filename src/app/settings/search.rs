@@ -2,29 +2,67 @@
 
 use super::*;
 
-pub(super) const STRICTNESS: [(f32, &str); 3] = [
-    (0.0, "Show all"),
-    (0.15, "Related only"),
-    (0.3, "Close only"),
-];
+/// The choices for how close a meaning match must be: a minimum similarity each.
+fn strictness() -> [(f32, String); 3] {
+    [
+        (0.0, t!("settings-strictness-all")),
+        (0.15, t!("settings-strictness-related")),
+        (0.3, t!("settings-strictness-close")),
+    ]
+}
 
 impl App {
     pub(super) fn search_page(&mut self, ui: &mut Ui, d: &mut Config, apply_model: &mut bool) {
         let def = Config::default();
-        section(ui, "Search");
-        setting_for(ui, "How search works", "Smart: finds items that contain your words and items that mean the same thing, merged into one list.\nMeaning: only by meaning (needs a search model).\nExact words: only items containing what you type.", &mut d.search_mode, def.search_mode, |ui, mode| {
-            segmented(ui, mode, &[(SearchMode::Hybrid, "Smart"), (SearchMode::Semantic, "Meaning"), (SearchMode::Keyword, "Exact words")])
-        });
-        setting_for(ui, "Meaning matches to show", "How closely an item has to match before it's listed. \"Show all\" ranks everything by closeness; stricter options hide weak matches. Exact word matches are always shown.", &mut d.min_similarity, def.min_similarity, |ui, min_similarity| {
-            let current = STRICTNESS.iter().find(|(v, _)| (*v - *min_similarity).abs() < 1e-4).map(|(_, l)| tr(l).to_string()).unwrap_or_else(|| trf("Custom ({v})", &[("v", &format!("{:.2}", min_similarity))]));
-            egui::ComboBox::from_id_salt("strict").selected_text(txt(&current, 14.0, None)).width(150.0).show_ui(ui, |ui| {
-                for (v, l) in STRICTNESS {
-                    ui.selectable_value(min_similarity, v, txt(tr(l), 14.0, None));
-                }
-            });
-        });
+        section(ui, &t!("settings-search"));
+        setting_for(
+            ui,
+            &t!("settings-search-mode"),
+            &t!("settings-search-mode-help"),
+            &mut d.search_mode,
+            def.search_mode,
+            |ui, mode| {
+                segmented(
+                    ui,
+                    mode,
+                    &[
+                        (SearchMode::Hybrid, t!("search-mode-smart")),
+                        (SearchMode::Semantic, t!("search-mode-meaning")),
+                        (SearchMode::Keyword, t!("search-mode-words")),
+                    ],
+                )
+            },
+        );
+        setting_for(
+            ui,
+            &t!("settings-strictness"),
+            &t!("settings-strictness-help"),
+            &mut d.min_similarity,
+            def.min_similarity,
+            |ui, min_similarity| {
+                let choices = strictness();
+                let current = choices
+                    .iter()
+                    .find(|(v, _)| (*v - *min_similarity).abs() < 1e-4)
+                    .map(|(_, l)| l.clone())
+                    .unwrap_or_else(|| {
+                        t!(
+                            "settings-strictness-custom",
+                            value = format!("{:.2}", min_similarity)
+                        )
+                    });
+                egui::ComboBox::from_id_salt("strict")
+                    .selected_text(txt(&current, 14.0, None))
+                    .width(150.0)
+                    .show_ui(ui, |ui| {
+                        for (v, l) in choices {
+                            ui.selectable_value(min_similarity, v, txt(&l, 14.0, None));
+                        }
+                    });
+            },
+        );
 
-        section(ui, "Meaning search model");
+        section(ui, &t!("settings-model-section"));
         let (dot, text) = self.model_status();
         row(ui, |ui| {
             ui.add_space(10.0);
@@ -38,12 +76,25 @@ impl App {
         });
         ui.add_space(4.0);
         let mut kind = d.backend.kind();
-        plain_setting(ui, "Model", "Off: search by words only (plus text found in images).\nBuilt-in: a model inside this app that understands text and images, no other software needed (one-time download).\nYour server: use a model you already run, such as llama.cpp, Unsloth, Sentence Transformers, Ollama or LM Studio.", |ui| {
-            segmented(ui, &mut kind, &[(BackendKind::Off, "Off"), (BackendKind::BuiltIn, "Built-in"), (BackendKind::Server, "Your server")]);
-        });
+        plain_setting(
+            ui,
+            &t!("settings-model"),
+            &t!("settings-model-help"),
+            |ui| {
+                segmented(
+                    ui,
+                    &mut kind,
+                    &[
+                        (BackendKind::Off, t!("settings-model-off")),
+                        (BackendKind::BuiltIn, t!("settings-model-builtin")),
+                        (BackendKind::Server, t!("settings-model-server")),
+                    ],
+                );
+            },
+        );
         d.choose_backend(kind);
         match &mut d.backend {
-            EmbedBackend::None => note(ui, "Searching by words only. Turn on a model to also find items by meaning, e.g. “trip” finds “flight to Jeddah”."),
+            EmbedBackend::None => note(ui, &t!("settings-model-off-note")),
             EmbedBackend::SigLip { repo } => self.builtin_models(ui, repo),
             EmbedBackend::Server(s) => {
                 server_settings(ui, s, &mut d.server_profiles, &mut self.model_list)
@@ -53,15 +104,18 @@ impl App {
             ui.add_space(8.0);
             row(ui, |ui| {
                 ui.add_space(10.0);
-                if primary_button(ui, "Apply model").clicked() {
+                if primary_button(ui, &t!("settings-apply-model")).clicked() {
                     *apply_model = true;
                 }
-                if ui.button(txt(tr("Discard changes"), 13.0, None)).clicked() {
+                if ui
+                    .button(txt(&t!("settings-discard-changes"), 13.0, None))
+                    .clicked()
+                {
                     d.backend = self.cfg.backend.clone();
                 }
                 lbl(
                     ui,
-                    "Your items are indexed again in the background.",
+                    &t!("settings-model-reindex"),
                     12.5,
                     ui.visuals().weak_text_color(),
                 );
@@ -70,7 +124,7 @@ impl App {
     }
 
     pub(super) fn builtin_models(&mut self, ui: &mut Ui, repo: &mut String) {
-        note(ui, "Runs on this PC's processor. Finds photos and screenshots from a description, like “receipt from a restaurant”.");
+        note(ui, &t!("settings-builtin-note"));
         let mut start: Option<String> = None;
         for m in &SIGLIP_MODELS {
             let ready = models::siglip_ready(&self.paths.models, m.repo);
@@ -78,18 +132,22 @@ impl App {
             let size = format!("{:.1}", m.size_mb as f32 / 1000.0);
             choice_setting(
                 ui,
-                m.label,
-                &trf(
-                    "{repo} · {size} GB download",
-                    &[("repo", &m.repo), ("size", &size)],
+                &(m.label)(),
+                &t!(
+                    "settings-model-download-size",
+                    repo = m.repo,
+                    size = size.as_str()
                 ),
                 selected,
                 |ui| {
                     if ready {
-                        chip(ui, "✔ Downloaded", GREEN);
+                        icons::chip(ui, Icon::Check, &t!("settings-model-downloaded"), GREEN);
                     } else if let Some(dl) = self.download.as_ref().filter(|x| x.repo == m.repo) {
                         let p = &dl.progress;
-                        if ui.small_button(txt(tr("Cancel"), 12.0, None)).clicked() {
+                        if ui
+                            .small_button(txt(&t!("common-cancel"), 12.0, None))
+                            .clicked()
+                        {
                             p.cancel.store(true, Ordering::Relaxed);
                         }
                         let (done, total) = (
@@ -99,13 +157,17 @@ impl App {
                         ui.add(
                             egui::ProgressBar::new(done as f32 / total as f32)
                                 .desired_width(150.0)
-                                .text(format!("{} / {} MB", done >> 20, total >> 20)),
+                                .text(t!(
+                                    "settings-model-progress",
+                                    done = done >> 20,
+                                    total = total >> 20
+                                )),
                         );
                         ui.ctx().request_repaint_after(Duration::from_millis(250));
                     } else if self.download.is_none()
                         && ui
                             .button(txt(
-                                &trf("Download {size} GB", &[("size", &size)]),
+                                &t!("settings-model-download", size = size.as_str()),
                                 14.0,
                                 None,
                             ))
@@ -116,7 +178,7 @@ impl App {
                     if !selected
                         && ui
                             .add(
-                                egui::Button::new(txt(tr("Use"), 14.0, None))
+                                egui::Button::new(txt(&t!("settings-model-use"), 14.0, None))
                                     .frame_when_inactive(false),
                             )
                             .clicked()

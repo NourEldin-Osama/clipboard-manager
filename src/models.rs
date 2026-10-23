@@ -8,21 +8,24 @@ use std::sync::Arc;
 
 use anyhow::{Context, Result};
 
+use crate::i18n::t;
+
 pub struct SigLipModel {
     pub repo: &'static str,
-    pub label: &'static str,
+    /// Its name in the interface language.
+    pub label: fn() -> String,
     pub size_mb: u32,
 }
 
 pub const SIGLIP_MODELS: [SigLipModel; 2] = [
     SigLipModel {
         repo: "google/siglip-base-patch16-256-multilingual",
-        label: "SigLIP base, multilingual (text + images)",
+        label: || t!("model-siglip-multilingual"),
         size_mb: 1483,
     },
     SigLipModel {
         repo: "google/siglip-base-patch16-224",
-        label: "SigLIP base, English (text + images)",
+        label: || t!("model-siglip-english"),
         size_mb: 813,
     },
 ];

@@ -2,13 +2,24 @@
 
 use super::*;
 
-pub(crate) const ACCENTS: [(&str, Color32); 5] = [
-    ("Indigo", Color32::from_rgb(88, 101, 242)),
-    ("Sky", Color32::from_rgb(14, 140, 214)),
-    ("Emerald", Color32::from_rgb(16, 160, 110)),
-    ("Amber", Color32::from_rgb(214, 128, 10)),
-    ("Rose", Color32::from_rgb(220, 60, 120)),
+/// The accent colours; `accent_name` names them in the same order.
+pub(crate) const ACCENTS: [Color32; 5] = [
+    Color32::from_rgb(88, 101, 242),
+    Color32::from_rgb(14, 140, 214),
+    Color32::from_rgb(16, 160, 110),
+    Color32::from_rgb(214, 128, 10),
+    Color32::from_rgb(220, 60, 120),
 ];
+
+pub(crate) fn accent_name(index: usize) -> String {
+    match index {
+        0 => t!("accent-indigo"),
+        1 => t!("accent-sky"),
+        2 => t!("accent-emerald"),
+        3 => t!("accent-amber"),
+        _ => t!("accent-rose"),
+    }
+}
 
 pub(super) static ACCENT: AtomicUsize = AtomicUsize::new(0);
 
@@ -17,7 +28,7 @@ pub(crate) fn set_accent(i: usize) {
 }
 
 pub(crate) fn accent() -> Color32 {
-    ACCENTS[ACCENT.load(Ordering::Relaxed)].1
+    ACCENTS[ACCENT.load(Ordering::Relaxed)]
 }
 
 pub(crate) const GREEN: Color32 = Color32::from_rgb(34, 160, 90);

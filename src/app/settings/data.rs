@@ -4,14 +4,14 @@ use super::*;
 
 impl App {
     pub(super) fn data_page(&mut self, ui: &mut Ui, d: &mut Config) {
-        section(ui, "Storage");
+        section(ui, &t!("settings-storage"));
         let root = self.paths.root.clone();
         plain_setting(
             ui,
-            "Data folder",
-            "History, images, models and settings are stored here, on this PC only.",
+            &t!("settings-data-folder"),
+            &t!("settings-data-folder-help"),
             |ui| {
-                if ui.button(txt(tr("Open"), 14.0, None)).clicked() {
+                if ui.button(txt(&t!("settings-open"), 14.0, None)).clicked() {
                     if let Err(e) = reveal(&root) {
                         self.set_error(format!("opening the folder: {e}"));
                     }
@@ -29,10 +29,10 @@ impl App {
         let log = root.join("clipboard-manager.log");
         plain_setting(
             ui,
-            "Log file",
-            "A record of what the app did in this session. Attach it when reporting a problem.",
+            &t!("settings-log-file"),
+            &t!("settings-log-file-help"),
             |ui| {
-                if ui.button(txt(tr("Show"), 14.0, None)).clicked() {
+                if ui.button(txt(&t!("settings-show"), 14.0, None)).clicked() {
                     if let Err(e) = reveal(&log) {
                         self.set_error(format!("opening the folder: {e}"));
                     }
@@ -43,30 +43,32 @@ impl App {
         let images = items.iter().filter(|i| i.kind == Kind::Image).count();
         let pinned = items.iter().filter(|i| i.pinned).count();
         let clip = self.library.clearable_count();
-        plain_setting(ui, "Stored", "", |ui| {
+        plain_setting(ui, &t!("settings-stored"), "", |ui| {
             ui.label(txt(
-                &trf(
-                    "{n} items · {i} images · {p} pinned",
-                    &[("n", &items.len()), ("i", &images), ("p", &pinned)],
+                &t!(
+                    "settings-stored-counts",
+                    count = items.len(),
+                    images = images,
+                    pinned = pinned
                 ),
                 13.0,
                 None,
             ));
         });
 
-        section(ui, "Clean up");
+        section(ui, &t!("settings-clean-up"));
         let mut clear = false;
         let confirm = self.confirm;
         plain_setting(
             ui,
-            "Clear clipboard history",
-            "Deletes copied items. Pinned and tagged items, and files you added, stay.",
+            &t!("settings-clear-history"),
+            &t!("settings-clear-history-help"),
             |ui| {
                 if confirm == Some(Confirm::ClearHistory) {
                     if ui
                         .add(
                             egui::Button::new(txt(
-                                &trf("Delete {n} items", &[("n", &clip)]),
+                                &t!("settings-delete-items", count = clip),
                                 14.0,
                                 Some(Color32::WHITE),
                             ))
@@ -76,13 +78,13 @@ impl App {
                     {
                         clear = true;
                     }
-                    if ui.button("Cancel").clicked() {
+                    if ui.button(t!("common-cancel")).clicked() {
                         self.confirm = None;
                     }
                 } else if ui
                     .add_enabled(
                         clip > 0,
-                        egui::Button::new(txt(tr("Clear…"), 14.0, Some(RED))),
+                        egui::Button::new(txt(&t!("settings-clear"), 14.0, Some(RED))),
                     )
                     .clicked()
                 {
@@ -98,14 +100,14 @@ impl App {
         let confirm = self.confirm;
         plain_setting(
             ui,
-            "Reset all settings",
-            "Puts every setting back to its default, including the search model.",
+            &t!("settings-reset-all"),
+            &t!("settings-reset-all-help"),
             |ui| {
                 if confirm == Some(Confirm::ResetSettings) {
                     if ui
                         .add(
                             egui::Button::new(txt(
-                                tr("Reset everything"),
+                                &t!("settings-reset-everything"),
                                 14.0,
                                 Some(Color32::WHITE),
                             ))
@@ -115,13 +117,13 @@ impl App {
                     {
                         reset = true;
                     }
-                    if ui.button("Cancel").clicked() {
+                    if ui.button(t!("common-cancel")).clicked() {
                         self.confirm = None;
                     }
                 } else if ui
                     .add_enabled(
                         *d != Config::default(),
-                        egui::Button::new(txt(tr("Reset…"), 14.0, None)),
+                        egui::Button::new(txt(&t!("settings-reset"), 14.0, None)),
                     )
                     .clicked()
                 {
@@ -133,6 +135,6 @@ impl App {
             self.confirm = None;
             *d = Config::default();
         }
-        note(ui, "Nothing you copy is sent anywhere. Search models run on this PC or on a server you choose. The update check only downloads the version file from GitHub.");
+        note(ui, &t!("settings-privacy-note"));
     }
 }

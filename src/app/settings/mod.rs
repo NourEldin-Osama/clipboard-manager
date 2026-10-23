@@ -7,8 +7,8 @@ use eframe::egui::{Frame, Margin, Pos2, Rect, Ui};
 use super::icons::{self, Icon};
 use super::shortcut;
 use super::view::{
-    accent, chip, far, flip, lbl, paint_text, primary_button, reveal, row, start_anchor, tip, txt,
-    ACCENTS, AMBER, GREEN, RED,
+    accent, accent_name, chip, far, flip, lbl, paint_text, primary_button, reveal, row,
+    start_anchor, tip, txt, ACCENTS, AMBER, GREEN, RED,
 };
 use super::*;
 use crate::config::{BackendKind, Density, Language, ServerProfiles, TimeFormat};
@@ -48,14 +48,14 @@ impl SettingsPage {
         Self::Data,
     ];
 
-    fn label(self) -> (Icon, &'static str) {
+    fn label(self) -> (Icon, String) {
         match self {
-            Self::General => (Icon::General, "General"),
-            Self::Search => (Icon::Search, "Search & AI model"),
-            Self::Clipboard => (Icon::Clipboard, "Clipboard"),
-            Self::Shortcuts => (Icon::Keyboard, "Shortcuts"),
-            Self::Appearance => (Icon::Palette, "Appearance"),
-            Self::Data => (Icon::Lock, "Data & privacy"),
+            Self::General => (Icon::General, t!("settings-page-general")),
+            Self::Search => (Icon::Search, t!("settings-page-search")),
+            Self::Clipboard => (Icon::Clipboard, t!("settings-page-clipboard")),
+            Self::Shortcuts => (Icon::Keyboard, t!("settings-page-shortcuts")),
+            Self::Appearance => (Icon::Palette, t!("settings-page-appearance")),
+            Self::Data => (Icon::Lock, t!("settings-page-data")),
         }
     }
 }
@@ -123,7 +123,7 @@ impl App {
             self.set_tray(self.cfg.tray);
         }
         if language_changed {
-            ctx.send_viewport_cmd(egui::ViewportCommand::Title(tr("Clipboard Manager").into()));
+            ctx.send_viewport_cmd(egui::ViewportCommand::Title(t!("app-title")));
         }
         if login_changed {
             if let Err(e) = crate::autostart::set(self.cfg.start_at_login) {
@@ -170,7 +170,7 @@ impl App {
                     if icons::icon_button_ex(
                         ui,
                         Icon::Back,
-                        "Back (Esc)",
+                        &t!("settings-back"),
                         Vec2::splat(34.0),
                         22.0,
                         None,
@@ -182,19 +182,22 @@ impl App {
                     }
                     ui.add_space(8.0);
                     let strong = ui.visuals().strong_text_color();
-                    lbl(ui, "Settings", 20.0, strong);
+                    lbl(ui, &t!("settings-title"), 20.0, strong);
                     far(ui, |ui| {
                         if model_pending {
-                            if primary_button(ui, "Apply model").clicked() {
+                            if primary_button(ui, &t!("settings-apply-model")).clicked() {
                                 apply_model = true;
                             }
-                            if ui.button(txt(tr("Discard changes"), 13.0, None)).clicked() {
+                            if ui
+                                .button(txt(&t!("settings-discard-changes"), 13.0, None))
+                                .clicked()
+                            {
                                 discard_model = true;
                             }
-                            chip(ui, tr("Model changes not applied yet"), AMBER);
+                            chip(ui, t!("settings-model-not-applied"), AMBER);
                         } else {
                             let weak = ui.visuals().weak_text_color();
-                            lbl(ui, "Changes are saved automatically", 12.5, weak);
+                            lbl(ui, &t!("settings-saved-automatically"), 12.5, weak);
                             icons::glyph(ui, Icon::Check, 13.0, weak);
                         }
                     });
@@ -263,7 +266,7 @@ impl App {
                         ui.painter(),
                         at,
                         start_anchor(egui::Align::Center),
-                        tr(name),
+                        &name,
                         FontId::proportional(14.0),
                         color,
                     );

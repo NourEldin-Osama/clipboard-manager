@@ -262,3 +262,226 @@ shortcut-recording-tip = اضغط المفاتيح الجديدة · Backspace �
 shortcut-click-to-set = انقر ثم اضغط المفاتيح الجديدة
 toast-save-anyway = احفظه على أي حال
 toast-undo = تراجع
+
+## Settings
+
+settings-page-general = عام
+settings-page-search = البحث والذكاء الاصطناعي
+settings-page-clipboard = الحافظة
+settings-page-shortcuts = الاختصارات
+settings-page-appearance = المظهر
+settings-page-data = البيانات والخصوصية
+app-title = مدير الحافظة
+settings-back = رجوع (Esc)
+settings-title = الإعدادات
+settings-apply-model = تطبيق النموذج
+settings-discard-changes = تجاهل التغييرات
+settings-model-not-applied = لم تُطبّق تغييرات النموذج بعد
+settings-saved-automatically = تُحفظ التغييرات تلقائيًا
+settings-back-to-default = العودة إلى الافتراضي
+settings-browse = استعراض…
+settings-filter-matching = الملفات المطابقة
+settings-filter-all = كل الملفات
+settings-language-and-time = اللغة والوقت
+settings-language = اللغة
+settings-language-help = لغة التطبيق. العربية تجعل اتجاه النافذة من اليمين إلى اليسار.
+settings-time-format = تنسيق الوقت
+settings-time-format-help = طريقة عرض الأوقات. تُحفظ بالتوقيت العالمي (UTC) وتُعرض بتوقيتك المحلي.
+settings-time-24h = 24 ساعة
+settings-time-12h = 12 ساعة
+settings-startup = بدء التشغيل
+settings-start-at-sign-in = التشغيل عند تسجيل الدخول
+settings-start-at-sign-in-help = يفتح التطبيق كلما سجّلت الدخول إلى ويندوز. يبدأ مخفيًا: في علبة النظام إن كانت مفعّلة، وإلا مصغّرًا.
+settings-tray-section = علبة النظام
+settings-tray = الاستمرار في العمل من علبة النظام
+settings-tray-help = يعرض أيقونة في منطقة الإشعارات. إغلاق النافذة أو تصغيرها يخفيها هناك ويستمر تسجيل السجل. انقر الأيقونة للفتح، وانقر بالزر الأيمن للخروج.
+settings-startup-note = عند تفعيل الخيارين، يبدأ التطبيق بهدوء في علبة النظام كلما سجّلت الدخول.
+settings-updates = التحديثات
+settings-update-check = التحقق من التحديثات تلقائيًا
+settings-update-check-help = يبحث عن إصدار جديد عند بدء التطبيق ومرة يوميًا. يُجلب ملف الإصدار من GitHub فقط، ولا يُرسل أي شيء عنك أو عن حافظتك.
+settings-update-download = تنزيل التحديثات تلقائيًا
+settings-update-download-help = مفعّل: يُنزَّل الإصدار الجديد في الخلفية ويُثبَّت عند إعادة التشغيل أو الخروج. معطّل: يُطلب إذنك قبل تنزيل أي شيء.
+settings-version = الإصدار
+settings-version-help = يُتحقق من كل تنزيل بمفتاح توقيع هذا التطبيق قبل تثبيته.
+settings-check-now = تحقّق الآن
+settings-update-checking = جارٍ التحقق…
+settings-update-current = لديك أحدث إصدار
+update-ready = الإصدار { $version } جاهز
+settings-updates-off-dev = التحديثات معطّلة في نسخ التطوير
+update-development-build = { $version } (نسخة تطوير)
+settings-look = الشكل
+settings-theme = السمة
+settings-theme-help = «النظام» يتبع إعداد الوضع الفاتح/الداكن في ويندوز.
+settings-theme-system = النظام
+settings-theme-light = فاتح
+settings-theme-dark = داكن
+settings-accent = لون التمييز
+settings-accent-help = يُستخدم للتحديد والأزرار والإبراز.
+accent-indigo = نيلي
+accent-sky = سماوي
+accent-emerald = زمردي
+accent-amber = كهرماني
+accent-rose = وردي
+settings-list = قائمة
+settings-layout = التخطيط
+settings-layout-help = الشبكة تعرض بطاقات والقائمة تعرض صفوفًا، وكلاهما يفتح التفاصيل عند الطلب. التفاصيل تُبقي العنصر المحدد بجانب القائمة. زر العرض بجانب مربع البحث يبدّل أيضًا.
+settings-density = الكثافة
+settings-density-help = المضغوط يعرض عناصر أكثر بإخفاء السطر الثاني.
+settings-density-comfortable = مريح
+settings-density-compact = مضغوط
+settings-pinned-on-top = المثبتة في الأعلى
+settings-pinned-on-top-help = تظهر العناصر المثبتة أولًا أثناء التصفح، أيًّا كان الترتيب. أما نتائج البحث فتُرتّب حسب اختيارك فقط.
+settings-group-by-day = التجميع حسب اليوم
+settings-group-by-day-help = إظهار عناوين المثبتة واليوم وأمس… أثناء التصفح (لا أثناء البحث).
+settings-recording = التسجيل
+settings-record = تسجيل سجل الحافظة
+settings-record-help = احفظ كل ما تنسخه. عطّله للإيقاف المؤقت، وزر الإيقاف في النافذة الرئيسية يفعل الشيء نفسه.
+settings-skip-secrets = تجاهل كلمات المرور ومفاتيح API
+settings-skip-secrets-help = لا تحفظ النسخ التي تبدو كلمة مرور أو مفتاح API أو رمزًا أو مفتاحًا خاصًا. ما زال بإمكانك لصقها كالمعتاد.
+settings-merge-duplicates = دمج النسخ المكررة
+settings-merge-duplicates-help = نسخ شيء موجود لديك ينقله إلى الأعلى بدلًا من إضافته مجددًا.
+settings-read-images = قراءة النص في الصور
+settings-read-images-help = اعثر على لقطات الشاشة والصور بالكلمات التي فيها. يعمل على هذا الجهاز.
+settings-after-copying = بعد النسخ من القائمة
+settings-hide-window = إخفاء النافذة
+settings-hide-window-help = بعد نسخ عنصر، تختفي النافذة لتلصقه مباشرة.
+settings-history-size = حجم السجل
+settings-keep-up-to = الاحتفاظ بما يصل إلى
+settings-keep-up-to-help = عند تجاوز العدد يُحذف الأقدم. لا تُحذف أبدًا العناصر المثبتة والموسومة والملفات التي أضفتها.
+settings-history-items = { $size } عنصر
+settings-storage = التخزين
+settings-data-folder = مجلد البيانات
+settings-data-folder-help = يُحفظ السجل والصور والنماذج والإعدادات هنا، على هذا الجهاز فقط.
+settings-open = فتح
+settings-log-file = ملف السجل
+settings-log-file-help = سجل بما فعله التطبيق في هذه الجلسة. أرفقه عند الإبلاغ عن مشكلة.
+settings-show = إظهار
+settings-stored = المخزَّن
+settings-stored-counts =
+    { $count ->
+        [one] عنصر واحد
+        [two] عنصران
+        [few] { $count } عناصر
+       *[other] { $count } عنصر
+    } · { $images ->
+        [one] صورة واحدة
+        [two] صورتان
+        [few] { $images } صور
+       *[other] { $images } صورة
+    } · { $pinned } مثبت
+settings-clean-up = التنظيف
+settings-clear-history = مسح سجل الحافظة
+settings-clear-history-help = يحذف العناصر المنسوخة. تبقى العناصر المثبتة والموسومة والملفات التي أضفتها.
+settings-delete-items =
+    { $count ->
+        [one] حذف عنصر واحد
+        [two] حذف عنصرين
+        [few] حذف { $count } عناصر
+       *[other] حذف { $count } عنصر
+    }
+settings-clear = مسح…
+settings-reset-all = إعادة ضبط كل الإعدادات
+settings-reset-all-help = يعيد كل إعداد إلى قيمته الافتراضية، بما في ذلك نموذج البحث.
+settings-reset-everything = إعادة ضبط الكل
+settings-reset = إعادة ضبط…
+settings-privacy-note = لا يُرسل أي شيء تنسخه إلى أي مكان. تعمل نماذج البحث على هذا الجهاز أو على خادم تختاره. التحقق من التحديثات يُنزّل ملف الإصدار من GitHub فقط.
+settings-strictness-all = إظهار الكل
+settings-strictness-related = المرتبطة فقط
+settings-strictness-close = القريبة فقط
+settings-strictness-custom = مخصص ({ $value })
+settings-search = البحث
+settings-search-mode = طريقة البحث
+settings-search-mode-help =
+    ذكي: يجد العناصر التي تحتوي كلماتك والعناصر التي تحمل المعنى نفسه في قائمة واحدة.
+    بالمعنى: بالمعنى فقط (يحتاج نموذج بحث).
+    الكلمات نفسها: العناصر التي تحتوي ما تكتبه فقط.
+settings-strictness = نتائج المعنى المعروضة
+settings-strictness-help = مدى التطابق المطلوب لعرض العنصر. «إظهار الكل» يرتّب كل شيء حسب القرب، والخيارات الأشد تخفي التطابقات الضعيفة. تظهر مطابقات الكلمات نفسها دائمًا.
+settings-model-section = نموذج البحث بالمعنى
+settings-model = النموذج
+settings-model-help =
+    معطّل: البحث بالكلمات فقط (مع النص الموجود في الصور).
+    مدمج: نموذج داخل التطبيق يفهم النصوص والصور، دون برامج أخرى (تنزيل لمرة واحدة).
+    خادمك: استخدم نموذجًا تشغّله بالفعل، مثل llama.cpp أو Unsloth أو Sentence Transformers أو Ollama أو LM Studio.
+settings-model-off = معطّل
+settings-model-builtin = مدمج
+settings-model-server = خادمك
+settings-model-off-note = البحث بالكلمات فقط. فعّل نموذجًا لتجد العناصر بالمعنى أيضًا، مثلًا «رحلة» تجد «طيران إلى جدة».
+settings-model-reindex = تُعاد فهرسة عناصرك في الخلفية.
+settings-builtin-note = يعمل على معالج هذا الجهاز. يجد الصور ولقطات الشاشة من وصف، مثل «إيصال من مطعم».
+settings-model-download-size = { $repo } · تنزيل { $size } غيغابايت
+settings-model-downloaded = تم التنزيل
+settings-model-progress = { $done } / { $total } ميغابايت
+settings-model-download = تنزيل { $size } غيغابايت
+settings-model-use = استخدام
+model-siglip-multilingual = SigLIP الأساسي، متعدد اللغات (نصوص وصور)
+model-siglip-english = SigLIP الأساسي، الإنجليزية (نصوص وصور)
+settings-vector-full = كامل · أفضل جودة
+settings-vector-512 = 512 · أصغر
+settings-vector-256 = 256 · مضغوط
+settings-vector-128 = 128 · صغير جدًا، الأسرع
+settings-server-quick-setup = إعداد سريع:
+settings-server-address = عنوان الخادم
+settings-server-address-help = عنوان خادم التضمينات، ويكون عادةً منتهيًا بـ ‎/v1.
+settings-server-check-again = تحقّق مجددًا
+settings-server-key = مفتاح API
+settings-server-key-help = فقط إن طلبه خادمك. يُرسل كرمز Bearer ويُحفظ على هذا الجهاز فقط.
+settings-server-hide-key = إخفاء المفتاح
+settings-server-show-key = إظهار المفتاح
+settings-server-optional = اختياري
+settings-server-model = النموذج
+settings-server-model-help = اتركه فارغًا لاستخدام نموذج التضمين الافتراضي للخادم. اختر من ▾ أو اكتب اسمًا يعرفه خادمك.
+settings-server-models = النماذج على هذا الخادم
+settings-server-default = الافتراضي للخادم
+settings-server-default-named = الافتراضي للخادم · { $model }
+settings-server-listed = يعرضها الخادم (قد تتضمن نماذج محادثة)
+settings-server-default-hint = الافتراضي: { $model }
+settings-server-default-lower = الافتراضي للخادم
+settings-server-checking = جارٍ التحقق من الخادم…
+settings-server-the-default-model = النموذج الافتراضي
+settings-server-connected-uses = متصل · يستخدم { $model }
+settings-server-no-default = متصل، لكن لا يوجد نموذج تضمين افتراضي: اختر واحدًا
+settings-server-connected = متصل
+settings-server-launch-note = يشغّل التطبيق llama-server بنفسه، ويتصل بعد التطبيق.
+settings-server-gemma-tip = يبحث EmbeddingGemma أفضل بمطالباته الخاصة
+settings-server-use-them = استخدمها
+settings-server-advanced = متقدم
+settings-server-query-prompt = عبارة الاستعلام
+settings-server-query-prompt-help = نص يوضع قبل ما تبحث عنه. تحتاجه بعض النماذج (EmbeddingGemma: «task: search result | query: »).
+settings-server-none = لا شيء
+settings-server-item-prompt = عبارة العنصر
+settings-server-item-prompt-help = نص يوضع قبل كل عنصر عند فهرسته (EmbeddingGemma: «title: none | text: »).
+settings-server-vector-size = حجم المتجه
+settings-server-vector-size-help = المتجهات الأصغر تستهلك ذاكرة أقل وتبحث أسرع، بجودة أقل قليلًا. تعمل مع نماذج Matryoshka مثل EmbeddingGemma وUltraVBERT.
+settings-vector-custom = { $count } رقم
+settings-server-images = ابحث في الصور بهذا النموذج
+settings-server-images-help = أرسل الصور إلى الخادم أيضًا. فقط للنماذج التي تفهم الصور (CLIP وSigLIP وBiUltraVBERT…). وإلا فتُوجد الصور بالنص الذي فيها.
+settings-server-launch = شغّل llama-server نيابةً عني
+settings-server-launch-help = يشغّل التطبيق llama-server بملف ‎.gguf الخاص بك في الخلفية ويوقفه عند الخروج.
+settings-server-program = برنامج llama-server
+settings-server-program-help = الملف llama-server.exe من إصدار llama.cpp.
+settings-server-model-file = ملف النموذج (‎.gguf)
+settings-server-projector = مُسقِط الصور (‎.gguf)
+settings-server-projector-help = ملف mmproj اختياري، للنماذج التي تضمّن الصور.
+settings-server-port = المنفذ
+settings-server-extra-args = وسائط إضافية
+settings-server-extra-args-help = تُمرَّر إلى llama-server كما هي.
+settings-shortcuts-global = في أي مكان في ويندوز
+settings-shortcut-show = إظهار هذه النافذة أو إخفاؤها
+settings-shortcut-show-help = يفتح النافذة فوق ما تعمل عليه، واضغط مجددًا لإخفائها.
+settings-shortcut-ignore = لا تسجّل النسخة التالية
+settings-shortcut-ignore-help = اضغطه قبل نسخ شيء خاص، فتُتجاهل النسخة التالية.
+settings-shortcut-not-usable = غير صالح
+settings-shortcut-taken = يستخدمه تطبيق آخر
+settings-shortcuts-local = داخل التطبيق
+settings-shortcut-copy = نسخ العنصر المحدد وإخفاء النافذة
+settings-shortcut-pin = تثبيت أو إلغاء التثبيت
+settings-shortcut-delete = حذف
+settings-shortcut-tag = إضافة وسم
+settings-shortcut-view = التبديل بين الشبكة والقائمة والتفاصيل
+settings-shortcut-used-twice = مستخدم مرتين
+settings-shortcut-move = التنقل في القائمة
+settings-shortcut-move-grid = التنقل بين البطاقات في الشبكة
+settings-shortcut-escape = إغلاق التفاصيل أو مسح البحث أو الإخفاء
+settings-shortcut-built-in = مدمج، لا يمكن تغييره.
+settings-shortcuts-note = انقر اختصارًا ثم اضغط المفاتيح الجديدة. Backspace للتعطيل، وEsc للإلغاء.

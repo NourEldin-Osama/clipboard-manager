@@ -41,8 +41,8 @@ pub fn build() -> Option<u32> {
 /// "0.1.0 (build 12)", or "0.1.0 (development build)".
 pub fn current_label() -> String {
     match build() {
-        Some(b) => format!("{VERSION} (build {b})"),
-        None => format!("{VERSION} ({})", crate::i18n::tr("development build")),
+        Some(b) => crate::i18n::t!("update-version-label", version = VERSION, build = b),
+        None => crate::i18n::t!("update-development-build", version = VERSION),
     }
 }
 

@@ -165,7 +165,7 @@ pub(super) fn setting_row(
                         if icons::icon_button_ex(
                             ui,
                             Icon::Reset,
-                            "Back to default",
+                            &t!("settings-back-to-default"),
                             Vec2::splat(28.0),
                             14.0,
                             None,
@@ -195,10 +195,12 @@ pub(super) fn note(ui: &mut Ui, text: &str) {
 }
 
 pub(super) fn path_field(ui: &mut Ui, p: &mut PathBuf, ext: &[&str]) {
-    if ui.button(txt(tr("Browse…"), 14.0, None)).clicked() {
+    if ui.button(txt(&t!("settings-browse"), 14.0, None)).clicked() {
         let mut dlg = rfd::FileDialog::new();
         if !ext.is_empty() {
-            dlg = dlg.add_filter("file", ext).add_filter("all", &["*"]);
+            dlg = dlg
+                .add_filter(t!("settings-filter-matching"), ext)
+                .add_filter(t!("settings-filter-all"), &["*"]);
         }
         if let Some(f) = dlg.pick_file() {
             *p = f;
