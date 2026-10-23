@@ -320,7 +320,7 @@ impl App {
             lines = with_headers(
                 self.results
                     .iter()
-                    .map(|h| group_label(&self.items[h.idx], pinned_first)),
+                    .map(|h| group_label(&self.library.items()[h.idx], pinned_first)),
             );
         } else {
             lines.extend((0..self.results.len()).map(Line::Row));
@@ -339,7 +339,7 @@ impl App {
         let mut sa = egui::ScrollArea::vertical().auto_shrink([false, false]);
         if self.scroll_to_selected {
             self.scroll_to_selected = false;
-            if let Some(i) = lines.iter().position(|l| matches!(l, Line::Row(r) if Some(self.items[self.results[*r].idx].id) == self.selected)) {
+            if let Some(i) = lines.iter().position(|l| matches!(l, Line::Row(r) if Some(self.library.items()[self.results[*r].idx].id) == self.selected)) {
                 let (off, view_h) = self.list_view;
                 let top = ys[i] - if i > 0 && matches!(lines[i - 1], Line::Header(..)) { header_h } else { 0.0 };
                 if top < off {
@@ -366,7 +366,7 @@ impl App {
         };
         let mut actions = Vec::new();
         let (items, results, thumbs, loader, selected) = (
-            &self.items,
+            self.library.items(),
             &self.results,
             &self.thumbs,
             &mut self.loader,
@@ -501,7 +501,7 @@ impl App {
         ui.vertical_centered(|ui| {
             let weak = ui.visuals().weak_text_color();
             let strong = ui.visuals().strong_text_color();
-            if self.items.is_empty() {
+            if self.library.items().is_empty() {
                 icons::glyph(ui, Icon::Clipboard, 40.0, weak);
                 ui.add_space(8.0);
                 lbl(ui, "Your clipboard history will appear here", 16.0, strong);

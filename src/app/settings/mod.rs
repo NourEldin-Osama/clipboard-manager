@@ -88,10 +88,8 @@ impl App {
         let keys_changed = d.show_hotkey != self.cfg.show_hotkey
             || d.ignore_next_hotkey != self.cfg.ignore_next_hotkey;
         if d.ocr_images && !self.cfg.ocr_images {
-            for it in &self.items {
-                if it.kind == Kind::Image && it.ocr.is_none() {
-                    self.worker.send_backfill(Job::Ocr(it.id));
-                }
+            for id in self.library.images_without_ocr() {
+                self.worker.send_backfill(Job::Ocr(id));
             }
         }
         let tray_changed = d.tray != self.cfg.tray;

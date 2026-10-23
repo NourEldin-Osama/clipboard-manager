@@ -228,8 +228,8 @@ impl App {
                         }
                     }
                     far(ui, |ui| {
-                        let pinned = self.items.iter().filter(|i| i.pinned).count();
-                        let n = self.items.len();
+                        let pinned = self.library.items().iter().filter(|i| i.pinned).count();
+                        let n = self.library.items().len();
                         let s = if pinned > 0 {
                             trf("{n} items · {p} pinned", &[("n", &n), ("p", &pinned)])
                         } else {

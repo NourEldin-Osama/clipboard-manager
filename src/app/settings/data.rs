@@ -35,10 +35,10 @@ impl App {
                 }
             },
         );
-        let images = self.items.iter().filter(|i| i.kind == Kind::Image).count();
-        let pinned = self.items.iter().filter(|i| i.pinned).count();
-        let clip = self
-            .items
+        let items = self.library.items();
+        let images = items.iter().filter(|i| i.kind == Kind::Image).count();
+        let pinned = items.iter().filter(|i| i.pinned).count();
+        let clip = items
             .iter()
             .filter(|i| i.origin == Origin::Clipboard && !i.pinned)
             .count();
@@ -46,7 +46,7 @@ impl App {
             ui.label(txt(
                 &trf(
                     "{n} items · {i} images · {p} pinned",
-                    &[("n", &self.items.len()), ("i", &images), ("p", &pinned)],
+                    &[("n", &items.len()), ("i", &images), ("p", &pinned)],
                 ),
                 13.0,
                 None,

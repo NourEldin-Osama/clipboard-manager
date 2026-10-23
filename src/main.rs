@@ -12,6 +12,7 @@ mod embed;
 mod i18n;
 mod images;
 mod import;
+mod library;
 mod models;
 mod net;
 mod ocr;

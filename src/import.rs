@@ -14,8 +14,8 @@ const TEXT_EXT: &[&str] = &[
 const MAX_TEXT_BYTES: u64 = 1 << 20;
 pub const MAX_FILES: usize = 20_000;
 
-/// Expands folders recursively. Items get ids from `next_id`.
-pub fn collect(paths: &[PathBuf], next_id: &mut u64) -> Vec<Item> {
+/// Expands folders recursively. The items get their ids when they are added.
+pub fn collect(paths: &[PathBuf]) -> Vec<Item> {
     let mut files: Vec<PathBuf> = Vec::new();
     for p in paths {
         if p.is_dir() {
@@ -34,10 +34,7 @@ pub fn collect(paths: &[PathBuf], next_id: &mut u64) -> Vec<Item> {
         }
     }
     files.truncate(MAX_FILES);
-    files
-        .into_iter()
-        .filter_map(|f| file_item(&f, next_id))
-        .collect()
+    files.into_iter().filter_map(|f| file_item(&f)).collect()
 }
 
 fn ext(p: &Path) -> String {
@@ -46,7 +43,7 @@ fn ext(p: &Path) -> String {
         .unwrap_or_default()
 }
 
-fn file_item(path: &Path, next_id: &mut u64) -> Option<Item> {
+fn file_item(path: &Path) -> Option<Item> {
     let e = ext(path);
     let path_str = path.to_string_lossy().into_owned();
     let mut item = Item::new(0, Kind::Files, Origin::Imported, path_str.as_str().into());
@@ -69,7 +66,5 @@ fn file_item(path: &Path, next_id: &mut u64) -> Option<Item> {
         item.kind = Kind::Text;
         item.text = text.into();
     }
-    item.id = *next_id;
-    *next_id += 1;
     Some(item)
 }

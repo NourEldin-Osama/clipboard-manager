@@ -78,7 +78,7 @@ impl App {
             }
             let editing = self.tag_input.as_ref().is_some_and(|(id, _)| *id == it.id);
             if editing {
-                let known = self.all_tags();
+                let known = self.library.all_tags();
                 let id = egui::Id::unique(("tag-input", it.id));
                 // Read Enter while the field still has focus: egui reports the
                 // lost focus a frame later, when the key is no longer "pressed".
@@ -162,7 +162,7 @@ impl App {
     /// List view, which gets a back button.
     pub(super) fn details(&mut self, ui: &mut Ui, closeable: bool) {
         let ctx = ui.ctx().clone();
-        let Some(it) = self.selected.and_then(|id| self.item(id)).cloned() else {
+        let Some(it) = self.selected.and_then(|id| self.library.get(id)).cloned() else {
             self.empty_details(ui);
             return;
         };

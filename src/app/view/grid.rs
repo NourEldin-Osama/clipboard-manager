@@ -330,10 +330,11 @@ impl App {
         let mut sa = egui::ScrollArea::vertical().auto_shrink([false, false]);
         if self.scroll_to_selected {
             self.scroll_to_selected = false;
-            if let Some(i) = self
-                .selected
-                .and_then(|id| self.results.iter().position(|h| self.items[h.idx].id == id))
-            {
+            if let Some(i) = self.selected.and_then(|id| {
+                self.results
+                    .iter()
+                    .position(|h| self.library.items()[h.idx].id == id)
+            }) {
                 let (off, view_h) = self.list_view;
                 let top = (i / cols) as f32 * pitch;
                 if top < off {
@@ -356,7 +357,7 @@ impl App {
         };
         let mut actions = Vec::new();
         let (items, results, thumbs, loader, selected) = (
-            &self.items,
+            self.library.items(),
             &self.results,
             &self.thumbs,
             &mut self.loader,

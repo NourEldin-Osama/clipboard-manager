@@ -182,7 +182,7 @@ impl App {
         row(ui, |ui| {
             ui.spacing_mut().item_spacing.x = 4.0;
             for f in Filter::ALL {
-                let n = self.items.iter().filter(|i| f.accepts(i)).count();
+                let n = self.library.items().iter().filter(|i| f.accepts(i)).count();
                 let selected = self.filter == f;
                 // Empty categories add noise; keep them out unless selected.
                 if n == 0 && f != Filter::All && !selected {
@@ -245,7 +245,7 @@ impl App {
 
     /// The most used tags as filters after the kind chips; the rest in a menu.
     pub(super) fn tag_chips(&mut self, ui: &mut Ui) {
-        let tags = self.all_tags();
+        let tags = self.library.all_tags();
         if tags.is_empty() {
             return;
         }

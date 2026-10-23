@@ -1,6 +1,7 @@
 //! How times are shown: relative times, day headers and row times.
 
 use super::*;
+use crate::store::now;
 
 /// Whole days between the item's local date and today (0 = today).
 pub(super) fn days_ago(ts: i64) -> i64 {
