@@ -726,6 +726,8 @@ impl App {
                 );
                 if invalid {
                     chip(ui, "⚠ Not usable", RED);
+                } else if self.hotkey_conflicts.iter().any(|k| k == value.trim()) {
+                    chip(ui, "Used by another app", RED);
                 }
             });
             if reset {

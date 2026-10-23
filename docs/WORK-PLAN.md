@@ -63,7 +63,7 @@ Status: `[ ]` to do, `[~]` in progress, `[x]` done, `[!]` waiting for a decision
 - [x] 2.18 Check, then fix: Esc in Settings applies a half-typed model (confirmed)
 - [x] 2.19 Check, then fix: delete has no undo (confirmed)
 - [x] 2.20 Touchpad scrolling stops where the fingers stop (fast swipes kept moving)
-- [ ] 2.21 A global shortcut that another app already uses is detected and shown
+- [x] 2.21 A global shortcut that another app already uses is detected and shown
 
 ### Phase 3. Structure (no behavior change)
 - [ ] 3.1 Split `view.rs` (theme, widgets, time format, top bar, list, grid, details, status bar, keyboard)

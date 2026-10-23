@@ -293,6 +293,9 @@ pub struct App {
     /// Global shortcuts are off while one is being recorded in Settings.
     hotkeys_paused: bool,
     hotkey_error: Option<String>,
+    /// Global shortcuts Windows refused because another app, or Windows
+    /// itself, already uses them.
+    hotkey_conflicts: Vec<String>,
     model_list: ModelList,
     settings_page: SettingsPage,
     /// A destructive action waiting for a second click.
@@ -424,6 +427,7 @@ impl App {
             hotkeys: None,
             hotkeys_paused: false,
             hotkey_error: None,
+            hotkey_conflicts: Vec::new(),
             model_list: ModelList::default(),
             settings_page: SettingsPage::Search,
             confirm: None,
@@ -492,6 +496,7 @@ impl App {
         self.hotkeys = None;
         self.hotkeys_paused = false;
         self.hotkey_error = None;
+        self.hotkey_conflicts.clear();
         let manager = match GlobalHotKeyManager::new() {
             Ok(m) => m,
             Err(e) => {
@@ -506,6 +511,15 @@ impl App {
             match HotKey::from_str(s) {
                 Ok(h) => match manager.register(h) {
                     Ok(()) => Some(h),
+                    // Windows refused it: another app (or Windows) holds these keys.
+                    Err(global_hotkey::Error::AlreadyRegistered(_)) => {
+                        self.hotkey_conflicts.push(s.trim().to_string());
+                        self.hotkey_error = Some(trf(
+                            "{keys} is already used by another app or by Windows. Choose other keys in Settings, Shortcuts.",
+                            &[("keys", &s.trim())],
+                        ));
+                        None
+                    }
                     Err(e) => {
                         self.hotkey_error = Some(format!("{s}: {e}"));
                         None

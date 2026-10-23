@@ -296,6 +296,13 @@ pub const TABLE: &[(&str, &str)] = &[
     ("Don't record the next copy", "لا تسجّل النسخة التالية"),
     ("Press before copying something private: the next copy is skipped.", "اضغطه قبل نسخ شيء خاص، فتُتجاهل النسخة التالية."),
     ("⚠ Not usable", "⚠ غير صالح"),
+    ("Used by another app", "يستخدمه تطبيق آخر"),
+    ("Shortcut {keys} is used by another app", "الاختصار {keys} يستخدمه تطبيق آخر"),
+    ("Open the shortcut settings", "افتح إعدادات الاختصارات"),
+    (
+        "{keys} is already used by another app or by Windows. Choose other keys in Settings, Shortcuts.",
+        "{keys} يستخدمه تطبيق آخر أو Windows. اختر مفاتيح أخرى في الإعدادات، الاختصارات.",
+    ),
     ("Inside the app", "داخل التطبيق"),
     ("Copy the selected item and hide the window", "نسخ العنصر المحدد وإخفاء النافذة"),
     ("Pin or unpin", "تثبيت أو إلغاء التثبيت"),

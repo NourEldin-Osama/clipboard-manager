@@ -1584,6 +1584,19 @@ impl App {
                     if !self.flags.enabled.load(Ordering::SeqCst) {
                         chip(ui, "⏸ Recording paused", AMBER);
                     }
+                    // A global shortcut that doesn't work must be visible here
+                    // too, not only in Settings.
+                    if let Some(keys) = self.hotkey_conflicts.first().cloned() {
+                        icons::glyph(ui, Icon::Warning, 13.0, AMBER);
+                        let text =
+                            trf("Shortcut {keys} is used by another app", &[("keys", &keys)]);
+                        let r = ui.add(
+                            egui::Label::new(txt(&text, 12.0, Some(AMBER))).sense(Sense::click()),
+                        );
+                        if tip(r, tr("Open the shortcut settings")).clicked() {
+                            self.open_settings(SettingsPage::Shortcuts);
+                        }
+                    }
                     if let Some((e, _)) = &self.error {
                         icons::glyph(ui, Icon::Warning, 13.0, RED);
                         let r = ui.add(
