@@ -50,7 +50,7 @@ One egui `App` (`src/app.rs`) owns all state; background threads talk to it over
 `ctx.request_repaint()`:
 
 - **Clipboard watcher** (`clipboard.rs`) polls the clipboard and sends `Captured` (text/image/files, or `Skipped` for
-  secrets and app-marked sensitive data).
+  secrets and app-marked sensitive data; the secret rules are in `privacy.rs`).
 - **Worker** (`worker.rs`) owns the OCR engine and the embedder; takes `Job`s (OCR, embed, set backend, query vector)
   and returns `Event`s. Embeddings are stored per model key, so switching models re-indexes without losing others.
 - **Image loader** (`images.rs`) decodes thumbnails/previews off the UI thread.
