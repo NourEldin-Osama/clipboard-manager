@@ -67,7 +67,7 @@ Status: `[ ]` to do, `[~]` in progress, `[x]` done, `[!]` waiting for a decision
 - [x] 2.21 A global shortcut that another app already uses is detected and shown
 
 ### Phase 3. Structure (no behavior change)
-- [ ] 3.1 Split `view.rs` (theme, widgets, time format, top bar, list, grid, details, status bar, keyboard)
+- [x] 3.1 Split `view.rs` (theme, widgets, time format, top bar, list, grid, details, status bar, keyboard)
 - [ ] 3.2 Split `settings_page.rs` (one file per page, plus the server settings)
 - [x] 3.3 Move secret detection into `privacy.rs`
 - [ ] 3.4 A `Library` that owns items, store, tags, pins and pruning; one `Command` enum for user actions

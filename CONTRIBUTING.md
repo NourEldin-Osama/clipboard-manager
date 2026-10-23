@@ -56,7 +56,7 @@ Interface text is written in English at the call site and translated through `tr
 `trf("… {name} …", &[("name", &value)])`. Arabic lives in [`src/i18n/ar.rs`](src/i18n/ar.rs), keyed by the English text.
 When you add or change a visible string, add or update its Arabic entry; a test checks that placeholders match and
 keys aren't duplicated. Arabic text is laid out right to left by the helpers in `src/app/bidi.rs`; use `txt`, `lbl`,
-`row` and `far` from `src/app/view.rs` instead of `ui.label`/`ui.horizontal` so new UI mirrors correctly.
+`row` and `far` from `src/app/view/widgets.rs` instead of `ui.label`/`ui.horizontal` so new UI mirrors correctly.
 
 ## Icons
 

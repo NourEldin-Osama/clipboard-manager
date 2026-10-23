@@ -61,7 +61,7 @@ One egui `App` (`src/app.rs`) owns all state; background threads talk to it over
 
 `App::logic` runs every frame **even while the window is hidden** (tray mode), so channel draining, tray commands,
 hide/show and update checks live there (`window_logic`, `update_logic`, `handle_events`); `App::ui` only draws.
-`src/app/view.rs` is the main window, `settings_page.rs` the settings; settings apply live except the search model
+`src/app/view/` is the main window (`mod.rs` wires `top_bar`, `list`, `grid`, `details`, `chrome`, `keyboard`), `settings_page.rs` the settings; settings apply live except the search model
 (Apply button) and global hotkeys. `Config` (`config.rs`) is JSON with `#[serde(default)]`, so new fields need defaults.
 
 Other modules: `update.rs` (self-update), `tray.rs`, `autostart.rs`, `i18n.rs`, `embed/` (SigLIP via candle, HTTP
@@ -72,7 +72,7 @@ server client with optional `llama-server` launcher), `import.rs` (files/folders
 - **All UI text is English at the call site**, translated with `tr("…")` / `trf("… {n} …", &[("n", &v)])`. Every new
   string needs an Arabic entry in `src/i18n/ar.rs` (a test checks placeholders and duplicate keys).
 - **Right-to-left:** egui shapes Arabic but lays runs out left to right, so text goes through `src/app/bidi.rs`. In
-  UI code use the helpers in `view.rs` — `txt`, `lbl`, `tip`, `row`, `far`, `row_wrapped`, `paint_text`, `flip`,
+  UI code use the helpers in `view/widgets.rs` — `txt`, `lbl`, `tip`, `row`, `far`, `row_wrapped`, `paint_text`, `flip`,
   `start_anchor` — instead of `ui.label`/`ui.horizontal`/`painter.text`, and mirror hand-placed rects with `flip`.
 - **Icons** are SVGs in `assets/icons` (Fluent UI System Icons and Material Symbols, chosen by the maintainer), white,
   tinted at runtime via `icons::paint`. Never hand-draw an icon or use emoji/font glyphs; show options from popular
