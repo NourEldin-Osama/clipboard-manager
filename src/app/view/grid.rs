@@ -385,10 +385,10 @@ impl App {
                 let hot = ui.rect_contains_pointer(rect);
                 paint_card(ui, rect, hot, it, thumb, Some(it.id) == selected, &terms);
                 if resp.clicked() {
-                    actions.push(ItemAction::Select(it.id));
+                    actions.push(Command::Select(it.id));
                 }
                 if resp.double_clicked() {
-                    actions.push(ItemAction::Copy(it.id));
+                    actions.push(Command::Copy(it.id));
                 }
                 if hot {
                     let size = 30.0;
@@ -409,25 +409,25 @@ impl App {
                             at(rect.left() + 8.0),
                             Icon::Delete,
                             "Delete",
-                            ItemAction::Delete(it.id),
+                            Command::Delete(it.id),
                         ),
                         (
                             at(rect.right() - 8.0 - 3.0 * size - 8.0),
                             pin.0,
                             pin.1,
-                            ItemAction::Pin(it.id),
+                            Command::Pin(it.id),
                         ),
                         (
                             at(rect.right() - 8.0 - 2.0 * size - 4.0),
                             Icon::Copy,
                             "Copy",
-                            ItemAction::Copy(it.id),
+                            Command::Copy(it.id),
                         ),
                         (
                             at(rect.right() - 8.0 - size),
                             Icon::Open,
                             "Open details",
-                            ItemAction::Open(it.id),
+                            Command::Open(it.id),
                         ),
                     ] {
                         if icon_button_at(

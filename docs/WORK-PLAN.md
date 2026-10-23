@@ -70,7 +70,7 @@ Status: `[ ]` to do, `[~]` in progress, `[x]` done, `[!]` waiting for a decision
 - [x] 3.1 Split `view.rs` (theme, widgets, time format, top bar, list, grid, details, status bar, keyboard)
 - [x] 3.2 Split `settings_page.rs` (one file per page, plus the server settings)
 - [x] 3.3 Move secret detection into `privacy.rs`
-- [ ] 3.4 A `Library` that owns items, store, tags, pins and pruning; one `Command` enum for user actions
+- [x] 3.4 A `Library` that owns items, store, tags, pins and pruning; one `Command` enum for user actions
 - [x] 3.5 Store: `update` in one transaction, batch writes, `delete_many`, smaller cache, schema version (relative image paths: in 5.1, D15)
 - [ ] 3.6 A background store thread for delete, prune, clear, import and PNG work
 - [x] 3.7 Worker queue: priorities, survives panics, restarts

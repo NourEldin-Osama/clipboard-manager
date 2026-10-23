@@ -268,12 +268,11 @@ impl App {
                         .show(ui, |ui| {
                             row(ui, |ui| {
                                 ui.label(txt(toast.text.as_str(), 14.0, Some(fg)));
-                                if let Some(action) = &toast.action {
-                                    let button =
-                                        egui::Button::new(txt(tr(action.label()), 13.0, Some(fg)))
-                                            .fill(Color32::TRANSPARENT)
-                                            .stroke(Stroke::new(1.0, fg))
-                                            .corner_radius(CornerRadius::same(12));
+                                if let Some((label, _)) = &toast.action {
+                                    let button = egui::Button::new(txt(tr(label), 13.0, Some(fg)))
+                                        .fill(Color32::TRANSPARENT)
+                                        .stroke(Stroke::new(1.0, fg))
+                                        .corner_radius(CornerRadius::same(12));
                                     clicked = ui.add(button).clicked();
                                 }
                             });
@@ -282,8 +281,8 @@ impl App {
             ctx.request_repaint_after(Duration::from_millis(200));
         }
         if clicked {
-            if let Some(action) = self.toast.take().and_then(|t| t.action) {
-                self.run_toast_action(action);
+            if let Some((_, command)) = self.toast.take().and_then(|t| t.action) {
+                self.run(command);
             }
         }
         if let Some((_, at)) = &self.error {

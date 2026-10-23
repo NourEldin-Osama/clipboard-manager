@@ -147,10 +147,10 @@ impl App {
             self.tag_input = None;
         }
         if let Some(t) = remove {
-            self.remove_tag(it.id, &t);
+            self.run(Command::RemoveTag(it.id, t));
         }
         if let Some(t) = add {
-            self.add_tags(it.id, &t);
+            self.run(Command::AddTags(it.id, t));
         }
         if let Some(t) = filter {
             self.tag_filter = Some(t);
@@ -197,7 +197,7 @@ impl App {
             far(ui, |ui| {
                 let keys = self.cfg.keys.clone();
                 if icons::icon_button(ui, Icon::Delete, &hint("Delete", &keys.delete)).clicked() {
-                    self.delete(it.id);
+                    self.run(Command::Delete(it.id));
                 }
                 let (pin, tip) = if it.pinned {
                     (Icon::PinFilled, hint("Unpin", &keys.pin))
@@ -207,7 +207,7 @@ impl App {
                 let pin_color = it.pinned.then(accent);
                 if icon_button_ex(ui, pin, &tip, Vec2::splat(34.0), 16.0, None, pin_color).clicked()
                 {
-                    self.toggle_pin(it.id);
+                    self.run(Command::Pin(it.id));
                 }
                 if it.kind == Kind::Image
                     && icons::icon_button(ui, Icon::Save, "Save image as…").clicked()
@@ -248,7 +248,7 @@ impl App {
                 )
                 .clicked()
                 {
-                    self.copy(it.id);
+                    self.run(Command::Copy(it.id));
                 }
             });
         });

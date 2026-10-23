@@ -68,16 +68,6 @@ pub(super) fn highlighted(
     job
 }
 
-/// What a row's or card's hover buttons asked for.
-#[derive(Clone, Copy)]
-pub(super) enum ItemAction {
-    Select(u64),
-    Copy(u64),
-    Delete(u64),
-    Pin(u64),
-    Open(u64),
-}
-
 /// Domain of a URL, e.g. `huggingface.co`.
 pub(super) fn domain(url: &str) -> &str {
     let rest = url.trim().split("://").nth(1).unwrap_or(url.trim());

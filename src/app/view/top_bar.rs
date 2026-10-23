@@ -22,12 +22,12 @@ impl App {
                             ui.set_width(MENU_W);
                             if icons::menu_item(ui, Icon::File, "Add files…").clicked() {
                                 if let Some(f) = rfd::FileDialog::new().pick_files() {
-                                    self.import(f);
+                                    self.run(Command::Import(f));
                                 }
                             }
                             if icons::menu_item(ui, Icon::Folder, "Add a folder…").clicked() {
                                 if let Some(f) = rfd::FileDialog::new().pick_folder() {
-                                    self.import(vec![f]);
+                                    self.run(Command::Import(vec![f]));
                                 }
                             }
                         });
@@ -332,7 +332,7 @@ impl App {
             self.dirty = true;
         }
         if let Some(t) = delete {
-            self.delete_tag(&t);
+            self.run(Command::DeleteTag(t));
         }
     }
 }

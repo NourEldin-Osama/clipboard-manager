@@ -211,24 +211,31 @@ struct Toast {
     text: String,
     shown: Instant,
     how_long: Duration,
-    action: Option<ToastAction>,
+    /// The button's text and what it does.
+    action: Option<(&'static str, Command)>,
 }
 
-/// What a toast's button does.
-enum ToastAction {
-    /// Records a copy the secret filter held back.
-    SaveSkipped(String),
+/// Everything the user can do to the history, from a row, a card, the
+/// details pane, a key, a menu or a toast. The views send these to `run`
+/// instead of changing the history themselves.
+pub(super) enum Command {
+    Select(u64),
+    Copy(u64),
+    Delete(u64),
+    Pin(u64),
+    /// Shows the item in the details pane.
+    Open(u64),
+    /// Comma-separated tags for one item.
+    AddTags(u64, String),
+    RemoveTag(u64, String),
+    /// Removes a tag from every item that has it.
+    DeleteTag(String),
+    Import(Vec<PathBuf>),
+    ClearHistory,
     /// Brings back the item just deleted.
     UndoDelete,
-}
-
-impl ToastAction {
-    fn label(&self) -> &'static str {
-        match self {
-            Self::SaveSkipped(_) => "Save anyway",
-            Self::UndoDelete => "Undo",
-        }
-    }
+    /// Records a copy the secret filter held back.
+    SaveSkipped(String),
 }
 
 /// How long a deleted item can still be brought back.
@@ -807,13 +814,30 @@ impl App {
         });
     }
 
-    fn run_toast_action(&mut self, action: ToastAction) {
-        match action {
-            ToastAction::SaveSkipped(text) => {
+    /// Carries out what the user asked for.
+    fn run(&mut self, command: Command) {
+        match command {
+            Command::Select(id) => self.selected = Some(id),
+            Command::Copy(id) => {
+                self.selected = Some(id);
+                self.copy(id);
+            }
+            Command::Delete(id) => self.delete(id),
+            Command::Pin(id) => self.toggle_pin(id),
+            Command::Open(id) => {
+                self.selected = Some(id);
+                self.details_open = true;
+            }
+            Command::AddTags(id, tags) => self.add_tags(id, &tags),
+            Command::RemoveTag(id, tag) => self.remove_tag(id, &tag),
+            Command::DeleteTag(tag) => self.delete_tag(&tag),
+            Command::Import(paths) => self.import(paths),
+            Command::ClearHistory => self.clear_history(),
+            Command::UndoDelete => self.undo_delete(),
+            Command::SaveSkipped(text) => {
                 self.on_capture(Captured::Text(text));
                 self.toast("Saved");
             }
-            ToastAction::UndoDelete => self.undo_delete(),
         }
     }
 
@@ -846,7 +870,7 @@ impl App {
             let how_long = Duration::from_secs(if text.is_some() { 8 } else { 4 });
             self.toast_for(reason, how_long);
             if let Some(toast) = &mut self.toast {
-                toast.action = text.map(ToastAction::SaveSkipped);
+                toast.action = text.map(|t| ("Save anyway", Command::SaveSkipped(t)));
             }
             return;
         }
@@ -1233,7 +1257,7 @@ impl App {
         });
         self.toast_for("Deleted", UNDO_FOR);
         if let Some(toast) = &mut self.toast {
-            toast.action = Some(ToastAction::UndoDelete);
+            toast.action = Some(("Undo", Command::UndoDelete));
         }
     }
 

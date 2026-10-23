@@ -438,10 +438,10 @@ impl App {
                             max_sem,
                         );
                         if resp.clicked() {
-                            actions.push(ItemAction::Select(it.id));
+                            actions.push(Command::Select(it.id));
                         }
                         if resp.double_clicked() {
-                            actions.push(ItemAction::Copy(it.id));
+                            actions.push(Command::Copy(it.id));
                         }
                         if hot {
                             // Hover actions replace the time at the right edge.
@@ -451,12 +451,12 @@ impl App {
                                 (Icon::Pin, "Pin")
                             };
                             let mut buttons = vec![
-                                (Icon::Delete, "Delete", ItemAction::Delete(it.id)),
-                                (pin.0, pin.1, ItemAction::Pin(it.id)),
-                                (Icon::Copy, "Copy", ItemAction::Copy(it.id)),
+                                (Icon::Delete, "Delete", Command::Delete(it.id)),
+                                (pin.0, pin.1, Command::Pin(it.id)),
+                                (Icon::Copy, "Copy", Command::Copy(it.id)),
                             ];
                             if can_open {
-                                buttons.push((Icon::Open, "Open details", ItemAction::Open(it.id)));
+                                buttons.push((Icon::Open, "Open details", Command::Open(it.id)));
                             }
                             let size = 28.0;
                             let mut x = rect.right() - 8.0 - buttons.len() as f32 * (size + 2.0);

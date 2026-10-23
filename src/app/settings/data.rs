@@ -91,7 +91,7 @@ impl App {
         );
         if clear {
             self.confirm = None;
-            self.clear_history();
+            self.run(Command::ClearHistory);
         }
         let mut reset = false;
         let confirm = self.confirm;

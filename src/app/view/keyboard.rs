@@ -116,13 +116,13 @@ impl App {
         }
         if let Some(id) = self.selected {
             if enter {
-                self.copy(id);
+                self.run(Command::Copy(id));
             }
             if del {
-                self.delete(id);
+                self.run(Command::Delete(id));
             }
             if pin {
-                self.toggle_pin(id);
+                self.run(Command::Pin(id));
             }
             if tag {
                 self.tag_input = Some((id, String::new()));

@@ -138,21 +138,10 @@ impl App {
         self.save_config();
     }
 
-    fn apply_actions(&mut self, actions: Vec<ItemAction>) {
-        for a in actions {
-            match a {
-                ItemAction::Select(id) => self.selected = Some(id),
-                ItemAction::Copy(id) => {
-                    self.selected = Some(id);
-                    self.copy(id);
-                }
-                ItemAction::Delete(id) => self.delete(id),
-                ItemAction::Pin(id) => self.toggle_pin(id),
-                ItemAction::Open(id) => {
-                    self.selected = Some(id);
-                    self.details_open = true;
-                }
-            }
+    /// Runs what the list or grid asked for while it was drawn.
+    fn apply_actions(&mut self, actions: Vec<Command>) {
+        for command in actions {
+            self.run(command);
         }
         if self.thumbs.len() > MAX_THUMBS {
             for id in self.thumbs.drain().map(|(id, _)| id).collect::<Vec<_>>() {
@@ -209,7 +198,7 @@ impl eframe::App for App {
                 .collect()
         });
         if !dropped.is_empty() {
-            self.import(dropped);
+            self.run(Command::Import(dropped));
         }
         if self.query_changed.is_some() {
             ctx.request_repaint_after(QUERY_DEBOUNCE);
