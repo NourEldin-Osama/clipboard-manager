@@ -1,0 +1,56 @@
+# Git hooks, run by prek (https://prek.j178.dev). Set up once per clone:
+#   uv tool install prek
+#   prek install
+# Run every hook on every file: prek run --all-files
+minimum_prek_version = "0.5.7"
+default_install_hook_types = ["pre-commit", "commit-msg", "pre-push"]
+# Hooks without their own `stages` run only before a commit.
+default_stages = ["pre-commit"]
+
+# prek's own Rust versions of the common checks: no download, no Python.
+[[repos]]
+repo = "builtin"
+hooks = [
+  # Fonts and icons are third-party files, kept exactly as published.
+  { id = "trailing-whitespace", args = ["--markdown-linebreak-ext=md"], exclude = '^assets/(fonts|icons)/' },
+  { id = "end-of-file-fixer", exclude = '^assets/(fonts|icons)/' },
+  { id = "check-yaml" },
+  { id = "check-toml" },
+  { id = "check-merge-conflict" },
+  { id = "check-case-conflict" },
+  { id = "check-illegal-windows-names" },
+  { id = "check-added-large-files" },
+  # The update signing key must never be committed. clipboard.rs is skipped:
+  # its secret-detection test contains a fake key header.
+  { id = "detect-private-key", exclude = '^src/clipboard\.rs$' },
+  # Checks the message of each new commit, and again before a push.
+  { id = "check-commit-trailers", args = ["--deny=Co-authored-by"], stages = ["commit-msg", "pre-push"] },
+]
+
+[[repos]]
+repo = "local"
+
+[[repos.hooks]]
+id = "cargo-fmt"
+name = "cargo fmt"
+language = "system"
+entry = "cargo fmt --check"
+types = ["rust"]
+pass_filenames = false
+
+[[repos.hooks]]
+id = "cargo-clippy"
+name = "cargo clippy"
+language = "system"
+entry = "cargo clippy --locked --all-targets --config ci/fast-build.toml -- -D warnings"
+files = '(\.rs|^Cargo\.(toml|lock)|^ci/fast-build\.toml)$'
+pass_filenames = false
+
+[[repos.hooks]]
+id = "cargo-test"
+name = "cargo test"
+language = "system"
+entry = "cargo test --locked --config ci/fast-build.toml"
+files = '(\.rs|^Cargo\.(toml|lock)|^ci/fast-build\.toml)$'
+pass_filenames = false
+stages = ["pre-push"]
