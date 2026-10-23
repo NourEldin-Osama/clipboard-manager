@@ -2,6 +2,16 @@
 
 use super::*;
 
+/// A button on the update bar.
+enum UpdateAction {
+    Later,
+    Skip,
+    Download,
+    Cancel,
+    Restart,
+    Retry,
+}
+
 impl App {
     /// A strip under the search bar while an update is found, downloading,
     /// ready, or failed. "Later" hides it until something changes.
@@ -24,7 +34,7 @@ impl App {
             .visuals()
             .panel_fill
             .lerp_to_gamma(accent(), if ui.visuals().dark_mode { 0.18 } else { 0.10 });
-        let mut action: Option<&'static str> = None;
+        let mut action: Option<UpdateAction> = None;
         egui::Panel::top("update")
             .show_separator_line(false)
             .frame(Frame::new().inner_margin(Margin { left: 16, right: 12, top: 6, bottom: 6 }).fill(fill))
@@ -61,29 +71,29 @@ impl App {
                     }
                     far(ui, |ui| {
                         if icon_button_ex(ui, Icon::Close, "Later", Vec2::splat(26.0), 12.0, None, None).clicked() {
-                            action = Some("later");
+                            action = Some(UpdateAction::Later);
                         }
                         match &self.update {
                             UpdateState::Available(_) => {
                                 if ui.button(txt(tr("Skip this version"), 13.0, None)).clicked() {
-                                    action = Some("skip");
+                                    action = Some(UpdateAction::Skip);
                                 }
                                 if primary_button(ui, "Download").clicked() {
-                                    action = Some("download");
+                                    action = Some(UpdateAction::Download);
                                 }
                             }
                             UpdateState::Downloading(..) => {
                                 if ui.button(txt(tr("Cancel"), 13.0, None)).clicked() {
-                                    action = Some("cancel");
+                                    action = Some(UpdateAction::Cancel);
                                 }
                             }
                             UpdateState::Ready(..) => {
                                 if primary_button(ui, "Restart to update").clicked() {
-                                    action = Some("restart");
+                                    action = Some(UpdateAction::Restart);
                                 }
                             }
                             UpdateState::Failed { release: Some(_), .. } if ui.button(txt(tr("Try again"), 13.0, None)).clicked() => {
-                                action = Some("retry");
+                                action = Some(UpdateAction::Retry);
                             }
                             _ => {}
                         }
@@ -96,15 +106,15 @@ impl App {
                 });
             });
         match action {
-            Some("later") => self.update_hidden = true,
-            Some("skip") => {
+            Some(UpdateAction::Later) => self.update_hidden = true,
+            Some(UpdateAction::Skip) => {
                 if let UpdateState::Available(r) = &self.update {
                     self.cfg.skipped_update = r.key();
                     self.save_config();
                 }
                 self.update = UpdateState::Idle;
             }
-            Some("download") | Some("retry") => {
+            Some(UpdateAction::Download | UpdateAction::Retry) => {
                 let r = match &self.update {
                     UpdateState::Available(r) => Some(r.clone()),
                     UpdateState::Failed {
@@ -116,13 +126,13 @@ impl App {
                     self.download_update(r, &ctx);
                 }
             }
-            Some("cancel") => {
+            Some(UpdateAction::Cancel) => {
                 if let UpdateState::Downloading(_, p) = &self.update {
                     p.cancel.store(true, Ordering::Relaxed);
                 }
             }
-            Some("restart") => self.restart_to_update(&ctx),
-            _ => {}
+            Some(UpdateAction::Restart) => self.restart_to_update(&ctx),
+            None => {}
         }
     }
 

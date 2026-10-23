@@ -9,15 +9,15 @@ impl App {
     pub(super) fn shortcuts_page(&mut self, ui: &mut Ui, d: &mut Config, apply_keys: &mut bool) {
         let def = Config::default();
         section(ui, "Anywhere in Windows");
-        let globals: [(&'static str, &str, &str, KeyField); 2] = [
+        let globals: [(ShortcutField, &str, &str, KeyField); 2] = [
             (
-                "show",
+                ShortcutField::Show,
                 "Show or hide this window",
                 "Opens the window over whatever you're doing; press again to hide it.",
                 |c| &mut c.show_hotkey,
             ),
             (
-                "ignore",
+                ShortcutField::IgnoreNext,
                 "Don't record the next copy",
                 "Press before copying something private: the next copy is skipped.",
                 |c| &mut c.ignore_next_hotkey,
@@ -65,18 +65,22 @@ impl App {
         }
 
         section(ui, "Inside the app");
-        let locals: [(&'static str, &str, KeyField); 5] = [
-            ("copy", "Copy the selected item and hide the window", |c| {
-                &mut c.keys.copy
-            }),
-            ("pin", "Pin or unpin", |c| &mut c.keys.pin),
-            ("delete", "Delete", |c| &mut c.keys.delete),
-            ("tag", "Add a tag", |c| &mut c.keys.tag),
-            ("view", "Switch between Grid, List and Detail", |c| {
-                &mut c.keys.view
-            }),
+        let locals: [(ShortcutField, &str, KeyField); 5] = [
+            (
+                ShortcutField::Copy,
+                "Copy the selected item and hide the window",
+                |c| &mut c.keys.copy,
+            ),
+            (ShortcutField::Pin, "Pin or unpin", |c| &mut c.keys.pin),
+            (ShortcutField::Delete, "Delete", |c| &mut c.keys.delete),
+            (ShortcutField::Tag, "Add a tag", |c| &mut c.keys.tag),
+            (
+                ShortcutField::View,
+                "Switch between Grid, List and Detail",
+                |c| &mut c.keys.view,
+            ),
         ];
-        let current: Vec<(&str, String)> = locals
+        let current: Vec<(ShortcutField, String)> = locals
             .iter()
             .map(|(id, _, f)| (*id, f(&mut d.clone()).clone()))
             .collect();

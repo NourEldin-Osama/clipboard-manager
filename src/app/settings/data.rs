@@ -58,7 +58,7 @@ impl App {
             "Clear clipboard history",
             "Deletes copied items. Pinned and tagged items, and files you added, stay.",
             |ui| {
-                if confirm == Some("clear") {
+                if confirm == Some(Confirm::ClearHistory) {
                     if ui
                         .add(
                             egui::Button::new(txt(
@@ -82,7 +82,7 @@ impl App {
                     )
                     .clicked()
                 {
-                    self.confirm = Some("clear");
+                    self.confirm = Some(Confirm::ClearHistory);
                 }
             },
         );
@@ -97,7 +97,7 @@ impl App {
             "Reset all settings",
             "Puts every setting back to its default, including the search model.",
             |ui| {
-                if confirm == Some("reset") {
+                if confirm == Some(Confirm::ResetSettings) {
                     if ui
                         .add(
                             egui::Button::new(txt(
@@ -121,7 +121,7 @@ impl App {
                     )
                     .clicked()
                 {
-                    self.confirm = Some("reset");
+                    self.confirm = Some(Confirm::ResetSettings);
                 }
             },
         );

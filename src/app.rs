@@ -237,6 +237,25 @@ pub(super) enum Command {
     SaveSkipped(String),
 }
 
+/// A destructive action in Settings, waiting for its second click.
+#[derive(Clone, Copy, PartialEq)]
+enum Confirm {
+    ClearHistory,
+    ResetSettings,
+}
+
+/// The shortcuts that can be changed in Settings.
+#[derive(Clone, Copy, PartialEq)]
+enum ShortcutField {
+    Show,
+    IgnoreNext,
+    Copy,
+    Pin,
+    Delete,
+    Tag,
+    View,
+}
+
 /// How long a deleted item can still be brought back.
 const UNDO_FOR: Duration = Duration::from_secs(8);
 
@@ -303,8 +322,7 @@ pub struct App {
     hotkey_conflicts: Vec<String>,
     model_list: ModelList,
     settings_page: SettingsPage,
-    /// A destructive action waiting for a second click.
-    confirm: Option<&'static str>,
+    confirm: Option<Confirm>,
     /// Scroll offset and visible height of the list, from the last frame.
     list_view: (f32, f32),
     /// Grid and List views show the details pane only after "Open details".
@@ -323,7 +341,7 @@ pub struct App {
     /// Frames left in which to hide a window started by sign-in.
     start_hidden: u8,
     /// The shortcut field listening for keys in Settings, and why the last try was refused.
-    recording: Option<&'static str>,
+    recording: Option<ShortcutField>,
     record_problem: Option<&'static str>,
     update: UpdateState,
     update_rx: Option<Receiver<UpdateMsg>>,
