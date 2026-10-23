@@ -24,11 +24,13 @@ impl App {
                                 if let Some(f) = rfd::FileDialog::new().pick_files() {
                                     self.run(Command::Import(f));
                                 }
+                                self.after_dialog();
                             }
                             if icons::menu_item(ui, Icon::Folder, "Add a folder…").clicked() {
                                 if let Some(f) = rfd::FileDialog::new().pick_folder() {
                                     self.run(Command::Import(vec![f]));
                                 }
+                                self.after_dialog();
                             }
                         });
                         let view = self.cfg.view;

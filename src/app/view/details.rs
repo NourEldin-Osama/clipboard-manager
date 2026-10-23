@@ -220,6 +220,7 @@ impl App {
                             self.set_error(format!("save failed: {e}"));
                         }
                     }
+                    self.after_dialog();
                 }
                 if let Some(p) = &it.source {
                     if icons::icon_button(ui, Icon::Folder, "Show in folder").clicked() {

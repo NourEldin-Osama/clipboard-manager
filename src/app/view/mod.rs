@@ -138,6 +138,12 @@ impl App {
         self.save_config();
     }
 
+    /// A file dialog took the keyboard focus away: the search box gets it
+    /// back, so typing searches again.
+    pub(super) fn after_dialog(&self) {
+        self.focus_search.store(true, Ordering::SeqCst);
+    }
+
     /// Runs what the list or grid asked for while it was drawn.
     fn apply_actions(&mut self, actions: Vec<Command>) {
         for command in actions {

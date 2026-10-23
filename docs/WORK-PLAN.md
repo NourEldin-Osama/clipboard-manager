@@ -67,6 +67,7 @@ Status: `[ ]` to do, `[~]` in progress, `[x]` done, `[!]` waiting for a decision
 - [x] 2.21 A global shortcut that another app already uses is detected and shown
 - [x] 2.22 "Clear clipboard history" counted the tagged items it keeps (found in 3.4)
 - [x] 2.23 Shift+Delete, the default Delete key, did nothing on Windows: egui-winit turns it into "cut" (found in the dev-build test)
+- [x] 2.24 After the Add files, Add a folder and Save image dialogs, typing did not reach the search box (found in the dev-build test)
 
 ### Phase 3. Structure (no behavior change)
 - [x] 3.1 Split `view.rs` (theme, widgets, time format, top bar, list, grid, details, status bar, keyboard)
