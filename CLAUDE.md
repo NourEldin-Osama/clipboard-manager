@@ -50,18 +50,25 @@ One egui `App` (`src/app.rs`) owns all state; background threads talk to it over
 `ctx.request_repaint()`:
 
 - **Clipboard watcher** (`clipboard.rs`) polls the clipboard and sends `Captured` (text/image/files, or `Skipped` for
-  secrets and app-marked sensitive data).
+  secrets and app-marked sensitive data; the secret rules are in `privacy.rs`).
 - **Worker** (`worker.rs`) owns the OCR engine and the embedder; takes `Job`s (OCR, embed, set backend, query vector)
   and returns `Event`s. Embeddings are stored per model key, so switching models re-indexes without losing others.
 - **Image loader** (`images.rs`) decodes thumbnails/previews off the UI thread.
+- **Background** (`app/background.rs`): saving a copied image as PNG and copying an item back run in order on one
+  thread; each import reads its files on its own thread and sends them in batches. Results come back as `Done`
+  messages, and `App::finish` saves them through the `Library`.
 - **Store** (`store.rs`): redb; items as JSON (new fields need `#[serde(default)]`), images as PNG files beside it.
+- **Library** (`library.rs`): the history in memory (items, their lower-cased search text, the current model's vectors)
+  kept in step with the store. Every change to the history goes through it; it has no UI code and its own tests.
+  Items sit behind `Arc`, so `snapshot()` hands a search the whole history without copying texts or vectors.
 - **Search** (`search.rs`): keyword score plus cosine similarity; text and image similarities are each scaled by their
   best match before merging (the "modality gap"), Smart adds a keyword boost, and `order()` applies the Sort by choice.
-  Results are `Hit`s indexing into `App::items`.
+  It runs on the `Searcher` thread; only the newest search's results are shown. Results are `Hit`s by item id, so
+  after removing items `App` also takes them out of `results` (`drop_removed`).
 
 `App::logic` runs every frame **even while the window is hidden** (tray mode), so channel draining, tray commands,
 hide/show and update checks live there (`window_logic`, `update_logic`, `handle_events`); `App::ui` only draws.
-`src/app/view.rs` is the main window, `settings_page.rs` the settings; settings apply live except the search model
+`src/app/view/` is the main window (`mod.rs` wires `top_bar`, `list`, `grid`, `details`, `chrome`, `keyboard`), `src/app/settings/` the settings (one file per page, `mod.rs` the frame); settings apply live except the search model
 (Apply button) and global hotkeys. `Config` (`config.rs`) is JSON with `#[serde(default)]`, so new fields need defaults.
 
 Other modules: `update.rs` (self-update), `tray.rs`, `autostart.rs`, `i18n.rs`, `embed/` (SigLIP via candle, HTTP
@@ -72,7 +79,7 @@ server client with optional `llama-server` launcher), `import.rs` (files/folders
 - **All UI text is English at the call site**, translated with `tr("…")` / `trf("… {n} …", &[("n", &v)])`. Every new
   string needs an Arabic entry in `src/i18n/ar.rs` (a test checks placeholders and duplicate keys).
 - **Right-to-left:** egui shapes Arabic but lays runs out left to right, so text goes through `src/app/bidi.rs`. In
-  UI code use the helpers in `view.rs` — `txt`, `lbl`, `tip`, `row`, `far`, `row_wrapped`, `paint_text`, `flip`,
+  UI code use the helpers in `view/widgets.rs` — `txt`, `lbl`, `tip`, `row`, `far`, `row_wrapped`, `paint_text`, `flip`,
   `start_anchor` — instead of `ui.label`/`ui.horizontal`/`painter.text`, and mirror hand-placed rects with `flip`.
 - **Icons** are SVGs in `assets/icons` (Fluent UI System Icons and Material Symbols, chosen by the maintainer), white,
   tinted at runtime via `icons::paint`. Never hand-draw an icon or use emoji/font glyphs; show options from popular

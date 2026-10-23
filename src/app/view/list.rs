@@ -1,0 +1,585 @@
+//! The list view and the rows it paints.
+
+use super::*;
+
+#[derive(Debug, PartialEq)]
+pub(super) enum Line {
+    Header(&'static str, usize),
+    Row(usize),
+}
+
+/// One row per label, with a header above each run of equal labels that
+/// counts its rows. Runs once per frame, so it stays linear.
+pub(super) fn with_headers(labels: impl Iterator<Item = &'static str>) -> Vec<Line> {
+    let mut lines = Vec::new();
+    let mut header_at = None;
+    let mut last = None;
+    for (r, label) in labels.enumerate() {
+        if last != Some(label) {
+            header_at = Some(lines.len());
+            lines.push(Line::Header(label, 0));
+            last = Some(label);
+        }
+        if let Some(Line::Header(_, n)) = header_at.map(|i| &mut lines[i]) {
+            *n += 1;
+        }
+        lines.push(Line::Row(r));
+    }
+    lines
+}
+
+/// The item's thumbnail texture, queuing a decode the first time it's seen.
+pub(super) fn thumb_for(
+    it: &Item,
+    thumbs: &HashMap<u64, Option<TextureHandle>>,
+    loader: &mut ImageLoader,
+) -> Option<TextureHandle> {
+    match (it.kind, thumbs.get(&it.id), &it.image) {
+        (Kind::Image, Some(t), _) => t.clone(),
+        (Kind::Image, None, Some(p)) => {
+            loader.request(it.id, p, false);
+            None
+        }
+        _ => None,
+    }
+}
+
+/// `hot` while the pointer is over the row: its hover buttons then take the
+/// right edge, so the time and badges are left out.
+#[allow(clippy::too_many_arguments)]
+pub(super) fn paint_row(
+    ui: &Ui,
+    rect: Rect,
+    hot: bool,
+    it: &Item,
+    hit: &Hit,
+    thumb: Option<TextureHandle>,
+    selected: bool,
+    compact: bool,
+    terms: &[String],
+    max_sem: f32,
+) {
+    let v = ui.visuals();
+    let p = ui.painter_at(rect);
+    let a = accent();
+    // Laid out left to right, then mirrored for Arabic.
+    let m = |r: Rect| flip(rect, r);
+    let rtl = i18n::rtl();
+    if selected {
+        p.rect_filled(
+            rect,
+            CornerRadius::same(8),
+            a.gamma_multiply(if v.dark_mode { 0.22 } else { 0.12 }),
+        );
+        p.rect_filled(
+            m(Rect::from_min_size(
+                rect.min + Vec2::new(0.0, 8.0),
+                Vec2::new(3.0, rect.height() - 16.0),
+            )),
+            CornerRadius::same(2),
+            a,
+        );
+    } else if hot {
+        p.rect_filled(
+            rect,
+            CornerRadius::same(8),
+            v.widgets.hovered.weak_bg_fill.gamma_multiply(0.6),
+        );
+    }
+
+    let av = if compact { 26.0 } else { 38.0 };
+    let av_rect = m(Rect::from_min_size(
+        Pos2::new(rect.left() + 12.0, rect.center().y - av / 2.0),
+        Vec2::splat(av),
+    ));
+    match thumb {
+        Some(t) => {
+            let s = t.size_vec2();
+            let k = (av / s.x).max(av / s.y);
+            // Fill the square, cropping the longer side.
+            let uv_w = (av / (s.x * k)).min(1.0);
+            let uv_h = (av / (s.y * k)).min(1.0);
+            let uv = Rect::from_min_max(
+                Pos2::new((1.0 - uv_w) / 2.0, (1.0 - uv_h) / 2.0),
+                Pos2::new((1.0 + uv_w) / 2.0, (1.0 + uv_h) / 2.0),
+            );
+            egui::Image::new((t.id(), Vec2::splat(av)))
+                .uv(uv)
+                .corner_radius(6.0)
+                .paint_at(ui, av_rect);
+        }
+        None => {
+            let c = kind_color(it.kind);
+            p.rect_filled(
+                av_rect,
+                CornerRadius::same(8),
+                c.gamma_multiply(if v.dark_mode { 0.25 } else { 0.13 }),
+            );
+            let code = it.kind == Kind::Text
+                && looks_like_code(&it.text.chars().take(600).collect::<String>());
+            if code {
+                p.text(
+                    av_rect.center(),
+                    Align2::CENTER_CENTER,
+                    "</>",
+                    FontId::monospace(av * 0.3),
+                    c,
+                );
+            } else {
+                icons::paint(
+                    &p,
+                    Rect::from_center_size(av_rect.center(), Vec2::splat(av * 0.46)),
+                    icons::kind(it.kind),
+                    c,
+                );
+            }
+        }
+    }
+
+    let x = rect.left() + 12.0 + av + 12.0;
+    let right_w = if hot { 134.0 } else { 64.0 };
+    let text_w = (rect.right() - x - right_w - 8.0).max(40.0);
+    // The text column, mirrored with the rest; lines start at its reading edge.
+    let column = m(Rect::from_min_size(
+        Pos2::new(x, rect.top()),
+        Vec2::new(text_w, rect.height()),
+    ));
+    let title_color = v.strong_text_color();
+    let weak = v.weak_text_color();
+    let sub = if compact { String::new() } else { subtitle(it) };
+    let title = row_title(it);
+    let title = if title.is_empty() {
+        tr("(empty)").to_string()
+    } else {
+        title
+    };
+
+    let tg = one_line(
+        ui,
+        &title,
+        terms,
+        FontId::proportional(14.0),
+        title_color,
+        text_w,
+    );
+    // One line sits on the row's midline, beside the icon; two lines share it.
+    let title_y = if sub.is_empty() {
+        rect.center().y - tg.size().y / 2.0
+    } else {
+        rect.top() + 10.0
+    };
+    let line_x = |w: f32| {
+        if rtl {
+            column.right() - w
+        } else {
+            column.left()
+        }
+    };
+    p.galley(Pos2::new(line_x(tg.size().x), title_y), tg, title_color);
+    if !sub.is_empty() {
+        let sg = one_line(ui, &sub, terms, FontId::proportional(12.5), weak, text_w);
+        p.galley(Pos2::new(line_x(sg.size().x), rect.top() + 32.0), sg, weak);
+    }
+
+    if hot {
+        return;
+    }
+    // Far edge: time, then pinned star and relevance.
+    let one_line_row = compact || sub.is_empty();
+    let time_y = if one_line_row {
+        rect.center().y
+    } else {
+        rect.top() + 18.0
+    };
+    let time_at = m(Rect::from_min_size(
+        Pos2::new(rect.right() - 12.0, time_y),
+        Vec2::ZERO,
+    ))
+    .min;
+    let time_anchor = if rtl {
+        Align2::LEFT_CENTER
+    } else {
+        Align2::RIGHT_CENTER
+    };
+    paint_text(
+        ui,
+        &p,
+        time_at,
+        time_anchor,
+        &row_time(it.created),
+        FontId::proportional(11.5),
+        weak,
+    );
+    let mut ix = rect.right() - 12.0;
+    // On one line the badges sit before the time instead of under it.
+    let iy = if one_line_row {
+        rect.center().y
+    } else {
+        rect.top() + 40.0
+    };
+    if one_line_row {
+        ix -= 56.0;
+    }
+    if it.pinned {
+        icons::paint(
+            &p,
+            m(Rect::from_center_size(
+                Pos2::new(ix - 6.5, iy),
+                Vec2::splat(13.0),
+            )),
+            Icon::PinFilled,
+            a,
+        );
+        ix -= 18.0;
+    }
+    if let Some(s) = hit.relevance.filter(|_| hit.semantic.is_some()) {
+        // Three bars: how close this match is to the best one.
+        let ratio = if max_sem > 0.0 { s / max_sem } else { 0.0 };
+        let level = if ratio > 0.93 {
+            3
+        } else if ratio > 0.8 {
+            2
+        } else {
+            1
+        };
+        for b in 0..3 {
+            let h = 4.0 + b as f32 * 3.0;
+            let r = m(Rect::from_min_size(
+                Pos2::new(ix - 18.0 + b as f32 * 6.0, iy + 6.0 - h),
+                Vec2::new(4.0, h),
+            ));
+            p.rect_filled(
+                r,
+                CornerRadius::same(1),
+                if b < level {
+                    a
+                } else {
+                    weak.gamma_multiply(0.35)
+                },
+            );
+        }
+    }
+}
+
+/// One line of item text cut to `width`, query terms highlighted; Arabic in
+/// reading order.
+pub(super) fn one_line(
+    ui: &Ui,
+    text: &str,
+    terms: &[String],
+    font: FontId,
+    color: Color32,
+    width: f32,
+) -> Arc<egui::Galley> {
+    if bidi::has_rtl(text) {
+        let first = text.lines().next().unwrap_or("");
+        // In the Arabic UI a line with Arabic in it reads right to left, even when
+        // it starts with a Latin tag or word.
+        let base = if i18n::rtl() { Some(true) } else { None };
+        bidi::lines(
+            ui,
+            first,
+            terms,
+            font,
+            color,
+            accent().gamma_multiply(0.28),
+            width,
+            1,
+            base,
+        )
+        .into_iter()
+        .next()
+        .map(|(g, _)| g)
+        .unwrap_or_else(|| {
+            ui.fonts_mut(|f| f.layout_no_wrap(String::new(), FontId::proportional(12.0), color))
+        })
+    } else {
+        ui.fonts_mut(|f| f.layout_job(highlighted(text, terms, font, color, width, 1)))
+    }
+}
+
+impl App {
+    pub(super) fn list(&mut self, ui: &mut Ui) {
+        if self.results.is_empty() {
+            // Until the first results come, show nothing rather than "no matches".
+            if !self.searching {
+                self.empty_list(ui);
+            }
+            return;
+        }
+        let compact = self.cfg.density == Density::Compact;
+        let row_h = if compact { 40.0 } else { 58.0 };
+        let header_h = 30.0;
+        let searching = !self.query.trim().is_empty();
+        // The details pane is always beside the list in Detail view, so rows
+        // there don't need an "open" button.
+        let can_open = self.cfg.view != ViewMode::Detail;
+
+        // Rows, with date/pinned headers when browsing.
+        let mut lines: Vec<Line> = Vec::with_capacity(self.results.len() + 8);
+        // Day headers only make sense in date order.
+        if !searching && self.cfg.group_by_date && self.sort() == SortOrder::Recent {
+            let pinned_first = self.cfg.pinned_first;
+            lines = with_headers(self.results.iter().map(|h| {
+                self.library
+                    .get(h.id)
+                    .map_or("", |it| group_label(it, pinned_first))
+            }));
+        } else {
+            lines.extend((0..self.results.len()).map(Line::Row));
+        }
+        let mut ys = Vec::with_capacity(lines.len());
+        let mut y = 0.0;
+        for l in &lines {
+            ys.push(y);
+            y += match l {
+                Line::Header(..) => header_h,
+                Line::Row(_) => row_h + 2.0,
+            };
+        }
+        let total = y;
+
+        let mut sa = egui::ScrollArea::vertical().auto_shrink([false, false]);
+        if self.scroll_to_selected {
+            self.scroll_to_selected = false;
+            if let Some(i) = lines.iter().position(
+                |l| matches!(l, Line::Row(r) if Some(self.results[*r].id) == self.selected),
+            ) {
+                let (off, view_h) = self.list_view;
+                let top = ys[i]
+                    - if i > 0 && matches!(lines[i - 1], Line::Header(..)) {
+                        header_h
+                    } else {
+                        0.0
+                    };
+                if top < off {
+                    sa = sa.vertical_scroll_offset(top);
+                } else if ys[i] + row_h > off + view_h {
+                    sa = sa.vertical_scroll_offset(ys[i] + row_h - view_h);
+                }
+            }
+        }
+
+        let max_sem = self
+            .results
+            .iter()
+            .filter_map(|h| h.relevance)
+            .fold(f32::MIN, f32::max);
+        let terms: Vec<String> = if searching {
+            self.query
+                .to_lowercase()
+                .split_whitespace()
+                .map(String::from)
+                .collect()
+        } else {
+            vec![]
+        };
+        let mut actions = Vec::new();
+        let (library, results, thumbs, loader, selected) = (
+            &self.library,
+            &self.results,
+            &self.thumbs,
+            &mut self.loader,
+            self.selected,
+        );
+        let out = sa.show_viewport(ui, |ui, viewport| {
+            ui.set_height(total);
+            let origin = ui.max_rect().min;
+            let width = ui.available_width();
+            for (i, l) in lines.iter().enumerate() {
+                let h = if matches!(l, Line::Header(..)) {
+                    header_h
+                } else {
+                    row_h
+                };
+                if ys[i] + h < viewport.min.y || ys[i] > viewport.max.y {
+                    continue;
+                }
+                let rect =
+                    Rect::from_min_size(Pos2::new(origin.x, origin.y + ys[i]), Vec2::new(width, h));
+                match l {
+                    Line::Header(label, n) => {
+                        let p = ui.painter();
+                        let weak = ui.visuals().weak_text_color();
+                        let (label_x, count_x) = if i18n::rtl() {
+                            (rect.right() - 12.0, rect.left() + 12.0)
+                        } else {
+                            (rect.left() + 12.0, rect.right() - 12.0)
+                        };
+                        paint_text(
+                            ui,
+                            p,
+                            Pos2::new(label_x, rect.bottom() - 7.0),
+                            start_anchor(egui::Align::Max),
+                            &tr(label).to_uppercase(),
+                            FontId::proportional(11.5),
+                            weak,
+                        );
+                        let end = if i18n::rtl() {
+                            Align2::LEFT_BOTTOM
+                        } else {
+                            Align2::RIGHT_BOTTOM
+                        };
+                        p.text(
+                            Pos2::new(count_x, rect.bottom() - 7.0),
+                            end,
+                            n.to_string(),
+                            FontId::proportional(11.5),
+                            weak.gamma_multiply(0.7),
+                        );
+                    }
+                    Line::Row(r) => {
+                        let hit = &results[*r];
+                        let Some(it) = library.get(hit.id) else {
+                            continue;
+                        };
+                        let thumb = thumb_for(it, thumbs, loader);
+                        let resp =
+                            ui.interact(rect, egui::Id::unique(("row", it.id)), Sense::click());
+                        let hot = ui.rect_contains_pointer(rect);
+                        paint_row(
+                            ui,
+                            rect,
+                            hot,
+                            it,
+                            hit,
+                            thumb,
+                            Some(it.id) == selected,
+                            compact,
+                            &terms,
+                            max_sem,
+                        );
+                        if resp.clicked() {
+                            actions.push(Command::Select(it.id));
+                        }
+                        if resp.double_clicked() {
+                            actions.push(Command::Copy(it.id));
+                        }
+                        if hot {
+                            // Hover actions replace the time at the right edge.
+                            let pin = if it.pinned {
+                                (Icon::PinFilled, "Unpin")
+                            } else {
+                                (Icon::Pin, "Pin")
+                            };
+                            let mut buttons = vec![
+                                (Icon::Delete, "Delete", Command::Delete(it.id)),
+                                (pin.0, pin.1, Command::Pin(it.id)),
+                                (Icon::Copy, "Copy", Command::Copy(it.id)),
+                            ];
+                            if can_open {
+                                buttons.push((Icon::Open, "Open details", Command::Open(it.id)));
+                            }
+                            let size = 28.0;
+                            let mut x = rect.right() - 8.0 - buttons.len() as f32 * (size + 2.0);
+                            for (icon, tip, action) in buttons {
+                                let b = flip(
+                                    rect,
+                                    Rect::from_min_size(
+                                        Pos2::new(x, rect.center().y - size / 2.0),
+                                        Vec2::splat(size),
+                                    ),
+                                );
+                                if icon_button_at(
+                                    ui,
+                                    b,
+                                    egui::Id::unique(("row-action", it.id, tip)),
+                                    icon,
+                                    tip,
+                                )
+                                .clicked()
+                                {
+                                    actions.push(action);
+                                }
+                                x += size + 2.0;
+                            }
+                        }
+                    }
+                }
+            }
+        });
+        self.list_view = (out.state.clamped_offset().y, out.inner_rect.height());
+        self.apply_actions(actions);
+    }
+
+    pub(super) fn empty_list(&mut self, ui: &mut Ui) {
+        ui.add_space(60.0);
+        // "text", "links"… in English; the Arabic nouns need no case change.
+        let kind = if i18n::rtl() {
+            tr(self.filter.label()).to_string()
+        } else {
+            self.filter.label().to_lowercase()
+        };
+        ui.vertical_centered(|ui| {
+            let weak = ui.visuals().weak_text_color();
+            let strong = ui.visuals().strong_text_color();
+            if self.library.items().is_empty() {
+                icons::glyph(ui, Icon::Clipboard, 40.0, weak);
+                ui.add_space(8.0);
+                lbl(ui, "Your clipboard history will appear here", 16.0, strong);
+                ui.add_space(4.0);
+                let help = trf("Copy anything, or drop files here.\nPress {key} to open this window from anywhere.", &[("key", &self.cfg.show_hotkey)]);
+                ui.label(txt(&help, 14.0, Some(weak)));
+            } else if !self.query.trim().is_empty() {
+                icons::glyph(ui, Icon::Search, 36.0, weak);
+                ui.add_space(8.0);
+                ui.label(txt(&trf("No matches for “{q}”", &[("q", &self.query.trim())]), 15.0, Some(strong)));
+                ui.add_space(4.0);
+                match (&self.backend, self.cfg.search_mode) {
+                    (BackendState::Off, _) => {
+                        lbl(ui, "Searching by meaning finds related words too.", 14.0, weak);
+                        if ui.link(txt(tr("Set up meaning search"), 14.0, None)).clicked() {
+                            self.open_settings(SettingsPage::Search);
+                        }
+                    }
+                    (_, SearchMode::Keyword) => {
+                        if ui.link(txt(tr("Try “Smart” search instead"), 14.0, None)).clicked() {
+                            self.cfg.search_mode = SearchMode::Hybrid;
+                            self.save_config();
+                            self.query_changed = Some(Instant::now() - QUERY_DEBOUNCE);
+                            self.dirty = true;
+                        }
+                    }
+                    _ => {
+                        lbl(ui, "Try fewer or different words.", 14.0, weak);
+                    }
+                }
+                if self.filter != Filter::All && ui.link(txt(&trf("Search all items, not just {kind}", &[("kind", &kind)]), 14.0, None)).clicked() {
+                    self.filter = Filter::All;
+                    self.dirty = true;
+                }
+            } else {
+                ui.label(txt(&trf("No {kind} yet", &[("kind", &kind)]), 14.0, Some(weak)));
+            }
+        });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn headers_count_their_rows() {
+        let lines = with_headers(["Today", "Today", "Yesterday", "Today"].into_iter());
+        assert_eq!(
+            lines,
+            vec![
+                Line::Header("Today", 2),
+                Line::Row(0),
+                Line::Row(1),
+                Line::Header("Yesterday", 1),
+                Line::Row(2),
+                Line::Header("Today", 1),
+                Line::Row(3),
+            ]
+        );
+    }
+
+    #[test]
+    fn one_big_group_stays_linear() {
+        let lines = with_headers(std::iter::repeat_n("Today", 100_000));
+        assert_eq!(lines[0], Line::Header("Today", 100_000));
+        assert_eq!(lines.len(), 100_001);
+    }
+}

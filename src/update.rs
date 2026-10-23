@@ -202,7 +202,12 @@ pub fn install(staged: &Path) -> Result<PathBuf> {
     std::fs::rename(&exe, &old).with_context(|| format!("moving {} aside", exe.display()))?;
     if let Err(e) = std::fs::rename(staged, &exe) {
         // Put the running version back rather than leave no exe at all.
-        let _ = std::fs::rename(&old, &exe);
+        if let Err(back) = std::fs::rename(&old, &exe) {
+            return Err(e).context(format!(
+                "putting the new version in place (putting {} back failed too: {back})",
+                exe.display()
+            ));
+        }
         return Err(e).context("putting the new version in place");
     }
     Ok(exe)

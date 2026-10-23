@@ -6,7 +6,7 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
 use redb::{Database, ReadableDatabase, ReadableTable, TableDefinition};
 use serde::{Deserialize, Serialize};
 
@@ -14,6 +14,20 @@ use crate::embed::Embedding;
 
 const ITEMS: TableDefinition<u64, &[u8]> = TableDefinition::new("items");
 const EMBEDDINGS: TableDefinition<(&str, u64), &[u8]> = TableDefinition::new("embeddings");
+/// The model keys that have rows in EMBEDDINGS, so deleting an item visits
+/// one row per model instead of scanning every stored vector.
+const MODELS: TableDefinition<&str, ()> = TableDefinition::new("models");
+/// Facts about the file itself, such as `schema_version`.
+const META: TableDefinition<&str, u64> = TableDefinition::new("meta");
+
+/// The stored format. `migrate` brings an older file up to it, and a newer
+/// file (from a later app version) is refused rather than misread.
+/// 1: items and embeddings. 2: adds the models and meta tables.
+const SCHEMA_VERSION: u64 = 2;
+
+/// redb's page cache defaults to 1 GiB, on top of the history the app already
+/// holds in memory; a clipboard history needs far less.
+const CACHE_BYTES: usize = 64 * 1024 * 1024;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Kind {
@@ -71,6 +85,26 @@ pub struct Item {
 }
 
 impl Item {
+    /// A new item copied now, with nothing optional set yet.
+    pub fn new(id: u64, kind: Kind, origin: Origin, text: Arc<str>) -> Self {
+        Self {
+            id,
+            kind,
+            origin,
+            hash: fnv1a(text.as_bytes()),
+            text,
+            image: None,
+            width: 0,
+            height: 0,
+            ocr: None,
+            pinned: false,
+            created: now(),
+            source: None,
+            tags: Vec::new(),
+            uses: 0,
+        }
+    }
+
     /// Everything keyword search looks at.
     pub fn searchable_text(&self) -> String {
         let mut s = String::from(&*self.text);
@@ -139,15 +173,46 @@ pub struct Store {
 
 impl Store {
     pub fn open(db_path: &Path, images_dir: &Path) -> Result<Self> {
-        let db = Database::create(db_path).context("opening database")?;
-        let txn = db.begin_write()?;
-        txn.open_table(ITEMS)?;
-        txn.open_table(EMBEDDINGS)?;
-        txn.commit()?;
-        Ok(Self {
+        let db = redb::Builder::new()
+            .set_cache_size(CACHE_BYTES)
+            .create(db_path)
+            .context("opening database")?;
+        let store = Self {
             db,
             images_dir: images_dir.to_path_buf(),
-        })
+        };
+        store.migrate()?;
+        Ok(store)
+    }
+
+    /// Creates missing tables and brings an older file up to SCHEMA_VERSION,
+    /// in one transaction: an interrupted migration leaves the old file as it was.
+    fn migrate(&self) -> Result<()> {
+        let txn = self.db.begin_write()?;
+        {
+            txn.open_table(ITEMS)?;
+            let embeddings = txn.open_table(EMBEDDINGS)?;
+            let mut models = txn.open_table(MODELS)?;
+            let mut meta = txn.open_table(META)?;
+            let version = meta.get("schema_version")?.map_or(1, |v| v.value());
+            if version > SCHEMA_VERSION {
+                bail!("the history was saved by a newer version of the app (format {version}); update the app");
+            }
+            if version < 2 {
+                // One scan to list the models; put_embeddings keeps the list after this.
+                let keys: std::collections::BTreeSet<String> = embeddings
+                    .iter()?
+                    .filter_map(|row| row.ok())
+                    .map(|(k, _)| k.value().0.to_string())
+                    .collect();
+                for key in &keys {
+                    models.insert(key.as_str(), ())?;
+                }
+            }
+            meta.insert("schema_version", SCHEMA_VERSION)?;
+        }
+        txn.commit()?;
+        Ok(())
     }
 
     pub fn all_items(&self) -> Result<Vec<Item>> {
@@ -181,9 +246,22 @@ impl Store {
     }
 
     pub fn put(&self, item: &Item) -> Result<()> {
-        let bytes = serde_json::to_vec(item)?;
+        self.put_many(std::slice::from_ref(item))
+    }
+
+    /// Saves items in one transaction: one disk sync for a whole import batch
+    /// instead of one per file.
+    pub fn put_many(&self, items: &[Item]) -> Result<()> {
+        if items.is_empty() {
+            return Ok(());
+        }
         let txn = self.db.begin_write()?;
-        txn.open_table(ITEMS)?.insert(item.id, bytes.as_slice())?;
+        {
+            let mut table = txn.open_table(ITEMS)?;
+            for item in items {
+                table.insert(item.id, serde_json::to_vec(item)?.as_slice())?;
+            }
+        }
         txn.commit()?;
         Ok(())
     }
@@ -212,34 +290,66 @@ impl Store {
     }
 
     pub fn delete(&self, item: &Item) -> Result<()> {
+        self.delete_many(std::slice::from_ref(item))
+    }
+
+    /// Removes items with their vectors under every model, in one transaction
+    /// (one disk sync however many there are), then their image files.
+    pub fn delete_many(&self, items: &[Item]) -> Result<()> {
+        if items.is_empty() {
+            return Ok(());
+        }
         let txn = self.db.begin_write()?;
-        txn.open_table(ITEMS)?.remove(item.id)?;
         {
-            let mut emb = txn.open_table(EMBEDDINGS)?;
-            let keys: Vec<String> = emb
+            let models: Vec<String> = txn
+                .open_table(MODELS)?
                 .iter()?
-                .filter_map(|r| r.ok())
-                .filter(|(k, _)| k.value().1 == item.id)
-                .map(|(k, _)| k.value().0.to_string())
+                .filter_map(|row| row.ok())
+                .map(|(k, _)| k.value().to_string())
                 .collect();
-            for model in keys {
-                emb.remove((model.as_str(), item.id))?;
+            let mut table = txn.open_table(ITEMS)?;
+            let mut vectors = txn.open_table(EMBEDDINGS)?;
+            for item in items {
+                table.remove(item.id)?;
+                for model in &models {
+                    vectors.remove((model.as_str(), item.id))?;
+                }
             }
         }
         txn.commit()?;
-        if let Some(p) = &item.image {
-            if item.origin == Origin::Clipboard && p.starts_with(&self.images_dir) {
-                let _ = std::fs::remove_file(p);
+        for item in items {
+            if let Some(p) = &item.image {
+                if item.origin == Origin::Clipboard && p.starts_with(&self.images_dir) {
+                    match std::fs::remove_file(p) {
+                        Err(e) if e.kind() != std::io::ErrorKind::NotFound => {
+                            log::warn!("deleting {}: {e}", p.display());
+                        }
+                        _ => {}
+                    }
+                }
             }
         }
         Ok(())
     }
 
     pub fn put_embedding(&self, model: &str, id: u64, e: &Embedding) -> Result<()> {
-        let bytes = e.to_bytes();
+        self.put_embeddings(model, &[(id, e)])
+    }
+
+    /// Saves vectors for one model in one transaction: one disk sync for a
+    /// whole indexing batch instead of one per item.
+    pub fn put_embeddings(&self, model: &str, rows: &[(u64, &Embedding)]) -> Result<()> {
+        if rows.is_empty() {
+            return Ok(());
+        }
         let txn = self.db.begin_write()?;
-        txn.open_table(EMBEDDINGS)?
-            .insert((model, id), bytes.as_slice())?;
+        {
+            let mut table = txn.open_table(EMBEDDINGS)?;
+            for (id, e) in rows {
+                table.insert((model, *id), e.to_bytes().as_slice())?;
+            }
+            txn.open_table(MODELS)?.insert(model, ())?;
+        }
         txn.commit()?;
         Ok(())
     }
@@ -293,22 +403,82 @@ mod tests {
     use super::*;
 
     fn item(id: u64, text: &str) -> Item {
-        Item {
-            id,
-            kind: Kind::Text,
-            origin: Origin::Clipboard,
-            text: text.into(),
-            image: None,
-            width: 0,
-            height: 0,
-            ocr: None,
-            pinned: false,
-            created: now(),
-            hash: fnv1a(text.as_bytes()),
-            source: None,
-            tags: Vec::new(),
-            uses: 0,
+        Item::new(id, Kind::Text, Origin::Clipboard, text.into())
+    }
+
+    fn temp_dir(name: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("cbm-{name}-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    #[test]
+    fn an_old_file_is_migrated_and_deletes_reach_every_model() {
+        let dir = temp_dir("migrate");
+        let path = dir.join("old.redb");
+        // A format-1 file: only the items and embeddings tables.
+        {
+            let db = Database::create(&path).unwrap();
+            let txn = db.begin_write().unwrap();
+            {
+                let mut items = txn.open_table(ITEMS).unwrap();
+                let bytes = serde_json::to_vec(&item(1, "a")).unwrap();
+                items.insert(1, bytes.as_slice()).unwrap();
+                let mut vectors = txn.open_table(EMBEDDINGS).unwrap();
+                for model in ["m1", "m2"] {
+                    let v = Embedding::Dense(vec![1.0]).to_bytes();
+                    vectors.insert((model, 1u64), v.as_slice()).unwrap();
+                }
+            }
+            txn.commit().unwrap();
         }
+        let store = Store::open(&path, &dir).unwrap();
+        assert_eq!(store.all_items().unwrap().len(), 1);
+        store.delete(&item(1, "a")).unwrap();
+        assert!(store.embeddings("m1").unwrap().is_empty());
+        assert!(store.embeddings("m2").unwrap().is_empty());
+        drop(store);
+        std::fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn a_file_from_a_newer_version_is_refused() {
+        let dir = temp_dir("newer");
+        let path = dir.join("t.redb");
+        drop(Store::open(&path, &dir).unwrap());
+        {
+            let db = Database::create(&path).unwrap();
+            let txn = db.begin_write().unwrap();
+            txn.open_table(META)
+                .unwrap()
+                .insert("schema_version", 99)
+                .unwrap();
+            txn.commit().unwrap();
+        }
+        let refused = Store::open(&path, &dir)
+            .err()
+            .expect("a newer format must be refused");
+        assert!(format!("{refused:#}").contains("newer version"));
+        std::fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn batches_are_saved_and_deleted_together() {
+        let dir = temp_dir("batch");
+        let store = Store::open(&dir.join("t.redb"), &dir).unwrap();
+        let items = [item(1, "one"), item(2, "two"), item(3, "three")];
+        store.put_many(&items).unwrap();
+        assert_eq!(store.all_items().unwrap().len(), 3);
+        let v = Embedding::Dense(vec![0.5, 0.5]);
+        store
+            .put_embeddings("m", &[(1, &v), (2, &v), (3, &v)])
+            .unwrap();
+        assert_eq!(store.embeddings("m").unwrap().len(), 3);
+        store.delete_many(&items[..2]).unwrap();
+        assert_eq!(store.all_items().unwrap().len(), 1);
+        assert_eq!(store.embeddings("m").unwrap().len(), 1);
+        drop(store);
+        std::fs::remove_dir_all(dir).ok();
     }
 
     #[test]

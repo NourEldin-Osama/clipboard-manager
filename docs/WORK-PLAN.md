@@ -18,11 +18,12 @@ Status: `[ ]` to do, `[~]` in progress, `[x]` done, `[!]` waiting for a decision
 | D7 | Code signing with SignPath Foundation: later | You | Decided (later) |
 | D8 | Sync between devices is out of scope | You | Decided |
 | D9 | Git: one branch per phase, one commit per task, merged into local `main` with `--no-ff`; you push | You | Decided |
-| D10 | How the app registers on the PC (Start menu, desktop shortcut, Installed apps) | You | Waiting |
-| D11 | Moving the existing history into encrypted storage: what happens to the unencrypted files | You | Waiting |
-| D12 | In the full window: what Enter does, and the shortcut that opens it | You | Waiting |
-| D13 | Delete by age: the default | You | Waiting |
-| D14 | Rules per app: what a rule can do | You | Waiting |
+| D10 | A per-user installer (Inno Setup) built with each release: no admin rights, Start menu and desktop shortcuts, an Installed apps entry with Uninstall; the portable exe stays | You | Decided |
+| D11 | First encryption of an existing history: encrypt, check it reads back, then delete the unencrypted files | You | Decided |
+| D12 | The full window uses the popup's keys: Enter pastes, Shift+Enter pastes plain text, Ctrl+Enter only copies; Alt+Shift+V opens it | You | Decided |
+| D13 | Delete by age is off by default; pinned and tagged items are never deleted by it | You | Decided |
+| D14 | Rules per app: ignore an app, and ignore text that matches a pattern (for one app or all); a copy a rule skipped can be kept with "Save anyway" | You | Decided |
+| D15 | Image paths become relative to the data folder in the same one-time step as the encryption (5.1), so the history is migrated once | Claude | Decided |
 
 ## Order of work, and why
 
@@ -64,17 +65,18 @@ Status: `[ ]` to do, `[~]` in progress, `[x]` done, `[!]` waiting for a decision
 - [x] 2.19 Check, then fix: delete has no undo (confirmed)
 - [x] 2.20 Touchpad scrolling stops where the fingers stop (fast swipes kept moving)
 - [x] 2.21 A global shortcut that another app already uses is detected and shown
+- [x] 2.22 "Clear clipboard history" counted the tagged items it keeps (found in 3.4)
 
 ### Phase 3. Structure (no behavior change)
-- [ ] 3.1 Split `view.rs` (theme, widgets, time format, top bar, list, grid, details, status bar, keyboard)
-- [ ] 3.2 Split `settings_page.rs` (one file per page, plus the server settings)
-- [ ] 3.3 Move secret detection into `privacy.rs`
-- [ ] 3.4 A `Library` that owns items, store, tags, pins and pruning; one `Command` enum for user actions
-- [ ] 3.5 Store: `update` in one transaction, batch writes, `delete_many`, smaller cache, relative image paths, schema version
-- [ ] 3.6 A background store thread for delete, prune, clear, import and PNG work
-- [ ] 3.7 Worker queue: priorities, survives panics, restarts
-- [ ] 3.8 Search runs on a background thread
-- [ ] 3.9 Code quality: `setting_for` helper, enums instead of numbers and strings, no ignored errors
+- [x] 3.1 Split `view.rs` (theme, widgets, time format, top bar, list, grid, details, status bar, keyboard)
+- [x] 3.2 Split `settings_page.rs` (one file per page, plus the server settings)
+- [x] 3.3 Move secret detection into `privacy.rs`
+- [x] 3.4 A `Library` that owns items, store, tags, pins and pruning; one `Command` enum for user actions
+- [x] 3.5 Store: `update` in one transaction, batch writes, `delete_many`, smaller cache, schema version (relative image paths: in 5.1, D15)
+- [x] 3.6 Slow disk work off the UI thread: import (own thread, one transaction per batch), PNG save and copy-back (one background thread). Delete, prune and clear stay: measured 2-3 ms
+- [x] 3.7 Worker queue: priorities, survives panics, restarts
+- [x] 3.8 Search runs on a background thread (measured: 85 ms at 100,000 items, 650 ms for 1,000 multi-vector images; the snapshot it needs takes 4 ms at 100,000)
+- [x] 3.9 Code quality: `setting_for` helper, enums instead of numbers and strings, no ignored errors
 
 ### Phase 4. Text system
 - [ ] 4.1 Project Fluent with semantic keys, whole sentences, placeholders and Arabic plurals

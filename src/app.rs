@@ -21,10 +21,10 @@ use crate::config::{
 use crate::embed::Embedding;
 use crate::i18n::{self, tr, trf};
 use crate::images::ImageLoader;
-use crate::import;
+use crate::library::{Library, Removed};
 use crate::models::{self, Progress, SIGLIP_MODELS};
-use crate::search::{self, Filter, Hit};
-use crate::store::{looks_like_link, now, Item, Kind, Origin, Store};
+use crate::search::{self, Filter, Hit, Searcher};
+use crate::store::{looks_like_link, Item, Kind, Origin, Store};
 use crate::tray::{Tray, TrayCmd};
 use crate::update::{self, Release};
 use crate::worker::{Event, Job, Worker};
@@ -210,24 +210,52 @@ struct Toast {
     text: String,
     shown: Instant,
     how_long: Duration,
-    action: Option<ToastAction>,
+    /// The button's text and what it does.
+    action: Option<(&'static str, Command)>,
 }
 
-/// What a toast's button does.
-enum ToastAction {
-    /// Records a copy the secret filter held back.
-    SaveSkipped(String),
+/// Everything the user can do to the history, from a row, a card, the
+/// details pane, a key, a menu or a toast. The views send these to `run`
+/// instead of changing the history themselves.
+pub(super) enum Command {
+    Select(u64),
+    Copy(u64),
+    Delete(u64),
+    Pin(u64),
+    /// Shows the item in the details pane.
+    Open(u64),
+    /// Comma-separated tags for one item.
+    AddTags(u64, String),
+    RemoveTag(u64, String),
+    /// Removes a tag from every item that has it.
+    DeleteTag(String),
+    Import(Vec<PathBuf>),
+    ClearHistory,
     /// Brings back the item just deleted.
     UndoDelete,
+    /// Records a copy the secret filter held back.
+    SaveSkipped(String),
+    /// Copies text read from an image; it is not recorded as a new copy.
+    CopyText(String),
 }
 
-impl ToastAction {
-    fn label(&self) -> &'static str {
-        match self {
-            Self::SaveSkipped(_) => "Save anyway",
-            Self::UndoDelete => "Undo",
-        }
-    }
+/// A destructive action in Settings, waiting for its second click.
+#[derive(Clone, Copy, PartialEq)]
+enum Confirm {
+    ClearHistory,
+    ResetSettings,
+}
+
+/// The shortcuts that can be changed in Settings.
+#[derive(Clone, Copy, PartialEq)]
+enum ShortcutField {
+    Show,
+    IgnoreNext,
+    Copy,
+    Pin,
+    Delete,
+    Tag,
+    View,
 }
 
 /// How long a deleted item can still be brought back.
@@ -236,10 +264,7 @@ const UNDO_FOR: Duration = Duration::from_secs(8);
 /// The last deleted item, kept for "Undo" until its toast ends; only then is
 /// it removed from the database, with its vectors and image file.
 struct PendingDelete {
-    item: Item,
-    /// Where it was in `App::items`, so it comes back in the same place.
-    position: usize,
-    embedding: Option<Embedding>,
+    removed: Removed,
     since: Instant,
 }
 
@@ -252,15 +277,13 @@ pub struct App {
     paths: Paths,
     cfg: Config,
     draft: Option<Config>,
-    store: Arc<Store>,
     worker: Worker,
     events: Receiver<Event>,
     captures: Receiver<Captured>,
     flags: Arc<Flags>,
 
-    items: Vec<Item>,
-    next_id: u64,
-    embeddings: HashMap<u64, Embedding>,
+    /// The clipboard history and every change to it.
+    library: Library,
     backend: BackendState,
     queue: usize,
     status: String,
@@ -271,10 +294,15 @@ pub struct App {
     query: String,
     query_changed: Option<Instant>,
     query_seq: u64,
-    query_vec: Option<(String, Embedding)>,
+    query_vec: Option<(String, Arc<Embedding>)>,
     filter: Filter,
     results: Vec<Hit>,
+    /// The history or the query changed: search again.
     dirty: bool,
+    searcher: Searcher,
+    /// The newest search sent, and whether its results are still to come.
+    search_seq: u64,
+    searching: bool,
     selected: Option<u64>,
     scroll_to_selected: bool,
     focus_search: Arc<AtomicBool>,
@@ -284,8 +312,6 @@ pub struct App {
     preview: Option<(u64, Option<TextureHandle>)>,
     loader: ImageLoader,
     detail: Option<DetailText>,
-    /// Lower-cased searchable text per item, so typing doesn't re-lowercase everything.
-    lower: HashMap<u64, String>,
     research_pending: bool,
     last_search: Instant,
     download: Option<Download>,
@@ -298,8 +324,7 @@ pub struct App {
     hotkey_conflicts: Vec<String>,
     model_list: ModelList,
     settings_page: SettingsPage,
-    /// A destructive action waiting for a second click.
-    confirm: Option<&'static str>,
+    confirm: Option<Confirm>,
     /// Scroll offset and visible height of the list, from the last frame.
     list_view: (f32, f32),
     /// Grid and List views show the details pane only after "Open details".
@@ -318,7 +343,7 @@ pub struct App {
     /// Frames left in which to hide a window started by sign-in.
     start_hidden: u8,
     /// The shortcut field listening for keys in Settings, and why the last try was refused.
-    recording: Option<&'static str>,
+    recording: Option<ShortcutField>,
     record_problem: Option<&'static str>,
     update: UpdateState,
     update_rx: Option<Receiver<UpdateMsg>>,
@@ -331,6 +356,11 @@ pub struct App {
     tag_input: Option<(u64, String)>,
     /// Give the tag field focus on its next frame (it was just opened).
     tag_focus: bool,
+    /// Image saving, copying back and imports, off the UI thread.
+    background: Background,
+    /// Imports still reading files, and the files they added so far.
+    imports_running: usize,
+    imported: usize,
 }
 
 impl App {
@@ -348,15 +378,16 @@ impl App {
         style(&ctx);
         apply_theme(&ctx, cfg.theme);
 
-        let store = Arc::new(Store::open(&paths.db, &paths.images)?);
-        let items = store.all_items()?;
-        let next_id = store.next_id()?;
+        let library = Library::open(Arc::new(Store::open(&paths.db, &paths.images)?))?;
 
         let (ev_tx, events) = channel();
         let c = ctx.clone();
-        let worker = Worker::spawn(store.clone(), paths.models.clone(), ev_tx, move || {
-            c.request_repaint()
-        });
+        let worker = Worker::spawn(
+            library.store().clone(),
+            paths.models.clone(),
+            ev_tx,
+            move || c.request_repaint(),
+        );
 
         let flags = Arc::new(Flags::default());
         flags.enabled.store(cfg.monitor_clipboard, Ordering::SeqCst);
@@ -388,14 +419,11 @@ impl App {
             },
             paths,
             draft: None,
-            store,
             worker,
             events,
             captures,
             flags,
-            items,
-            next_id,
-            embeddings: HashMap::new(),
+            library,
             backend: BackendState::Off,
             queue: 0,
             status: String::new(),
@@ -409,6 +437,12 @@ impl App {
             filter: Filter::All,
             results: Vec::new(),
             dirty: true,
+            searcher: {
+                let c = ctx.clone();
+                Searcher::spawn(move || c.request_repaint())
+            },
+            search_seq: 0,
+            searching: false,
             selected: None,
             scroll_to_selected: false,
             focus_search,
@@ -420,7 +454,6 @@ impl App {
                 ImageLoader::new(move || c.request_repaint())
             },
             detail: None,
-            lower: HashMap::new(),
             research_pending: false,
             last_search: Instant::now(),
             download: None,
@@ -442,21 +475,17 @@ impl App {
             tag_filter: None,
             tag_input: None,
             tag_focus: false,
+            background: Background::spawn(ctx.clone()),
+            imports_running: 0,
+            imported: 0,
             recording: None,
             record_problem: None,
             cfg,
         };
-        app.lower = app
-            .items
-            .iter()
-            .map(|i| (i.id, i.searchable_text().to_lowercase()))
-            .collect();
         app.set_backend(app.cfg.backend.clone());
         if app.cfg.ocr_images {
-            for it in &app.items {
-                if it.kind == Kind::Image && it.ocr.is_none() {
-                    app.worker.send(Job::Ocr(it.id));
-                }
+            for id in app.library.images_without_ocr() {
+                app.worker.send_backfill(Job::Ocr(id));
             }
         }
         app.register_hotkeys(&ctx);
@@ -481,7 +510,7 @@ impl App {
     // ----- state changes -------------------------------------------------
 
     fn set_backend(&mut self, b: EmbedBackend) {
-        self.embeddings.clear();
+        self.library.clear_embeddings();
         self.query_vec = None;
         self.backend = if b == EmbedBackend::None {
             BackendState::Off
@@ -740,14 +769,17 @@ impl App {
                 };
             }
             UpdateMsg::Downloaded(result) => {
-                let release = match std::mem::replace(&mut self.update, UpdateState::Idle) {
-                    UpdateState::Downloading(r, _) => r,
-                    _ => return,
-                };
+                let (release, progress) =
+                    match std::mem::replace(&mut self.update, UpdateState::Idle) {
+                        UpdateState::Downloading(r, p) => (r, p),
+                        _ => return,
+                    };
                 self.update = match result {
                     Ok(path) => UpdateState::Ready(release, path),
                     // Cancelled: back to asking.
-                    Err(e) if e == "cancelled" => UpdateState::Available(release),
+                    Err(_) if progress.cancel.load(Ordering::Relaxed) => {
+                        UpdateState::Available(release)
+                    }
                     Err(e) => {
                         log::warn!("update download: {e}");
                         UpdateState::Failed {
@@ -767,11 +799,15 @@ impl App {
             return;
         };
         let r = r.clone();
-        let result = update::install(path).and_then(|exe| {
-            update::relaunch(&exe).inspect_err(|_| {
-                // The new version wouldn't start: keep this one.
-                let _ = update::roll_back();
-            })
+        let result = update::install(path).and_then(|exe| match update::relaunch(&exe) {
+            Ok(()) => Ok(()),
+            // The new version wouldn't start: keep this one.
+            Err(e) => match update::roll_back() {
+                Ok(()) => Err(e),
+                Err(back) => {
+                    Err(e.context(format!("putting this version back failed too: {back:#}")))
+                }
+            },
         });
         match result {
             Ok(()) => {
@@ -823,13 +859,36 @@ impl App {
         });
     }
 
-    fn run_toast_action(&mut self, action: ToastAction) {
-        match action {
-            ToastAction::SaveSkipped(text) => {
+    /// Carries out what the user asked for.
+    fn run(&mut self, command: Command) {
+        match command {
+            Command::Select(id) => self.selected = Some(id),
+            Command::Copy(id) => {
+                self.selected = Some(id);
+                self.copy(id);
+            }
+            Command::Delete(id) => self.delete(id),
+            Command::Pin(id) => self.toggle_pin(id),
+            Command::Open(id) => {
+                self.selected = Some(id);
+                self.details_open = true;
+            }
+            Command::AddTags(id, tags) => self.add_tags(id, &tags),
+            Command::RemoveTag(id, tag) => self.remove_tag(id, &tag),
+            Command::DeleteTag(tag) => self.delete_tag(&tag),
+            Command::Import(paths) => self.import(paths),
+            Command::ClearHistory => self.clear_history(),
+            Command::UndoDelete => self.undo_delete(),
+            Command::SaveSkipped(text) => {
                 self.on_capture(Captured::Text(text));
                 self.toast("Saved");
             }
-            ToastAction::UndoDelete => self.undo_delete(),
+            Command::CopyText(text) => {
+                let flags = self.flags.clone();
+                self.background.run(move || {
+                    Done::TextCopied(write_clipboard(&flags, || clipboard::copy_text(&text)))
+                });
+            }
         }
     }
 
@@ -841,20 +900,29 @@ impl App {
     }
 
     fn add_item(&mut self, item: Item) {
-        if let Err(e) = self.store.put(&item) {
+        let (id, kind) = (item.id, item.kind);
+        // Saved before the jobs go out: the worker reads the item from the disk.
+        if let Err(e) = self.library.add(item) {
             self.set_error(format!("saving item: {e}"));
             return;
         }
-        if item.kind == Kind::Image && self.cfg.ocr_images {
-            self.worker.send(Job::Ocr(item.id));
+        for job in self.indexing_jobs(id, kind) {
+            self.worker.send(job);
+        }
+        self.dirty = true;
+    }
+
+    /// What the worker does for a new item: read the text in an image, and
+    /// make the item's vector.
+    fn indexing_jobs(&self, id: u64, kind: Kind) -> Vec<Job> {
+        let mut jobs = Vec::new();
+        if kind == Kind::Image && self.cfg.ocr_images {
+            jobs.push(Job::Ocr(id));
         }
         if self.ready_key().is_some() {
-            self.worker.send(Job::Embed(item.id));
+            jobs.push(Job::Embed(id));
         }
-        self.lower
-            .insert(item.id, item.searchable_text().to_lowercase());
-        self.items.push(item);
-        self.dirty = true;
+        jobs
     }
 
     fn on_capture(&mut self, c: Captured) {
@@ -863,44 +931,29 @@ impl App {
             let how_long = Duration::from_secs(if text.is_some() { 8 } else { 4 });
             self.toast_for(reason, how_long);
             if let Some(toast) = &mut self.toast {
-                toast.action = text.map(ToastAction::SaveSkipped);
+                toast.action = text.map(|t| ("Save anyway", Command::SaveSkipped(t)));
             }
             return;
         }
         let hash = c.hash();
         if self.cfg.dedupe {
-            if let Some(it) = self
-                .items
-                .iter_mut()
-                .find(|i| i.hash == hash && i.origin == Origin::Clipboard)
-            {
-                it.created = now();
-                let (id, created) = (it.id, it.created);
-                if let Err(e) = self.store.update(id, |stored| stored.created = created) {
+            let found = match self.library.touch_duplicate(hash) {
+                Ok(found) => found,
+                // Only saving the time of the item found can fail.
+                Err(e) => {
                     self.set_error(format!("saving item: {e}"));
+                    true
                 }
+            };
+            if found {
                 self.dirty = true;
                 return;
             }
         }
-        let id = self.next_id;
-        self.next_id += 1;
-        let mut item = Item {
-            id,
-            kind: Kind::Text,
-            origin: Origin::Clipboard,
-            text: "".into(),
-            image: None,
-            width: 0,
-            height: 0,
-            ocr: None,
-            pinned: false,
-            created: now(),
-            hash,
-            source: None,
-            tags: Vec::new(),
-            uses: 0,
-        };
+        let id = self.library.new_id();
+        let mut item = Item::new(id, Kind::Text, Origin::Clipboard, "".into());
+        // The capture's own hash, which also covers image pixels and file lists.
+        item.hash = hash;
         match c {
             Captured::Text(t) => {
                 item.kind = if looks_like_link(&t) {
@@ -919,10 +972,14 @@ impl App {
                 item.kind = Kind::Image;
                 item.width = img.width();
                 item.height = img.height();
-                match self.store.save_png(id, &img) {
-                    Ok(p) => item.image = Some(p),
-                    Err(e) => return self.set_error(format!("saving image: {e}")),
-                }
+                // Writing the PNG takes a while for a big image: the item joins
+                // the history once the file is saved (`Done::ImageSaved`).
+                let store = self.library.store().clone();
+                self.background.run(move || {
+                    let saved = store.save_png(id, &img).map_err(|e| format!("{e:#}"));
+                    Done::ImageSaved { item, saved }
+                });
+                return;
             }
         }
         self.add_item(item);
@@ -930,53 +987,70 @@ impl App {
     }
 
     fn prune(&mut self) {
-        let mut history: Vec<(i64, u64)> = self
-            .items
-            .iter()
-            .filter(|i| i.origin == Origin::Clipboard && !i.is_kept())
-            .map(|i| (i.created, i.id))
-            .collect();
-        if history.len() <= self.cfg.max_items {
-            return;
+        match self.library.prune(self.cfg.max_items) {
+            Ok(removed) => self.drop_removed(&removed),
+            Err(e) => self.set_error(format!("delete failed: {e}")),
         }
-        history.sort();
-        let excess = history.len() - self.cfg.max_items;
-        let doomed: HashSet<u64> = history.into_iter().take(excess).map(|(_, id)| id).collect();
-        for it in self.items.iter().filter(|i| doomed.contains(&i.id)) {
-            let _ = self.store.delete(it);
-            self.lower.remove(&it.id);
-            self.embeddings.remove(&it.id);
-            self.thumbs.remove(&it.id);
-        }
-        self.items.retain(|i| !doomed.contains(&i.id));
-        self.dirty = true;
     }
 
+    /// Reads the files in the background; `finish` saves them as they come.
     fn import(&mut self, paths: Vec<PathBuf>) {
-        let mut next = self.next_id;
-        let known: HashSet<u64> = self
-            .items
-            .iter()
-            .filter(|i| i.origin == Origin::Imported)
-            .map(|i| i.hash)
-            .collect();
-        let new: Vec<Item> = import::collect(&paths, &mut next)
-            .into_iter()
-            .filter(|i| !known.contains(&i.hash))
-            .collect();
-        self.next_id = next;
-        let n = new.len();
-        for it in new {
-            self.add_item(it);
+        self.imports_running += 1;
+        self.background.import(paths);
+    }
+
+    /// Takes in what the background threads finished.
+    fn finish(&mut self, done: Done) {
+        match done {
+            Done::ImageSaved {
+                mut item,
+                saved: Ok(path),
+            } => {
+                item.image = Some(path);
+                self.add_item(item);
+                self.prune();
+            }
+            Done::ImageSaved { saved: Err(e), .. } => self.set_error(format!("saving image: {e}")),
+            Done::Copied { id, result: Ok(()) } => {
+                if let Err(e) = self.library.record_use(id) {
+                    self.set_error(format!("saving item: {e}"));
+                }
+                self.dirty = true;
+                self.toast("Copied");
+                if self.cfg.minimize_after_copy {
+                    self.win.hide();
+                }
+            }
+            Done::Copied { result: Err(e), .. } => self.set_error(format!("copy failed: {e}")),
+            Done::TextCopied(Ok(())) => self.toast("Copied text"),
+            Done::TextCopied(Err(e)) => self.set_error(format!("copy failed: {e}")),
+            Done::Imported(batch) => match self.library.add_imported(batch) {
+                Ok(added) => {
+                    // Files added in bulk wait behind new copies.
+                    for (id, kind) in &added {
+                        for job in self.indexing_jobs(*id, *kind) {
+                            self.worker.send_backfill(job);
+                        }
+                    }
+                    self.imported += added.len();
+                    self.dirty = true;
+                }
+                Err(e) => self.set_error(format!("saving item: {e}")),
+            },
+            Done::ImportFinished => {
+                self.imports_running = self.imports_running.saturating_sub(1);
+                if self.imports_running == 0 {
+                    let n = std::mem::take(&mut self.imported);
+                    self.toast(trf("Imported {n} files", &[("n", &n)]));
+                }
+            }
+            Done::Crashed => self.set_error("a background task crashed (see the log file)".into()),
         }
-        self.toast(trf("Imported {n} files", &[("n", &n)]));
     }
 
     fn index_missing(&mut self) {
-        for it in &self.items {
-            if !self.embeddings.contains_key(&it.id) {
-                self.worker.send(Job::Embed(it.id));
-            }
+        for id in self.library.missing_embeddings() {
+            self.worker.send_backfill(Job::Embed(id));
         }
     }
 
@@ -984,6 +1058,9 @@ impl App {
         self.model_list.poll();
         while let Ok(c) = self.captures.try_recv() {
             self.on_capture(c);
+        }
+        while let Ok(done) = self.background.done.try_recv() {
+            self.finish(done);
         }
         while let Ok(e) = self.events.try_recv() {
             match e {
@@ -1009,7 +1086,7 @@ impl App {
                             self.model_list.fetch(&sc, ctx);
                         }
                     }
-                    self.embeddings = stored.into_iter().collect();
+                    self.library.set_embeddings(stored);
                     self.status.clear();
                     self.backend = BackendState::Ready { key, images };
                     self.index_missing();
@@ -1019,10 +1096,7 @@ impl App {
                 Event::Ocr { id, text } => {
                     let reembed = matches!(self.backend, BackendState::Ready { images: false, .. })
                         && !text.is_empty();
-                    if let Some(it) = self.items.iter_mut().find(|i| i.id == id) {
-                        it.ocr = Some(text.into());
-                        self.lower.insert(id, it.searchable_text().to_lowercase());
-                    }
+                    self.library.set_ocr(id, &text);
                     if self.detail.as_ref().map(|d| d.id) == Some(id) {
                         self.detail = None;
                     }
@@ -1034,7 +1108,7 @@ impl App {
                 Event::Embedded { id, key, embedding } => {
                     if self.ready_key() == Some(key.as_str()) {
                         if let Some(e) = embedding {
-                            self.embeddings.insert(id, e);
+                            self.library.set_embedding(id, e);
                             self.research_pending |= !self.query.trim().is_empty();
                         }
                     }
@@ -1045,7 +1119,7 @@ impl App {
                     embedding,
                 } => {
                     if seq == self.query_seq && self.ready_key() == Some(key.as_str()) {
-                        self.query_vec = Some((self.query.clone(), embedding));
+                        self.query_vec = Some((self.query.clone(), Arc::new(embedding)));
                         self.dirty = true;
                     }
                 }
@@ -1120,41 +1194,78 @@ impl App {
             self.research_pending = false;
             self.dirty = true;
         }
-        if !self.dirty {
-            return;
-        }
-        self.dirty = false;
-        self.last_search = Instant::now();
-        let vector = self
-            .query_vec
-            .as_ref()
-            .filter(|(q, _)| *q == self.query)
-            .map(|(_, v)| v);
-        self.results = search::search(
-            &self.items,
-            &self.lower,
-            &self.embeddings,
-            &search::Query {
-                text: &self.query,
+        if self.dirty {
+            self.dirty = false;
+            self.last_search = Instant::now();
+            let vector = self
+                .query_vec
+                .as_ref()
+                .filter(|(q, _)| *q == self.query)
+                .map(|(_, v)| v.clone());
+            let query = search::Query {
+                text: self.query.clone(),
                 vector,
                 mode: self.cfg.search_mode,
                 filter: self.filter,
-                tag: self.tag_filter.as_deref(),
+                tag: self.tag_filter.clone(),
                 min_similarity: self.cfg.min_similarity,
                 image_vectors: matches!(self.backend, BackendState::Ready { images: true, .. }),
-            },
-        );
-        let sort = self.sort();
-        // While searching, the best matches lead even when pinned items don't match as well.
-        let pinned_first = self.cfg.pinned_first && self.query.trim().is_empty();
-        search::order(&self.items, &mut self.results, sort, pinned_first);
+                sort: self.sort(),
+                // While searching, the best matches lead even when pinned items
+                // don't match as well.
+                pinned_first: self.cfg.pinned_first && self.query.trim().is_empty(),
+            };
+            self.search_seq += 1;
+            self.searching = true;
+            self.searcher
+                .search(self.search_seq, self.library.snapshot(), query);
+        }
+        // Looked for after sending, so results from before a change never show.
+        if let Some(hits) = self.searcher.results_for(self.search_seq) {
+            self.show_results(hits);
+        }
+    }
+
+    /// Before a key acts on the selected item, the list must match what was
+    /// just typed: waits for the search still running, if any.
+    fn finish_search(&mut self) {
+        self.refresh_results();
+        if self.searching {
+            let waited = self
+                .searcher
+                .wait_for(self.search_seq, Duration::from_secs(3));
+            match waited {
+                Some(hits) => self.show_results(hits),
+                // Act on the list as shown. Without this, a search that crashed
+                // would make every key wait again.
+                None => self.searching = false,
+            }
+        }
+    }
+
+    fn show_results(&mut self, hits: Vec<Hit>) {
+        self.searching = false;
+        self.results = hits;
         let still_there = self
             .selected
-            .map(|id| self.results.iter().any(|h| self.items[h.idx].id == id))
-            .unwrap_or(false);
+            .is_some_and(|id| self.results.iter().any(|h| h.id == id));
         if !still_there {
-            self.selected = self.results.first().map(|h| self.items[h.idx].id);
+            self.selected = self.results.first().map(|h| h.id);
         }
+    }
+
+    /// Takes removed items out of the list at once, before the next search
+    /// confirms it, and drops their thumbnails.
+    fn drop_removed(&mut self, ids: &[u64]) {
+        if ids.is_empty() {
+            return;
+        }
+        let gone: HashSet<u64> = ids.iter().copied().collect();
+        self.results.retain(|h| !gone.contains(&h.id));
+        for id in ids {
+            self.thumbs.remove(id);
+        }
+        self.dirty = true;
     }
 
     /// The order in effect: searching and browsing each remember their own.
@@ -1179,156 +1290,57 @@ impl App {
         self.dirty = true;
     }
 
-    fn item(&self, id: u64) -> Option<&Item> {
-        self.items.iter().find(|i| i.id == id)
-    }
-
+    /// Puts the item on the clipboard in the background; `finish` reports it.
     fn copy(&mut self, id: u64) {
-        let Some(it) = self.item(id).cloned() else {
+        let Some(item) = self.library.get(id).cloned() else {
             return;
         };
-        self.flags.ignore_next.store(true, Ordering::SeqCst);
-        let r = match it.kind {
-            Kind::Text | Kind::Link => clipboard::copy_text(&it.text),
-            Kind::Files => {
-                clipboard::copy_files(&it.text.lines().map(PathBuf::from).collect::<Vec<_>>())
-            }
-            Kind::Image => it
-                .image
-                .as_ref()
-                .ok_or_else(|| anyhow::anyhow!("missing image"))
-                .and_then(|p| Ok(image::open(p)?.into_rgba8()))
-                .and_then(|img| clipboard::copy_image(&img)),
-        };
-        match r {
-            Ok(()) => {
-                if let Some(x) = self.items.iter_mut().find(|i| i.id == id) {
-                    // Copying from the list counts as a use, and makes a copied item recent.
-                    x.uses = x.uses.saturating_add(1);
-                    if x.origin == Origin::Clipboard {
-                        x.created = now();
-                    }
-                    let (uses, created) = (x.uses, x.created);
-                    let saved = self.store.update(id, |stored| {
-                        stored.uses = uses;
-                        stored.created = created;
-                    });
-                    if let Err(e) = saved {
-                        self.set_error(format!("saving item: {e}"));
-                    }
-                    self.dirty = true;
-                }
-                self.toast("Copied");
-                if self.cfg.minimize_after_copy {
-                    self.win.hide();
-                }
-            }
-            Err(e) => {
-                self.flags.ignore_next.store(false, Ordering::SeqCst);
-                self.set_error(format!("copy failed: {e}"));
-            }
-        }
+        let flags = self.flags.clone();
+        self.background.run(move || Done::Copied {
+            id,
+            result: write_clipboard(&flags, || clipboard::copy_item(&item)),
+        });
     }
 
     fn toggle_pin(&mut self, id: u64) {
-        if let Some(it) = self.items.iter_mut().find(|i| i.id == id) {
-            it.pinned = !it.pinned;
-            let pinned = it.pinned;
-            if let Err(e) = self.store.update(id, |stored| stored.pinned = pinned) {
-                self.set_error(format!("saving item: {e}"));
-            }
-            self.dirty = true;
-        }
-    }
-
-    /// Every tag in use with its item count, most used first.
-    fn all_tags(&self) -> Vec<(String, usize)> {
-        let mut counts: HashMap<String, (String, usize)> = HashMap::new();
-        for t in self.items.iter().flat_map(|i| &i.tags) {
-            counts
-                .entry(t.to_lowercase())
-                .or_insert_with(|| (t.clone(), 0))
-                .1 += 1;
-        }
-        let mut v: Vec<(String, usize)> = counts.into_values().collect();
-        v.sort_by(|a, b| {
-            b.1.cmp(&a.1)
-                .then_with(|| a.0.to_lowercase().cmp(&b.0.to_lowercase()))
-        });
-        v
-    }
-
-    /// Saves an item's tags, and only them, so OCR text saved meanwhile stays.
-    fn save_tags(&mut self, id: u64) {
-        let Some(it) = self.items.iter().find(|i| i.id == id) else {
-            return;
-        };
-        let (tags, lower) = (it.tags.clone(), it.searchable_text().to_lowercase());
-        if let Err(e) = self.store.update(id, |stored| stored.tags = tags) {
+        if let Err(e) = self.library.toggle_pin(id) {
             self.set_error(format!("saving item: {e}"));
-            return;
         }
-        self.lower.insert(id, lower);
         self.dirty = true;
     }
 
-    /// Adds comma-separated tags, keeping the spelling of a tag already in use.
     fn add_tags(&mut self, id: u64, input: &str) {
-        let known = self.all_tags();
-        let Some(it) = self.items.iter_mut().find(|i| i.id == id) else {
-            return;
-        };
-        for t in input
-            .split(',')
-            .map(|t| t.trim().trim_start_matches('#').trim())
-            .filter(|t| !t.is_empty())
-        {
-            let t: String = t.chars().take(40).collect();
-            if it.has_tag(&t) {
-                continue;
-            }
-            let t = known
-                .iter()
-                .find(|(k, _)| k.eq_ignore_ascii_case(&t))
-                .map(|(k, _)| k.clone())
-                .unwrap_or(t);
-            it.tags.push(t);
+        if let Err(e) = self.library.add_tags(id, input) {
+            self.set_error(format!("saving item: {e}"));
         }
-        self.save_tags(id);
+        self.dirty = true;
     }
 
     fn remove_tag(&mut self, id: u64, tag: &str) {
-        if let Some(it) = self.items.iter_mut().find(|i| i.id == id) {
-            it.tags.retain(|t| !t.eq_ignore_ascii_case(tag));
+        if let Err(e) = self.library.remove_tag(id, tag) {
+            self.set_error(format!("saving item: {e}"));
         }
-        self.save_tags(id);
+        self.dirty = true;
         self.drop_stale_tag_filter();
     }
 
     /// Removes a tag from every item that has it.
     fn delete_tag(&mut self, tag: &str) {
-        let ids: Vec<u64> = self
-            .items
-            .iter()
-            .filter(|i| i.has_tag(tag))
-            .map(|i| i.id)
-            .collect();
-        for id in &ids {
-            if let Some(it) = self.items.iter_mut().find(|i| i.id == *id) {
-                it.tags.retain(|t| !t.eq_ignore_ascii_case(tag));
-            }
-            self.save_tags(*id);
-        }
+        let removed = self.library.delete_tag(tag);
+        self.dirty = true;
         self.drop_stale_tag_filter();
-        self.toast(trf(
-            "Removed #{tag} from {n} items",
-            &[("tag", &tag), ("n", &ids.len())],
-        ));
+        match removed {
+            Ok(n) => self.toast(trf(
+                "Removed #{tag} from {n} items",
+                &[("tag", &tag), ("n", &n)],
+            )),
+            Err(e) => self.set_error(format!("saving item: {e}")),
+        }
     }
 
     fn drop_stale_tag_filter(&mut self) {
         if let Some(t) = &self.tag_filter {
-            if !self.items.iter().any(|i| i.has_tag(t)) {
+            if !self.library.any_has_tag(t) {
                 self.tag_filter = None;
             }
         }
@@ -1339,40 +1351,34 @@ impl App {
     fn delete(&mut self, id: u64) {
         // One undo at a time: an earlier delete becomes final now.
         self.finish_delete();
-        if let Some(pos) = self.items.iter().position(|i| i.id == id) {
-            let item = self.items.remove(pos);
-            let embedding = self.embeddings.remove(&id);
-            self.thumbs.remove(&id);
-            self.lower.remove(&id);
-            self.loader.forget(id, false);
-            self.drop_stale_tag_filter();
-            // Keep the selection on a neighbour.
-            let idx = self.results.iter().position(|h| h.idx == pos);
-            self.dirty = true;
-            self.refresh_results();
-            if let Some(i) = idx {
-                self.selected = self
-                    .results
-                    .get(i.min(self.results.len().saturating_sub(1)))
-                    .map(|h| self.items[h.idx].id);
-            }
-            self.pending_delete = Some(PendingDelete {
-                item,
-                position: pos,
-                embedding,
-                since: Instant::now(),
-            });
-            self.toast_for("Deleted", UNDO_FOR);
-            if let Some(toast) = &mut self.toast {
-                toast.action = Some(ToastAction::UndoDelete);
-            }
+        let Some(removed) = self.library.take(id) else {
+            return;
+        };
+        self.loader.forget(id, false);
+        self.drop_stale_tag_filter();
+        // Keep the selection on a neighbour: the row that takes its place.
+        let row = self.results.iter().position(|h| h.id == id);
+        self.drop_removed(&[id]);
+        if let Some(i) = row {
+            self.selected = self
+                .results
+                .get(i.min(self.results.len().saturating_sub(1)))
+                .map(|h| h.id);
+        }
+        self.pending_delete = Some(PendingDelete {
+            removed,
+            since: Instant::now(),
+        });
+        self.toast_for("Deleted", UNDO_FOR);
+        if let Some(toast) = &mut self.toast {
+            toast.action = Some(("Undo", Command::UndoDelete));
         }
     }
 
     /// Makes the pending delete final: database row, vectors and image file.
     pub(super) fn finish_delete(&mut self) {
         if let Some(pending) = self.pending_delete.take() {
-            if let Err(e) = self.store.delete(&pending.item) {
+            if let Err(e) = self.library.forget(pending.removed) {
                 self.set_error(format!("delete failed: {e}"));
             }
         }
@@ -1382,17 +1388,9 @@ impl App {
         let Some(pending) = self.pending_delete.take() else {
             return;
         };
-        let id = pending.item.id;
-        self.lower
-            .insert(id, pending.item.searchable_text().to_lowercase());
-        if let Some(e) = pending.embedding {
-            self.embeddings.insert(id, e);
-        }
-        let position = pending.position.min(self.items.len());
-        self.items.insert(position, pending.item);
-        self.selected = Some(id);
+        self.selected = Some(pending.removed.item.id);
+        self.library.put_back(pending.removed);
         self.dirty = true;
-        self.refresh_results();
     }
 
     fn move_selection(&mut self, delta: i32) {
@@ -1401,12 +1399,12 @@ impl App {
         }
         let cur = self
             .selected
-            .and_then(|id| self.results.iter().position(|h| self.items[h.idx].id == id));
+            .and_then(|id| self.results.iter().position(|h| h.id == id));
         let next = match cur {
             Some(c) => (c as i32 + delta).clamp(0, self.results.len() as i32 - 1) as usize,
             None => 0,
         };
-        self.selected = Some(self.items[self.results[next].idx].id);
+        self.selected = Some(self.results[next].id);
         self.scroll_to_selected = true;
     }
 
@@ -1441,32 +1439,37 @@ impl App {
 
     /// Deletes clipboard items; pinned, tagged and imported items stay.
     fn clear_history(&mut self) {
-        let doomed: Vec<Item> = self
-            .items
-            .iter()
-            .filter(|i| i.origin == Origin::Clipboard && !i.is_kept())
-            .cloned()
-            .collect();
-        for it in &doomed {
-            if let Err(e) = self.store.delete(it) {
-                self.set_error(format!("delete failed: {e}"));
+        match self.library.clear() {
+            Ok(removed) => {
+                self.drop_removed(&removed);
+                self.toast(trf("Cleared {n} items", &[("n", &removed.len())]));
             }
-            self.lower.remove(&it.id);
-            self.embeddings.remove(&it.id);
-            self.thumbs.remove(&it.id);
+            Err(e) => self.set_error(format!("delete failed: {e}")),
         }
-        let gone: HashSet<u64> = doomed.iter().map(|i| i.id).collect();
-        self.items.retain(|i| !gone.contains(&i.id));
-        self.dirty = true;
-        self.toast(trf("Cleared {n} items", &[("n", &gone.len())]));
     }
 }
 
+/// Writes to the clipboard from the background thread. The watcher skips
+/// the change this makes instead of recording it as a new copy.
+fn write_clipboard(
+    flags: &Flags,
+    write: impl FnOnce() -> anyhow::Result<()>,
+) -> Result<(), String> {
+    flags.ignore_next.store(true, Ordering::SeqCst);
+    let result = write();
+    if result.is_err() {
+        flags.ignore_next.store(false, Ordering::SeqCst);
+    }
+    result.map_err(|e| format!("{e:#}"))
+}
+
+mod background;
 mod bidi;
 mod icons;
-mod settings_page;
+mod settings;
 mod shortcut;
 mod view;
 
-use settings_page::SettingsPage;
+use background::{Background, Done};
+use settings::SettingsPage;
 use view::{add_fonts, apply_theme, looks_like_code, set_accent, style};

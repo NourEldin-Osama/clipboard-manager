@@ -214,6 +214,7 @@ src/
   ocr.rs         ocrs wrapper
   search.rs      keyword scoring, similarity ranking with a word-match boost
   store.rs       redb persistence
+  library.rs     the history in memory and every change to it, kept in step with the store
   import.rs      files/folders -> items
   models.rs      model catalogue + atomic (temp-file then rename) downloads
   tray.rs        system-tray icon and menu (tray-icon)

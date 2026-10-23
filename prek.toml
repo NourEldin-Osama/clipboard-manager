@@ -20,9 +20,9 @@ hooks = [
   { id = "check-case-conflict" },
   { id = "check-illegal-windows-names" },
   { id = "check-added-large-files" },
-  # The update signing key must never be committed. clipboard.rs is skipped:
+  # The update signing key must never be committed. privacy.rs is skipped:
   # its secret-detection test contains a fake key header.
-  { id = "detect-private-key", exclude = '^src/clipboard\.rs$' },
+  { id = "detect-private-key", exclude = '^src/privacy\.rs$' },
   # Checks the message of each new commit, and again before a push.
   { id = "check-commit-trailers", args = ["--deny=Co-authored-by"], stages = ["commit-msg", "pre-push"] },
 ]
