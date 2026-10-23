@@ -31,11 +31,12 @@ pub enum EmbedBackend {
     Server(Box<ServerConfig>),
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Serialize, Deserialize)]
 pub struct ServerConfig {
     pub base_url: String,
-    /// Sent as `Authorization: Bearer <key>` when not empty.
-    #[serde(default)]
+    /// Sent as `Authorization: Bearer <key>` when not empty. Encrypted in the
+    /// settings file (see secure.rs).
+    #[serde(default, with = "crate::secure::string")]
     pub api_key: String,
     pub model: String,
     pub query_prefix: String,
@@ -56,6 +57,27 @@ pub struct LaunchConfig {
     pub mmproj: Option<PathBuf>,
     pub port: u16,
     pub extra_args: String,
+}
+
+/// Written by hand so the API key never reaches a log.
+impl std::fmt::Debug for ServerConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let key = if self.api_key.is_empty() {
+            ""
+        } else {
+            "<hidden>"
+        };
+        f.debug_struct("ServerConfig")
+            .field("base_url", &self.base_url)
+            .field("api_key", &key)
+            .field("model", &self.model)
+            .field("query_prefix", &self.query_prefix)
+            .field("document_prefix", &self.document_prefix)
+            .field("images", &self.images)
+            .field("truncate_dims", &self.truncate_dims)
+            .field("launch", &self.launch)
+            .finish()
+    }
 }
 
 impl ServerConfig {
@@ -499,5 +521,31 @@ mod tests {
         let cfg: Config = serde_json::from_str(old).unwrap();
         assert_eq!(cfg.max_items, 100);
         assert!(cfg.server_profiles.latest().is_none());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn api_keys_are_encrypted_in_the_settings_file() {
+        let mut cfg = Config {
+            backend: EmbedBackend::Server(Box::new(unsloth())),
+            ..Config::default()
+        };
+        cfg.server_profiles.remember(&unsloth());
+        let json = serde_json::to_string(&cfg).unwrap();
+        assert!(!json.contains("unsloth-key"));
+        let back: Config = serde_json::from_str(&json).unwrap();
+        assert_eq!(back, cfg);
+    }
+
+    #[test]
+    fn a_plain_key_from_an_older_version_still_loads() {
+        let json = r#"{"base_url":"http://x/v1","api_key":"old-key","model":"","query_prefix":"","document_prefix":"","images":false,"truncate_dims":0,"launch":null}"#;
+        let s: ServerConfig = serde_json::from_str(json).unwrap();
+        assert_eq!(s.api_key, "old-key");
+    }
+
+    #[test]
+    fn debug_output_hides_the_api_key() {
+        assert!(!format!("{:?}", unsloth()).contains("unsloth-key"));
     }
 }

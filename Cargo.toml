@@ -46,6 +46,8 @@ winresource = { version = "0.1", default-features = false }
 
 [target.'cfg(windows)'.dependencies]
 clipboard-win = "5"
+# DPAPI, which encrypts API keys for the signed-in Windows user (secure.rs).
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Security_Cryptography"] }
 
 # Everyday release builds: no LTO and many codegen units, so rebuilding after a
 # change takes a fraction of the time.

@@ -804,6 +804,7 @@ dependencies = [
  "unicode-bidi",
  "ureq",
  "walkdir",
+ "windows-sys 0.61.2",
  "winresource",
 ]
 

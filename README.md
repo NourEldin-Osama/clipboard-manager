@@ -122,7 +122,8 @@ Run any embedding server on your PC, paste its link into the app and pick a mode
    the server's **default embedding model**. This matters for servers whose model list shows only chat models.
    A green *connected · embeddings will use …* line confirms it works. Leave **Model** empty to use that default, or pick or type another.
 3. If the server needs a key (for example `llama-server --api-key …`, Unsloth, or LM Studio with auth enabled), paste it into **API key**.
-   It is sent as `Authorization: Bearer <key>`. It is stored in `config.json` in your app-data folder, never in the repository.
+   It is sent as `Authorization: Bearer <key>`. It is stored in `config.json` in your app-data folder, encrypted for
+   your Windows account (DPAPI), and each server keeps its own key, model and prompts when you switch between them.
 4. Choose a model and click **Save**. Your existing history is embedded in the background.
    For EmbeddingGemma models a **Use EmbeddingGemma's search prompts** button appears. Click it for better retrieval.
 

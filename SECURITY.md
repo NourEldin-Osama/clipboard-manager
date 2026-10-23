@@ -18,6 +18,8 @@ Only the latest release gets fixes. The app updates itself, so most people are o
 - **Secrets aren't recorded** by default: copies that look like passwords, API keys, tokens or private keys are
   skipped, as are copies other apps mark as sensitive.
 - **Local storage:** history, images and settings stay in `%APPDATA%\clipboard-manager\data`.
+- **API keys** for embedding servers are encrypted in `config.json` with Windows DPAPI, so only your Windows account
+  on that PC can read them ([`src/secure.rs`](src/secure.rs)). A key copied to another user or PC has to be entered again.
 
 ## How updates are verified
 

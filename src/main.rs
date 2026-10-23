@@ -15,6 +15,7 @@ mod import;
 mod models;
 mod ocr;
 mod search;
+mod secure;
 mod store;
 mod tray;
 mod update;
