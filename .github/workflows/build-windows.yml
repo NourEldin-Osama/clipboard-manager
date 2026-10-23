@@ -3,8 +3,9 @@ name: Build Windows exe
 # Builds main only: each push (a merged pull request included) publishes a
 # release with the exe and notes listing the pull requests merged since the
 # previous release. Run it by hand from the Actions tab to rebuild main.
-# Pushes that only touch docs, templates or check settings don't change the
-# exe, so they don't make a release; a push that also changes code does.
+# Pushes that only touch docs, templates, hooks, tools or check settings don't
+# change the exe, so they don't make a release; a push that also changes code
+# does. Keep this list in step with checks.yml.
 on:
   push:
     branches: [main]
@@ -12,11 +13,14 @@ on:
       - "**.md"
       - "docs/**"
       - "LICENSE-*"
+      - ".gitignore"
       - ".github/ISSUE_TEMPLATE/**"
       - ".github/pull_request_template.md"
       - ".github/dependabot.yml"
       - ".github/workflows/checks.yml"
       - "ci/**"
+      - "prek.toml"
+      - "tools/**"
   workflow_dispatch:
 
 # Builds of main run one after another, so releases come out in order.

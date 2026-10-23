@@ -8,6 +8,19 @@ on:
     branches: [main]
   push:
     branches: [main]
+    # Files that aren't code. Keep this list in step with NOT_CODE below and
+    # with build-windows.yml.
+    paths-ignore:
+      - "**.md"
+      - "docs/**"
+      - "LICENSE-*"
+      - ".gitignore"
+      - ".github/ISSUE_TEMPLATE/**"
+      - ".github/pull_request_template.md"
+      - ".github/dependabot.yml"
+      - ".github/workflows/build-windows.yml"
+      - "prek.toml"
+      - "tools/**"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -24,18 +37,42 @@ jobs:
       CARGO_TERM_COLOR: always
     steps:
       - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@stable
+        with:
+          # A pull request is compared with its base, which needs the history.
+          fetch-depth: 0
+      # main requires this job on every pull request, so a pull request with
+      # only non-code files still runs it, but skips the work and passes.
+      - name: Find code changes
+        id: changes
+        shell: bash
+        env:
+          NOT_CODE: '^(.*\.md|docs/.*|LICENSE-.*|\.gitignore|\.github/ISSUE_TEMPLATE/.*|\.github/pull_request_template\.md|\.github/dependabot\.yml|\.github/workflows/build-windows\.yml|prek\.toml|tools/.*)$'
+        run: |
+          if [ "${{ github.event_name }}" != pull_request ]; then
+            echo "code=true" >> "$GITHUB_OUTPUT"
+          elif git diff --name-only "${{ github.event.pull_request.base.sha }}" HEAD | grep -qvE "$NOT_CODE"; then
+            echo "code=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "code=false" >> "$GITHUB_OUTPUT"
+            echo "Only non-code files changed: skipping format, tests and lint."
+          fi
+      - if: steps.changes.outputs.code == 'true'
+        uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy, rustfmt
       # First, because it needs no build and fails in seconds.
       - name: Format
+        if: steps.changes.outputs.code == 'true'
         run: cargo fmt --check
-      - uses: Swatinem/rust-cache@v2
+      - if: steps.changes.outputs.code == 'true'
+        uses: Swatinem/rust-cache@v2
         with:
           # Only main saves the cache; pull requests just restore it.
           save-if: ${{ github.ref == 'refs/heads/main' }}
       # ci/fast-build.toml: no optimisation, no debug info; tests don't need them.
       - name: Test
+        if: steps.changes.outputs.code == 'true'
         run: cargo test --locked --config ci/fast-build.toml
       - name: Lint
+        if: steps.changes.outputs.code == 'true'
         run: cargo clippy --locked --all-targets --config ci/fast-build.toml
