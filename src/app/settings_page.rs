@@ -11,7 +11,7 @@ use super::view::{
     ACCENTS, AMBER, GREEN, RED,
 };
 use super::*;
-use crate::config::{Density, Language, TimeFormat};
+use crate::config::{BackendKind, Density, Language, ServerProfiles, TimeFormat};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(super) enum SettingsPage {
@@ -546,30 +546,17 @@ impl App {
             ui.label(txt(&text, 13.0, Some(color)));
         });
         ui.add_space(4.0);
-        let mut kind = match &d.backend {
-            EmbedBackend::None => 0,
-            EmbedBackend::SigLip { .. } => 1,
-            EmbedBackend::Server(_) => 2,
-        };
+        let mut kind = d.backend.kind();
         setting(ui, "Model", "Off: search by words only (plus text found in images).\nBuilt-in: a model inside this app that understands text and images, no other software needed (one-time download).\nYour server: use a model you already run, such as llama.cpp, Unsloth, Sentence Transformers, Ollama or LM Studio.", false, |ui| {
-            segmented(ui, &mut kind, &[(0, "Off"), (1, "Built-in"), (2, "Your server")]);
+            segmented(ui, &mut kind, &[(BackendKind::Off, "Off"), (BackendKind::BuiltIn, "Built-in"), (BackendKind::Server, "Your server")]);
         });
-        match (kind, &d.backend) {
-            (0, EmbedBackend::None)
-            | (1, EmbedBackend::SigLip { .. })
-            | (2, EmbedBackend::Server(_)) => {}
-            (0, _) => d.backend = EmbedBackend::None,
-            (1, _) => {
-                d.backend = EmbedBackend::SigLip {
-                    repo: SIGLIP_MODELS[0].repo.into(),
-                }
-            }
-            _ => d.backend = EmbedBackend::Server(Box::new(ServerConfig::embeddinggemma())),
-        }
+        d.choose_backend(kind);
         match &mut d.backend {
             EmbedBackend::None => note(ui, "Searching by words only. Turn on a model to also find items by meaning, e.g. “trip” finds “flight to Jeddah”."),
             EmbedBackend::SigLip { repo } => self.builtin_models(ui, repo),
-            EmbedBackend::Server(s) => server_settings(ui, s, &mut self.model_list),
+            EmbedBackend::Server(s) => {
+                server_settings(ui, s, &mut d.server_profiles, &mut self.model_list)
+            }
         }
         if d.backend != self.cfg.backend {
             ui.add_space(8.0);
@@ -1182,7 +1169,12 @@ fn appearance_page(ui: &mut Ui, d: &mut Config) {
     }
 }
 
-fn server_settings(ui: &mut Ui, s: &mut ServerConfig, list: &mut ModelList) {
+fn server_settings(
+    ui: &mut Ui,
+    s: &mut ServerConfig,
+    profiles: &mut ServerProfiles,
+    list: &mut ModelList,
+) {
     super::view::row_wrapped(ui, |ui| {
         ui.add_space(10.0);
         lbl(ui, "Quick setup:", 12.5, ui.visuals().weak_text_color());
@@ -1207,11 +1199,7 @@ fn server_settings(ui: &mut Ui, s: &mut ServerConfig, list: &mut ModelList) {
             })
             .corner_radius(CornerRadius::same(12));
             if ui.add(b).on_hover_text(url).clicked() {
-                let key = std::mem::take(&mut s.api_key);
-                *s = ServerConfig {
-                    api_key: key,
-                    ..ServerConfig::plain(url)
-                };
+                profiles.switch_to(s, url);
             }
         }
     });

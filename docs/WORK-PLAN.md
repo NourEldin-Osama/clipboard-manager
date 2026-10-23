@@ -38,7 +38,7 @@ Status: `[ ]` to do, `[~]` in progress, `[x]` done, `[!]` waiting for a decision
 
 ### Phase 2. Bugs
 - [x] 2.1 Global shortcuts stay off after a cancelled or unchanged shortcut recording
-- [ ] 2.2 Embedding server settings are remembered per server address (the Unsloth report)
+- [x] 2.2 Embedding server settings are remembered per server address (the Unsloth report)
 - [ ] 2.3 API keys are encrypted with Windows DPAPI
 - [ ] 2.4 OCR no longer overwrites pins and tags
 - [ ] 2.5 Secret filter: no false alarms on file names, catches more real secrets, "Save anyway"
