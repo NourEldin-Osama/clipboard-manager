@@ -500,6 +500,10 @@ impl App {
 
     fn set_recording(&mut self, on: bool) {
         self.cfg.monitor_clipboard = on;
+        // Open Settings applies its draft every frame, which would undo this.
+        if let Some(draft) = &mut self.draft {
+            draft.monitor_clipboard = on;
+        }
         self.flags.enabled.store(on, Ordering::SeqCst);
         self.save_config();
     }

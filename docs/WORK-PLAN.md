@@ -44,7 +44,7 @@ Status: `[ ]` to do, `[~]` in progress, `[x]` done, `[!]` waiting for a decision
 - [x] 2.5 Secret filter: no false alarms on file names, catches more real secrets, "Save anyway"
 - [x] 2.6 Tag filter works with meaning search
 - [x] 2.7 The tag field no longer freezes the keyboard
-- [ ] 2.8 Tray "Pause recording" works while Settings is open
+- [x] 2.8 Tray "Pause recording" works while Settings is open
 - [ ] 2.9 Grid arrow keys go the right way in Arabic
 - [ ] 2.10 Day headers without O(n squared) work every frame
 - [ ] 2.11 Sign-in entry: quoted path, not re-enabled at every start
