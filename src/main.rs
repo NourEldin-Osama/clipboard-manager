@@ -80,6 +80,9 @@ fn main() -> eframe::Result {
             .with_drag_and_drop(true)
             .with_icon(icon()),
         persist_window: true,
+        // eframe's own default is the installed app's folder, even for a
+        // portable copy or a dev build with CLIPBOARD_MANAGER_HOME set.
+        persistence_path: Some(paths.root.join("app.ron")),
         ..Default::default()
     };
     let result = eframe::run_native(

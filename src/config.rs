@@ -473,10 +473,7 @@ impl Paths {
     pub fn new() -> anyhow::Result<Self> {
         let root = match std::env::var_os("CLIPBOARD_MANAGER_HOME") {
             Some(p) => PathBuf::from(p),
-            None => directories::ProjectDirs::from("", "", "clipboard-manager")
-                .ok_or_else(|| anyhow::anyhow!("no home directory"))?
-                .data_dir()
-                .to_path_buf(),
+            None => default_root().ok_or_else(|| anyhow::anyhow!("no home directory"))?,
         };
         Self::at(root)
     }
@@ -495,9 +492,22 @@ impl Paths {
     }
 }
 
+/// The data folder when CLIPBOARD_MANAGER_HOME is not set.
+fn default_root() -> Option<PathBuf> {
+    directories::ProjectDirs::from("", "", "clipboard-manager").map(|d| d.data_dir().to_path_buf())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The window's size and place are kept in the data folder. Without
+    /// CLIPBOARD_MANAGER_HOME that is the folder eframe used before, so an
+    /// installed app keeps its window.
+    #[test]
+    fn the_default_data_folder_is_where_eframe_kept_the_window() {
+        assert_eq!(default_root(), eframe::storage_dir("clipboard-manager"));
+    }
 
     const UNSLOTH: &str = "http://127.0.0.1:8888/v1";
     const LLAMA: &str = "http://127.0.0.1:8080/v1";

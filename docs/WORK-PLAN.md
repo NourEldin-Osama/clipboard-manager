@@ -71,6 +71,7 @@ Status: `[ ]` to do, `[~]` in progress, `[x]` done, `[!]` waiting for a decision
 - [x] 2.25 Opening the window kept the last selection, so Enter could copy an old item; now the top item is selected (found in the dev-build test)
 - [x] 2.26 The tray menu did nothing after the tray was built again (a new language, or the tray turned off and on) until a restart (found in the Phase 4 check)
 - [x] 2.27 In the status bar a long error ran over the item count, and an Arabic error would show its words in the wrong order (found in the Phase 4 check)
+- [x] 2.28 A portable copy or a dev build (CLIPBOARD_MANAGER_HOME) kept its window state in the installed app's folder (found in the Phase 4 check)
 
 ### Phase 3. Structure (no behavior change)
 - [x] 3.1 Split `view.rs` (theme, widgets, time format, top bar, list, grid, details, status bar, keyboard)
