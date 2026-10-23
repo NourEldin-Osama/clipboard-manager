@@ -82,10 +82,10 @@ Status: `[ ]` to do, `[~]` in progress, `[x]` done, `[!]` waiting for a decision
 - [x] 3.9 Code quality: `setting_for` helper, enums instead of numbers and strings, no ignored errors
 
 ### Phase 4. Text system
-- [ ] 4.1 Project Fluent with semantic keys, whole sentences, placeholders and Arabic plurals
-- [ ] 4.2 Every UI text moves to `locales/en` and `locales/ar`; nothing hard-coded
-- [ ] 4.3 Tests: every key in every language, matching placeholders, no unused keys
-- [ ] 4.4 Guide: how to add a language
+- [x] 4.1 Project Fluent with semantic keys, whole sentences, placeholders and Arabic plurals
+- [x] 4.2 Every UI text moves to `locales/en` and `locales/ar`; nothing hard-coded
+- [x] 4.3 Tests: every key in every language, matching placeholders, no unused keys
+- [x] 4.4 Guide: how to add a language
 
 ### Phase 5. Security and privacy
 - [ ] 5.1 Encryption at rest for the history (D4)
