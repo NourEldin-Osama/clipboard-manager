@@ -16,6 +16,7 @@ mod models;
 mod ocr;
 mod search;
 mod secure;
+mod single_instance;
 mod store;
 mod tray;
 mod update;
@@ -31,12 +32,16 @@ fn main() -> eframe::Result {
             std::process::exit(1);
         }
     };
+    // One copy per data folder, checked before logging so a second start
+    // doesn't touch the running copy's log. Right after an update the
+    // previous version is still closing: wait for it to go, so its hotkeys
+    // are free and its exe can be removed.
+    let after_update = std::env::args().any(|a| a == update::AFTER_UPDATE_ARG);
+    let instance = match single_instance::claim(&paths.root, after_update) {
+        single_instance::Claim::First(guard) => guard,
+        single_instance::Claim::AlreadyRunning => return Ok(()),
+    };
     init_logging(&paths);
-    // After an update, the previous version is still closing; let it go first
-    // so its hotkeys are free and its exe can be removed.
-    if std::env::args().any(|a| a == update::AFTER_UPDATE_ARG) {
-        std::thread::sleep(std::time::Duration::from_millis(1500));
-    }
     update::clean_up();
     log::info!(
         "clipboard-manager {} starting, data in {}",
@@ -57,11 +62,24 @@ fn main() -> eframe::Result {
         persist_window: true,
         ..Default::default()
     };
-    eframe::run_native(
+    let result = eframe::run_native(
         "clipboard-manager",
         options,
-        Box::new(move |cc| Ok(Box::new(app::App::new(cc, paths)?))),
-    )
+        Box::new(move |cc| Ok(Box::new(app::App::new(cc, paths, instance)?))),
+    );
+    // A release build has no console, so a failed start needs a visible message.
+    if let Err(e) = &result {
+        log::error!("could not start: {e}");
+        rfd::MessageDialog::new()
+            .set_title(i18n::tr("Clipboard Manager"))
+            .set_description(format!(
+                "{}\n\n{e}",
+                i18n::tr("Clipboard Manager could not start.")
+            ))
+            .set_level(rfd::MessageLevel::Error)
+            .show();
+    }
+    result
 }
 
 /// Logs to `clipboard-manager.log` in the data folder (release builds on

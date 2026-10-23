@@ -252,6 +252,8 @@ pub struct App {
     /// Cards per row in the grid, from the last frame, for ↑ ↓ navigation.
     grid_cols: usize,
     win: WindowCtl,
+    /// Marks this as the running copy; another start shows this window.
+    instance: crate::single_instance::Guard,
     tray: Option<Tray>,
     tray_tx: std::sync::mpsc::Sender<TrayCmd>,
     tray_rx: Receiver<TrayCmd>,
@@ -277,7 +279,11 @@ pub struct App {
 }
 
 impl App {
-    pub fn new(cc: &eframe::CreationContext<'_>, paths: Paths) -> anyhow::Result<Self> {
+    pub fn new(
+        cc: &eframe::CreationContext<'_>,
+        paths: Paths,
+        instance: crate::single_instance::Guard,
+    ) -> anyhow::Result<Self> {
         let ctx = cc.egui_ctx.clone();
         let (cfg, settings_problem) = Config::load(&paths.config);
         i18n::set(cfg.language, cfg.time_format);
@@ -314,6 +320,7 @@ impl App {
         let (tray_tx, tray_rx) = channel();
         let mut app = Self {
             win,
+            instance,
             tray: None,
             tray_tx,
             tray_rx,
@@ -409,6 +416,8 @@ impl App {
         if let Some(problem) = settings_problem {
             app.set_error(problem);
         }
+        let win = app.win.clone();
+        app.instance.on_show_request(move || win.show());
         Ok(app)
     }
 
