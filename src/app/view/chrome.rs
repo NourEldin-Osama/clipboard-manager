@@ -243,6 +243,21 @@ impl App {
             .show(ui, |ui| {
                 row(ui, |ui| {
                     let weak = ui.visuals().weak_text_color();
+                    // The item count goes at the far end. It is laid out first,
+                    // so a long error before it can be cut to the room left.
+                    let pinned = self.library.items().iter().filter(|i| i.pinned).count();
+                    let n = self.library.items().len();
+                    let count = if pinned > 0 {
+                        t!("status-items-pinned", count = n, pinned = pinned)
+                    } else {
+                        t!("status-items", count = n)
+                    };
+                    let count = txt(&count, 12.0, Some(weak)).into_galley(
+                        ui,
+                        Some(egui::TextWrapMode::Extend),
+                        f32::INFINITY,
+                        egui::FontSelection::Default,
+                    );
                     let (dot, text) = self.model_status();
                     let color = if dot == Color32::GRAY { weak } else { dot };
                     let job = pill_job(&text, 12.0, color, None);
@@ -289,25 +304,15 @@ impl App {
                     }
                     if let Some((e, _)) = &self.error {
                         icons::glyph(ui, Icon::Warning, 13.0, RED);
-                        let r = ui.add(
-                            egui::Label::new(RichText::new(e.as_str()).size(12.0).color(RED))
-                                .truncate()
-                                .sense(Sense::click()),
-                        );
+                        let room = ui.available_width()
+                            - count.size().x
+                            - 2.0 * ui.spacing().item_spacing.x;
+                        let r = cut_line(ui, e, room.max(0.0), 12.0, RED, Sense::click());
                         if tip(r, &t!("status-dismiss-error")).clicked() {
                             self.error = None;
                         }
                     }
-                    far(ui, |ui| {
-                        let pinned = self.library.items().iter().filter(|i| i.pinned).count();
-                        let n = self.library.items().len();
-                        let s = if pinned > 0 {
-                            t!("status-items-pinned", count = n, pinned = pinned)
-                        } else {
-                            t!("status-items", count = n)
-                        };
-                        ui.label(txt(&s, 12.0, Some(weak)));
-                    });
+                    far(ui, |ui| ui.label(count));
                 });
             });
     }
