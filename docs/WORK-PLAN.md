@@ -120,3 +120,5 @@ Status: `[ ]` to do, `[~]` in progress, `[x]` done, `[!]` waiting for a decision
 | 2026-10-23 | `e2813c5` to `8b0c5d8` | Before this plan: rustfmt, clippy fixes, dependency updates, format check in CI, prek hooks |
 | 2026-10-23 | `ff0e6aa`, `c7ff1e4`, `8138797`, merge `67c3b1e` | Phase 1: this plan, prek built-in hooks, pipelines skip non-code changes |
 | 2026-10-23 | `a12e456` to `c564da8` (19 commits), merge `8bcf88d` | Phase 2: all 13 bugs and the 6 checked agent findings, one commit each |
+| 2026-10-23 | `dd39a9a` to `0c33161` (4 commits), merge `976bcca` | Decisions D4 to D7, touchpad scrolling (2.20), shortcuts used by another app (2.21), the hook that reports newer crates and actions |
+| 2026-10-23 | `78ff429` to `720aac5` (16 commits), merge `bcef26c` | Phase 3: decisions D10 to D15; privacy.rs; view and settings split into folders; store schema version and batch writes; worker priorities and crash safety; Library and Command; Clear history count (2.22); image saving, copy-back and import off the UI thread; search on its own thread; setting_for; enums for string states; dropped errors reported |
