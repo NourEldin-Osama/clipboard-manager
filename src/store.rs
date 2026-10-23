@@ -246,9 +246,22 @@ impl Store {
     }
 
     pub fn put(&self, item: &Item) -> Result<()> {
-        let bytes = serde_json::to_vec(item)?;
+        self.put_many(std::slice::from_ref(item))
+    }
+
+    /// Saves items in one transaction: one disk sync for a whole import batch
+    /// instead of one per file.
+    pub fn put_many(&self, items: &[Item]) -> Result<()> {
+        if items.is_empty() {
+            return Ok(());
+        }
         let txn = self.db.begin_write()?;
-        txn.open_table(ITEMS)?.insert(item.id, bytes.as_slice())?;
+        {
+            let mut table = txn.open_table(ITEMS)?;
+            for item in items {
+                table.insert(item.id, serde_json::to_vec(item)?.as_slice())?;
+            }
+        }
         txn.commit()?;
         Ok(())
     }
@@ -449,9 +462,8 @@ mod tests {
         let dir = temp_dir("batch");
         let store = Store::open(&dir.join("t.redb"), &dir).unwrap();
         let items = [item(1, "one"), item(2, "two"), item(3, "three")];
-        for it in &items {
-            store.put(it).unwrap();
-        }
+        store.put_many(&items).unwrap();
+        assert_eq!(store.all_items().unwrap().len(), 3);
         let v = Embedding::Dense(vec![0.5, 0.5]);
         store
             .put_embeddings("m", &[(1, &v), (2, &v), (3, &v)])

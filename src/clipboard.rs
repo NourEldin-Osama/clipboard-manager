@@ -6,7 +6,7 @@ use std::sync::mpsc::Sender;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use crate::store::fnv1a;
+use crate::store::{fnv1a, Item, Kind};
 
 pub enum Captured {
     Text(String),
@@ -247,11 +247,28 @@ fn write(f: impl Fn(&mut arboard::Clipboard) -> Result<(), arboard::Error>) -> a
     }
 }
 
+/// Puts an item from the history back on the clipboard. Slow for a big image
+/// (it is read from its PNG file), and it waits while another program holds
+/// the clipboard open, so the window calls it from a background thread.
+pub fn copy_item(item: &Item) -> anyhow::Result<()> {
+    match item.kind {
+        Kind::Text | Kind::Link => copy_text(&item.text),
+        Kind::Files => copy_files(&item.text.lines().map(PathBuf::from).collect::<Vec<_>>()),
+        Kind::Image => {
+            let path = item
+                .image
+                .as_ref()
+                .ok_or_else(|| anyhow::anyhow!("missing image"))?;
+            copy_image(&image::open(path)?.into_rgba8())
+        }
+    }
+}
+
 pub fn copy_text(text: &str) -> anyhow::Result<()> {
     write(|cb| cb.set_text(text))
 }
 
-pub fn copy_image(img: &image::RgbaImage) -> anyhow::Result<()> {
+fn copy_image(img: &image::RgbaImage) -> anyhow::Result<()> {
     write(|cb| {
         cb.set_image(arboard::ImageData {
             width: img.width() as usize,
@@ -261,6 +278,6 @@ pub fn copy_image(img: &image::RgbaImage) -> anyhow::Result<()> {
     })
 }
 
-pub fn copy_files(files: &[PathBuf]) -> anyhow::Result<()> {
+fn copy_files(files: &[PathBuf]) -> anyhow::Result<()> {
     write(|cb| cb.set().file_list(files))
 }

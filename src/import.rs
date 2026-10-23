@@ -13,28 +13,52 @@ const TEXT_EXT: &[&str] = &[
 ];
 const MAX_TEXT_BYTES: u64 = 1 << 20;
 pub const MAX_FILES: usize = 20_000;
+/// A batch is handed over at this many files or bytes of text, so saving one
+/// batch stays quick.
+const BATCH_FILES: usize = 200;
+const BATCH_BYTES: usize = 4 << 20;
 
-/// Expands folders recursively. The items get their ids when they are added.
-pub fn collect(paths: &[PathBuf]) -> Vec<Item> {
+/// Expands folders recursively and reads the files, handing the items over in
+/// batches as it goes. The items get their ids when they are added.
+pub fn read_in_batches(paths: &[PathBuf], mut hand_over: impl FnMut(Vec<Item>)) {
+    let mut batch = Vec::new();
+    let mut bytes = 0;
+    for item in list_files(paths).iter().filter_map(|f| file_item(f)) {
+        bytes += item.text.len();
+        batch.push(item);
+        if batch.len() >= BATCH_FILES || bytes >= BATCH_BYTES {
+            hand_over(std::mem::take(&mut batch));
+            bytes = 0;
+        }
+    }
+    if !batch.is_empty() {
+        hand_over(batch);
+    }
+}
+
+/// The given files, and the files in the given folders, at most MAX_FILES.
+fn list_files(paths: &[PathBuf]) -> Vec<PathBuf> {
     let mut files: Vec<PathBuf> = Vec::new();
     for p in paths {
+        let room = MAX_FILES - files.len();
         if p.is_dir() {
             files.extend(
                 walkdir::WalkDir::new(p)
                     .into_iter()
                     .filter_map(|e| e.ok())
                     .filter(|e| e.file_type().is_file())
-                    .map(|e| e.into_path()),
+                    .map(|e| e.into_path())
+                    // Stops early: a dropped drive would otherwise be walked to the end.
+                    .take(room),
             );
-        } else if p.is_file() {
+        } else if p.is_file() && room > 0 {
             files.push(p.clone());
         }
         if files.len() >= MAX_FILES {
             break;
         }
     }
-    files.truncate(MAX_FILES);
-    files.into_iter().filter_map(|f| file_item(&f)).collect()
+    files
 }
 
 fn ext(p: &Path) -> String {
@@ -67,4 +91,37 @@ fn file_item(path: &Path) -> Option<Item> {
         item.text = text.into();
     }
     Some(item)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_folder_is_read_into_items() {
+        let dir = std::env::temp_dir().join(format!("cbm-import-{}", std::process::id()));
+        std::fs::create_dir_all(dir.join("inner")).unwrap();
+        std::fs::write(dir.join("notes.txt"), "Meeting at 10").unwrap();
+        std::fs::write(dir.join("inner").join("readme.md"), "# Title").unwrap();
+        std::fs::write(dir.join("empty.txt"), "  ").unwrap();
+        std::fs::write(dir.join("data.bin"), [0u8, 1, 2]).unwrap();
+        let mut batches = Vec::new();
+        read_in_batches(std::slice::from_ref(&dir), |b| batches.push(b));
+        assert_eq!(batches.len(), 1);
+        let mut found: Vec<(Kind, String)> = batches[0]
+            .iter()
+            .map(|i| (i.kind, i.text.to_string()))
+            .collect();
+        // The empty file is left out; a file of unknown type is kept by its path.
+        let bin = dir.join("data.bin").to_string_lossy().into_owned();
+        let mut expected = vec![
+            (Kind::Text, "# Title".to_string()),
+            (Kind::Text, "Meeting at 10".to_string()),
+            (Kind::Files, bin),
+        ];
+        found.sort_by(|a, b| a.1.cmp(&b.1));
+        expected.sort_by(|a, b| a.1.cmp(&b.1));
+        assert_eq!(found, expected);
+        std::fs::remove_dir_all(dir).ok();
+    }
 }

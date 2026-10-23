@@ -21,7 +21,6 @@ use crate::config::{
 use crate::embed::Embedding;
 use crate::i18n::{self, tr, trf};
 use crate::images::ImageLoader;
-use crate::import;
 use crate::library::{Library, Removed};
 use crate::models::{self, Progress, SIGLIP_MODELS};
 use crate::search::{self, Filter, Hit};
@@ -332,6 +331,11 @@ pub struct App {
     tag_input: Option<(u64, String)>,
     /// Give the tag field focus on its next frame (it was just opened).
     tag_focus: bool,
+    /// Image saving, copying back and imports, off the UI thread.
+    background: Background,
+    /// Imports still reading files, and the files they added so far.
+    imports_running: usize,
+    imported: usize,
 }
 
 impl App {
@@ -440,6 +444,9 @@ impl App {
             tag_filter: None,
             tag_input: None,
             tag_focus: false,
+            background: Background::spawn(ctx.clone()),
+            imports_running: 0,
+            imported: 0,
             recording: None,
             record_problem: None,
             cfg,
@@ -849,19 +856,29 @@ impl App {
     }
 
     fn add_item(&mut self, item: Item) {
-        let (id, is_image) = (item.id, item.kind == Kind::Image);
+        let (id, kind) = (item.id, item.kind);
         // Saved before the jobs go out: the worker reads the item from the disk.
         if let Err(e) = self.library.add(item) {
             self.set_error(format!("saving item: {e}"));
             return;
         }
-        if is_image && self.cfg.ocr_images {
-            self.worker.send(Job::Ocr(id));
-        }
-        if self.ready_key().is_some() {
-            self.worker.send(Job::Embed(id));
+        for job in self.indexing_jobs(id, kind) {
+            self.worker.send(job);
         }
         self.dirty = true;
+    }
+
+    /// What the worker does for a new item: read the text in an image, and
+    /// make the item's vector.
+    fn indexing_jobs(&self, id: u64, kind: Kind) -> Vec<Job> {
+        let mut jobs = Vec::new();
+        if kind == Kind::Image && self.cfg.ocr_images {
+            jobs.push(Job::Ocr(id));
+        }
+        if self.ready_key().is_some() {
+            jobs.push(Job::Embed(id));
+        }
+        jobs
     }
 
     fn on_capture(&mut self, c: Captured) {
@@ -911,10 +928,14 @@ impl App {
                 item.kind = Kind::Image;
                 item.width = img.width();
                 item.height = img.height();
-                match self.library.store().save_png(id, &img) {
-                    Ok(p) => item.image = Some(p),
-                    Err(e) => return self.set_error(format!("saving image: {e}")),
-                }
+                // Writing the PNG takes a while for a big image: the item joins
+                // the history once the file is saved (`Done::ImageSaved`).
+                let store = self.library.store().clone();
+                self.background.run(move || {
+                    let saved = store.save_png(id, &img).map_err(|e| format!("{e:#}"));
+                    Done::ImageSaved { item, saved }
+                });
+                return;
             }
         }
         self.add_item(item);
@@ -934,18 +955,57 @@ impl App {
         }
     }
 
+    /// Reads the files in the background; `finish` saves them as they come.
     fn import(&mut self, paths: Vec<PathBuf>) {
-        let known = self.library.imported_hashes();
-        let new: Vec<Item> = import::collect(&paths)
-            .into_iter()
-            .filter(|i| !known.contains(&i.hash))
-            .collect();
-        let n = new.len();
-        for mut it in new {
-            it.id = self.library.new_id();
-            self.add_item(it);
+        self.imports_running += 1;
+        self.background.import(paths);
+    }
+
+    /// Takes in what the background threads finished.
+    fn finish(&mut self, done: Done) {
+        match done {
+            Done::ImageSaved {
+                mut item,
+                saved: Ok(path),
+            } => {
+                item.image = Some(path);
+                self.add_item(item);
+                self.prune();
+            }
+            Done::ImageSaved { saved: Err(e), .. } => self.set_error(format!("saving image: {e}")),
+            Done::Copied { id, result: Ok(()) } => {
+                if let Err(e) = self.library.record_use(id) {
+                    self.set_error(format!("saving item: {e}"));
+                }
+                self.dirty = true;
+                self.toast("Copied");
+                if self.cfg.minimize_after_copy {
+                    self.win.hide();
+                }
+            }
+            Done::Copied { result: Err(e), .. } => self.set_error(format!("copy failed: {e}")),
+            Done::Imported(batch) => match self.library.add_imported(batch) {
+                Ok(added) => {
+                    // Files added in bulk wait behind new copies.
+                    for (id, kind) in &added {
+                        for job in self.indexing_jobs(*id, *kind) {
+                            self.worker.send_backfill(job);
+                        }
+                    }
+                    self.imported += added.len();
+                    self.dirty = true;
+                }
+                Err(e) => self.set_error(format!("saving item: {e}")),
+            },
+            Done::ImportFinished => {
+                self.imports_running = self.imports_running.saturating_sub(1);
+                if self.imports_running == 0 {
+                    let n = std::mem::take(&mut self.imported);
+                    self.toast(trf("Imported {n} files", &[("n", &n)]));
+                }
+            }
+            Done::Crashed => self.set_error("a background task crashed (see the log file)".into()),
         }
-        self.toast(trf("Imported {n} files", &[("n", &n)]));
     }
 
     fn index_missing(&mut self) {
@@ -958,6 +1018,9 @@ impl App {
         self.model_list.poll();
         while let Ok(c) = self.captures.try_recv() {
             self.on_capture(c);
+        }
+        while let Ok(done) = self.background.done.try_recv() {
+            self.finish(done);
         }
         while let Ok(e) = self.events.try_recv() {
             match e {
@@ -1151,39 +1214,24 @@ impl App {
         self.dirty = true;
     }
 
+    /// Puts the item on the clipboard in the background; `finish` reports it.
     fn copy(&mut self, id: u64) {
-        let Some(it) = self.library.get(id).cloned() else {
+        let Some(item) = self.library.get(id).cloned() else {
             return;
         };
-        self.flags.ignore_next.store(true, Ordering::SeqCst);
-        let r = match it.kind {
-            Kind::Text | Kind::Link => clipboard::copy_text(&it.text),
-            Kind::Files => {
-                clipboard::copy_files(&it.text.lines().map(PathBuf::from).collect::<Vec<_>>())
+        let flags = self.flags.clone();
+        self.background.run(move || {
+            // The watcher then skips this change instead of recording it again.
+            flags.ignore_next.store(true, Ordering::SeqCst);
+            let result = clipboard::copy_item(&item);
+            if result.is_err() {
+                flags.ignore_next.store(false, Ordering::SeqCst);
             }
-            Kind::Image => it
-                .image
-                .as_ref()
-                .ok_or_else(|| anyhow::anyhow!("missing image"))
-                .and_then(|p| Ok(image::open(p)?.into_rgba8()))
-                .and_then(|img| clipboard::copy_image(&img)),
-        };
-        match r {
-            Ok(()) => {
-                if let Err(e) = self.library.record_use(id) {
-                    self.set_error(format!("saving item: {e}"));
-                }
-                self.dirty = true;
-                self.toast("Copied");
-                if self.cfg.minimize_after_copy {
-                    self.win.hide();
-                }
+            Done::Copied {
+                id,
+                result: result.map_err(|e| format!("{e:#}")),
             }
-            Err(e) => {
-                self.flags.ignore_next.store(false, Ordering::SeqCst);
-                self.set_error(format!("copy failed: {e}"));
-            }
-        }
+        });
     }
 
     fn toggle_pin(&mut self, id: u64) {
@@ -1340,11 +1388,13 @@ impl App {
     }
 }
 
+mod background;
 mod bidi;
 mod icons;
 mod settings;
 mod shortcut;
 mod view;
 
+use background::{Background, Done};
 use settings::SettingsPage;
 use view::{add_fonts, apply_theme, looks_like_code, set_accent, style};

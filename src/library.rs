@@ -81,10 +81,39 @@ impl Library {
     /// Saves a new item and adds it to the history.
     pub fn add(&mut self, item: Item) -> Result<()> {
         self.store.put(&item)?;
+        self.push(item);
+        Ok(())
+    }
+
+    /// Saves a batch of imported files in one transaction and adds them,
+    /// skipping files imported before. Returns the ids and kinds added.
+    pub fn add_imported(&mut self, batch: Vec<Item>) -> Result<Vec<(u64, Kind)>> {
+        let mut known: HashSet<u64> = self
+            .items
+            .iter()
+            .filter(|i| i.origin == Origin::Imported)
+            .map(|i| i.hash)
+            .collect();
+        let mut new = Vec::new();
+        for mut item in batch {
+            // Also skips a second copy of a file within the batch.
+            if known.insert(item.hash) {
+                item.id = self.new_id();
+                new.push(item);
+            }
+        }
+        self.store.put_many(&new)?;
+        let added = new.iter().map(|i| (i.id, i.kind)).collect();
+        for item in new {
+            self.push(item);
+        }
+        Ok(added)
+    }
+
+    fn push(&mut self, item: Item) {
         self.lower
             .insert(item.id, item.searchable_text().to_lowercase());
         self.items.push(item);
-        Ok(())
     }
 
     /// A repeated copy: the clipboard item with the same content counts as
@@ -249,15 +278,6 @@ impl Library {
             .iter()
             .filter(|i| !self.embeddings.contains_key(&i.id))
             .map(|i| i.id)
-    }
-
-    /// Hashes of the files imported so far, to skip importing them again.
-    pub fn imported_hashes(&self) -> HashSet<u64> {
-        self.items
-            .iter()
-            .filter(|i| i.origin == Origin::Imported)
-            .map(|i| i.hash)
-            .collect()
     }
 
     // ----- removing ----------------------------------------------------------
@@ -446,6 +466,30 @@ mod tests {
         assert!(lib.get(a).unwrap().created > 1);
         assert!(lib.store.get(a).unwrap().unwrap().created > 1);
         assert!(!lib.touch_duplicate(hash ^ 1).unwrap());
+        drop(lib);
+        std::fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn an_import_skips_files_imported_before() {
+        let (dir, mut lib) = open("import");
+        let file = |text: &str| Item::new(0, Kind::Text, Origin::Imported, text.into());
+        let first = lib
+            .add_imported(vec![file("a"), file("b"), file("a")])
+            .unwrap();
+        assert_eq!(first.len(), 2);
+        let second = lib.add_imported(vec![file("b"), file("c")]).unwrap();
+        assert_eq!(second.len(), 1);
+        let mut ids: Vec<u64> = lib
+            .store
+            .all_items()
+            .unwrap()
+            .iter()
+            .map(|i| i.id)
+            .collect();
+        ids.sort();
+        ids.dedup();
+        assert_eq!(ids.len(), 3, "three items, each with its own id");
         drop(lib);
         std::fs::remove_dir_all(dir).ok();
     }

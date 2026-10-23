@@ -77,6 +77,7 @@ pub const TABLE: &[(&str, &str)] = &[
     ("Words only", "بالكلمات فقط"),
     ("Search model: click to change", "نموذج البحث: انقر للتغيير"),
     ("Indexing · {n} left", "جارٍ الفهرسة · بقي {n}"),
+    ("Adding files · {n} added", "جارٍ إضافة الملفات · أُضيف {n}"),
     ("⏸ Recording paused", "⏸ التسجيل متوقف"),
     ("Click to dismiss", "انقر للإغلاق"),
     ("{n} items", "{n} عنصر"),

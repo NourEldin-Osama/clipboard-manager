@@ -197,6 +197,14 @@ impl App {
                             Some(weak),
                         ));
                     }
+                    if self.imports_running > 0 {
+                        ui.add(egui::Spinner::new().size(11.0).color(weak));
+                        ui.label(txt(
+                            &trf("Adding files · {n} added", &[("n", &self.imported)]),
+                            12.0,
+                            Some(weak),
+                        ));
+                    }
                     if !self.status.is_empty() {
                         ui.label(txt(tr(&self.status), 12.0, Some(weak)));
                     }
