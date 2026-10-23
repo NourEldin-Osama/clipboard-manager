@@ -855,11 +855,14 @@ impl App {
             self.move_selection(-step);
         }
         if grid && self.query.is_empty() {
+            // Cards fill from the reading start, so in Arabic the next card is
+            // to the left.
+            let forward = if i18n::rtl() { -1 } else { 1 };
             if right {
-                self.move_selection(1);
+                self.move_selection(forward);
             }
             if left {
-                self.move_selection(-1);
+                self.move_selection(-forward);
             }
         }
         if let Some(id) = self.selected {
