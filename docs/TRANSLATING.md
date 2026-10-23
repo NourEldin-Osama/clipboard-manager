@@ -63,6 +63,13 @@ toast-cleared =
 - The star marks the default form (`*[other]`). Every choice needs one. The app uses it for each category that has no
   form of its own.
 
+### Right-to-left languages
+
+The window takes the direction of each line from its first letter. So in a right-to-left language such as Arabic,
+start each text with a word of your language. A line that starts with a Latin name or a value, such as `{ $keys }`
+or a model name, is laid out left to right, and the words come out in the wrong order. Numbers do not count: a line
+may start with `{ $count }`.
+
 ## Rules for keys
 
 - A key is lower-case words joined by dashes, such as `details-save-image`.
