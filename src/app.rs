@@ -885,22 +885,9 @@ impl App {
         }
         let id = self.next_id;
         self.next_id += 1;
-        let mut item = Item {
-            id,
-            kind: Kind::Text,
-            origin: Origin::Clipboard,
-            text: "".into(),
-            image: None,
-            width: 0,
-            height: 0,
-            ocr: None,
-            pinned: false,
-            created: now(),
-            hash,
-            source: None,
-            tags: Vec::new(),
-            uses: 0,
-        };
+        let mut item = Item::new(id, Kind::Text, Origin::Clipboard, "".into());
+        // The capture's own hash, which also covers image pixels and file lists.
+        item.hash = hash;
         match c {
             Captured::Text(t) => {
                 item.kind = if looks_like_link(&t) {

@@ -2,7 +2,7 @@
 
 use std::path::{Path, PathBuf};
 
-use crate::store::{fnv1a, now, Item, Kind, Origin};
+use crate::store::{Item, Kind, Origin};
 
 const IMAGE_EXT: &[&str] = &["png", "jpg", "jpeg", "gif", "bmp", "webp", "tif", "tiff"];
 const TEXT_EXT: &[&str] = &[
@@ -49,22 +49,8 @@ fn ext(p: &Path) -> String {
 fn file_item(path: &Path, next_id: &mut u64) -> Option<Item> {
     let e = ext(path);
     let path_str = path.to_string_lossy().into_owned();
-    let mut item = Item {
-        id: 0,
-        kind: Kind::Files,
-        origin: Origin::Imported,
-        text: path_str.as_str().into(),
-        image: None,
-        width: 0,
-        height: 0,
-        ocr: None,
-        pinned: false,
-        created: now(),
-        hash: fnv1a(path_str.as_bytes()),
-        source: Some(path.to_path_buf()),
-        tags: Vec::new(),
-        uses: 0,
-    };
+    let mut item = Item::new(0, Kind::Files, Origin::Imported, path_str.as_str().into());
+    item.source = Some(path.to_path_buf());
     if IMAGE_EXT.contains(&e.as_str()) {
         let (w, h) = image::image_dimensions(path).ok()?;
         item.kind = Kind::Image;

@@ -85,6 +85,26 @@ pub struct Item {
 }
 
 impl Item {
+    /// A new item copied now, with nothing optional set yet.
+    pub fn new(id: u64, kind: Kind, origin: Origin, text: Arc<str>) -> Self {
+        Self {
+            id,
+            kind,
+            origin,
+            hash: fnv1a(text.as_bytes()),
+            text,
+            image: None,
+            width: 0,
+            height: 0,
+            ocr: None,
+            pinned: false,
+            created: now(),
+            source: None,
+            tags: Vec::new(),
+            uses: 0,
+        }
+    }
+
     /// Everything keyword search looks at.
     pub fn searchable_text(&self) -> String {
         let mut s = String::from(&*self.text);
@@ -365,22 +385,7 @@ mod tests {
     use super::*;
 
     fn item(id: u64, text: &str) -> Item {
-        Item {
-            id,
-            kind: Kind::Text,
-            origin: Origin::Clipboard,
-            text: text.into(),
-            image: None,
-            width: 0,
-            height: 0,
-            ocr: None,
-            pinned: false,
-            created: now(),
-            hash: fnv1a(text.as_bytes()),
-            source: None,
-            tags: Vec::new(),
-            uses: 0,
-        }
+        Item::new(id, Kind::Text, Origin::Clipboard, text.into())
     }
 
     fn temp_dir(name: &str) -> PathBuf {
