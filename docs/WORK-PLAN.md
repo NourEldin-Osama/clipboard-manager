@@ -18,11 +18,12 @@ Status: `[ ]` to do, `[~]` in progress, `[x]` done, `[!]` waiting for a decision
 | D7 | Code signing with SignPath Foundation: later | You | Decided (later) |
 | D8 | Sync between devices is out of scope | You | Decided |
 | D9 | Git: one branch per phase, one commit per task, merged into local `main` with `--no-ff`; you push | You | Decided |
-| D10 | How the app registers on the PC (Start menu, desktop shortcut, Installed apps) | You | Waiting |
-| D11 | Moving the existing history into encrypted storage: what happens to the unencrypted files | You | Waiting |
-| D12 | In the full window: what Enter does, and the shortcut that opens it | You | Waiting |
-| D13 | Delete by age: the default | You | Waiting |
-| D14 | Rules per app: what a rule can do | You | Waiting |
+| D10 | A per-user installer (Inno Setup) built with each release: no admin rights, Start menu and desktop shortcuts, an Installed apps entry with Uninstall; the portable exe stays | You | Decided |
+| D11 | First encryption of an existing history: encrypt, check it reads back, then delete the unencrypted files | You | Decided |
+| D12 | The full window uses the popup's keys: Enter pastes, Shift+Enter pastes plain text, Ctrl+Enter only copies; Alt+Shift+V opens it | You | Decided |
+| D13 | Delete by age is off by default; pinned and tagged items are never deleted by it | You | Decided |
+| D14 | Rules per app: ignore an app, and ignore text that matches a pattern (for one app or all); a copy a rule skipped can be kept with "Save anyway" | You | Decided |
+| D15 | Image paths become relative to the data folder in the same one-time step as the encryption (5.1), so the history is migrated once | Claude | Decided |
 
 ## Order of work, and why
 
