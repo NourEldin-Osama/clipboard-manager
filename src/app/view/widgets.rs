@@ -173,9 +173,9 @@ pub(crate) fn flip(within: Rect, r: Rect) -> Rect {
 /// "Pin (Ctrl+P)", or just "Pin" when the shortcut is off.
 pub(super) fn hint(what: &str, keys: &str) -> String {
     if keys.trim().is_empty() {
-        tr(what).to_string()
+        what.to_string()
     } else {
-        format!("{} ({keys})", tr(what))
+        t!("hint-with-keys", action = what, keys = keys)
     }
 }
 
@@ -300,7 +300,7 @@ pub(super) fn mode_option(ui: &mut Ui, m: SearchMode, active: bool) -> egui::Res
     let w = MODE_MENU_W;
     let (rect, resp) = ui.allocate_exact_size(Vec2::new(w, 46.0), Sense::click());
     resp.widget_info(|| {
-        egui::WidgetInfo::selected(egui::Role::RadioButton, true, active, tr(mode_label(m)))
+        egui::WidgetInfo::selected(egui::Role::RadioButton, true, active, mode_label(m))
     });
     let v = ui.visuals();
     let p = ui.painter();
@@ -348,7 +348,7 @@ pub(super) fn mode_option(ui: &mut Ui, m: SearchMode, active: bool) -> egui::Res
         p,
         at(8.0),
         start_anchor(egui::Align::Min),
-        tr(mode_label(m)),
+        &mode_label(m),
         FontId::proportional(14.0),
         title,
     );
@@ -357,7 +357,7 @@ pub(super) fn mode_option(ui: &mut Ui, m: SearchMode, active: bool) -> egui::Res
         p,
         at(27.0),
         start_anchor(egui::Align::Min),
-        tr(mode_help(m)),
+        &mode_help(m),
         FontId::proportional(11.5),
         v.weak_text_color(),
     );

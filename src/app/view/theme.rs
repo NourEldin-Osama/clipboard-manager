@@ -62,19 +62,19 @@ pub(super) fn filter_icon(f: Filter) -> Icon {
     }
 }
 
-pub(crate) fn mode_label(m: SearchMode) -> &'static str {
+pub(crate) fn mode_label(m: SearchMode) -> String {
     match m {
-        SearchMode::Hybrid => "Smart",
-        SearchMode::Semantic => "Meaning",
-        SearchMode::Keyword => "Exact words",
+        SearchMode::Hybrid => t!("search-mode-smart"),
+        SearchMode::Semantic => t!("search-mode-meaning"),
+        SearchMode::Keyword => t!("search-mode-words"),
     }
 }
 
-pub(crate) fn mode_help(m: SearchMode) -> &'static str {
+pub(crate) fn mode_help(m: SearchMode) -> String {
     match m {
-        SearchMode::Hybrid => "Exact words and meaning, merged (recommended)",
-        SearchMode::Semantic => "Only by meaning: \"trip\" finds \"flight to Jeddah\"",
-        SearchMode::Keyword => "Only items containing the words you type",
+        SearchMode::Hybrid => t!("search-mode-smart-help"),
+        SearchMode::Semantic => t!("search-mode-meaning-help"),
+        SearchMode::Keyword => t!("search-mode-words-help"),
     }
 }
 

@@ -4,6 +4,8 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
+use crate::i18n::t;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum SearchMode {
     /// Reciprocal-rank fusion of keyword and embedding results.
@@ -257,13 +259,14 @@ impl SortOrder {
         Self::MostUsed,
     ];
 
-    pub fn label(self) -> &'static str {
+    /// Its name in the interface language.
+    pub fn label(self) -> String {
         match self {
-            Self::BestMatch => "Best match",
-            Self::Recent => "Recent",
-            Self::Oldest => "Oldest",
-            Self::AToZ => "A to Z",
-            Self::MostUsed => "Most used",
+            Self::BestMatch => t!("sort-best-match"),
+            Self::Recent => t!("sort-recent"),
+            Self::Oldest => t!("sort-oldest"),
+            Self::AToZ => t!("sort-a-to-z"),
+            Self::MostUsed => t!("sort-most-used"),
         }
     }
 }
@@ -282,11 +285,12 @@ pub enum ViewMode {
 impl ViewMode {
     pub const ALL: [ViewMode; 3] = [Self::Grid, Self::List, Self::Detail];
 
-    pub fn label(self) -> &'static str {
+    /// Its name in the interface language.
+    pub fn label(self) -> String {
         match self {
-            Self::Grid => "Grid",
-            Self::List => "List",
-            Self::Detail => "Detail",
+            Self::Grid => t!("view-grid"),
+            Self::List => t!("view-list"),
+            Self::Detail => t!("view-detail"),
         }
     }
 

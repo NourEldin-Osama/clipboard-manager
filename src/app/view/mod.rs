@@ -238,7 +238,7 @@ impl eframe::App for App {
             p.rect_filled(r, 0.0, Color32::from_black_alpha(160));
             let g = ctx.fonts_mut(|f| {
                 f.layout_job(bidi::job(
-                    tr("Drop to add to your searchable library"),
+                    &t!("list-drop-files"),
                     FontId::proportional(22.0),
                     Color32::WHITE,
                 ))

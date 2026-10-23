@@ -58,8 +58,13 @@ pub struct Release {
 }
 
 impl Release {
+    /// "1.4.0 (build 52)", in the interface language.
     pub fn label(&self) -> String {
-        format!("{} (build {})", self.version, self.build)
+        crate::i18n::t!(
+            "update-version-label",
+            version = self.version.as_str(),
+            build = self.build
+        )
     }
 
     /// Remembered by "Skip this version".

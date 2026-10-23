@@ -167,7 +167,7 @@ pub(super) fn recorder(
     value: &mut String,
     recording: bool,
     global: bool,
-    problem: &mut Option<&'static str>,
+    problem: &mut Option<String>,
 ) -> Recorded {
     let mut out = Recorded::Nothing;
     if recording {
@@ -192,9 +192,9 @@ pub(super) fn recorder(
                 out = Recorded::Changed;
             } else if bare && (types_text(key) || (global && !key.name().starts_with('F'))) {
                 *problem = Some(if global {
-                    "Add Ctrl, Alt, Shift or Win"
+                    t!("shortcut-needs-modifier-global")
                 } else {
-                    "Add Ctrl, Alt or Shift"
+                    t!("shortcut-needs-modifier")
                 });
             } else {
                 *value = format(mods, key);
@@ -247,16 +247,16 @@ pub(super) fn recorder(
             .layout(view::row_layout()),
     );
     if recording {
-        let text = problem.unwrap_or("Press keys…");
+        let text = problem.clone().unwrap_or_else(|| t!("shortcut-press-keys"));
         inner.label(view::txt(
-            tr(text),
+            &text,
             12.5,
             Some(if problem.is_some() { view::RED } else { a }),
         ));
         ui.ctx().request_repaint();
     } else if value.trim().is_empty() {
         inner.label(view::txt(
-            tr("Off · click to set"),
+            &t!("shortcut-off"),
             12.5,
             Some(v.weak_text_color()),
         ));
@@ -287,11 +287,11 @@ pub(super) fn recorder(
         );
     }
     let tip = if recording {
-        "Press the new keys · Backspace turns it off · Esc cancels"
+        t!("shortcut-recording-tip")
     } else {
-        "Click, then press the new keys"
+        t!("shortcut-click-to-set")
     };
-    let resp = view::tip(resp, tr(tip));
+    let resp = view::tip(resp, &tip);
     if resp.clicked() && !recording {
         *problem = None;
         out = Recorded::Started;

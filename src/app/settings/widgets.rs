@@ -33,17 +33,17 @@ pub(super) fn toggle(ui: &mut Ui, on: &mut bool) -> egui::Response {
 
 /// Options side by side; the chosen one is tinted. Called inside a setting's
 /// control area, which fills from the far end, so options are added in reverse.
-pub(super) fn segmented<T: PartialEq + Copy>(
+pub(super) fn segmented<T: PartialEq + Copy, L: AsRef<str>>(
     ui: &mut Ui,
     value: &mut T,
-    options: &[(T, &str)],
+    options: &[(T, L)],
 ) -> bool {
     let mut changed = false;
     ui.spacing_mut().item_spacing.x = 2.0;
     for (v, label) in options.iter().rev() {
         let sel = *value == *v;
         let text = txt(
-            tr(label),
+            tr(label.as_ref()),
             13.0,
             Some(if sel {
                 accent()

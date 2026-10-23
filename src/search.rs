@@ -9,6 +9,7 @@ use std::time::{Duration, Instant};
 
 use crate::config::{SearchMode, SortOrder};
 use crate::embed::Embedding;
+use crate::i18n::t;
 use crate::store::{Item, Kind};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -31,14 +32,15 @@ impl Filter {
         Filter::Pinned,
     ];
 
-    pub fn label(self) -> &'static str {
+    /// Its name in the interface language.
+    pub fn label(self) -> String {
         match self {
-            Filter::All => "All",
-            Filter::Text => "Text",
-            Filter::Links => "Links",
-            Filter::Images => "Images",
-            Filter::Files => "Files",
-            Filter::Pinned => "Pinned",
+            Filter::All => t!("filter-all"),
+            Filter::Text => t!("filter-text"),
+            Filter::Links => t!("filter-links"),
+            Filter::Images => t!("filter-images"),
+            Filter::Files => t!("filter-files"),
+            Filter::Pinned => t!("filter-pinned"),
         }
     }
 

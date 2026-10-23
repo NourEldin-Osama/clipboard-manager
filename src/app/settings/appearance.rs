@@ -45,7 +45,7 @@ pub(super) fn appearance_page(ui: &mut Ui, d: &mut Config) {
     );
     section(ui, "List");
     setting_for(ui, "Layout", "Grid shows cards, List shows rows; both open details on demand. Detail keeps the selected item beside the list. The view button next to the search box switches too.", &mut d.view, def.view, |ui, view| {
-        let options: Vec<(ViewMode, &str)> = ViewMode::ALL.iter().map(|v| (*v, v.label())).collect();
+        let options: Vec<(ViewMode, String)> = ViewMode::ALL.iter().map(|v| (*v, v.label())).collect();
         segmented(ui, view, &options)
     });
     setting_for(

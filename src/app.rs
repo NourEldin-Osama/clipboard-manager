@@ -214,7 +214,7 @@ struct Toast {
     shown: Instant,
     how_long: Duration,
     /// The button's text and what it does.
-    action: Option<(&'static str, Command)>,
+    action: Option<(String, Command)>,
 }
 
 /// Everything the user can do to the history, from a row, a card, the
@@ -347,7 +347,7 @@ pub struct App {
     start_hidden: u8,
     /// The shortcut field listening for keys in Settings, and why the last try was refused.
     recording: Option<ShortcutField>,
-    record_problem: Option<&'static str>,
+    record_problem: Option<String>,
     update: UpdateState,
     update_rx: Option<Receiver<UpdateMsg>>,
     /// "Later" hides the update bar until the next change.
@@ -941,7 +941,7 @@ impl App {
             let how_long = Duration::from_secs(if text.is_some() { 8 } else { 4 });
             self.toast_for(reason, how_long);
             if let Some(toast) = &mut self.toast {
-                toast.action = text.map(|t| ("Save anyway", Command::SaveSkipped(t)));
+                toast.action = text.map(|t| (t!("toast-save-anyway"), Command::SaveSkipped(t)));
             }
             return;
         }
@@ -1382,7 +1382,7 @@ impl App {
         });
         self.toast_for("Deleted", UNDO_FOR);
         if let Some(toast) = &mut self.toast {
-            toast.action = Some(("Undo", Command::UndoDelete));
+            toast.action = Some((t!("toast-undo"), Command::UndoDelete));
         }
     }
 
