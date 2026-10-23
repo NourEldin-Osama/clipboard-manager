@@ -40,7 +40,7 @@ Status: `[ ]` to do, `[~]` in progress, `[x]` done, `[!]` waiting for a decision
 ### Phase 1. Tooling
 - [x] 1.1 Hooks use prek's built-in versions; the config moves to `prek.toml` (prek 0.5.7 or newer)
 - [x] 1.2 The pipelines skip changes to unrelated files (docs, README, templates, hook config)
-- [ ] 1.3 A prek hook that reports newer versions of the crates and GitHub Actions in use
+- [x] 1.3 A prek hook that reports newer versions of the crates and GitHub Actions in use
 
 ### Phase 2. Bugs
 - [x] 2.1 Global shortcuts stay off after a cancelled or unchanged shortcut recording

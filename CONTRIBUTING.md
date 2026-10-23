@@ -37,7 +37,9 @@ prek install
 - **Before each commit:** trailing whitespace and final newlines, YAML and TOML syntax, merge markers, file names
   Windows can't use, large files, private keys, `cargo fmt --check`, and `cargo clippy` with warnings as errors.
 - **On the commit message:** a `Co-Authored-By` trailer is rejected.
-- **Before each push:** `cargo test`, and the commit message check again for every commit being pushed.
+- **Before each push:** `cargo test`, and the commit message check again for every commit being pushed. It also
+  lists newer crates and GitHub Actions (`tools/check_updates.py`) without blocking the push; run that check any time
+  with `prek run check-updates --hook-stage manual`.
 
 Run every hook on every file with `prek run --all-files`.
 
