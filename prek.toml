@@ -46,6 +46,18 @@ entry = "cargo clippy --locked --all-targets --config ci/fast-build.toml -- -D w
 files = '(\.rs|^Cargo\.(toml|lock)|^ci/fast-build\.toml)$'
 pass_filenames = false
 
+# Reports newer crates and GitHub Actions before a push; it never blocks.
+# On demand: prek run check-updates --hook-stage manual
+[[repos.hooks]]
+id = "check-updates"
+name = "check for newer crates and actions"
+language = "python"
+entry = "python tools/check_updates.py"
+pass_filenames = false
+always_run = true
+verbose = true
+stages = ["pre-push", "manual"]
+
 [[repos.hooks]]
 id = "cargo-test"
 name = "cargo test"
