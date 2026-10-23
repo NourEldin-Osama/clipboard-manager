@@ -1464,9 +1464,9 @@ impl App {
 
 mod bidi;
 mod icons;
-mod settings_page;
+mod settings;
 mod shortcut;
 mod view;
 
-use settings_page::SettingsPage;
+use settings::SettingsPage;
 use view::{add_fonts, apply_theme, looks_like_code, set_accent, style};

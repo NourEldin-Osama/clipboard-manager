@@ -61,7 +61,7 @@ One egui `App` (`src/app.rs`) owns all state; background threads talk to it over
 
 `App::logic` runs every frame **even while the window is hidden** (tray mode), so channel draining, tray commands,
 hide/show and update checks live there (`window_logic`, `update_logic`, `handle_events`); `App::ui` only draws.
-`src/app/view/` is the main window (`mod.rs` wires `top_bar`, `list`, `grid`, `details`, `chrome`, `keyboard`), `settings_page.rs` the settings; settings apply live except the search model
+`src/app/view/` is the main window (`mod.rs` wires `top_bar`, `list`, `grid`, `details`, `chrome`, `keyboard`), `src/app/settings/` the settings (one file per page, `mod.rs` the frame); settings apply live except the search model
 (Apply button) and global hotkeys. `Config` (`config.rs`) is JSON with `#[serde(default)]`, so new fields need defaults.
 
 Other modules: `update.rs` (self-update), `tray.rs`, `autostart.rs`, `i18n.rs`, `embed/` (SigLIP via candle, HTTP
