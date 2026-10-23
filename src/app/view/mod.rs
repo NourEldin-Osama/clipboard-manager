@@ -41,8 +41,8 @@ pub(crate) use theme::{
     accent, accent_name, add_fonts, apply_theme, set_accent, style, ACCENTS, AMBER, GREEN, RED,
 };
 pub(crate) use widgets::{
-    chip, far, flip, lbl, paint_text, primary_button, row, row_layout, row_wrapped, start_anchor,
-    tip, txt,
+    chip, cut_line, far, flip, lbl, paint_text, primary_button, row, row_layout, row_wrapped,
+    start_anchor, tip, txt,
 };
 
 impl App {
