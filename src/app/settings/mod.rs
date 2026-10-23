@@ -7,7 +7,7 @@ use eframe::egui::{Frame, Margin, Pos2, Rect, Ui};
 use super::icons::{self, Icon};
 use super::shortcut;
 use super::view::{
-    accent, accent_name, chip, far, flip, lbl, paint_text, primary_button, reveal, row,
+    accent, accent_name, chip, cut_line, far, flip, lbl, paint_text, primary_button, reveal, row,
     start_anchor, tip, txt, ACCENTS, AMBER, GREEN, RED,
 };
 use super::*;

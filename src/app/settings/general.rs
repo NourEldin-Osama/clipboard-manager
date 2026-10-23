@@ -120,10 +120,20 @@ impl App {
                     }
                     UpdateState::Idle => String::new(),
                 };
+                // The version comes after the status, so it is laid out first
+                // and the status is cut to the room it leaves.
+                let version = txt(&crate::update::current_label(), 13.0, None).into_galley(
+                    ui,
+                    Some(egui::TextWrapMode::Extend),
+                    f32::INFINITY,
+                    egui::FontSelection::Default,
+                );
                 if !status.is_empty() {
-                    ui.add(egui::Label::new(txt(&status, 12.5, Some(weak))).truncate());
+                    let room =
+                        ui.available_width() - version.size().x - 2.0 * ui.spacing().item_spacing.x;
+                    cut_line(ui, &status, room.max(0.0), 12.5, weak, Sense::hover());
                 }
-                ui.label(txt(&crate::update::current_label(), 13.0, None));
+                ui.label(version);
             },
         );
         if check {

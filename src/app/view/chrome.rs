@@ -59,63 +59,8 @@ impl App {
                         } => Some(r.notes_url.clone()),
                         _ => None,
                     };
-                    match &self.update {
-                        UpdateState::Available(r) => {
-                            ui.label(txt(
-                                &t!("update-available", version = r.label()),
-                                13.5,
-                                Some(text_color),
-                            ));
-                        }
-                        UpdateState::Downloading(r, p) => {
-                            let (done, total) = (
-                                p.done.load(Ordering::Relaxed),
-                                p.total.load(Ordering::Relaxed).max(1),
-                            );
-                            if done >= total {
-                                ui.label(txt(
-                                    &t!("update-verifying", version = r.label()),
-                                    13.5,
-                                    Some(text_color),
-                                ));
-                                ui.add(egui::Spinner::new().size(14.0));
-                            } else {
-                                ui.label(txt(
-                                    &t!("update-downloading", version = r.label()),
-                                    13.5,
-                                    Some(text_color),
-                                ));
-                                ui.add(
-                                    egui::ProgressBar::new(done as f32 / total as f32)
-                                        .desired_width(160.0)
-                                        .text(t!(
-                                            "update-progress",
-                                            done = done >> 20,
-                                            total = total >> 20
-                                        )),
-                                );
-                            }
-                        }
-                        UpdateState::Ready(r, _) => {
-                            ui.label(txt(
-                                &t!("update-ready-restart", version = r.label()),
-                                13.5,
-                                Some(text_color),
-                            ));
-                        }
-                        UpdateState::Failed { error, .. } => {
-                            icons::glyph(ui, Icon::Warning, 14.0, RED);
-                            ui.add(
-                                egui::Label::new(txt(
-                                    &t!("update-failed", error = error.as_str()),
-                                    13.0,
-                                    Some(RED),
-                                ))
-                                .truncate(),
-                            );
-                        }
-                        _ => {}
-                    }
+                    // The buttons go first, at the far end, so the message can
+                    // be cut to the room they leave.
                     far(ui, |ui| {
                         if icon_button_ex(
                             ui,
@@ -164,6 +109,58 @@ impl App {
                                 ctx.open_url(egui::OpenUrl::new_tab(url));
                             }
                         }
+                        ui.with_layout(row_layout(), |ui| match &self.update {
+                            UpdateState::Available(r) => {
+                                ui.label(txt(
+                                    &t!("update-available", version = r.label()),
+                                    13.5,
+                                    Some(text_color),
+                                ));
+                            }
+                            UpdateState::Downloading(r, p) => {
+                                let (done, total) = (
+                                    p.done.load(Ordering::Relaxed),
+                                    p.total.load(Ordering::Relaxed).max(1),
+                                );
+                                if done >= total {
+                                    ui.label(txt(
+                                        &t!("update-verifying", version = r.label()),
+                                        13.5,
+                                        Some(text_color),
+                                    ));
+                                    ui.add(egui::Spinner::new().size(14.0));
+                                } else {
+                                    ui.label(txt(
+                                        &t!("update-downloading", version = r.label()),
+                                        13.5,
+                                        Some(text_color),
+                                    ));
+                                    ui.add(
+                                        egui::ProgressBar::new(done as f32 / total as f32)
+                                            .desired_width(160.0)
+                                            .text(t!(
+                                                "update-progress",
+                                                done = done >> 20,
+                                                total = total >> 20
+                                            )),
+                                    );
+                                }
+                            }
+                            UpdateState::Ready(r, _) => {
+                                ui.label(txt(
+                                    &t!("update-ready-restart", version = r.label()),
+                                    13.5,
+                                    Some(text_color),
+                                ));
+                            }
+                            UpdateState::Failed { error, .. } => {
+                                icons::glyph(ui, Icon::Warning, 14.0, RED);
+                                let text = t!("update-failed", error = error.as_str());
+                                let width = ui.available_width();
+                                cut_line(ui, &text, width, 13.0, RED, Sense::hover());
+                            }
+                            _ => {}
+                        });
                     });
                 });
             });

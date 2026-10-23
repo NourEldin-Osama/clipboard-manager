@@ -33,7 +33,7 @@ pub(crate) fn lbl(ui: &mut Ui, text: &str, size: f32, color: Color32) -> egui::R
 /// One line of `text` in reading order, cut with "…" to fit `width`; hovering
 /// a cut line shows all of it. (A truncated egui label would cut a
 /// right-to-left line at its start.)
-pub(super) fn cut_line(
+pub(crate) fn cut_line(
     ui: &mut Ui,
     text: &str,
     width: f32,
