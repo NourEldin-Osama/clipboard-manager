@@ -12,12 +12,17 @@ Status: `[ ]` to do, `[~]` in progress, `[x]` done, `[!]` waiting for a decision
 | D1 | API keys are encrypted with Windows DPAPI, so only your Windows account can read them | Claude | Decided |
 | D2 | Embedding server settings are remembered for each server address | You | Decided |
 | D3 | UI text uses Project Fluent: semantic keys, whole sentences, placeholders, Arabic plural rules | Claude | Decided |
-| D4 | History encryption at rest: key tied to your Windows account, or a password at start | You | Waiting |
-| D5 | Shortcuts for the quick popup and for paste, copy and plain-text paste | You | Waiting |
-| D6 | Default OCR provider for new installs | You | Waiting |
-| D7 | Code signing: SignPath Foundation needs an application from you | You | Waiting |
+| D4 | History encryption at rest: a key tied to your Windows account (DPAPI), no password | You | Decided |
+| D5 | Alt+V opens the quick popup at the cursor; there, Enter pastes into the app you were using, Shift+Enter pastes plain text, Ctrl+Enter only copies; the full window opens from the popup | You | Decided |
+| D6 | New installs use Windows OCR by default | You | Decided |
+| D7 | Code signing with SignPath Foundation: later | You | Decided (later) |
 | D8 | Sync between devices is out of scope | You | Decided |
 | D9 | Git: one branch per phase, one commit per task, merged into local `main` with `--no-ff`; you push | You | Decided |
+| D10 | How the app registers on the PC (Start menu, desktop shortcut, Installed apps) | You | Waiting |
+| D11 | Moving the existing history into encrypted storage: what happens to the unencrypted files | You | Waiting |
+| D12 | In the full window: what Enter does, and the shortcut that opens it | You | Waiting |
+| D13 | Delete by age: the default | You | Waiting |
+| D14 | Rules per app: what a rule can do | You | Waiting |
 
 ## Order of work, and why
 
@@ -35,6 +40,7 @@ Status: `[ ]` to do, `[~]` in progress, `[x]` done, `[!]` waiting for a decision
 ### Phase 1. Tooling
 - [x] 1.1 Hooks use prek's built-in versions; the config moves to `prek.toml` (prek 0.5.7 or newer)
 - [x] 1.2 The pipelines skip changes to unrelated files (docs, README, templates, hook config)
+- [ ] 1.3 A prek hook that reports newer versions of the crates and GitHub Actions in use
 
 ### Phase 2. Bugs
 - [x] 2.1 Global shortcuts stay off after a cancelled or unchanged shortcut recording
@@ -56,6 +62,8 @@ Status: `[ ]` to do, `[~]` in progress, `[x]` done, `[!]` waiting for a decision
 - [x] 2.17 Check, then fix: an update that never installs when Windows shuts down (confirmed in code; shutdown not run)
 - [x] 2.18 Check, then fix: Esc in Settings applies a half-typed model (confirmed)
 - [x] 2.19 Check, then fix: delete has no undo (confirmed)
+- [ ] 2.20 Touchpad scrolling stops where the fingers stop (fast swipes kept moving)
+- [ ] 2.21 A global shortcut that another app already uses is detected and shown
 
 ### Phase 3. Structure (no behavior change)
 - [ ] 3.1 Split `view.rs` (theme, widgets, time format, top bar, list, grid, details, status bar, keyboard)
@@ -88,6 +96,7 @@ Status: `[ ]` to do, `[~]` in progress, `[x]` done, `[!]` waiting for a decision
 - [ ] 6.5 Rules per app
 - [ ] 6.6 Delete by age
 - [ ] 6.7 OCR providers: built-in, Windows OCR, or an OCR server with a custom prompt (DeepSeek-OCR, PaddleOCR-VL, llama.cpp, other vision models)
+- [ ] 6.8 Register the app on the PC: Start menu and desktop shortcuts, an entry in Installed apps (D10)
 
 ### Phase 7. Speed and accessibility
 - [ ] 7.1 No repaint loop while indexing, cached file checks, thumbnail cache that keeps visible images
@@ -100,7 +109,7 @@ Status: `[ ]` to do, `[~]` in progress, `[x]` done, `[!]` waiting for a decision
 - [ ] 8.4 `cargo deny` for licenses and security advisories
 - [ ] 8.5 Clippy fails on warnings in CI
 - [ ] 8.6 More tests: worker, update install and rollback, settings migration, app logic
-- [ ] 8.7 Code signing with SignPath, after your application is approved (D7)
+- [!] 8.7 Code signing with SignPath, after your application is approved (D7: later)
 
 ## Change log
 
