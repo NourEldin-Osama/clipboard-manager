@@ -1231,12 +1231,8 @@ fn server_settings(
 
     list.poll();
     let editable = s.launch.is_none();
-    if editable
-        && list.pending.is_none()
-        && list.url != ModelList::key(s)
-        && !s.base_url.trim().is_empty()
-    {
-        list.fetch(s, ui.ctx());
+    if editable {
+        list.fetch_when_settled(s, ui.ctx());
     }
     plain_setting(
         ui,

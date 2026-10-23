@@ -71,6 +71,8 @@ struct ModelList {
     error: Option<String>,
     pending: Option<Receiver<Result<crate::embed::server::ServerModels, String>>>,
     show_key: bool,
+    /// The address and key as typed, and when they last changed.
+    typed: Option<(String, Instant)>,
 }
 
 impl ModelList {
@@ -106,6 +108,37 @@ impl ModelList {
         });
         self.url = Self::key(s);
         self.pending = Some(rx);
+    }
+
+    /// Checks the server once its address and key have stayed the same for a
+    /// moment, so a half-typed address or key is never sent. The first check
+    /// after opening Settings runs at once.
+    fn fetch_when_settled(&mut self, s: &ServerConfig, ctx: &egui::Context) {
+        const SETTLE: Duration = Duration::from_millis(700);
+        let key = Self::key(s);
+        if self.url == key || s.base_url.trim().is_empty() {
+            self.typed = None;
+            return;
+        }
+        if self.url.is_empty() && self.pending.is_none() {
+            self.fetch(s, ctx);
+            return;
+        }
+        let since = match &self.typed {
+            Some((typed, since)) if *typed == key => *since,
+            _ => {
+                let now = Instant::now();
+                self.typed = Some((key, now));
+                now
+            }
+        };
+        let waited = since.elapsed();
+        if waited < SETTLE {
+            ctx.request_repaint_after(SETTLE - waited);
+        } else if self.pending.is_none() {
+            self.typed = None;
+            self.fetch(s, ctx);
+        }
     }
 }
 
