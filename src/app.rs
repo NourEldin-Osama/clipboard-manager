@@ -19,7 +19,7 @@ use crate::config::{
     Config, EmbedBackend, LaunchConfig, Paths, SearchMode, ServerConfig, SortOrder, Theme, ViewMode,
 };
 use crate::embed::Embedding;
-use crate::i18n::{self, tr, trf};
+use crate::i18n::{self, t, tr, trf};
 use crate::images::ImageLoader;
 use crate::library::{Library, Removed};
 use crate::models::{self, Progress, SIGLIP_MODELS};

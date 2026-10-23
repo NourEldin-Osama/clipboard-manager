@@ -4,13 +4,13 @@ use super::*;
 
 #[derive(Debug, PartialEq)]
 pub(super) enum Line {
-    Header(&'static str, usize),
+    Header(Group, usize),
     Row(usize),
 }
 
-/// One row per label, with a header above each run of equal labels that
+/// One row per group, with a header above each run of equal groups that
 /// counts its rows. Runs once per frame, so it stays linear.
-pub(super) fn with_headers(labels: impl Iterator<Item = &'static str>) -> Vec<Line> {
+pub(super) fn with_headers(labels: impl Iterator<Item = Group>) -> Vec<Line> {
     let mut lines = Vec::new();
     let mut header_at = None;
     let mut last = None;
@@ -323,7 +323,7 @@ impl App {
             lines = with_headers(self.results.iter().map(|h| {
                 self.library
                     .get(h.id)
-                    .map_or("", |it| group_label(it, pinned_first))
+                    .map_or(Group::Older, |it| Group::of(it, pinned_first))
             }));
         } else {
             lines.extend((0..self.results.len()).map(Line::Row));
@@ -411,7 +411,7 @@ impl App {
                             p,
                             Pos2::new(label_x, rect.bottom() - 7.0),
                             start_anchor(egui::Align::Max),
-                            &tr(label).to_uppercase(),
+                            &label.text().to_uppercase(),
                             FontId::proportional(11.5),
                             weak,
                         );
@@ -561,16 +561,17 @@ mod tests {
 
     #[test]
     fn headers_count_their_rows() {
-        let lines = with_headers(["Today", "Today", "Yesterday", "Today"].into_iter());
+        let (today, yesterday) = (Group::Today, Group::Yesterday);
+        let lines = with_headers([today, today, yesterday, today].into_iter());
         assert_eq!(
             lines,
             vec![
-                Line::Header("Today", 2),
+                Line::Header(today, 2),
                 Line::Row(0),
                 Line::Row(1),
-                Line::Header("Yesterday", 1),
+                Line::Header(yesterday, 1),
                 Line::Row(2),
-                Line::Header("Today", 1),
+                Line::Header(today, 1),
                 Line::Row(3),
             ]
         );
@@ -578,8 +579,8 @@ mod tests {
 
     #[test]
     fn one_big_group_stays_linear() {
-        let lines = with_headers(std::iter::repeat_n("Today", 100_000));
-        assert_eq!(lines[0], Line::Header("Today", 100_000));
+        let lines = with_headers(std::iter::repeat_n(Group::Today, 100_000));
+        assert_eq!(lines[0], Line::Header(Group::Today, 100_000));
         assert_eq!(lines.len(), 100_001);
     }
 }

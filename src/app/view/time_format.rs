@@ -10,11 +10,17 @@ pub(super) fn days_ago(ts: i64) -> i64 {
 
 pub(super) fn day_month(dt: &chrono::DateTime<chrono::Local>, year: bool) -> String {
     use chrono::Datelike;
-    let mut s = format!("{} {}", dt.day(), i18n::month(dt));
+    let (day, month) = (dt.day(), i18n::month(dt));
     if year {
-        s.push_str(&format!(" {}", dt.year()));
+        t!(
+            "date-day-month-year",
+            day = day,
+            month = month,
+            year = dt.year()
+        )
+    } else {
+        t!("date-day-month", day = day, month = month)
     }
-    s
 }
 
 /// Short time for the edge of a row; the group header already gives the day.
@@ -23,7 +29,7 @@ pub(super) fn row_time(ts: i64) -> String {
     let dt = i18n::local(ts);
     match days_ago(ts) {
         0 | 1 => i18n::clock(&dt),
-        2..=6 => i18n::weekday(&dt).to_string(),
+        2..=6 => i18n::weekday(&dt),
         _ => day_month(&dt, dt.year() != i18n::local(now()).year()),
     }
 }
@@ -33,13 +39,11 @@ pub(super) fn row_time(ts: i64) -> String {
 pub(super) fn ago(ts: i64) -> String {
     let secs = (now() - ts).max(0);
     match secs {
-        0..=44 => tr("just now").into(),
-        45..=119 => tr("1 minute ago").into(),
-        120..=3_599 => trf("{n} minutes ago", &[("n", &(secs / 60))]),
-        3_600..=7_199 => tr("1 hour ago").into(),
-        7_200..=86_399 => trf("{n} hours ago", &[("n", &(secs / 3_600))]),
+        0..=44 => t!("time-just-now"),
+        45..=3_599 => t!("time-minutes-ago", count = (secs / 60).max(1)),
+        3_600..=86_399 => t!("time-hours-ago", count = secs / 3_600),
         _ => match days_ago(ts) {
-            1 => tr("yesterday").into(),
+            1 => t!("time-yesterday"),
             _ => row_time(ts),
         },
     }
@@ -50,30 +54,52 @@ pub(crate) fn when(ts: i64) -> String {
     let dt = i18n::local(ts);
     let time = i18n::clock(&dt);
     match days_ago(ts) {
-        0 => trf("Today at {time}", &[("time", &time)]),
-        1 => trf("Yesterday at {time}", &[("time", &time)]),
-        _ => trf(
-            "{date} at {time}",
-            &[
-                (
-                    "date",
-                    &format!("{} {}", i18n::weekday(&dt), day_month(&dt, true)),
-                ),
-                ("time", &time),
-            ],
-        ),
+        0 => t!("time-today-at", time = time),
+        1 => t!("time-yesterday-at", time = time),
+        _ => {
+            let date = t!(
+                "date-weekday-date",
+                weekday = i18n::weekday(&dt),
+                date = day_month(&dt, true)
+            );
+            t!("time-date-at", date = date, time = time)
+        }
     }
 }
 
-pub(super) fn group_label(it: &Item, pinned_first: bool) -> &'static str {
-    if it.pinned && pinned_first {
-        return "Pinned";
+/// The day header an item is listed under while browsing.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(super) enum Group {
+    Pinned,
+    Today,
+    Yesterday,
+    ThisWeek,
+    ThisMonth,
+    Older,
+}
+
+impl Group {
+    pub(super) fn of(it: &Item, pinned_first: bool) -> Self {
+        if it.pinned && pinned_first {
+            return Group::Pinned;
+        }
+        match days_ago(it.created) {
+            0 => Group::Today,
+            1 => Group::Yesterday,
+            2..=6 => Group::ThisWeek,
+            7..=30 => Group::ThisMonth,
+            _ => Group::Older,
+        }
     }
-    match days_ago(it.created) {
-        0 => "Today",
-        1 => "Yesterday",
-        2..=6 => "This week",
-        7..=30 => "This month",
-        _ => "Older",
+
+    pub(super) fn text(self) -> String {
+        match self {
+            Group::Pinned => t!("group-pinned"),
+            Group::Today => t!("group-today"),
+            Group::Yesterday => t!("group-yesterday"),
+            Group::ThisWeek => t!("group-this-week"),
+            Group::ThisMonth => t!("group-this-month"),
+            Group::Older => t!("group-older"),
+        }
     }
 }
