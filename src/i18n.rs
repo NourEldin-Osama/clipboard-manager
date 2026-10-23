@@ -10,13 +10,9 @@
 //! writes the same text in English to the log, so the log reads the same
 //! for everyone.
 //!
-//! `tr` is the older way, by English text; it goes once every
-//! text has moved to the .ftl files.
-//!
 //! Items store their time as UTC Unix seconds; `local` converts each one with
 //! the offset that applied at that moment (daylight saving included).
 
-use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::OnceLock;
 
@@ -25,8 +21,6 @@ use fluent_bundle::concurrent::FluentBundle;
 use fluent_bundle::{FluentArgs, FluentResource};
 
 use crate::config::{Language, TimeFormat};
-
-mod ar;
 
 static ARABIC: AtomicBool = AtomicBool::new(false);
 static H12: AtomicBool = AtomicBool::new(false);
@@ -134,21 +128,6 @@ pub fn text_in(language: Language, key: &str, args: Option<&FluentArgs>) -> Stri
     }
     log::warn!("no text for {key}");
     key.to_string()
-}
-
-fn arabic() -> &'static HashMap<&'static str, &'static str> {
-    static TABLE: OnceLock<HashMap<&'static str, &'static str>> = OnceLock::new();
-    TABLE.get_or_init(|| ar::TABLE.iter().copied().collect())
-}
-
-/// `en` in the interface language.
-pub fn tr(en: &str) -> &str {
-    if rtl() {
-        if let Some(t) = arabic().get(en) {
-            return t;
-        }
-    }
-    en
 }
 
 /// A stored UTC timestamp in the user's time zone.
@@ -366,31 +345,6 @@ mod tests {
             text_in(Language::Arabic, "no-such-key", None),
             "no-such-key"
         );
-    }
-
-    /// Every translation keeps the placeholders of its English text.
-    #[test]
-    fn placeholders_match() {
-        let names = |s: &str| {
-            let mut v: Vec<String> = s
-                .split('{')
-                .skip(1)
-                .filter_map(|p| p.split_once('}').map(|(n, _)| n.to_string()))
-                .collect();
-            v.sort();
-            v
-        };
-        for (en, ar) in ar::TABLE {
-            assert_eq!(names(en), names(ar), "{en}");
-        }
-    }
-
-    #[test]
-    fn no_duplicate_keys() {
-        let mut seen = std::collections::HashSet::new();
-        for (en, _) in ar::TABLE {
-            assert!(seen.insert(*en), "duplicate: {en}");
-        }
     }
 
     #[test]

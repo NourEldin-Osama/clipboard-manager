@@ -43,7 +43,7 @@ pub(super) fn segmented<T: PartialEq + Copy, L: AsRef<str>>(
     for (v, label) in options.iter().rev() {
         let sel = *value == *v;
         let text = txt(
-            tr(label.as_ref()),
+            label.as_ref(),
             13.0,
             Some(if sel {
                 accent()
@@ -69,14 +69,14 @@ pub(super) fn segmented<T: PartialEq + Copy, L: AsRef<str>>(
 pub(super) fn info(ui: &mut Ui, text: &str) {
     tip(
         icons::glyph(ui, Icon::Info, 14.0, ui.visuals().weak_text_color()),
-        tr(text),
+        text,
     );
 }
 
 pub(super) fn section(ui: &mut Ui, title: &str) {
     ui.add_space(18.0);
     let weak = ui.visuals().weak_text_color();
-    row(ui, |ui| lbl(ui, &tr(title).to_uppercase(), 11.5, weak));
+    row(ui, |ui| lbl(ui, &title.to_uppercase(), 11.5, weak));
     ui.add_space(4.0);
 }
 
@@ -190,7 +190,7 @@ pub(super) fn note(ui: &mut Ui, text: &str) {
     Frame::new()
         .inner_margin(Margin::symmetric(10, 0))
         .show(ui, |ui| {
-            super::bidi::paragraph(ui, tr(text), FontId::proportional(12.5), weak);
+            super::bidi::paragraph(ui, text, FontId::proportional(12.5), weak);
         });
 }
 

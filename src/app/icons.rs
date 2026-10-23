@@ -232,7 +232,6 @@ pub(super) fn icon_button_ex(
     fg: Option<Color32>,
 ) -> egui::Response {
     let (rect, resp) = ui.allocate_exact_size(size, Sense::click());
-    let tip = tr(tip);
     resp.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, ui.is_enabled(), tip));
     paint_button(ui, rect, &resp, icon, glyph, fill, fg);
     view::tip(resp, tip)
@@ -252,7 +251,7 @@ pub(super) fn icon_button_at(
 ) -> egui::Response {
     let resp = ui.interact(rect, id, Sense::click());
     paint_button(ui, rect, &resp, icon, 15.0, None, None);
-    view::tip(resp, tr(tip))
+    view::tip(resp, tip)
 }
 
 fn paint_button(
@@ -346,7 +345,7 @@ pub(super) fn paint_icon_text(
 
 /// A rounded tinted label with an icon: kind, state or status.
 pub(super) fn chip(ui: &mut Ui, icon: Icon, text: &str, color: Color32) -> egui::Response {
-    let (g, size) = icon_text_size(ui, &view::txt(tr(text), 12.0, Some(color)), 12.0, 12.0);
+    let (g, size) = icon_text_size(ui, &view::txt(text, 12.0, Some(color)), 12.0, 12.0);
     let pad = Vec2::new(8.0, 3.0);
     let (rect, resp) =
         ui.allocate_exact_size(size + pad * 2.0 + Vec2::new(0.0, 2.0), Sense::hover());
@@ -424,25 +423,9 @@ pub(super) fn menu_item(ui: &mut Ui, icon: Icon, text: &str) -> egui::Response {
         ui.painter(),
         at,
         view::start_anchor(egui::Align::Center),
-        tr(text),
+        text,
         FontId::proportional(14.0),
         color,
     );
     resp
-}
-
-/// The painted icon for a leading glyph in older label text ("✔ Done").
-pub(super) fn from_prefix(text: &str) -> Option<(Icon, &str)> {
-    const MAP: [(&str, Icon); 8] = [
-        ("✔", Icon::Check),
-        ("⚠", Icon::Warning),
-        ("★", Icon::PinFilled),
-        ("📂", Icon::Folder),
-        ("⏸", Icon::Pause),
-        ("💡", Icon::Info),
-        ("🔍", Icon::Search),
-        ("●", Icon::Dot),
-    ];
-    MAP.iter()
-        .find_map(|(g, i)| text.strip_prefix(g).map(|rest| (*i, rest.trim_start())))
 }

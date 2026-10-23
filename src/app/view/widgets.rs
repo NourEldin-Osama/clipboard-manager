@@ -25,9 +25,9 @@ pub(crate) fn txt(text: &str, size: f32, color: Option<Color32>) -> egui::Widget
     }
 }
 
-/// `en`, translated, as a label.
-pub(crate) fn lbl(ui: &mut Ui, en: &str, size: f32, color: Color32) -> egui::Response {
-    ui.label(txt(tr(en), size, Some(color)))
+/// `text` as a label, in `size` and `color`.
+pub(crate) fn lbl(ui: &mut Ui, text: &str, size: f32, color: Color32) -> egui::Response {
+    ui.label(txt(text, size, Some(color)))
 }
 
 /// A hover tooltip that wraps Arabic in reading order.
@@ -232,10 +232,6 @@ pub(super) fn mode_button(ui: &mut Ui, label: &str, emphasised: bool) -> egui::R
 /// Rounded tinted label: kind, state or status.
 pub(crate) fn chip(ui: &mut Ui, text: impl Into<String>, color: Color32) -> egui::Response {
     let text = text.into();
-    let text = tr(&text).to_string();
-    if let Some((icon, rest)) = icons::from_prefix(&text) {
-        return icons::chip(ui, icon, rest, color);
-    }
     Frame::new()
         .fill(color.gamma_multiply(0.14))
         .corner_radius(CornerRadius::same(10))
@@ -245,10 +241,10 @@ pub(crate) fn chip(ui: &mut Ui, text: impl Into<String>, color: Color32) -> egui
 }
 
 /// A menu row with a check mark at the far end when `checked`.
-pub(super) fn check_row(ui: &mut Ui, en: &str, checked: bool) -> egui::Response {
+pub(super) fn check_row(ui: &mut Ui, text: &str, checked: bool) -> egui::Response {
     let (rect, resp) =
         ui.allocate_exact_size(Vec2::new(ui.available_width(), 30.0), Sense::click());
-    resp.widget_info(|| egui::WidgetInfo::selected(egui::Role::CheckBox, true, checked, tr(en)));
+    resp.widget_info(|| egui::WidgetInfo::selected(egui::Role::CheckBox, true, checked, text));
     let v = ui.visuals();
     if resp.hovered() {
         ui.painter()
@@ -271,7 +267,7 @@ pub(super) fn check_row(ui: &mut Ui, en: &str, checked: bool) -> egui::Response 
         ui.painter(),
         at,
         start_anchor(egui::Align::Center),
-        tr(en),
+        text,
         FontId::proportional(14.0),
         color,
     );
@@ -379,11 +375,11 @@ pub(super) fn mode_option(ui: &mut Ui, m: SearchMode, active: bool) -> egui::Res
     resp
 }
 
-pub(crate) fn primary_button(ui: &mut Ui, en: &str) -> egui::Response {
+pub(crate) fn primary_button(ui: &mut Ui, text: &str) -> egui::Response {
     ui.scope(|ui| {
         ui.spacing_mut().button_padding.x = 16.0;
         ui.add(
-            egui::Button::new(txt(tr(en), 14.0, Some(Color32::WHITE)))
+            egui::Button::new(txt(text, 14.0, Some(Color32::WHITE)))
                 .fill(accent())
                 .min_size(Vec2::new(0.0, 32.0)),
         )
