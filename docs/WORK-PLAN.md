@@ -53,7 +53,7 @@ Status: `[ ]` to do, `[~]` in progress, `[x]` done, `[!]` waiting for a decision
 - [x] 2.14 Check, then fix: "Back to default" buttons that do nothing (confirmed: 6 rows)
 - [x] 2.15 Check, then fix: a server request for every key press in the server settings (confirmed)
 - [x] 2.16 Check, then fix: no network timeouts (confirmed; also cut-off downloads)
-- [ ] 2.17 Check, then fix: an update that never installs when Windows shuts down
+- [x] 2.17 Check, then fix: an update that never installs when Windows shuts down (confirmed in code; shutdown not run)
 - [ ] 2.18 Check, then fix: Esc in Settings applies a half-typed model
 - [ ] 2.19 Check, then fix: delete has no undo
 

@@ -43,6 +43,23 @@ fn main() -> eframe::Result {
         single_instance::Claim::AlreadyRunning => return Ok(()),
     };
     init_logging(&paths);
+    // An update downloaded last time but never installed (a Windows shutdown
+    // ends the app without the install on quit) goes in now.
+    if !after_update {
+        match update::install_staged() {
+            Ok(Some(exe)) => match update::relaunch(&exe) {
+                Ok(()) => return Ok(()),
+                Err(e) => {
+                    log::warn!("{e:#}");
+                    if let Err(e) = update::roll_back() {
+                        log::error!("{e:#}");
+                    }
+                }
+            },
+            Ok(None) => {}
+            Err(e) => log::warn!("installing the downloaded update: {e:#}"),
+        }
+    }
     update::clean_up();
     log::info!(
         "clipboard-manager {} starting, data in {}",

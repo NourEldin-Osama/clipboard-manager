@@ -4,7 +4,7 @@ use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::mpsc::{channel, Receiver};
+use std::sync::mpsc::{channel, Receiver, TryRecvError};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -202,6 +202,8 @@ enum UpdateMsg {
 
 /// How often a running app looks for a new release.
 const UPDATE_EVERY: Duration = Duration::from_secs(24 * 3600);
+/// After a failed background check (offline, say), try again sooner.
+const UPDATE_RETRY: Duration = Duration::from_secs(3600);
 
 /// A short message at the bottom of the window, with an optional button.
 struct Toast {
@@ -642,11 +644,23 @@ impl App {
             self.check_for_update(false, ctx);
         }
         let Some(rx) = &self.update_rx else { return };
-        let Ok(msg) = rx.try_recv() else {
-            if matches!(self.update, UpdateState::Downloading(..)) {
-                ctx.request_repaint_after(Duration::from_millis(250));
+        let msg = match rx.try_recv() {
+            Ok(msg) => msg,
+            Err(TryRecvError::Empty) => {
+                if matches!(self.update, UpdateState::Downloading(..)) {
+                    ctx.request_repaint_after(Duration::from_millis(250));
+                }
+                return;
             }
-            return;
+            // The check or download thread died (a panic): without this the
+            // channel stays "busy" and no later check would ever start.
+            Err(TryRecvError::Disconnected) => {
+                log::warn!("the update thread stopped without an answer");
+                self.update_rx = None;
+                self.update = UpdateState::Idle;
+                self.next_update_check = Instant::now() + UPDATE_RETRY;
+                return;
+            }
         };
         self.update_rx = None;
         match msg {
@@ -680,6 +694,9 @@ impl App {
                 manual,
             } => {
                 log::warn!("update check: {e}");
+                if !manual {
+                    self.next_update_check = Instant::now() + UPDATE_RETRY;
+                }
                 // A failed background check (offline, say) isn't worth a bar.
                 self.update = if manual {
                     UpdateState::Failed {
