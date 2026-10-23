@@ -33,6 +33,42 @@ pub(super) fn touchpad_scroll(event: egui::Event, line_points: f32) -> Vec<egui:
     }
 }
 
+/// Fixes a frame's input before egui sees it: touchpad scrolling (see
+/// `touchpad_scroll`) and Shift+Delete (see `shift_delete`). `modifiers` are
+/// the keys held when the frame starts; changes arrive as events.
+pub(super) fn repair_input(
+    events: Vec<egui::Event>,
+    mut modifiers: egui::Modifiers,
+    line_points: f32,
+) -> Vec<egui::Event> {
+    events
+        .into_iter()
+        .flat_map(|event| {
+            if let egui::Event::ModifiersChanged(held) = event {
+                modifiers = held;
+            }
+            touchpad_scroll(shift_delete(event, modifiers), line_points)
+        })
+        .collect()
+}
+
+/// On Windows, egui-winit turns Shift+Delete into "cut" and drops the key
+/// press, so the default Delete shortcut never arrived. Shift+Delete becomes a
+/// key press again; Ctrl+X still cuts.
+fn shift_delete(event: egui::Event, modifiers: egui::Modifiers) -> egui::Event {
+    let shift_only = modifiers.shift && !modifiers.ctrl && !modifiers.command && !modifiers.alt;
+    match event {
+        egui::Event::Cut if cfg!(windows) && shift_only => egui::Event::Key {
+            key: Key::Delete,
+            physical_key: Some(Key::Delete),
+            pressed: true,
+            repeat: false,
+            modifiers,
+        },
+        other => other,
+    }
+}
+
 impl App {
     pub(super) fn keyboard(&mut self, ctx: &egui::Context) {
         if self.draft.is_some() {
@@ -181,6 +217,29 @@ mod tests {
             total += *delta;
         }
         assert!((total.y + 36.0).abs() < 1e-3, "{total:?}");
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn shift_delete_reaches_the_delete_shortcut() {
+        // What egui-winit sends for Shift+Delete: Shift goes down, then "cut".
+        let shift = egui::Modifiers::SHIFT;
+        let events = vec![egui::Event::ModifiersChanged(shift), egui::Event::Cut];
+        let input = egui::RawInput {
+            events: repair_input(events, egui::Modifiers::NONE, 40.0),
+            focused: true,
+            ..Default::default()
+        };
+        let mut pressed = false;
+        let mut output = egui::Context::default().run_ui(input, |ui| {
+            pressed = shortcut::pressed(ui.ctx(), &crate::config::Keys::default().delete);
+        });
+        // The font atlas upload no renderer takes here.
+        output.textures_delta.clear();
+        assert!(pressed, "Shift+Delete must reach the Delete shortcut");
+        // Ctrl+X, held since an earlier frame, is still a cut.
+        let cut = repair_input(vec![egui::Event::Cut], egui::Modifiers::COMMAND, 40.0);
+        assert_eq!(cut, vec![egui::Event::Cut]);
     }
 
     #[test]
