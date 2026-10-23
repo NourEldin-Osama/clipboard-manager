@@ -2365,12 +2365,18 @@ impl App {
     }
 
     fn toasts(&mut self, ctx: &egui::Context) {
-        if let Some((t, at, how_long)) = &self.toast {
-            if at.elapsed() > *how_long {
+        let mut clicked = false;
+        if let Some(toast) = &self.toast {
+            if toast.shown.elapsed() > toast.how_long {
                 self.toast = None;
                 return;
             }
             let dark = ctx.theme() == egui::Theme::Dark;
+            let fg = if dark {
+                Color32::from_gray(20)
+            } else {
+                Color32::WHITE
+            };
             egui::Area::new(egui::Id::unique("toast"))
                 .anchor(Align2::CENTER_BOTTOM, Vec2::new(0.0, -48.0))
                 .show(ctx, |ui| {
@@ -2383,18 +2389,25 @@ impl App {
                         .corner_radius(CornerRadius::same(18))
                         .inner_margin(Margin::symmetric(16, 8))
                         .show(ui, |ui| {
-                            ui.label(txt(
-                                t.as_str(),
-                                14.0,
-                                Some(if dark {
-                                    Color32::from_gray(20)
-                                } else {
-                                    Color32::WHITE
-                                }),
-                            ))
+                            row(ui, |ui| {
+                                ui.label(txt(toast.text.as_str(), 14.0, Some(fg)));
+                                if let Some(action) = &toast.action {
+                                    let button =
+                                        egui::Button::new(txt(tr(action.label()), 13.0, Some(fg)))
+                                            .fill(Color32::TRANSPARENT)
+                                            .stroke(Stroke::new(1.0, fg))
+                                            .corner_radius(CornerRadius::same(12));
+                                    clicked = ui.add(button).clicked();
+                                }
+                            });
                         });
                 });
             ctx.request_repaint_after(Duration::from_millis(200));
+        }
+        if clicked {
+            if let Some(action) = self.toast.take().and_then(|t| t.action) {
+                self.run_toast_action(action);
+            }
         }
         if let Some((_, at)) = &self.error {
             if at.elapsed() > Duration::from_secs(20) {

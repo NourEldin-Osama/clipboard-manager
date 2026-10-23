@@ -95,6 +95,8 @@ pub const TABLE: &[(&str, &str)] = &[
     ("Open in browser", "فتح في المتصفح"),
     ("{action} · or double-click in the list", "{action} · أو انقر نقرًا مزدوجًا في القائمة"),
     ("Copied", "تم النسخ"),
+    ("Save anyway", "احفظه على أي حال"),
+    ("Saved", "تم الحفظ"),
     ("Copied text", "تم نسخ النص"),
     ("Copy text", "نسخ النص"),
     ("Imported {n} files", "تم استيراد {n} ملف"),

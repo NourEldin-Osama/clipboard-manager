@@ -170,6 +170,28 @@ enum UpdateMsg {
 /// How often a running app looks for a new release.
 const UPDATE_EVERY: Duration = Duration::from_secs(24 * 3600);
 
+/// A short message at the bottom of the window, with an optional button.
+struct Toast {
+    text: String,
+    shown: Instant,
+    how_long: Duration,
+    action: Option<ToastAction>,
+}
+
+/// What a toast's button does.
+enum ToastAction {
+    /// Records a copy the secret filter held back.
+    SaveSkipped(String),
+}
+
+impl ToastAction {
+    fn label(&self) -> &'static str {
+        match self {
+            Self::SaveSkipped(_) => "Save anyway",
+        }
+    }
+}
+
 /// Keeps the registrations alive; dropping the manager unregisters them.
 struct Hotkeys {
     _manager: GlobalHotKeyManager,
@@ -192,7 +214,7 @@ pub struct App {
     queue: usize,
     status: String,
     error: Option<(String, Instant)>,
-    toast: Option<(String, Instant, Duration)>,
+    toast: Option<Toast>,
 
     query: String,
     query_changed: Option<Instant>,
@@ -694,7 +716,21 @@ impl App {
     /// Shows `s`, translated when it's one of the fixed messages.
     fn toast_for(&mut self, s: impl Into<String>, how_long: Duration) {
         let s = s.into();
-        self.toast = Some((tr(&s).to_string(), Instant::now(), how_long));
+        self.toast = Some(Toast {
+            text: tr(&s).to_string(),
+            shown: Instant::now(),
+            how_long,
+            action: None,
+        });
+    }
+
+    fn run_toast_action(&mut self, action: ToastAction) {
+        match action {
+            ToastAction::SaveSkipped(text) => {
+                self.on_capture(Captured::Text(text));
+                self.toast("Saved");
+            }
+        }
     }
 
     fn ready_key(&self) -> Option<&str> {
@@ -722,8 +758,13 @@ impl App {
     }
 
     fn on_capture(&mut self, c: Captured) {
-        if let Captured::Skipped(reason) = c {
-            self.toast_for(reason, Duration::from_secs(4));
+        if let Captured::Skipped { reason, text } = c {
+            // Longer when there is a button to reach.
+            let how_long = Duration::from_secs(if text.is_some() { 8 } else { 4 });
+            self.toast_for(reason, how_long);
+            if let Some(toast) = &mut self.toast {
+                toast.action = text.map(ToastAction::SaveSkipped);
+            }
             return;
         }
         let hash = c.hash();
@@ -773,7 +814,7 @@ impl App {
                 item.kind = Kind::Files;
                 item.text = clipboard::join_paths(&f).into();
             }
-            Captured::Skipped(_) => unreachable!(),
+            Captured::Skipped { .. } => unreachable!(),
             Captured::Image(img) => {
                 item.kind = Kind::Image;
                 item.width = img.width();
