@@ -90,7 +90,7 @@ impl App {
         if d.ocr_images && !self.cfg.ocr_images {
             for it in &self.items {
                 if it.kind == Kind::Image && it.ocr.is_none() {
-                    self.worker.send(Job::Ocr(it.id));
+                    self.worker.send_backfill(Job::Ocr(it.id));
                 }
             }
         }

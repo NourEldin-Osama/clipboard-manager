@@ -99,6 +99,7 @@ pub const TABLE: &[(&str, &str)] = &[
     ("Copied", "تم النسخ"),
     ("Save anyway", "احفظه على أي حال"),
     ("Discard changes", "تجاهل التغييرات"),
+    ("Indexing failed on an item; it was skipped.", "تعذّرت فهرسة عنصر، فتم تخطيه."),
     ("Clipboard Manager could not start.", "تعذّر تشغيل مدير الحافظة."),
     ("Saved", "تم الحفظ"),
     ("Copied text", "تم نسخ النص"),

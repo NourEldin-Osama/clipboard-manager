@@ -455,7 +455,7 @@ impl App {
         if app.cfg.ocr_images {
             for it in &app.items {
                 if it.kind == Kind::Image && it.ocr.is_none() {
-                    app.worker.send(Job::Ocr(it.id));
+                    app.worker.send_backfill(Job::Ocr(it.id));
                 }
             }
         }
@@ -972,7 +972,7 @@ impl App {
     fn index_missing(&mut self) {
         for it in &self.items {
             if !self.embeddings.contains_key(&it.id) {
-                self.worker.send(Job::Embed(it.id));
+                self.worker.send_backfill(Job::Embed(it.id));
             }
         }
     }
