@@ -235,6 +235,8 @@ pub(super) enum Command {
     UndoDelete,
     /// Records a copy the secret filter held back.
     SaveSkipped(String),
+    /// Copies text read from an image; it is not recorded as a new copy.
+    CopyText(String),
 }
 
 /// A destructive action in Settings, waiting for its second click.
@@ -794,11 +796,15 @@ impl App {
             return;
         };
         let r = r.clone();
-        let result = update::install(path).and_then(|exe| {
-            update::relaunch(&exe).inspect_err(|_| {
-                // The new version wouldn't start: keep this one.
-                let _ = update::roll_back();
-            })
+        let result = update::install(path).and_then(|exe| match update::relaunch(&exe) {
+            Ok(()) => Ok(()),
+            // The new version wouldn't start: keep this one.
+            Err(e) => match update::roll_back() {
+                Ok(()) => Err(e),
+                Err(back) => {
+                    Err(e.context(format!("putting this version back failed too: {back:#}")))
+                }
+            },
         });
         match result {
             Ok(()) => {
@@ -873,6 +879,12 @@ impl App {
             Command::SaveSkipped(text) => {
                 self.on_capture(Captured::Text(text));
                 self.toast("Saved");
+            }
+            Command::CopyText(text) => {
+                let flags = self.flags.clone();
+                self.background.run(move || {
+                    Done::TextCopied(write_clipboard(&flags, || clipboard::copy_text(&text)))
+                });
             }
         }
     }
@@ -1007,6 +1019,8 @@ impl App {
                 }
             }
             Done::Copied { result: Err(e), .. } => self.set_error(format!("copy failed: {e}")),
+            Done::TextCopied(Ok(())) => self.toast("Copied text"),
+            Done::TextCopied(Err(e)) => self.set_error(format!("copy failed: {e}")),
             Done::Imported(batch) => match self.library.add_imported(batch) {
                 Ok(added) => {
                     // Files added in bulk wait behind new copies.
@@ -1279,17 +1293,9 @@ impl App {
             return;
         };
         let flags = self.flags.clone();
-        self.background.run(move || {
-            // The watcher then skips this change instead of recording it again.
-            flags.ignore_next.store(true, Ordering::SeqCst);
-            let result = clipboard::copy_item(&item);
-            if result.is_err() {
-                flags.ignore_next.store(false, Ordering::SeqCst);
-            }
-            Done::Copied {
-                id,
-                result: result.map_err(|e| format!("{e:#}")),
-            }
+        self.background.run(move || Done::Copied {
+            id,
+            result: write_clipboard(&flags, || clipboard::copy_item(&item)),
         });
     }
 
@@ -1438,6 +1444,20 @@ impl App {
             Err(e) => self.set_error(format!("delete failed: {e}")),
         }
     }
+}
+
+/// Writes to the clipboard from the background thread. The watcher skips
+/// the change this makes instead of recording it as a new copy.
+fn write_clipboard(
+    flags: &Flags,
+    write: impl FnOnce() -> anyhow::Result<()>,
+) -> Result<(), String> {
+    flags.ignore_next.store(true, Ordering::SeqCst);
+    let result = write();
+    if result.is_err() {
+        flags.ignore_next.store(false, Ordering::SeqCst);
+    }
+    result.map_err(|e| format!("{e:#}"))
 }
 
 mod background;

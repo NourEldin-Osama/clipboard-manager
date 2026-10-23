@@ -2,30 +2,28 @@
 
 use super::*;
 
-pub(crate) fn reveal(p: &std::path::Path) {
+/// Shows a file or folder in the system's file manager.
+pub(crate) fn reveal(p: &std::path::Path) -> std::io::Result<()> {
     #[cfg(windows)]
-    {
-        let _ = if p.is_dir() {
-            std::process::Command::new("explorer").arg(p).spawn()
-        } else {
-            std::process::Command::new("explorer")
-                .arg(format!("/select,{}", p.display()))
-                .spawn()
-        };
-    }
+    let started = if p.is_dir() {
+        std::process::Command::new("explorer").arg(p).spawn()
+    } else {
+        std::process::Command::new("explorer")
+            .arg(format!("/select,{}", p.display()))
+            .spawn()
+    };
     #[cfg(target_os = "macos")]
-    {
-        let _ = std::process::Command::new("open").arg("-R").arg(p).spawn();
-    }
+    let started = std::process::Command::new("open").arg("-R").arg(p).spawn();
     #[cfg(all(unix, not(target_os = "macos")))]
-    {
+    let started = {
         let dir = if p.is_dir() {
             p
         } else {
             p.parent().unwrap_or(p)
         };
-        let _ = std::process::Command::new("xdg-open").arg(dir).spawn();
-    }
+        std::process::Command::new("xdg-open").arg(dir).spawn()
+    };
+    started.map(|_| ())
 }
 
 impl App {
@@ -225,7 +223,9 @@ impl App {
                 }
                 if let Some(p) = &it.source {
                     if icons::icon_button(ui, Icon::Folder, "Show in folder").clicked() {
-                        reveal(p);
+                        if let Err(e) = reveal(p) {
+                            self.set_error(format!("opening the folder: {e}"));
+                        }
                     }
                 }
                 if it.kind == Kind::Link
@@ -279,7 +279,9 @@ impl App {
                                 .map(|f| f.to_string_lossy().into_owned())
                                 .unwrap_or_else(|| line.to_string());
                             if tip(ui.link(txt(&name, 14.5, None)), line).clicked() {
-                                reveal(&p);
+                                if let Err(e) = reveal(&p) {
+                                    self.set_error(format!("opening the folder: {e}"));
+                                }
                             }
                             let parent = p
                                 .parent()
@@ -395,9 +397,7 @@ impl App {
                 )
                 .clicked()
                 {
-                    self.flags.ignore_next.store(true, Ordering::SeqCst);
-                    let _ = clipboard::copy_text(t);
-                    self.toast(tr("Copied text"));
+                    self.run(Command::CopyText(t.to_string()));
                 }
             });
             if bidi::has_rtl(t) {

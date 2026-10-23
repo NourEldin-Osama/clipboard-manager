@@ -20,6 +20,8 @@ pub(super) enum Done {
     },
     /// An item put back on the clipboard, or why it wasn't.
     Copied { id: u64, result: Result<(), String> },
+    /// Text read from an image put on the clipboard, or why it wasn't.
+    TextCopied(Result<(), String>),
     /// Files read by an import, not saved yet.
     Imported(Vec<Item>),
     /// An import has read all its files.

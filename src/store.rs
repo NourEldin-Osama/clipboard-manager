@@ -320,7 +320,12 @@ impl Store {
         for item in items {
             if let Some(p) = &item.image {
                 if item.origin == Origin::Clipboard && p.starts_with(&self.images_dir) {
-                    let _ = std::fs::remove_file(p);
+                    match std::fs::remove_file(p) {
+                        Err(e) if e.kind() != std::io::ErrorKind::NotFound => {
+                            log::warn!("deleting {}: {e}", p.display());
+                        }
+                        _ => {}
+                    }
                 }
             }
         }

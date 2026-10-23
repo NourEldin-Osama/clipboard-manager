@@ -12,7 +12,9 @@ impl App {
             "History, images, models and settings are stored here, on this PC only.",
             |ui| {
                 if ui.button(txt(tr("Open"), 14.0, None)).clicked() {
-                    reveal(&root);
+                    if let Err(e) = reveal(&root) {
+                        self.set_error(format!("opening the folder: {e}"));
+                    }
                 }
                 ui.add(
                     egui::Label::new(
@@ -31,7 +33,9 @@ impl App {
             "A record of what the app did in this session. Attach it when reporting a problem.",
             |ui| {
                 if ui.button(txt(tr("Show"), 14.0, None)).clicked() {
-                    reveal(&log);
+                    if let Err(e) = reveal(&log) {
+                        self.set_error(format!("opening the folder: {e}"));
+                    }
                 }
             },
         );
