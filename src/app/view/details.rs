@@ -223,7 +223,7 @@ impl App {
                             .save_file(),
                     ) {
                         if let Err(e) = image::open(src).and_then(|i| i.save(&dst)) {
-                            self.set_error(format!("save failed: {e}"));
+                            self.set_error(log_error!("error-saving-image", error = e.to_string()));
                         }
                     }
                     self.after_dialog();
@@ -232,7 +232,10 @@ impl App {
                     if icons::icon_button(ui, Icon::Folder, &t!("details-show-in-folder")).clicked()
                     {
                         if let Err(e) = reveal(p) {
-                            self.set_error(format!("opening the folder: {e}"));
+                            self.set_error(log_error!(
+                                "error-opening-folder",
+                                error = e.to_string()
+                            ));
                         }
                     }
                 }
@@ -289,7 +292,10 @@ impl App {
                                 .unwrap_or_else(|| line.to_string());
                             if tip(ui.link(txt(&name, 14.5, None)), line).clicked() {
                                 if let Err(e) = reveal(&p) {
-                                    self.set_error(format!("opening the folder: {e}"));
+                                    self.set_error(log_error!(
+                                        "error-opening-folder",
+                                        error = e.to_string()
+                                    ));
                                 }
                             }
                             let parent = p

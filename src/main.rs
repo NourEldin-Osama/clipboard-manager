@@ -73,7 +73,7 @@ fn main() -> eframe::Result {
     i18n::set(cfg.language, cfg.time_format);
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
-            .with_title(i18n::tr("Clipboard Manager"))
+            .with_title(i18n::t!("app-title"))
             .with_app_id("clipboard-manager")
             .with_inner_size([1040.0, 680.0])
             .with_min_inner_size([560.0, 380.0])
@@ -91,11 +91,8 @@ fn main() -> eframe::Result {
     if let Err(e) = &result {
         log::error!("could not start: {e}");
         rfd::MessageDialog::new()
-            .set_title(i18n::tr("Clipboard Manager"))
-            .set_description(format!(
-                "{}\n\n{e}",
-                i18n::tr("Clipboard Manager could not start.")
-            ))
+            .set_title(i18n::t!("app-title"))
+            .set_description(format!("{}\n\n{e}", i18n::t!("error-start-failed")))
             .set_level(rfd::MessageLevel::Error)
             .show();
     }

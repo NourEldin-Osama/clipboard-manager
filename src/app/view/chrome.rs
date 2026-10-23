@@ -270,7 +270,7 @@ impl App {
                         ));
                     }
                     if !self.status.is_empty() {
-                        ui.label(txt(tr(&self.status), 12.0, Some(weak)));
+                        ui.label(txt(&self.status, 12.0, Some(weak)));
                     }
                     if !self.flags.enabled.load(Ordering::SeqCst) {
                         icons::chip(ui, Icon::Pause, &t!("status-recording-paused"), AMBER);

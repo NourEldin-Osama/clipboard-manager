@@ -127,7 +127,10 @@ impl App {
         }
         if login_changed {
             if let Err(e) = crate::autostart::set(self.cfg.start_at_login) {
-                self.set_error(format!("{e:#}"));
+                self.set_error(log_error!(
+                    "error-start-at-sign-in",
+                    error = format!("{e:#}")
+                ));
                 self.cfg.start_at_login = !self.cfg.start_at_login;
                 self.save_config();
             }

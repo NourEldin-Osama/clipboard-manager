@@ -11,7 +11,7 @@ use anyhow::{anyhow, Result};
 
 use crate::config::EmbedBackend;
 use crate::embed::{server::ServerEmbedder, siglip::SigLip, Embedder, Embedding, TextRole};
-use crate::i18n::{tr, trf};
+use crate::i18n::{log_error, t};
 use crate::models;
 use crate::ocr::Ocr;
 use crate::store::{Kind, Store};
@@ -26,7 +26,9 @@ pub enum Job {
 }
 
 pub enum Event {
+    /// A status line, in the interface language.
     Status(String),
+    /// An error to show, in the interface language (the log has it in English).
     Error(String),
     /// A backend is loaded; carries the embeddings already stored for it.
     BackendReady {
@@ -287,9 +289,7 @@ impl State {
         log::error!("indexing panicked on items {ids:?}; they are skipped until the app restarts");
         self.failed.extend(ids);
         self.ocr = None;
-        self.emit(Event::Error(
-            tr("Indexing failed on an item; it was skipped.").into(),
-        ));
+        self.emit(Event::Error(t!("error-indexing-skipped")));
         if was_backend {
             self.embedder = None;
             self.emit(Event::BackendOff);
@@ -319,7 +319,10 @@ impl State {
                 });
             }
             Ok(_) => {}
-            Err(e) => self.emit(Event::Error(format!("query embedding failed: {e:#}"))),
+            Err(e) => self.emit(Event::Error(log_error!(
+                "error-query-embedding",
+                error = format!("{e:#}")
+            ))),
         }
     }
 
@@ -331,23 +334,26 @@ impl State {
             EmbedBackend::None => Ok(None),
             EmbedBackend::SigLip { repo } => {
                 if !models::siglip_ready(&self.models_dir, repo) {
-                    Err(anyhow!(
-                        "{repo} is not downloaded yet (Settings → Search model)"
-                    ))
-                } else {
-                    self.emit(Event::Status(trf("Loading {repo}…", &[("repo", &repo)])));
-                    SigLip::load(
-                        &models::siglip_dir(&self.models_dir, repo),
-                        &format!("siglip:{repo}"),
-                    )
-                    .map(|m| Some(Box::new(m) as Box<dyn Embedder>))
+                    let message = log_error!("error-model-not-downloaded", model = repo.as_str());
+                    self.emit(Event::Error(message));
+                    self.emit(Event::BackendOff);
+                    return;
                 }
+                self.emit(Event::Status(t!(
+                    "status-loading-model",
+                    model = repo.as_str()
+                )));
+                SigLip::load(
+                    &models::siglip_dir(&self.models_dir, repo),
+                    &format!("siglip:{repo}"),
+                )
+                .map(|m| Some(Box::new(m) as Box<dyn Embedder>))
             }
             EmbedBackend::Server(cfg) => {
                 self.emit(Event::Status(if cfg.launch.is_some() {
-                    tr("Starting llama-server…").into()
+                    t!("status-starting-llama")
                 } else {
-                    trf("Connecting to {host}…", &[("host", &cfg.base_url)])
+                    t!("status-connecting", host = cfg.base_url.as_str())
                 }));
                 ServerEmbedder::new(cfg.as_ref().clone()).and_then(|mut s| {
                     // Probe once so misconfiguration shows up immediately.
@@ -371,7 +377,10 @@ impl State {
             }
             Ok(None) => self.emit(Event::BackendOff),
             Err(e) => {
-                self.emit(Event::Error(format!("{e:#}")));
+                self.emit(Event::Error(log_error!(
+                    "error-model",
+                    error = format!("{e:#}")
+                )));
                 self.emit(Event::BackendOff);
             }
         }
@@ -381,9 +390,7 @@ impl State {
         if self.ocr.is_none() && !self.ocr_failed {
             let r = (|| -> Result<Ocr> {
                 if !models::ocr_ready(&self.models_dir) {
-                    self.emit(Event::Status(
-                        tr("Downloading OCR models (12 MB, one time)…").into(),
-                    ));
+                    self.emit(Event::Status(t!("status-downloading-ocr")));
                     models::download_ocr(&self.models_dir, &Arc::default())?;
                 }
                 Ocr::load(&models::ocr_dir(&self.models_dir))
@@ -392,7 +399,10 @@ impl State {
                 Ok(o) => self.ocr = Some(o),
                 Err(e) => {
                     self.ocr_failed = true;
-                    self.emit(Event::Error(format!("OCR unavailable: {e:#}")));
+                    self.emit(Event::Error(log_error!(
+                        "error-ocr-unavailable",
+                        error = format!("{e:#}")
+                    )));
                 }
             }
         }

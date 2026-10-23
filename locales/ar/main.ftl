@@ -485,3 +485,64 @@ settings-shortcut-move-grid = التنقل بين البطاقات في الشب
 settings-shortcut-escape = إغلاق التفاصيل أو مسح البحث أو الإخفاء
 settings-shortcut-built-in = مدمج، لا يمكن تغييره.
 settings-shortcuts-note = انقر اختصارًا ثم اضغط المفاتيح الجديدة. Backspace للتعطيل، وEsc للإلغاء.
+
+## Errors, statuses, messages and the tray icon
+
+error-saving-item = تعذّر حفظ العنصر: { $error }
+error-saving-image = تعذّر حفظ الصورة: { $error }
+error-saving-settings = تعذّر حفظ الإعدادات: { $error }
+error-deleting = تعذّر الحذف: { $error }
+error-copying = تعذّر النسخ: { $error }
+error-opening-folder = تعذّر فتح المجلد: { $error }
+error-background-crash = توقفت مهمة في الخلفية بسبب خطأ. التفاصيل في ملف السجل.
+error-download-failed = فشل التنزيل: { $error }
+error-download-crashed = توقف التنزيل بسبب خطأ. التفاصيل في ملف السجل.
+error-tray-unavailable = أيقونة علبة النظام غير متاحة: { $error }
+error-start-at-sign-in = تعذّر تغيير «التشغيل عند تسجيل الدخول»: { $error }
+error-hotkeys-unavailable = الاختصارات التي تعمل في أي مكان في ويندوز غير متاحة: { $error }
+error-hotkey-taken = { $keys } يستخدمه تطبيق آخر أو ويندوز. اختر مفاتيح أخرى في الإعدادات، الاختصارات.
+error-hotkey-invalid = لا يمكن استخدام الاختصار { $keys }: { $error }
+error-indexing-skipped = تعذّرت فهرسة عنصر، فتم تخطيه.
+error-query-embedding = تعذّر البحث بالمعنى: { $error }
+error-model = تعذّر تحميل نموذج البحث: { $error }
+error-model-not-downloaded = لم يُنزَّل { $model } بعد. نزّله من الإعدادات، البحث والذكاء الاصطناعي.
+error-ocr-unavailable = تعذّرت قراءة النص في الصور: { $error }
+error-settings-unreadable = تعذّرت قراءة الإعدادات ({ $error }). يستخدم التطبيق الآن الإعدادات الافتراضية. حُفظ الملف القديم باسم { $copy }
+error-settings-unreadable-no-copy = تعذّرت قراءة الإعدادات ({ $error }). يستخدم التطبيق الآن الإعدادات الافتراضية. وتعذّر نسخ الملف القديم أيضًا: { $reason }
+error-start-failed = تعذّر تشغيل مدير الحافظة.
+status-loading-model = جارٍ تحميل { $model }…
+status-starting-llama = جارٍ تشغيل llama-server…
+status-connecting = جارٍ الاتصال بـ { $host }…
+status-downloading-ocr = جارٍ تنزيل نماذج قراءة النص (12 ميغابايت، مرة واحدة)…
+toast-copied = تم النسخ
+toast-copied-text = تم نسخ النص
+toast-saved = تم الحفظ
+toast-deleted = تم الحذف
+toast-imported =
+    { $count ->
+        [one] تم استيراد ملف واحد
+        [two] تم استيراد ملفين
+        [few] تم استيراد { $count } ملفات
+       *[other] تم استيراد { $count } ملف
+    }
+toast-cleared =
+    { $count ->
+        [one] تم مسح عنصر واحد
+        [two] تم مسح عنصرين
+        [few] تم مسح { $count } عناصر
+       *[other] تم مسح { $count } عنصر
+    }
+toast-tag-removed =
+    { $count ->
+        [one] أُزيل #{ $tag } من عنصر واحد
+        [two] أُزيل #{ $tag } من عنصرين
+        [few] أُزيل #{ $tag } من { $count } عناصر
+       *[other] أُزيل #{ $tag } من { $count } عنصر
+    }
+toast-downloaded = تم تنزيل { $model }
+toast-skipped-private = لم يُحفظ: التطبيق الذي نسخت منه وسمه بأنه خاص
+toast-skipped-secret = لم يُحفظ: يبدو كلمة مرور أو مفتاح API (راجع الإعدادات)
+tray-show = إظهار مدير الحافظة
+tray-pause-recording = إيقاف التسجيل مؤقتًا
+tray-resume-recording = استئناف التسجيل
+tray-quit = خروج

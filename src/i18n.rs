@@ -6,14 +6,17 @@
 //! `t!("time-minutes-ago", count = 5)`. A text missing in a language shows in
 //! English. `docs/TRANSLATING.md` explains how to add a language.
 //!
-//! `tr` and `trf` are the older way, by English text; they go once every
+//! An error uses `log_error!` instead: it returns the text to show, and
+//! writes the same text in English to the log, so the log reads the same
+//! for everyone.
+//!
+//! `tr` is the older way, by English text; it goes once every
 //! text has moved to the .ftl files.
 //!
 //! Items store their time as UTC Unix seconds; `local` converts each one with
 //! the offset that applied at that moment (daylight saving included).
 
 use std::collections::HashMap;
-use std::fmt::Display;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::OnceLock;
 
@@ -55,6 +58,28 @@ macro_rules! t {
     }};
 }
 pub(crate) use t;
+
+/// Like `t!`, for an error: writes the text to the log in English, and
+/// returns it in the interface language, to show.
+macro_rules! log_error {
+    ($key:literal) => {{
+        ::log::error!(
+            "{}",
+            $crate::i18n::text_in($crate::config::Language::English, $key, None)
+        );
+        $crate::i18n::text($key, None)
+    }};
+    ($key:literal, $($name:ident = $value:expr),+ $(,)?) => {{
+        let mut args = ::fluent_bundle::FluentArgs::new();
+        $(args.set(stringify!($name), $value);)+
+        ::log::error!(
+            "{}",
+            $crate::i18n::text_in($crate::config::Language::English, $key, Some(&args))
+        );
+        $crate::i18n::text($key, Some(&args))
+    }};
+}
+pub(crate) use log_error;
 
 type Bundle = FluentBundle<FluentResource>;
 
@@ -124,15 +149,6 @@ pub fn tr(en: &str) -> &str {
         }
     }
     en
-}
-
-/// `en` translated, with each `{name}` replaced by its value.
-pub fn trf(en: &str, args: &[(&str, &dyn Display)]) -> String {
-    let mut s = tr(en).to_string();
-    for (name, value) in args {
-        s = s.replace(&format!("{{{name}}}"), &value.to_string());
-    }
-    s
 }
 
 /// A stored UTC timestamp in the user's time zone.
@@ -250,7 +266,8 @@ mod tests {
         }
     }
 
-    /// Every key passed to `t!` in the source code, skipping comments.
+    /// Every key passed to `t!` or `log_error!` in the source code,
+    /// skipping comments.
     fn keys_in_code() -> BTreeSet<String> {
         let src = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
         let mut keys = BTreeSet::new();
@@ -265,13 +282,16 @@ mod tests {
                 .filter(|line| !line.trim_start().starts_with("//"))
                 .collect::<Vec<_>>()
                 .join("\n");
-            for (at, _) in code.match_indices("t!(") {
+            let calls = ["t!(", "log_error!("]
+                .into_iter()
+                .flat_map(|name| code.match_indices(name));
+            for (at, name) in calls {
                 // Not the end of another macro, like format!( or assert!(.
                 let before = code[..at].chars().next_back();
                 if before.is_some_and(|c| c.is_alphanumeric() || c == '_') {
                     continue;
                 }
-                let rest = code[at + 3..].trim_start();
+                let rest = code[at + name.len()..].trim_start();
                 let Some(quoted) = rest.strip_prefix('"') else {
                     continue;
                 };

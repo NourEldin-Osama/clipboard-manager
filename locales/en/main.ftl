@@ -462,3 +462,58 @@ settings-shortcut-move-grid = Move between cards in the grid
 settings-shortcut-escape = Close details, clear the search, or hide
 settings-shortcut-built-in = Built in; can't be changed.
 settings-shortcuts-note = Click a shortcut, then press the new keys. Backspace turns it off, Esc cancels.
+
+## Errors, statuses, messages and the tray icon
+
+error-saving-item = Could not save the item: { $error }
+error-saving-image = Could not save the image: { $error }
+error-saving-settings = Could not save the settings: { $error }
+error-deleting = Could not delete: { $error }
+error-copying = Could not copy: { $error }
+error-opening-folder = Could not open the folder: { $error }
+error-background-crash = A background task stopped because of an error. The log file has the details.
+error-download-failed = The download failed: { $error }
+error-download-crashed = The download stopped because of an error. The log file has the details.
+error-tray-unavailable = The system tray icon is not available: { $error }
+error-start-at-sign-in = Could not change “Start when you sign in”: { $error }
+error-hotkeys-unavailable = Shortcuts that work anywhere in Windows are not available: { $error }
+error-hotkey-taken = { $keys } is already used by another app or by Windows. Choose other keys in Settings, Shortcuts.
+error-hotkey-invalid = Cannot use the shortcut { $keys }: { $error }
+error-indexing-skipped = Indexing failed on an item; it was skipped.
+error-query-embedding = Could not search by meaning: { $error }
+error-model = Could not load the search model: { $error }
+error-model-not-downloaded = { $model } is not downloaded yet. Download it in Settings, Search & AI model.
+error-ocr-unavailable = Cannot read text in images: { $error }
+error-settings-unreadable = Could not read the settings ({ $error }). The app now uses the default settings. The old file is saved as { $copy }
+error-settings-unreadable-no-copy = Could not read the settings ({ $error }). The app now uses the default settings. The old file could not be copied either: { $reason }
+error-start-failed = Clipboard Manager could not start.
+status-loading-model = Loading { $model }…
+status-starting-llama = Starting llama-server…
+status-connecting = Connecting to { $host }…
+status-downloading-ocr = Downloading OCR models (12 MB, one time)…
+toast-copied = Copied
+toast-copied-text = Copied text
+toast-saved = Saved
+toast-deleted = Deleted
+toast-imported =
+    { $count ->
+        [one] Imported 1 file
+       *[other] Imported { $count } files
+    }
+toast-cleared =
+    { $count ->
+        [one] Cleared 1 item
+       *[other] Cleared { $count } items
+    }
+toast-tag-removed =
+    { $count ->
+        [one] Removed #{ $tag } from 1 item
+       *[other] Removed #{ $tag } from { $count } items
+    }
+toast-downloaded = Downloaded { $model }
+toast-skipped-private = Not saved: the app you copied from marked it as private
+toast-skipped-secret = Not saved: looks like a password or API key (see Settings)
+tray-show = Show Clipboard Manager
+tray-pause-recording = Pause recording
+tray-resume-recording = Resume recording
+tray-quit = Quit

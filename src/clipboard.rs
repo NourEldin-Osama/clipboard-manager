@@ -12,13 +12,22 @@ pub enum Captured {
     Text(String),
     Image(image::RgbaImage),
     Files(Vec<PathBuf>),
-    /// A copy that was deliberately not recorded, with the reason to show.
+    /// A copy that was deliberately not recorded, and why.
     /// `text` is kept only when the user may still choose to save it (the
     /// secret filter can be wrong); a copy marked private by its app is not.
     Skipped {
-        reason: &'static str,
+        reason: SkipReason,
         text: Option<String>,
     },
+}
+
+/// Why a copy was not recorded.
+#[derive(Clone, Copy, Debug)]
+pub enum SkipReason {
+    /// The app it came from marked it as private (password managers do).
+    Private,
+    /// It looks like a password or an API key.
+    Secret,
 }
 
 impl Captured {
@@ -112,7 +121,7 @@ pub fn spawn_watcher(flags: Arc<Flags>, tx: Sender<Captured>, wake: impl Fn() + 
                 }
                 let c = if is_sensitive() {
                     Captured::Skipped {
-                        reason: "Not saved: the app you copied from marked it as private",
+                        reason: SkipReason::Private,
                         text: None,
                     }
                 } else {
@@ -122,8 +131,7 @@ pub fn spawn_watcher(flags: Arc<Flags>, tx: Sender<Captured>, wake: impl Fn() + 
                                 && crate::privacy::looks_like_secret(&t) =>
                         {
                             Captured::Skipped {
-                                reason:
-                                    "Not saved: looks like a password or API key (see Settings)",
+                                reason: SkipReason::Secret,
                                 text: Some(t),
                             }
                         }
@@ -131,7 +139,7 @@ pub fn spawn_watcher(flags: Arc<Flags>, tx: Sender<Captured>, wake: impl Fn() + 
                     }
                 };
                 if let Captured::Skipped { reason, .. } = &c {
-                    log::info!("{reason}");
+                    log::info!("copy not saved: {reason:?}");
                 }
                 if tx.send(c).is_err() {
                     return;

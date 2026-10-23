@@ -13,7 +13,7 @@ impl App {
             |ui| {
                 if ui.button(txt(&t!("settings-open"), 14.0, None)).clicked() {
                     if let Err(e) = reveal(&root) {
-                        self.set_error(format!("opening the folder: {e}"));
+                        self.set_error(log_error!("error-opening-folder", error = e.to_string()));
                     }
                 }
                 ui.add(
@@ -34,7 +34,7 @@ impl App {
             |ui| {
                 if ui.button(txt(&t!("settings-show"), 14.0, None)).clicked() {
                     if let Err(e) = reveal(&log) {
-                        self.set_error(format!("opening the folder: {e}"));
+                        self.set_error(log_error!("error-opening-folder", error = e.to_string()));
                     }
                 }
             },
