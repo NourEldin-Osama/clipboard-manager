@@ -1039,14 +1039,11 @@ impl App {
                 vector,
                 mode: self.cfg.search_mode,
                 filter: self.filter,
+                tag: self.tag_filter.as_deref(),
                 min_similarity: self.cfg.min_similarity,
                 image_vectors: matches!(self.backend, BackendState::Ready { images: true, .. }),
             },
         );
-        if let Some(tag) = &self.tag_filter {
-            let items = &self.items;
-            self.results.retain(|h| items[h.idx].has_tag(tag));
-        }
         let sort = self.sort();
         // While searching, the best matches lead even when pinned items don't match as well.
         let pinned_first = self.cfg.pinned_first && self.query.trim().is_empty();

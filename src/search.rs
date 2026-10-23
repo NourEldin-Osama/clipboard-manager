@@ -65,6 +65,9 @@ pub struct Query<'a> {
     pub vector: Option<&'a Embedding>,
     pub mode: SearchMode,
     pub filter: Filter,
+    /// Only items with this tag. Applied before results are cut to the best
+    /// matches, so tagged items further down are not lost.
+    pub tag: Option<&'a str>,
     pub min_similarity: f32,
     /// Image items carry image vectors (not OCR-text vectors).
     pub image_vectors: bool,
@@ -102,7 +105,7 @@ pub fn search(
 ) -> Vec<Hit> {
     let query_lower = q.text.trim().to_lowercase();
     let candidates: Vec<usize> = (0..items.len())
-        .filter(|&i| q.filter.accepts(&items[i]))
+        .filter(|&i| q.filter.accepts(&items[i]) && q.tag.is_none_or(|t| items[i].has_tag(t)))
         .collect();
 
     if query_lower.is_empty() {
@@ -301,6 +304,7 @@ mod tests {
             mode,
             filter: Filter::All,
             min_similarity: 0.5,
+            tag: None,
             image_vectors: false,
         };
 
@@ -341,6 +345,7 @@ mod tests {
             mode: SearchMode::Semantic,
             filter: Filter::All,
             min_similarity: 0.0,
+            tag: None,
             image_vectors: true,
         };
         let ids: Vec<u64> = search(&items, &HashMap::new(), &embs, &q)
@@ -371,6 +376,7 @@ mod tests {
             mode: SearchMode::Hybrid,
             filter: Filter::All,
             min_similarity: 0.0,
+            tag: None,
             image_vectors: false,
         };
         let hits = search(&items, &HashMap::new(), &embs, &q);
@@ -419,6 +425,7 @@ mod tests {
             mode: SearchMode::Hybrid,
             filter: Filter::All,
             min_similarity: 0.0,
+            tag: None,
             image_vectors: false,
         };
         let ids: Vec<u64> = search(&items, &HashMap::new(), &HashMap::new(), &q)
@@ -426,5 +433,33 @@ mod tests {
             .map(|h| items[h.idx].id)
             .collect();
         assert_eq!(ids, vec![1, 3, 2]);
+    }
+
+    #[test]
+    fn tag_filter_keeps_tagged_items_ranked_low_by_meaning() {
+        // 250 items; the only tagged one is the weakest meaning match, below
+        // the 200 best that meaning search keeps.
+        let mut items: Vec<Item> = (1..=250).map(|id| item(id, "note", id as i64)).collect();
+        items[249].tags = vec!["work".into()];
+        let mut embs = HashMap::new();
+        for it in &items {
+            let s = 1.0 - it.id as f32 / 1000.0;
+            embs.insert(it.id, Embedding::dense(vec![s, (1.0 - s * s).sqrt()], 0));
+        }
+        let qv = Embedding::dense(vec![1.0, 0.0], 0);
+        let q = Query {
+            text: "anything",
+            vector: Some(&qv),
+            mode: SearchMode::Semantic,
+            filter: Filter::All,
+            tag: Some("WORK"),
+            min_similarity: 0.0,
+            image_vectors: false,
+        };
+        let ids: Vec<u64> = search(&items, &HashMap::new(), &embs, &q)
+            .iter()
+            .map(|h| items[h.idx].id)
+            .collect();
+        assert_eq!(ids, vec![250]);
     }
 }
