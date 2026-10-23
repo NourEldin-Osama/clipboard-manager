@@ -30,6 +30,47 @@ pub(crate) fn lbl(ui: &mut Ui, text: &str, size: f32, color: Color32) -> egui::R
     ui.label(txt(text, size, Some(color)))
 }
 
+/// One line of `text` in reading order, cut with "…" to fit `width`; hovering
+/// a cut line shows all of it. (A truncated egui label would cut a
+/// right-to-left line at its start.)
+pub(super) fn cut_line(
+    ui: &mut Ui,
+    text: &str,
+    width: f32,
+    size: f32,
+    color: Color32,
+    sense: Sense,
+) -> egui::Response {
+    let font = FontId::proportional(size);
+    let whole_width = ui
+        .fonts_mut(|f| f.layout_no_wrap(text.to_string(), font.clone(), color))
+        .size()
+        .x;
+    let line = bidi::lines(
+        ui,
+        text,
+        &[],
+        font,
+        color,
+        Color32::TRANSPARENT,
+        width,
+        1,
+        None,
+    );
+    let galley = line.into_iter().next().map(|(g, _)| g);
+    let (rect, resp) =
+        ui.allocate_exact_size(galley.as_ref().map_or(Vec2::ZERO, |g| g.size()), sense);
+    resp.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Label, ui.is_enabled(), text));
+    if let Some(g) = galley {
+        ui.painter().galley(rect.min, g, color);
+    }
+    if whole_width > width {
+        tip(resp, text)
+    } else {
+        resp
+    }
+}
+
 /// A hover tooltip that wraps Arabic in reading order.
 pub(crate) fn tip(resp: egui::Response, text: &str) -> egui::Response {
     if bidi::has_rtl(text) {
