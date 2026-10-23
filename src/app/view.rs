@@ -782,9 +782,30 @@ fn row_title(it: &Item) -> String {
     }
 }
 
+#[derive(Debug, PartialEq)]
 enum Line {
     Header(&'static str, usize),
     Row(usize),
+}
+
+/// One row per label, with a header above each run of equal labels that
+/// counts its rows. Runs once per frame, so it stays linear.
+fn with_headers(labels: impl Iterator<Item = &'static str>) -> Vec<Line> {
+    let mut lines = Vec::new();
+    let mut header_at = None;
+    let mut last = None;
+    for (r, label) in labels.enumerate() {
+        if last != Some(label) {
+            header_at = Some(lines.len());
+            lines.push(Line::Header(label, 0));
+            last = Some(label);
+        }
+        if let Some(Line::Header(_, n)) = header_at.map(|i| &mut lines[i]) {
+            *n += 1;
+        }
+        lines.push(Line::Row(r));
+    }
+    lines
 }
 
 // ----- the window ------------------------------------------------------------------
@@ -1715,22 +1736,12 @@ impl App {
         let mut lines: Vec<Line> = Vec::with_capacity(self.results.len() + 8);
         // Day headers only make sense in date order.
         if !searching && self.cfg.group_by_date && self.sort() == SortOrder::Recent {
-            let mut last: Option<&'static str> = None;
-            for (r, h) in self.results.iter().enumerate() {
-                let g = group_label(&self.items[h.idx], self.cfg.pinned_first);
-                if last != Some(g) {
-                    lines.push(Line::Header(g, 0));
-                    last = Some(g);
-                }
-                if let Some(Line::Header(_, n)) = lines
-                    .iter_mut()
-                    .rev()
-                    .find(|l| matches!(l, Line::Header(..)))
-                {
-                    *n += 1;
-                }
-                lines.push(Line::Row(r));
-            }
+            let pinned_first = self.cfg.pinned_first;
+            lines = with_headers(
+                self.results
+                    .iter()
+                    .map(|h| group_label(&self.items[h.idx], pinned_first)),
+            );
         } else {
             lines.extend((0..self.results.len()).map(Line::Row));
         }
@@ -3106,5 +3117,34 @@ impl eframe::App for App {
             );
             icons::paint_icon_text(&p, row, Icon::Folder, 26.0, g, Color32::WHITE);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn headers_count_their_rows() {
+        let lines = with_headers(["Today", "Today", "Yesterday", "Today"].into_iter());
+        assert_eq!(
+            lines,
+            vec![
+                Line::Header("Today", 2),
+                Line::Row(0),
+                Line::Row(1),
+                Line::Header("Yesterday", 1),
+                Line::Row(2),
+                Line::Header("Today", 1),
+                Line::Row(3),
+            ]
+        );
+    }
+
+    #[test]
+    fn one_big_group_stays_linear() {
+        let lines = with_headers(std::iter::repeat_n("Today", 100_000));
+        assert_eq!(lines[0], Line::Header("Today", 100_000));
+        assert_eq!(lines.len(), 100_001);
     }
 }
