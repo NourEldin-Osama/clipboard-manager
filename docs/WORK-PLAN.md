@@ -33,7 +33,7 @@ Status: `[ ]` to do, `[~]` in progress, `[x]` done, `[!]` waiting for a decision
 ## Tasks
 
 ### Phase 1. Tooling
-- [ ] 1.1 Hooks use prek's built-in versions; the config moves to `prek.toml` (prek 0.5.7 or newer)
+- [x] 1.1 Hooks use prek's built-in versions; the config moves to `prek.toml` (prek 0.5.7 or newer)
 - [ ] 1.2 The pipelines skip changes to unrelated files (docs, README, templates, hook config)
 
 ### Phase 2. Bugs

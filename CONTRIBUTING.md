@@ -26,18 +26,18 @@ drive, keep the build cache elsewhere: `CARGO_TARGET_DIR=/some/local/dir cargo b
 
 ## Git hooks
 
-The repo has [prek](https://prek.j178.dev) hooks in `.pre-commit-config.yaml` (upstream pre-commit also works).
-Set them up once per clone:
+The repo has [prek](https://prek.j178.dev) hooks in `prek.toml` (prek 0.5.7 or newer; they use prek's built-in
+checks, so upstream pre-commit can't run them). Set them up once per clone:
 
 ```bash
 uv tool install prek
 prek install
 ```
 
-- **Before each commit:** trailing whitespace and final newlines, YAML and TOML syntax, merge markers, large files,
-  private keys, `cargo fmt --check`, and `cargo clippy` with warnings as errors.
+- **Before each commit:** trailing whitespace and final newlines, YAML and TOML syntax, merge markers, file names
+  Windows can't use, large files, private keys, `cargo fmt --check`, and `cargo clippy` with warnings as errors.
 - **On the commit message:** a `Co-Authored-By` trailer is rejected.
-- **Before each push:** `cargo test`.
+- **Before each push:** `cargo test`, and the commit message check again for every commit being pushed.
 
 Run every hook on every file with `prek run --all-files`.
 
