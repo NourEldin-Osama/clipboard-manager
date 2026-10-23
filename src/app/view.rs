@@ -798,6 +798,17 @@ impl App {
             }
             return;
         }
+        // The tag field belongs to the item in the details pane: selecting
+        // another item or closing the pane closes it. Left open, it would
+        // keep every shortcut off below.
+        let pane_shown = self.details_open || self.cfg.view == ViewMode::Detail;
+        if self
+            .tag_input
+            .as_ref()
+            .is_some_and(|(id, _)| Some(*id) != self.selected || !pane_shown)
+        {
+            self.tag_input = None;
+        }
         // Typing in a field other than search (a tag, say) isn't a command.
         // The tag field counts even before egui has moved focus to it.
         let typing = self.tag_input.is_some()
