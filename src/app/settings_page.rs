@@ -344,6 +344,7 @@ impl App {
         };
         let mut close = false;
         let mut apply_model = false;
+        let mut discard_model = false;
         let mut apply_keys = false;
         let model_pending = d.backend != self.cfg.backend;
 
@@ -382,6 +383,9 @@ impl App {
                         if model_pending {
                             if primary_button(ui, "Apply model").clicked() {
                                 apply_model = true;
+                            }
+                            if ui.button(txt(tr("Discard changes"), 13.0, None)).clicked() {
+                                discard_model = true;
                             }
                             chip(ui, tr("Model changes not applied yet"), AMBER);
                         } else {
@@ -537,6 +541,9 @@ impl App {
             c.backend = d.backend.clone();
             self.apply_settings(c, &ctx, false);
         }
+        if discard_model {
+            d.backend = self.cfg.backend.clone();
+        }
         // App::logic turns the global shortcuts back on in the next frame.
         if self.hotkeys_paused && self.recording.is_none() {
             ctx.request_repaint();
@@ -594,6 +601,9 @@ impl App {
                 ui.add_space(10.0);
                 if primary_button(ui, "Apply model").clicked() {
                     *apply_model = true;
+                }
+                if ui.button(txt(tr("Discard changes"), 13.0, None)).clicked() {
+                    d.backend = self.cfg.backend.clone();
                 }
                 lbl(
                     ui,

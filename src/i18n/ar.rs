@@ -96,6 +96,7 @@ pub const TABLE: &[(&str, &str)] = &[
     ("{action} · or double-click in the list", "{action} · أو انقر نقرًا مزدوجًا في القائمة"),
     ("Copied", "تم النسخ"),
     ("Save anyway", "احفظه على أي حال"),
+    ("Discard changes", "تجاهل التغييرات"),
     ("Clipboard Manager could not start.", "تعذّر تشغيل مدير الحافظة."),
     ("Saved", "تم الحفظ"),
     ("Copied text", "تم نسخ النص"),

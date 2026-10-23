@@ -813,8 +813,13 @@ fn with_headers(labels: impl Iterator<Item = &'static str>) -> Vec<Line> {
 impl App {
     fn keyboard(&mut self, ctx: &egui::Context) {
         if self.draft.is_some() {
-            // While a shortcut field listens, Esc is its "cancel".
-            if self.recording.is_none() && ctx.input(|i| i.key_pressed(Key::Escape)) {
+            // Esc first closes what is open inside Settings: a shortcut field
+            // listening (its "cancel"), a menu, or a text field being typed
+            // in. Only an Esc with none of these leaves (and applies) Settings.
+            let busy = self.recording.is_some()
+                || egui::Popup::is_any_open(ctx)
+                || ctx.memory(|m| m.focused().is_some());
+            if !busy && ctx.input(|i| i.key_pressed(Key::Escape)) {
                 self.close_settings(ctx);
             }
             return;
