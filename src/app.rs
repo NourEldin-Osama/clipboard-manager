@@ -769,14 +769,17 @@ impl App {
                 };
             }
             UpdateMsg::Downloaded(result) => {
-                let release = match std::mem::replace(&mut self.update, UpdateState::Idle) {
-                    UpdateState::Downloading(r, _) => r,
-                    _ => return,
-                };
+                let (release, progress) =
+                    match std::mem::replace(&mut self.update, UpdateState::Idle) {
+                        UpdateState::Downloading(r, p) => (r, p),
+                        _ => return,
+                    };
                 self.update = match result {
                     Ok(path) => UpdateState::Ready(release, path),
                     // Cancelled: back to asking.
-                    Err(e) if e == "cancelled" => UpdateState::Available(release),
+                    Err(_) if progress.cancel.load(Ordering::Relaxed) => {
+                        UpdateState::Available(release)
+                    }
                     Err(e) => {
                         log::warn!("update download: {e}");
                         UpdateState::Failed {

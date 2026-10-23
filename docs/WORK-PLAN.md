@@ -76,7 +76,7 @@ Status: `[ ]` to do, `[~]` in progress, `[x]` done, `[!]` waiting for a decision
 - [x] 3.6 Slow disk work off the UI thread: import (own thread, one transaction per batch), PNG save and copy-back (one background thread). Delete, prune and clear stay: measured 2-3 ms
 - [x] 3.7 Worker queue: priorities, survives panics, restarts
 - [x] 3.8 Search runs on a background thread (measured: 85 ms at 100,000 items, 650 ms for 1,000 multi-vector images; the snapshot it needs takes 4 ms at 100,000)
-- [ ] 3.9 Code quality: `setting_for` helper, enums instead of numbers and strings, no ignored errors
+- [x] 3.9 Code quality: `setting_for` helper, enums instead of numbers and strings, no ignored errors
 
 ### Phase 4. Text system
 - [ ] 4.1 Project Fluent with semantic keys, whole sentences, placeholders and Arabic plurals
