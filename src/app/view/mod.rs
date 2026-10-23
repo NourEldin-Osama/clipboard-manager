@@ -154,11 +154,10 @@ impl App {
 impl eframe::App for App {
     fn raw_input_hook(&mut self, ctx: &egui::Context, raw_input: &mut egui::RawInput) {
         let line_points = ctx.options(|o| o.input_options.line_scroll_speed);
+        // The keys held as the frame starts; this frame's changes are events.
+        let modifiers = ctx.input(|i| i.modifiers);
         let events = std::mem::take(&mut raw_input.events);
-        raw_input.events = events
-            .into_iter()
-            .flat_map(|e| touchpad_scroll(e, line_points))
-            .collect();
+        raw_input.events = repair_input(events, modifiers, line_points);
     }
 
     fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
