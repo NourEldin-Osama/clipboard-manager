@@ -734,8 +734,10 @@ impl App {
                 .find(|i| i.hash == hash && i.origin == Origin::Clipboard)
             {
                 it.created = now();
-                let it = it.clone();
-                let _ = self.store.put(&it);
+                let (id, created) = (it.id, it.created);
+                if let Err(e) = self.store.update(id, |stored| stored.created = created) {
+                    self.set_error(format!("saving item: {e}"));
+                }
                 self.dirty = true;
                 return;
             }
@@ -1068,8 +1070,14 @@ impl App {
                     if x.origin == Origin::Clipboard {
                         x.created = now();
                     }
-                    let x = x.clone();
-                    let _ = self.store.put(&x);
+                    let (uses, created) = (x.uses, x.created);
+                    let saved = self.store.update(id, |stored| {
+                        stored.uses = uses;
+                        stored.created = created;
+                    });
+                    if let Err(e) = saved {
+                        self.set_error(format!("saving item: {e}"));
+                    }
                     self.dirty = true;
                 }
                 self.toast("Copied");
@@ -1087,8 +1095,10 @@ impl App {
     fn toggle_pin(&mut self, id: u64) {
         if let Some(it) = self.items.iter_mut().find(|i| i.id == id) {
             it.pinned = !it.pinned;
-            let it = it.clone();
-            let _ = self.store.put(&it);
+            let pinned = it.pinned;
+            if let Err(e) = self.store.update(id, |stored| stored.pinned = pinned) {
+                self.set_error(format!("saving item: {e}"));
+            }
             self.dirty = true;
         }
     }
@@ -1110,15 +1120,17 @@ impl App {
         v
     }
 
-    fn save_item(&mut self, id: u64) {
-        if let Some(it) = self.items.iter().find(|i| i.id == id) {
-            if let Err(e) = self.store.put(it) {
-                let e = format!("saving item: {e}");
-                self.set_error(e);
-                return;
-            }
-            self.lower.insert(id, it.searchable_text().to_lowercase());
+    /// Saves an item's tags, and only them, so OCR text saved meanwhile stays.
+    fn save_tags(&mut self, id: u64) {
+        let Some(it) = self.items.iter().find(|i| i.id == id) else {
+            return;
+        };
+        let (tags, lower) = (it.tags.clone(), it.searchable_text().to_lowercase());
+        if let Err(e) = self.store.update(id, |stored| stored.tags = tags) {
+            self.set_error(format!("saving item: {e}"));
+            return;
         }
+        self.lower.insert(id, lower);
         self.dirty = true;
     }
 
@@ -1144,14 +1156,14 @@ impl App {
                 .unwrap_or(t);
             it.tags.push(t);
         }
-        self.save_item(id);
+        self.save_tags(id);
     }
 
     fn remove_tag(&mut self, id: u64, tag: &str) {
         if let Some(it) = self.items.iter_mut().find(|i| i.id == id) {
             it.tags.retain(|t| !t.eq_ignore_ascii_case(tag));
         }
-        self.save_item(id);
+        self.save_tags(id);
         self.drop_stale_tag_filter();
     }
 
@@ -1167,7 +1179,7 @@ impl App {
             if let Some(it) = self.items.iter_mut().find(|i| i.id == *id) {
                 it.tags.retain(|t| !t.eq_ignore_ascii_case(tag));
             }
-            self.save_item(*id);
+            self.save_tags(*id);
         }
         self.drop_stale_tag_filter();
         self.toast(trf(

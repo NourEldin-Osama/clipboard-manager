@@ -267,7 +267,7 @@ impl State {
     }
 
     fn do_ocr(&mut self, id: u64) -> Result<()> {
-        let Some(mut item) = self.store.get(id)? else {
+        let Some(item) = self.store.get(id)? else {
             return Ok(());
         };
         let Some(path) = item.image.clone() else {
@@ -281,9 +281,14 @@ impl State {
             Some(ocr) => ocr.recognize(&img)?,
             None => return Ok(()),
         };
-        item.ocr = Some(text.as_str().into());
-        self.store.put(&item)?;
-        self.emit(Event::Ocr { id, text });
+        // Only the OCR field: a pin or tag set while OCR ran stays, and an item
+        // deleted meanwhile stays deleted.
+        let saved = self
+            .store
+            .update(id, |stored| stored.ocr = Some(text.as_str().into()))?;
+        if saved.is_some() {
+            self.emit(Event::Ocr { id, text });
+        }
         Ok(())
     }
 

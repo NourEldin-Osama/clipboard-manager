@@ -40,7 +40,7 @@ Status: `[ ]` to do, `[~]` in progress, `[x]` done, `[!]` waiting for a decision
 - [x] 2.1 Global shortcuts stay off after a cancelled or unchanged shortcut recording
 - [x] 2.2 Embedding server settings are remembered per server address (the Unsloth report)
 - [x] 2.3 API keys are encrypted with Windows DPAPI
-- [ ] 2.4 OCR no longer overwrites pins and tags
+- [x] 2.4 OCR no longer overwrites pins and tags
 - [ ] 2.5 Secret filter: no false alarms on file names, catches more real secrets, "Save anyway"
 - [ ] 2.6 Tag filter works with meaning search
 - [ ] 2.7 The tag field no longer freezes the keyboard
