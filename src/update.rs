@@ -41,8 +41,8 @@ pub fn build() -> Option<u32> {
 /// "0.1.0 (build 12)", or "0.1.0 (development build)".
 pub fn current_label() -> String {
     match build() {
-        Some(b) => format!("{VERSION} (build {b})"),
-        None => format!("{VERSION} ({})", crate::i18n::tr("development build")),
+        Some(b) => crate::i18n::t!("update-version-label", version = VERSION, build = b),
+        None => crate::i18n::t!("update-development-build", version = VERSION),
     }
 }
 
@@ -58,8 +58,13 @@ pub struct Release {
 }
 
 impl Release {
+    /// "1.4.0 (build 52)", in the interface language.
     pub fn label(&self) -> String {
-        format!("{} (build {})", self.version, self.build)
+        crate::i18n::t!(
+            "update-version-label",
+            version = self.version.as_str(),
+            build = self.build
+        )
     }
 
     /// Remembered by "Skip this version".

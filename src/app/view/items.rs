@@ -115,7 +115,7 @@ pub(super) fn subtitle_detail(it: &Item) -> String {
                     .map(|p| p.display().to_string())
                     .unwrap_or_default()
             } else {
-                trf("{n} files", &[("n", &n)])
+                t!("item-files-count", count = n)
             }
         }
         Kind::Text => {

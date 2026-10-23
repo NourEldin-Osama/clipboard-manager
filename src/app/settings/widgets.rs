@@ -33,17 +33,17 @@ pub(super) fn toggle(ui: &mut Ui, on: &mut bool) -> egui::Response {
 
 /// Options side by side; the chosen one is tinted. Called inside a setting's
 /// control area, which fills from the far end, so options are added in reverse.
-pub(super) fn segmented<T: PartialEq + Copy>(
+pub(super) fn segmented<T: PartialEq + Copy, L: AsRef<str>>(
     ui: &mut Ui,
     value: &mut T,
-    options: &[(T, &str)],
+    options: &[(T, L)],
 ) -> bool {
     let mut changed = false;
     ui.spacing_mut().item_spacing.x = 2.0;
     for (v, label) in options.iter().rev() {
         let sel = *value == *v;
         let text = txt(
-            tr(label),
+            label.as_ref(),
             13.0,
             Some(if sel {
                 accent()
@@ -69,14 +69,14 @@ pub(super) fn segmented<T: PartialEq + Copy>(
 pub(super) fn info(ui: &mut Ui, text: &str) {
     tip(
         icons::glyph(ui, Icon::Info, 14.0, ui.visuals().weak_text_color()),
-        tr(text),
+        text,
     );
 }
 
 pub(super) fn section(ui: &mut Ui, title: &str) {
     ui.add_space(18.0);
     let weak = ui.visuals().weak_text_color();
-    row(ui, |ui| lbl(ui, &tr(title).to_uppercase(), 11.5, weak));
+    row(ui, |ui| lbl(ui, &title.to_uppercase(), 11.5, weak));
     ui.add_space(4.0);
 }
 
@@ -165,7 +165,7 @@ pub(super) fn setting_row(
                         if icons::icon_button_ex(
                             ui,
                             Icon::Reset,
-                            "Back to default",
+                            &t!("settings-back-to-default"),
                             Vec2::splat(28.0),
                             14.0,
                             None,
@@ -190,15 +190,17 @@ pub(super) fn note(ui: &mut Ui, text: &str) {
     Frame::new()
         .inner_margin(Margin::symmetric(10, 0))
         .show(ui, |ui| {
-            super::bidi::paragraph(ui, tr(text), FontId::proportional(12.5), weak);
+            super::bidi::paragraph(ui, text, FontId::proportional(12.5), weak);
         });
 }
 
 pub(super) fn path_field(ui: &mut Ui, p: &mut PathBuf, ext: &[&str]) {
-    if ui.button(txt(tr("Browse…"), 14.0, None)).clicked() {
+    if ui.button(txt(&t!("settings-browse"), 14.0, None)).clicked() {
         let mut dlg = rfd::FileDialog::new();
         if !ext.is_empty() {
-            dlg = dlg.add_filter("file", ext).add_filter("all", &["*"]);
+            dlg = dlg
+                .add_filter(t!("settings-filter-matching"), ext)
+                .add_filter(t!("settings-filter-all"), &["*"]);
         }
         if let Some(f) = dlg.pick_file() {
             *p = f;

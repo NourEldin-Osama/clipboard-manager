@@ -11,6 +11,7 @@ use redb::{Database, ReadableDatabase, ReadableTable, TableDefinition};
 use serde::{Deserialize, Serialize};
 
 use crate::embed::Embedding;
+use crate::i18n::t;
 
 const ITEMS: TableDefinition<u64, &[u8]> = TableDefinition::new("items");
 const EMBEDDINGS: TableDefinition<(&str, u64), &[u8]> = TableDefinition::new("embeddings");
@@ -38,12 +39,13 @@ pub enum Kind {
 }
 
 impl Kind {
-    pub fn label(self) -> &'static str {
+    /// Its name in the interface language.
+    pub fn label(self) -> String {
         match self {
-            Kind::Text => "Text",
-            Kind::Link => "Link",
-            Kind::Image => "Image",
-            Kind::Files => "Files",
+            Kind::Text => t!("kind-text"),
+            Kind::Link => t!("kind-link"),
+            Kind::Image => t!("kind-image"),
+            Kind::Files => t!("kind-files"),
         }
     }
 }
@@ -144,10 +146,7 @@ impl Item {
                             .file_name()
                             .map(|f| f.to_string_lossy().into_owned())
                             .unwrap_or_default(),
-                        None => crate::i18n::trf(
-                            "Image {w}×{h}",
-                            &[("w", &self.width), ("h", &self.height)],
-                        ),
+                        None => t!("item-image-size", width = self.width, height = self.height),
                     }
                 }
             },

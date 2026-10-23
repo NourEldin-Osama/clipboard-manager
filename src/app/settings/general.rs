@@ -4,12 +4,12 @@ use super::*;
 
 pub(super) fn general_settings(ui: &mut Ui, d: &mut Config) {
     let def = Config::default();
-    section(ui, "Language and time");
+    section(ui, &t!("settings-language-and-time"));
     // Each language is named in itself, so it can be found whatever is showing.
     setting_for(
         ui,
-        "Language",
-        "The language of the app. Arabic also lays the window out right to left.",
+        &t!("settings-language"),
+        &t!("settings-language-help"),
         &mut d.language,
         def.language,
         |ui, language| {
@@ -25,26 +25,40 @@ pub(super) fn general_settings(ui: &mut Ui, d: &mut Config) {
     );
     setting_for(
         ui,
-        "Time format",
-        "How times are shown. They're stored in UTC and shown in your time zone.",
+        &t!("settings-time-format"),
+        &t!("settings-time-format-help"),
         &mut d.time_format,
         def.time_format,
         |ui, time_format| {
             segmented(
                 ui,
                 time_format,
-                &[(TimeFormat::H24, "24-hour"), (TimeFormat::H12, "12-hour")],
+                &[
+                    (TimeFormat::H24, t!("settings-time-24h")),
+                    (TimeFormat::H12, t!("settings-time-12h")),
+                ],
             )
         },
     );
-    section(ui, "Startup");
-    setting_for(ui, "Start when you sign in", "Opens the app each time you sign in to Windows. It starts hidden: in the system tray when that's on, otherwise minimised.", &mut d.start_at_login, def.start_at_login, toggle);
-    section(ui, "System tray");
-    setting_for(ui, "Keep running in the system tray", "Shows an icon in the notification area. Closing or minimising the window hides it there and history keeps recording. Click the icon to open; right-click it to quit.", &mut d.tray, def.tray, toggle);
-    note(
+    section(ui, &t!("settings-startup"));
+    setting_for(
         ui,
-        "With both on, the app starts quietly in the tray each time you sign in.",
+        &t!("settings-start-at-sign-in"),
+        &t!("settings-start-at-sign-in-help"),
+        &mut d.start_at_login,
+        def.start_at_login,
+        toggle,
     );
+    section(ui, &t!("settings-tray-section"));
+    setting_for(
+        ui,
+        &t!("settings-tray"),
+        &t!("settings-tray-help"),
+        &mut d.tray,
+        def.tray,
+        toggle,
+    );
+    note(ui, &t!("settings-startup-note"));
 }
 
 impl App {
@@ -55,21 +69,35 @@ impl App {
 
     pub(super) fn updates_section(&mut self, ui: &mut Ui, d: &mut Config) {
         let def = Config::default();
-        section(ui, "Updates");
+        section(ui, &t!("settings-updates"));
         let release_build = crate::update::build().is_some();
-        setting_for(ui, "Check for updates automatically", "Looks for a new version when the app starts and once a day. Only the version file on GitHub is fetched; nothing about you or your clipboard is sent.", &mut d.update_check, def.update_check, toggle);
-        setting_for(ui, "Download updates automatically", "On: a new version downloads in the background and installs when you restart or quit. Off: you're asked before anything is downloaded.", &mut d.update_download, def.update_download, toggle);
+        setting_for(
+            ui,
+            &t!("settings-update-check"),
+            &t!("settings-update-check-help"),
+            &mut d.update_check,
+            def.update_check,
+            toggle,
+        );
+        setting_for(
+            ui,
+            &t!("settings-update-download"),
+            &t!("settings-update-download-help"),
+            &mut d.update_download,
+            def.update_download,
+            toggle,
+        );
         let mut check = false;
         plain_setting(
             ui,
-            "Version",
-            "Every download is checked against this app's signing key before it's installed.",
+            &t!("settings-version"),
+            &t!("settings-version-help"),
             |ui| {
                 if release_build
                     && ui
                         .add_enabled(
                             self.update_rx.is_none(),
-                            egui::Button::new(txt(tr("Check now"), 13.0, None)),
+                            egui::Button::new(txt(&t!("settings-check-now"), 13.0, None)),
                         )
                         .clicked()
                 {
@@ -77,22 +105,18 @@ impl App {
                 }
                 let weak = ui.visuals().weak_text_color();
                 let status = match &self.update {
-                    UpdateState::Checking => tr("Checking…").to_string(),
-                    UpdateState::UpToDate => tr("You're up to date").to_string(),
-                    UpdateState::Available(r) => {
-                        trf("Version {version} is available", &[("version", &r.label())])
-                    }
+                    UpdateState::Checking => t!("settings-update-checking"),
+                    UpdateState::UpToDate => t!("settings-update-current"),
+                    UpdateState::Available(r) => t!("update-available", version = r.label()),
                     UpdateState::Downloading(r, _) => {
-                        trf("Downloading version {version}…", &[("version", &r.label())])
+                        t!("update-downloading", version = r.label())
                     }
-                    UpdateState::Ready(r, _) => {
-                        trf("Version {version} is ready", &[("version", &r.label())])
-                    }
+                    UpdateState::Ready(r, _) => t!("update-ready", version = r.label()),
                     UpdateState::Failed { error, .. } => {
-                        trf("Update failed: {error}", &[("error", error)])
+                        t!("update-failed", error = error.as_str())
                     }
                     UpdateState::Idle if !release_build => {
-                        tr("Updates are off in development builds").to_string()
+                        t!("settings-updates-off-dev")
                     }
                     UpdateState::Idle => String::new(),
                 };

@@ -8,18 +8,18 @@ pub(super) type KeyField = fn(&mut Config) -> &mut String;
 impl App {
     pub(super) fn shortcuts_page(&mut self, ui: &mut Ui, d: &mut Config, apply_keys: &mut bool) {
         let def = Config::default();
-        section(ui, "Anywhere in Windows");
-        let globals: [(ShortcutField, &str, &str, KeyField); 2] = [
+        section(ui, &t!("settings-shortcuts-global"));
+        let globals: [(ShortcutField, String, String, KeyField); 2] = [
             (
                 ShortcutField::Show,
-                "Show or hide this window",
-                "Opens the window over whatever you're doing; press again to hide it.",
+                t!("settings-shortcut-show"),
+                t!("settings-shortcut-show-help"),
                 |c| &mut c.show_hotkey,
             ),
             (
                 ShortcutField::IgnoreNext,
-                "Don't record the next copy",
-                "Press before copying something private: the next copy is skipped.",
+                t!("settings-shortcut-ignore"),
+                t!("settings-shortcut-ignore-help"),
                 |c| &mut c.ignore_next_hotkey,
             ),
         ];
@@ -28,7 +28,7 @@ impl App {
             let value = field(d);
             let invalid = !value.trim().is_empty() && HotKey::from_str(value.trim()).is_err();
             let mut result = shortcut::Recorded::Nothing;
-            let reset = setting(ui, label, help, *value != default, |ui| {
+            let reset = setting(ui, &label, &help, *value != default, |ui| {
                 result = shortcut::recorder(
                     ui,
                     value,
@@ -37,9 +37,9 @@ impl App {
                     &mut self.record_problem,
                 );
                 if invalid {
-                    chip(ui, "⚠ Not usable", RED);
+                    icons::chip(ui, Icon::Warning, &t!("settings-shortcut-not-usable"), RED);
                 } else if self.hotkey_conflicts.iter().any(|k| k == value.trim()) {
-                    chip(ui, "Used by another app", RED);
+                    chip(ui, t!("settings-shortcut-taken"), RED);
                 }
             });
             if reset {
@@ -64,21 +64,23 @@ impl App {
             note(ui, &format!("⚠ {e}"));
         }
 
-        section(ui, "Inside the app");
-        let locals: [(ShortcutField, &str, KeyField); 5] = [
-            (
-                ShortcutField::Copy,
-                "Copy the selected item and hide the window",
-                |c| &mut c.keys.copy,
-            ),
-            (ShortcutField::Pin, "Pin or unpin", |c| &mut c.keys.pin),
-            (ShortcutField::Delete, "Delete", |c| &mut c.keys.delete),
-            (ShortcutField::Tag, "Add a tag", |c| &mut c.keys.tag),
-            (
-                ShortcutField::View,
-                "Switch between Grid, List and Detail",
-                |c| &mut c.keys.view,
-            ),
+        section(ui, &t!("settings-shortcuts-local"));
+        let locals: [(ShortcutField, String, KeyField); 5] = [
+            (ShortcutField::Copy, t!("settings-shortcut-copy"), |c| {
+                &mut c.keys.copy
+            }),
+            (ShortcutField::Pin, t!("settings-shortcut-pin"), |c| {
+                &mut c.keys.pin
+            }),
+            (ShortcutField::Delete, t!("settings-shortcut-delete"), |c| {
+                &mut c.keys.delete
+            }),
+            (ShortcutField::Tag, t!("settings-shortcut-tag"), |c| {
+                &mut c.keys.tag
+            }),
+            (ShortcutField::View, t!("settings-shortcut-view"), |c| {
+                &mut c.keys.view
+            }),
         ];
         let current: Vec<(ShortcutField, String)> = locals
             .iter()
@@ -92,7 +94,7 @@ impl App {
                     .iter()
                     .any(|(other, v)| *other != id && v.eq_ignore_ascii_case(value));
             let mut result = shortcut::Recorded::Nothing;
-            let reset = setting(ui, label, "", *value != default, |ui| {
+            let reset = setting(ui, &label, "", *value != default, |ui| {
                 result = shortcut::recorder(
                     ui,
                     value,
@@ -101,7 +103,7 @@ impl App {
                     &mut self.record_problem,
                 );
                 if clash {
-                    chip(ui, "Used twice", AMBER);
+                    chip(ui, t!("settings-shortcut-used-twice"), AMBER);
                 }
             });
             if reset {
@@ -116,17 +118,14 @@ impl App {
             }
         }
         for (label, keys) in [
-            ("Move through the list", "Up+Down"),
-            ("Move between cards in the grid", "Left+Right"),
-            ("Close details, clear the search, or hide", "Escape"),
+            (t!("settings-shortcut-move"), "Up+Down"),
+            (t!("settings-shortcut-move-grid"), "Left+Right"),
+            (t!("settings-shortcut-escape"), "Escape"),
         ] {
-            plain_setting(ui, label, "Built in; can't be changed.", |ui| {
+            plain_setting(ui, &label, &t!("settings-shortcut-built-in"), |ui| {
                 shortcut::fixed(ui, keys)
             });
         }
-        note(
-            ui,
-            "Click a shortcut, then press the new keys. Backspace turns it off, Esc cancels.",
-        );
+        note(ui, &t!("settings-shortcuts-note"));
     }
 }

@@ -52,10 +52,11 @@ Run every hook on every file with `prek run --all-files`.
 
 ## Translations
 
-Interface text is written in English at the call site and translated through `tr("…")` or
-`trf("… {name} …", &[("name", &value)])`. Arabic lives in [`src/i18n/ar.rs`](src/i18n/ar.rs), keyed by the English text.
-When you add or change a visible string, add or update its Arabic entry; a test checks that placeholders match and
-keys aren't duplicated. Arabic text is laid out right to left by the helpers in `src/app/bidi.rs`; use `txt`, `lbl`,
+Interface text is never written in the code. Each text has a key in `locales/en/main.ftl` and `locales/ar/main.ftl`
+([Project Fluent](https://projectfluent.org/)), and the code asks for it with `t!("key")` or `t!("key", name = value)`;
+error messages use `log_error!`. When you add or change a visible text, change it in every language; `cargo test`
+checks that the languages and the code match. [`docs/TRANSLATING.md`](docs/TRANSLATING.md) explains the rules for keys
+and plural forms, and how to add a language. Arabic text is laid out right to left by the helpers in `src/app/bidi.rs`; use `txt`, `lbl`,
 `row` and `far` from `src/app/view/widgets.rs` instead of `ui.label`/`ui.horizontal` so new UI mirrors correctly.
 
 ## Icons

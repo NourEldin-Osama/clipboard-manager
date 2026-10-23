@@ -53,7 +53,7 @@ impl App {
                                 egui::Label::new(txt(&format!("# {t}"), 12.5, Some(c)))
                                     .sense(Sense::click()),
                             ),
-                            tr("Show only items with this tag"),
+                            &t!("details-only-this-tag"),
                         )
                         .clicked()
                         {
@@ -62,7 +62,7 @@ impl App {
                         if icon_button_ex(
                             ui,
                             Icon::Close,
-                            "Remove tag",
+                            &t!("details-remove-tag"),
                             Vec2::splat(18.0),
                             8.0,
                             None,
@@ -86,7 +86,7 @@ impl App {
                 let r = ui.add(
                     egui::TextEdit::singleline(text)
                         .id(id)
-                        .hint_text(txt(tr("tag, another…"), 13.0, None))
+                        .hint_text(txt(&t!("details-tag-hint"), 13.0, None))
                         .desired_width(150.0)
                         .font(FontId::proportional(13.0)),
                 );
@@ -125,14 +125,18 @@ impl App {
                 }
             } else {
                 let job = pill_job(
-                    tr(if it.tags.is_empty() { "Add tag" } else { "Tag" }),
+                    &if it.tags.is_empty() {
+                        t!("details-add-tag")
+                    } else {
+                        t!("details-tag")
+                    },
                     12.5,
                     ui.visuals().weak_text_color(),
                     None,
                 );
                 if tip(
                     icons::pill(ui, Icon::Add, job, accent(), false),
-                    &hint("Add a tag", &self.cfg.keys.tag),
+                    &hint(&t!("details-add-tag-tip"), &self.cfg.keys.tag),
                 )
                 .clicked()
                 {
@@ -170,7 +174,7 @@ impl App {
                 && icons::icon_button_ex(
                     ui,
                     Icon::Back,
-                    "Close details (Esc)",
+                    &t!("details-close"),
                     Vec2::splat(30.0),
                     20.0,
                     None,
@@ -183,24 +187,26 @@ impl App {
             icons::chip(
                 ui,
                 icons::kind(it.kind),
-                it.kind.label(),
+                &it.kind.label(),
                 kind_color(it.kind),
             );
             if it.pinned {
-                icons::chip(ui, Icon::PinFilled, "Pinned", accent());
+                icons::chip(ui, Icon::PinFilled, &t!("details-pinned"), accent());
             }
             if it.origin == Origin::Imported {
-                chip(ui, "📂 From your files", Color32::GRAY);
+                icons::chip(ui, Icon::Folder, &t!("details-from-files"), Color32::GRAY);
             }
             far(ui, |ui| {
                 let keys = self.cfg.keys.clone();
-                if icons::icon_button(ui, Icon::Delete, &hint("Delete", &keys.delete)).clicked() {
+                if icons::icon_button(ui, Icon::Delete, &hint(&t!("details-delete"), &keys.delete))
+                    .clicked()
+                {
                     self.run(Command::Delete(it.id));
                 }
                 let (pin, tip) = if it.pinned {
-                    (Icon::PinFilled, hint("Unpin", &keys.pin))
+                    (Icon::PinFilled, hint(&t!("details-unpin"), &keys.pin))
                 } else {
-                    (Icon::Pin, hint("Pin: keep forever", &keys.pin))
+                    (Icon::Pin, hint(&t!("details-pin-keep"), &keys.pin))
                 };
                 let pin_color = it.pinned.then(accent);
                 if icon_button_ex(ui, pin, &tip, Vec2::splat(34.0), 16.0, None, pin_color).clicked()
@@ -208,7 +214,7 @@ impl App {
                     self.run(Command::Pin(it.id));
                 }
                 if it.kind == Kind::Image
-                    && icons::icon_button(ui, Icon::Save, "Save image as…").clicked()
+                    && icons::icon_button(ui, Icon::Save, &t!("details-save-image")).clicked()
                 {
                     if let (Some(src), Some(dst)) = (
                         &it.image,
@@ -217,26 +223,31 @@ impl App {
                             .save_file(),
                     ) {
                         if let Err(e) = image::open(src).and_then(|i| i.save(&dst)) {
-                            self.set_error(format!("save failed: {e}"));
+                            self.set_error(log_error!("error-saving-image", error = e.to_string()));
                         }
                     }
                     self.after_dialog();
                 }
                 if let Some(p) = &it.source {
-                    if icons::icon_button(ui, Icon::Folder, "Show in folder").clicked() {
+                    if icons::icon_button(ui, Icon::Folder, &t!("details-show-in-folder")).clicked()
+                    {
                         if let Err(e) = reveal(p) {
-                            self.set_error(format!("opening the folder: {e}"));
+                            self.set_error(log_error!(
+                                "error-opening-folder",
+                                error = e.to_string()
+                            ));
                         }
                     }
                 }
                 if it.kind == Kind::Link
-                    && icons::icon_button(ui, Icon::Browser, "Open in browser").clicked()
+                    && icons::icon_button(ui, Icon::Browser, &t!("details-open-in-browser"))
+                        .clicked()
                 {
                     ctx.open_url(egui::OpenUrl::new_tab(it.text.trim()));
                 }
-                let copy_tip = trf(
-                    "{action} · or double-click in the list",
-                    &[("action", &hint("Copy", &keys.copy))],
+                let copy_tip = t!(
+                    "details-copy-tip",
+                    action = hint(&t!("details-copy"), &keys.copy)
                 );
                 if icon_button_ex(
                     ui,
@@ -281,7 +292,10 @@ impl App {
                                 .unwrap_or_else(|| line.to_string());
                             if tip(ui.link(txt(&name, 14.5, None)), line).clicked() {
                                 if let Err(e) = reveal(&p) {
-                                    self.set_error(format!("opening the folder: {e}"));
+                                    self.set_error(log_error!(
+                                        "error-opening-folder",
+                                        error = e.to_string()
+                                    ));
                                 }
                             }
                             let parent = p
@@ -335,26 +349,26 @@ impl App {
                 let d = self.detail_text(it);
                 let (c, w, code) = (d.chars, d.words, d.monospace);
                 if code {
-                    parts.push(trf("{n} lines of code", &[("n", &it.text.lines().count())]));
+                    parts.push(t!("details-code-lines", count = it.text.lines().count()));
                 }
-                parts.push(trf("{n} characters", &[("n", &c)]));
-                parts.push(if w == 1 {
-                    tr("1 word").to_string()
-                } else {
-                    trf("{n} words", &[("n", &w)])
-                });
+                parts.push(t!("details-characters", count = c));
+                parts.push(t!("details-words", count = w));
             }
             Kind::Image => {
-                parts.push(format!("{} × {} px", it.width, it.height));
+                parts.push(t!(
+                    "details-image-size",
+                    width = it.width,
+                    height = it.height
+                ));
                 match it.ocr.as_deref() {
-                    Some(o) if !o.trim().is_empty() => parts.push(tr("contains text").into()),
-                    Some(_) => parts.push(tr("no text found").into()),
-                    None if self.cfg.ocr_images => parts.push(tr("reading text…").into()),
+                    Some(o) if !o.trim().is_empty() => parts.push(t!("details-has-text")),
+                    Some(_) => parts.push(t!("details-no-text")),
+                    None if self.cfg.ocr_images => parts.push(t!("details-reading-text")),
                     None => {}
                 }
             }
             Kind::Link => parts.push(domain(&it.text).to_string()),
-            Kind::Files => parts.push(trf("{n} item(s)", &[("n", &it.text.lines().count())])),
+            Kind::Files => parts.push(t!("details-files-count", count = it.text.lines().count())),
         }
         if let Some(src) = &it.source {
             parts.push(src.display().to_string());
@@ -377,7 +391,7 @@ impl App {
             Preview::Missing => {
                 lbl(
                     ui,
-                    "The image file is missing.",
+                    &t!("details-image-missing"),
                     14.0,
                     ui.visuals().weak_text_color(),
                 );
@@ -386,11 +400,16 @@ impl App {
         if let Some(t) = it.ocr.as_deref().filter(|t| !t.trim().is_empty()) {
             ui.add_space(16.0);
             row(ui, |ui| {
-                lbl(ui, "TEXT IN IMAGE", 11.5, ui.visuals().weak_text_color());
+                lbl(
+                    ui,
+                    &t!("details-text-in-image"),
+                    11.5,
+                    ui.visuals().weak_text_color(),
+                );
                 if icon_button_ex(
                     ui,
                     Icon::Copy,
-                    "Copy text",
+                    &t!("details-copy-text"),
                     Vec2::splat(26.0),
                     13.0,
                     None,
@@ -414,16 +433,16 @@ impl App {
         ui.add_space(80.0);
         ui.vertical_centered(|ui| {
             let weak = ui.visuals().weak_text_color();
-            lbl(ui, "Select an item to see it here", 14.0, weak);
+            lbl(ui, &t!("details-select-an-item"), 14.0, weak);
             ui.add_space(18.0);
             let k = &self.cfg.keys;
             let rows = [
-                ("Up+Down", "move"),
-                (k.copy.as_str(), "copy & hide"),
-                (k.pin.as_str(), "pin"),
-                (k.tag.as_str(), "tag"),
-                (k.delete.as_str(), "delete"),
-                ("Escape", "clear / hide"),
+                ("Up+Down", t!("details-key-move")),
+                (k.copy.as_str(), t!("details-key-copy")),
+                (k.pin.as_str(), t!("details-key-pin")),
+                (k.tag.as_str(), t!("details-key-tag")),
+                (k.delete.as_str(), t!("details-key-delete")),
+                ("Escape", t!("details-key-clear")),
             ];
             for (keys, what) in rows.into_iter().filter(|(k, _)| !k.trim().is_empty()) {
                 row(ui, |ui| {
@@ -441,7 +460,7 @@ impl App {
                     };
                     shortcut::keycaps(&mut caps, &keys, false);
                     ui.add_space(8.0);
-                    lbl(ui, what, 12.5, weak);
+                    lbl(ui, &what, 12.5, weak);
                 });
             }
         });

@@ -6,5 +6,5 @@
 
 - [ ] `cargo test` and `cargo clippy` pass
 - [ ] Tried it in the app (screenshots for UI changes)
-- [ ] New interface text is in `src/i18n/ar.rs` too
+- [ ] New interface text is in every `locales/*/main.ftl` file
 - [ ] README updated if behaviour or settings changed

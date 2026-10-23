@@ -8,7 +8,7 @@ use anyhow::Result;
 use tray_icon::menu::{Menu, MenuEvent, MenuItem, PredefinedMenuItem};
 use tray_icon::{MouseButton, MouseButtonState, TrayIcon, TrayIconBuilder, TrayIconEvent};
 
-use crate::i18n::tr;
+use crate::i18n::t;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TrayCmd {
@@ -33,9 +33,9 @@ impl Tray {
         tx: Sender<TrayCmd>,
         wake: impl Fn() + Send + Sync + Clone + 'static,
     ) -> Result<Self> {
-        let show = MenuItem::new(tr("Show Clipboard Manager"), true, None);
+        let show = MenuItem::new(t!("tray-show"), true, None);
         let pause = MenuItem::new(pause_label(paused), true, None);
-        let quit = MenuItem::new(tr("Quit"), true, None);
+        let quit = MenuItem::new(t!("tray-quit"), true, None);
         let menu = Menu::new();
         menu.append_items(&[
             &show,
@@ -77,7 +77,7 @@ impl Tray {
 
         let icon = TrayIconBuilder::new()
             .with_icon(tray_icon::Icon::from_rgba(rgba, size, size)?)
-            .with_tooltip(tr("Clipboard Manager"))
+            .with_tooltip(t!("app-title"))
             .with_menu(Box::new(menu))
             .with_menu_on_left_click(false)
             .build()?;
@@ -97,10 +97,10 @@ impl Tray {
     }
 }
 
-fn pause_label(paused: bool) -> &'static str {
-    tr(if paused {
-        "Resume recording"
+fn pause_label(paused: bool) -> String {
+    if paused {
+        t!("tray-resume-recording")
     } else {
-        "Pause recording"
-    })
+        t!("tray-pause-recording")
+    }
 }

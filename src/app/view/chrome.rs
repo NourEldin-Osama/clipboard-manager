@@ -37,68 +37,130 @@ impl App {
         let mut action: Option<UpdateAction> = None;
         egui::Panel::top("update")
             .show_separator_line(false)
-            .frame(Frame::new().inner_margin(Margin { left: 16, right: 12, top: 6, bottom: 6 }).fill(fill))
+            .frame(
+                Frame::new()
+                    .inner_margin(Margin {
+                        left: 16,
+                        right: 12,
+                        top: 6,
+                        bottom: 6,
+                    })
+                    .fill(fill),
+            )
             .show(ui, |ui| {
                 row(ui, |ui| {
                     let text_color = ui.visuals().strong_text_color();
                     let notes = match &self.update {
-                        UpdateState::Available(r) | UpdateState::Downloading(r, _) | UpdateState::Ready(r, _) => Some(r.notes_url.clone()),
-                        UpdateState::Failed { release: Some(r), .. } => Some(r.notes_url.clone()),
+                        UpdateState::Available(r)
+                        | UpdateState::Downloading(r, _)
+                        | UpdateState::Ready(r, _) => Some(r.notes_url.clone()),
+                        UpdateState::Failed {
+                            release: Some(r), ..
+                        } => Some(r.notes_url.clone()),
                         _ => None,
                     };
                     match &self.update {
                         UpdateState::Available(r) => {
-                            ui.label(txt(&trf("Version {version} is available", &[("version", &r.label())]), 13.5, Some(text_color)));
+                            ui.label(txt(
+                                &t!("update-available", version = r.label()),
+                                13.5,
+                                Some(text_color),
+                            ));
                         }
                         UpdateState::Downloading(r, p) => {
-                            let (done, total) = (p.done.load(Ordering::Relaxed), p.total.load(Ordering::Relaxed).max(1));
+                            let (done, total) = (
+                                p.done.load(Ordering::Relaxed),
+                                p.total.load(Ordering::Relaxed).max(1),
+                            );
                             if done >= total {
-                                ui.label(txt(&trf("Checking the download of version {version}…", &[("version", &r.label())]), 13.5, Some(text_color)));
+                                ui.label(txt(
+                                    &t!("update-verifying", version = r.label()),
+                                    13.5,
+                                    Some(text_color),
+                                ));
                                 ui.add(egui::Spinner::new().size(14.0));
                             } else {
-                                ui.label(txt(&trf("Downloading version {version}…", &[("version", &r.label())]), 13.5, Some(text_color)));
-                                ui.add(egui::ProgressBar::new(done as f32 / total as f32).desired_width(160.0).text(format!("{} / {} MB", done >> 20, total >> 20)));
+                                ui.label(txt(
+                                    &t!("update-downloading", version = r.label()),
+                                    13.5,
+                                    Some(text_color),
+                                ));
+                                ui.add(
+                                    egui::ProgressBar::new(done as f32 / total as f32)
+                                        .desired_width(160.0)
+                                        .text(t!(
+                                            "update-progress",
+                                            done = done >> 20,
+                                            total = total >> 20
+                                        )),
+                                );
                             }
                         }
                         UpdateState::Ready(r, _) => {
-                            ui.label(txt(&trf("Version {version} is ready. Restart to update, or it installs when you quit.", &[("version", &r.label())]), 13.5, Some(text_color)));
+                            ui.label(txt(
+                                &t!("update-ready-restart", version = r.label()),
+                                13.5,
+                                Some(text_color),
+                            ));
                         }
                         UpdateState::Failed { error, .. } => {
                             icons::glyph(ui, Icon::Warning, 14.0, RED);
-                            ui.add(egui::Label::new(txt(&trf("Update failed: {error}", &[("error", error)]), 13.0, Some(RED))).truncate());
+                            ui.add(
+                                egui::Label::new(txt(
+                                    &t!("update-failed", error = error.as_str()),
+                                    13.0,
+                                    Some(RED),
+                                ))
+                                .truncate(),
+                            );
                         }
                         _ => {}
                     }
                     far(ui, |ui| {
-                        if icon_button_ex(ui, Icon::Close, "Later", Vec2::splat(26.0), 12.0, None, None).clicked() {
+                        if icon_button_ex(
+                            ui,
+                            Icon::Close,
+                            &t!("update-later"),
+                            Vec2::splat(26.0),
+                            12.0,
+                            None,
+                            None,
+                        )
+                        .clicked()
+                        {
                             action = Some(UpdateAction::Later);
                         }
                         match &self.update {
                             UpdateState::Available(_) => {
-                                if ui.button(txt(tr("Skip this version"), 13.0, None)).clicked() {
+                                if ui.button(txt(&t!("update-skip"), 13.0, None)).clicked() {
                                     action = Some(UpdateAction::Skip);
                                 }
-                                if primary_button(ui, "Download").clicked() {
+                                if primary_button(ui, &t!("update-download")).clicked() {
                                     action = Some(UpdateAction::Download);
                                 }
                             }
                             UpdateState::Downloading(..) => {
-                                if ui.button(txt(tr("Cancel"), 13.0, None)).clicked() {
+                                if ui.button(txt(&t!("common-cancel"), 13.0, None)).clicked() {
                                     action = Some(UpdateAction::Cancel);
                                 }
                             }
                             UpdateState::Ready(..) => {
-                                if primary_button(ui, "Restart to update").clicked() {
+                                if primary_button(ui, &t!("update-restart")).clicked() {
                                     action = Some(UpdateAction::Restart);
                                 }
                             }
-                            UpdateState::Failed { release: Some(_), .. } if ui.button(txt(tr("Try again"), 13.0, None)).clicked() => {
+                            UpdateState::Failed {
+                                release: Some(_), ..
+                            } if ui
+                                .button(txt(&t!("update-try-again"), 13.0, None))
+                                .clicked() =>
+                            {
                                 action = Some(UpdateAction::Retry);
                             }
                             _ => {}
                         }
                         if let Some(url) = notes {
-                            if ui.link(txt(tr("What's new"), 13.0, None)).clicked() {
+                            if ui.link(txt(&t!("update-whats-new"), 13.0, None)).clicked() {
                                 ctx.open_url(egui::OpenUrl::new_tab(url));
                             }
                         }
@@ -138,12 +200,12 @@ impl App {
 
     pub(crate) fn model_status(&self) -> (Color32, String) {
         match (&self.backend, &self.cfg.backend) {
-            (BackendState::Loading, _) => (AMBER, tr("Loading search model…").into()),
+            (BackendState::Loading, _) => (AMBER, t!("status-model-loading")),
             (BackendState::Ready { .. }, EmbedBackend::SigLip { repo }) => (
                 GREEN,
-                trf(
-                    "Built-in · {model}",
-                    &[("model", &repo.rsplit('/').next().unwrap_or(repo))],
+                t!(
+                    "status-model-builtin",
+                    model = repo.rsplit('/').next().unwrap_or(repo)
                 ),
             ),
             (BackendState::Ready { .. }, EmbedBackend::Server(s)) => {
@@ -156,23 +218,15 @@ impl App {
                         .clone()
                         .filter(|d| !d.is_empty())
                         .unwrap_or_else(|| {
-                            trf(
-                                "{server} (default model)",
-                                &[("server", &domain(&s.base_url))],
-                            )
+                            t!("status-model-server-default", server = domain(&s.base_url))
                         })
                 };
                 (GREEN, name)
             }
-            (BackendState::Off, EmbedBackend::None) => (
-                Color32::GRAY,
-                tr("Words only · set up meaning search").into(),
-            ),
-            (BackendState::Off, _) => {
-                (RED, tr("Search model unavailable · fix in Settings").into())
-            }
+            (BackendState::Off, EmbedBackend::None) => (Color32::GRAY, t!("status-model-off")),
+            (BackendState::Off, _) => (RED, t!("status-model-unavailable")),
             (BackendState::Ready { .. }, EmbedBackend::None) => {
-                (Color32::GRAY, tr("Words only").into())
+                (Color32::GRAY, t!("status-model-words-only"))
             }
         }
     }
@@ -194,7 +248,7 @@ impl App {
                     let job = pill_job(&text, 12.0, color, None);
                     let r = tip(
                         icons::pill(ui, Icon::Dot, job, color, false),
-                        tr("Search model: click to change"),
+                        &t!("status-model-tip"),
                     );
                     if r.clicked() {
                         self.open_settings(SettingsPage::Search);
@@ -202,7 +256,7 @@ impl App {
                     if self.queue > 0 {
                         ui.add(egui::Spinner::new().size(11.0).color(weak));
                         ui.label(txt(
-                            &trf("Indexing · {n} left", &[("n", &self.queue)]),
+                            &t!("status-indexing", count = self.queue),
                             12.0,
                             Some(weak),
                         ));
@@ -210,27 +264,26 @@ impl App {
                     if self.imports_running > 0 {
                         ui.add(egui::Spinner::new().size(11.0).color(weak));
                         ui.label(txt(
-                            &trf("Adding files · {n} added", &[("n", &self.imported)]),
+                            &t!("status-adding-files", count = self.imported),
                             12.0,
                             Some(weak),
                         ));
                     }
                     if !self.status.is_empty() {
-                        ui.label(txt(tr(&self.status), 12.0, Some(weak)));
+                        ui.label(txt(&self.status, 12.0, Some(weak)));
                     }
                     if !self.flags.enabled.load(Ordering::SeqCst) {
-                        chip(ui, "⏸ Recording paused", AMBER);
+                        icons::chip(ui, Icon::Pause, &t!("status-recording-paused"), AMBER);
                     }
                     // A global shortcut that doesn't work must be visible here
                     // too, not only in Settings.
                     if let Some(keys) = self.hotkey_conflicts.first().cloned() {
                         icons::glyph(ui, Icon::Warning, 13.0, AMBER);
-                        let text =
-                            trf("Shortcut {keys} is used by another app", &[("keys", &keys)]);
+                        let text = t!("status-shortcut-taken", keys = keys);
                         let r = ui.add(
                             egui::Label::new(txt(&text, 12.0, Some(AMBER))).sense(Sense::click()),
                         );
-                        if tip(r, tr("Open the shortcut settings")).clicked() {
+                        if tip(r, &t!("status-open-shortcut-settings")).clicked() {
                             self.open_settings(SettingsPage::Shortcuts);
                         }
                     }
@@ -241,7 +294,7 @@ impl App {
                                 .truncate()
                                 .sense(Sense::click()),
                         );
-                        if tip(r, tr("Click to dismiss")).clicked() {
+                        if tip(r, &t!("status-dismiss-error")).clicked() {
                             self.error = None;
                         }
                     }
@@ -249,9 +302,9 @@ impl App {
                         let pinned = self.library.items().iter().filter(|i| i.pinned).count();
                         let n = self.library.items().len();
                         let s = if pinned > 0 {
-                            trf("{n} items · {p} pinned", &[("n", &n), ("p", &pinned)])
+                            t!("status-items-pinned", count = n, pinned = pinned)
                         } else {
-                            trf("{n} items", &[("n", &n)])
+                            t!("status-items", count = n)
                         };
                         ui.label(txt(&s, 12.0, Some(weak)));
                     });
@@ -287,7 +340,7 @@ impl App {
                             row(ui, |ui| {
                                 ui.label(txt(toast.text.as_str(), 14.0, Some(fg)));
                                 if let Some((label, _)) = &toast.action {
-                                    let button = egui::Button::new(txt(tr(label), 13.0, Some(fg)))
+                                    let button = egui::Button::new(txt(label, 13.0, Some(fg)))
                                         .fill(Color32::TRANSPARENT)
                                         .stroke(Stroke::new(1.0, fg))
                                         .corner_radius(CornerRadius::same(12));

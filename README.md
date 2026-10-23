@@ -33,7 +33,7 @@ public feature descriptions only, and it shares no code or assets with Planck an
 | **Tags** | Label any item with one or more tags (`Ctrl+T`, or *Add tag* in the details pane; existing tags are suggested as you type). The most used tags appear as filters beside the kind filters, tags are searchable (`work` or `#work`), and tagged items, like pinned ones, are never pruned or cleared. Right-click a tag filter to remove it from every item. |
 | **Global hotkeys** | `Alt+V` shows/hides the window, `Alt+C` skips recording the next copy. Both can be changed in Settings. |
 | **Keyboard-first** | Type to search, `↑/↓` to move, `Enter` (or double-click) copies and hides the window so you can paste right away, `Ctrl+P` pins, `Ctrl+T` tags, `Shift+Del` deletes, `Ctrl+L` switches layout, `Esc` closes the details pane, clears the search or hides the window. In the grid, `↑/↓` move a row and `←/→` one card. Every shortcut except the arrows and `Esc` can be changed in *Settings → Shortcuts*: click it and press the new keys. |
-| **English and Arabic** | Switch the language in *Settings → General*. Arabic lays the whole window out right to left, and Arabic text, whether part of the interface or something you copied, is shaped, ordered and wrapped correctly, even when it mixes in numbers or English. A bundled Arabic font ([Noto Sans Arabic](https://github.com/notofonts/arabic), SIL Open Font License) means it doesn't depend on the PC's fonts. |
+| **English and Arabic** | Switch the language in *Settings → General*. Arabic lays the whole window out right to left, and Arabic text, whether part of the interface or something you copied, is shaped, ordered and wrapped correctly, even when it mixes in numbers or English. To add a language, see [docs/TRANSLATING.md](docs/TRANSLATING.md). A bundled Arabic font ([Noto Sans Arabic](https://github.com/notofonts/arabic), SIL Open Font License) means it doesn't depend on the PC's fonts. |
 | **12- or 24-hour clock** | Times are stored in UTC and shown in your time zone, including daylight saving, with the clock you choose in *Settings → General*. |
 | **System tray and start at sign-in** | In *Settings → General*: keep the app running in the system tray (closing or minimising the window hides it there; click the icon to open it, right-click to pause recording or quit), and start it hidden when you sign in. |
 | **On-device OCR** | Text in images and screenshots becomes searchable ([ocrs](https://github.com/robertknight/ocrs), pure Rust). |
@@ -218,7 +218,7 @@ src/
   import.rs      files/folders -> items
   models.rs      model catalogue + atomic (temp-file then rename) downloads
   tray.rs        system-tray icon and menu (tray-icon)
-  i18n.rs        interface language (English/Arabic) and local date/time display
+  i18n.rs        interface texts from locales/*/main.ftl (Project Fluent), local date/time display
   update.rs      self-update: release manifest, signed download, exe swap
   autostart.rs   start at sign-in (auto-launch: Run key / launch agent / XDG autostart)
 ```

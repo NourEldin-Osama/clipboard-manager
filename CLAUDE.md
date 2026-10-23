@@ -76,8 +76,11 @@ server client with optional `llama-server` launcher), `import.rs` (files/folders
 
 ## Conventions that aren't obvious from one file
 
-- **All UI text is English at the call site**, translated with `tr("…")` / `trf("… {n} …", &[("n", &v)])`. Every new
-  string needs an Arabic entry in `src/i18n/ar.rs` (a test checks placeholders and duplicate keys).
+- **No UI text in the code.** Every text is a key in `locales/en/main.ftl` and `locales/ar/main.ftl` (Project
+  Fluent): `t!("details-copy")`, `t!("toast-cleared", count = n)`. Errors use `log_error!`, which logs the English text
+  and returns the text to show. Keys start with the part of the window; whole sentences, never pieced together; plural
+  forms live in the files. Tests check that both languages have the same keys and values, and that code and files
+  match. See `docs/TRANSLATING.md`.
 - **Right-to-left:** egui shapes Arabic but lays runs out left to right, so text goes through `src/app/bidi.rs`. In
   UI code use the helpers in `view/widgets.rs` — `txt`, `lbl`, `tip`, `row`, `far`, `row_wrapped`, `paint_text`, `flip`,
   `start_anchor` — instead of `ui.label`/`ui.horizontal`/`painter.text`, and mirror hand-placed rects with `flip`.

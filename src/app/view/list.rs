@@ -4,13 +4,13 @@ use super::*;
 
 #[derive(Debug, PartialEq)]
 pub(super) enum Line {
-    Header(&'static str, usize),
+    Header(Group, usize),
     Row(usize),
 }
 
-/// One row per label, with a header above each run of equal labels that
+/// One row per group, with a header above each run of equal groups that
 /// counts its rows. Runs once per frame, so it stays linear.
-pub(super) fn with_headers(labels: impl Iterator<Item = &'static str>) -> Vec<Line> {
+pub(super) fn with_headers(labels: impl Iterator<Item = Group>) -> Vec<Line> {
     let mut lines = Vec::new();
     let mut header_at = None;
     let mut last = None;
@@ -149,7 +149,7 @@ pub(super) fn paint_row(
     let sub = if compact { String::new() } else { subtitle(it) };
     let title = row_title(it);
     let title = if title.is_empty() {
-        tr("(empty)").to_string()
+        t!("item-empty")
     } else {
         title
     };
@@ -323,7 +323,7 @@ impl App {
             lines = with_headers(self.results.iter().map(|h| {
                 self.library
                     .get(h.id)
-                    .map_or("", |it| group_label(it, pinned_first))
+                    .map_or(Group::Older, |it| Group::of(it, pinned_first))
             }));
         } else {
             lines.extend((0..self.results.len()).map(Line::Row));
@@ -411,7 +411,7 @@ impl App {
                             p,
                             Pos2::new(label_x, rect.bottom() - 7.0),
                             start_anchor(egui::Align::Max),
-                            &tr(label).to_uppercase(),
+                            &label.text().to_uppercase(),
                             FontId::proportional(11.5),
                             weak,
                         );
@@ -458,17 +458,21 @@ impl App {
                         if hot {
                             // Hover actions replace the time at the right edge.
                             let pin = if it.pinned {
-                                (Icon::PinFilled, "Unpin")
+                                (Icon::PinFilled, t!("item-unpin"))
                             } else {
-                                (Icon::Pin, "Pin")
+                                (Icon::Pin, t!("item-pin"))
                             };
                             let mut buttons = vec![
-                                (Icon::Delete, "Delete", Command::Delete(it.id)),
+                                (Icon::Delete, t!("item-delete"), Command::Delete(it.id)),
                                 (pin.0, pin.1, Command::Pin(it.id)),
-                                (Icon::Copy, "Copy", Command::Copy(it.id)),
+                                (Icon::Copy, t!("item-copy"), Command::Copy(it.id)),
                             ];
                             if can_open {
-                                buttons.push((Icon::Open, "Open details", Command::Open(it.id)));
+                                buttons.push((
+                                    Icon::Open,
+                                    t!("item-open-details"),
+                                    Command::Open(it.id),
+                                ));
                             }
                             let size = 28.0;
                             let mut x = rect.right() - 8.0 - buttons.len() as f32 * (size + 2.0);
@@ -483,9 +487,9 @@ impl App {
                                 if icon_button_at(
                                     ui,
                                     b,
-                                    egui::Id::unique(("row-action", it.id, tip)),
+                                    egui::Id::unique(("row-action", it.id, &tip)),
                                     icon,
-                                    tip,
+                                    &tip,
                                 )
                                 .clicked()
                                 {
@@ -504,36 +508,34 @@ impl App {
 
     pub(super) fn empty_list(&mut self, ui: &mut Ui) {
         ui.add_space(60.0);
-        // "text", "links"… in English; the Arabic nouns need no case change.
-        let kind = if i18n::rtl() {
-            tr(self.filter.label()).to_string()
-        } else {
-            self.filter.label().to_lowercase()
-        };
         ui.vertical_centered(|ui| {
             let weak = ui.visuals().weak_text_color();
             let strong = ui.visuals().strong_text_color();
             if self.library.items().is_empty() {
                 icons::glyph(ui, Icon::Clipboard, 40.0, weak);
                 ui.add_space(8.0);
-                lbl(ui, "Your clipboard history will appear here", 16.0, strong);
+                lbl(ui, &t!("list-empty-title"), 16.0, strong);
                 ui.add_space(4.0);
-                let help = trf("Copy anything, or drop files here.\nPress {key} to open this window from anywhere.", &[("key", &self.cfg.show_hotkey)]);
+                let help = t!("list-empty-help", key = self.cfg.show_hotkey.as_str());
                 ui.label(txt(&help, 14.0, Some(weak)));
             } else if !self.query.trim().is_empty() {
                 icons::glyph(ui, Icon::Search, 36.0, weak);
                 ui.add_space(8.0);
-                ui.label(txt(&trf("No matches for “{q}”", &[("q", &self.query.trim())]), 15.0, Some(strong)));
+                let none = t!("list-no-matches", query = self.query.trim());
+                ui.label(txt(&none, 15.0, Some(strong)));
                 ui.add_space(4.0);
                 match (&self.backend, self.cfg.search_mode) {
                     (BackendState::Off, _) => {
-                        lbl(ui, "Searching by meaning finds related words too.", 14.0, weak);
-                        if ui.link(txt(tr("Set up meaning search"), 14.0, None)).clicked() {
+                        lbl(ui, &t!("list-meaning-finds-more"), 14.0, weak);
+                        if ui
+                            .link(txt(&t!("list-set-up-meaning"), 14.0, None))
+                            .clicked()
+                        {
                             self.open_settings(SettingsPage::Search);
                         }
                     }
                     (_, SearchMode::Keyword) => {
-                        if ui.link(txt(tr("Try “Smart” search instead"), 14.0, None)).clicked() {
+                        if ui.link(txt(&t!("list-try-smart"), 14.0, None)).clicked() {
                             self.cfg.search_mode = SearchMode::Hybrid;
                             self.save_config();
                             self.query_changed = Some(Instant::now() - QUERY_DEBOUNCE);
@@ -541,17 +543,44 @@ impl App {
                         }
                     }
                     _ => {
-                        lbl(ui, "Try fewer or different words.", 14.0, weak);
+                        lbl(ui, &t!("list-try-other-words"), 14.0, weak);
                     }
                 }
-                if self.filter != Filter::All && ui.link(txt(&trf("Search all items, not just {kind}", &[("kind", &kind)]), 14.0, None)).clicked() {
+                if self.filter != Filter::All
+                    && ui
+                        .link(txt(&search_all_instead(self.filter), 14.0, None))
+                        .clicked()
+                {
                     self.filter = Filter::All;
                     self.dirty = true;
                 }
             } else {
-                ui.label(txt(&trf("No {kind} yet", &[("kind", &kind)]), 14.0, Some(weak)));
+                ui.label(txt(&none_yet(self.filter), 14.0, Some(weak)));
             }
         });
+    }
+}
+
+/// The link that leaves a filter which has no matches.
+fn search_all_instead(filter: Filter) -> String {
+    match filter {
+        Filter::Text => t!("list-search-all-not-text"),
+        Filter::Links => t!("list-search-all-not-links"),
+        Filter::Images => t!("list-search-all-not-images"),
+        Filter::Files => t!("list-search-all-not-files"),
+        Filter::Pinned | Filter::All => t!("list-search-all-not-pinned"),
+    }
+}
+
+/// What an empty filter says.
+fn none_yet(filter: Filter) -> String {
+    match filter {
+        Filter::All => t!("list-none-yet"),
+        Filter::Text => t!("list-none-yet-text"),
+        Filter::Links => t!("list-none-yet-links"),
+        Filter::Images => t!("list-none-yet-images"),
+        Filter::Files => t!("list-none-yet-files"),
+        Filter::Pinned => t!("list-none-yet-pinned"),
     }
 }
 
@@ -561,16 +590,17 @@ mod tests {
 
     #[test]
     fn headers_count_their_rows() {
-        let lines = with_headers(["Today", "Today", "Yesterday", "Today"].into_iter());
+        let (today, yesterday) = (Group::Today, Group::Yesterday);
+        let lines = with_headers([today, today, yesterday, today].into_iter());
         assert_eq!(
             lines,
             vec![
-                Line::Header("Today", 2),
+                Line::Header(today, 2),
                 Line::Row(0),
                 Line::Row(1),
-                Line::Header("Yesterday", 1),
+                Line::Header(yesterday, 1),
                 Line::Row(2),
-                Line::Header("Today", 1),
+                Line::Header(today, 1),
                 Line::Row(3),
             ]
         );
@@ -578,8 +608,8 @@ mod tests {
 
     #[test]
     fn one_big_group_stays_linear() {
-        let lines = with_headers(std::iter::repeat_n("Today", 100_000));
-        assert_eq!(lines[0], Line::Header("Today", 100_000));
+        let lines = with_headers(std::iter::repeat_n(Group::Today, 100_000));
+        assert_eq!(lines[0], Line::Header(Group::Today, 100_000));
         assert_eq!(lines.len(), 100_001);
     }
 }

@@ -7,26 +7,35 @@ impl App {
         let fill = ui.visuals().panel_fill;
         egui::Panel::top("top")
             .show_separator_line(false)
-            .frame(Frame::new().inner_margin(Margin { left: 16, right: 12, top: 12, bottom: 6 }).fill(fill))
+            .frame(
+                Frame::new()
+                    .inner_margin(Margin {
+                        left: 16,
+                        right: 12,
+                        top: 12,
+                        bottom: 6,
+                    })
+                    .fill(fill),
+            )
             .show(ui, |ui| {
                 row(ui, |ui| {
                     let actions_w = 4.0 * 40.0;
                     let w = (ui.available_width() - actions_w).max(200.0);
                     self.search_field(ui, w);
                     far(ui, |ui| {
-                        if icons::icon_button(ui, Icon::Settings, "Settings").clicked() {
+                        if icons::icon_button(ui, Icon::Settings, &t!("top-settings")).clicked() {
                             self.open_settings(SettingsPage::General);
                         }
-                        let import = icons::icon_button(ui, Icon::Add, "Add files or a folder to search (you can also drop them on the window)");
+                        let import = icons::icon_button(ui, Icon::Add, &t!("top-add-files-tip"));
                         egui::Popup::menu(&import).show(|ui| {
                             ui.set_width(MENU_W);
-                            if icons::menu_item(ui, Icon::File, "Add files…").clicked() {
+                            if icons::menu_item(ui, Icon::File, &t!("top-add-files")).clicked() {
                                 if let Some(f) = rfd::FileDialog::new().pick_files() {
                                     self.run(Command::Import(f));
                                 }
                                 self.after_dialog();
                             }
-                            if icons::menu_item(ui, Icon::Folder, "Add a folder…").clicked() {
+                            if icons::menu_item(ui, Icon::Folder, &t!("top-add-folder")).clicked() {
                                 if let Some(f) = rfd::FileDialog::new().pick_folder() {
                                     self.run(Command::Import(vec![f]));
                                 }
@@ -34,14 +43,28 @@ impl App {
                             }
                         });
                         let view = self.cfg.view;
-                        let tip = trf("View: {view} · click for {next}", &[("view", &tr(view.label())), ("next", &tr(view.next().label()))]);
+                        let tip = t!(
+                            "top-view-tip",
+                            view = view.label(),
+                            next = view.next().label()
+                        );
                         if icons::icon_button(ui, view_icon(view), &tip).clicked() {
                             self.set_view(view.next());
                         }
                         let rec = self.flags.enabled.load(Ordering::SeqCst);
-                        let (icon, tip) = if rec { (Icon::Pause, "Pause recording") } else { (Icon::Play, "Resume recording") };
-                        let (fill, fg) = if rec { (None, None) } else { (Some(AMBER), Some(Color32::WHITE)) };
-                        if icon_button_ex(ui, icon, tip, Vec2::splat(34.0), 16.0, fill, fg).clicked() {
+                        let (icon, tip) = if rec {
+                            (Icon::Pause, t!("top-pause-recording"))
+                        } else {
+                            (Icon::Play, t!("top-resume-recording"))
+                        };
+                        let (fill, fg) = if rec {
+                            (None, None)
+                        } else {
+                            (Some(AMBER), Some(Color32::WHITE))
+                        };
+                        if icon_button_ex(ui, icon, &tip, Vec2::splat(34.0), 16.0, fill, fg)
+                            .clicked()
+                        {
                             self.set_recording(!rec);
                         }
                     });
@@ -97,11 +120,9 @@ impl App {
                 ui.with_layout(row_layout(), |ui| {
                     icons::glyph(ui, Icon::Search, 16.0, ui.visuals().weak_text_color());
                     let hint = match &self.backend {
-                        BackendState::Ready { images: true, .. } => {
-                            "Search text and images by meaning…"
-                        }
-                        BackendState::Ready { .. } => "Search by words or meaning…",
-                        _ => "Search your clipboard…",
+                        BackendState::Ready { images: true, .. } => t!("search-hint-images"),
+                        BackendState::Ready { .. } => t!("search-hint-meaning"),
+                        _ => t!("search-hint"),
                     };
                     // Arabic is shown in reading order (the cursor still follows typing order).
                     let mut layouter = |ui: &Ui, text: &dyn egui::TextBuffer, _wrap: f32| {
@@ -120,7 +141,7 @@ impl App {
                     let te = egui::TextEdit::singleline(&mut self.query)
                         .id(search_id())
                         .frame(Frame::NONE)
-                        .hint_text(txt(tr(hint), 16.0, Some(ui.visuals().weak_text_color())))
+                        .hint_text(txt(&hint, 16.0, Some(ui.visuals().weak_text_color())))
                         .font(FontId::proportional(16.0))
                         .align(if i18n::rtl() {
                             Align2::RIGHT_CENTER
@@ -141,7 +162,7 @@ impl App {
                         // Search mode, quiet until needed.
                         let mode = self.cfg.search_mode;
                         let non_default = mode != SearchMode::Hybrid;
-                        let b = mode_button(ui, tr(mode_label(mode)), non_default);
+                        let b = mode_button(ui, &mode_label(mode), non_default);
                         egui::Popup::menu(&b).show(|ui| {
                             ui.set_width(MODE_MENU_W);
                             ui.spacing_mut().item_spacing.y = 2.0;
@@ -162,7 +183,7 @@ impl App {
                             && icon_button_ex(
                                 ui,
                                 Icon::Close,
-                                "Clear (Esc)",
+                                &t!("search-clear"),
                                 Vec2::splat(26.0),
                                 11.0,
                                 None,
@@ -195,7 +216,7 @@ impl App {
                 } else {
                     (ui.visuals().text_color(), ui.visuals().weak_text_color())
                 };
-                let job = pill_job(tr(f.label()), 13.5, fg, Some((n.to_string(), weak)));
+                let job = pill_job(&f.label(), 13.5, fg, Some((n.to_string(), weak)));
                 if icons::pill(ui, filter_icon(f), job, accent(), selected).clicked() {
                     self.filter = f;
                     self.dirty = true;
@@ -206,12 +227,7 @@ impl App {
                 ui.add_space(4.0);
                 self.sort_menu(ui);
                 if !self.query.trim().is_empty() {
-                    let n = self.results.len();
-                    let text = if n == 1 {
-                        tr("1 result").to_string()
-                    } else {
-                        trf("{n} results", &[("n", &n)])
-                    };
+                    let text = t!("top-results", count = self.results.len());
                     ui.label(txt(&text, 12.5, Some(ui.visuals().weak_text_color())));
                 }
             });
@@ -221,7 +237,7 @@ impl App {
     /// "Sort by" button and menu. Best match is offered only while searching.
     pub(super) fn sort_menu(&mut self, ui: &mut Ui) {
         let current = self.sort();
-        let b = tip(mode_button(ui, tr(current.label()), false), tr("Sort by"));
+        let b = tip(mode_button(ui, &current.label(), false), &t!("top-sort-by"));
         let searching = !self.query.trim().is_empty();
         let mut pick = None;
         egui::Popup::menu(&b).show(|ui| {
@@ -229,13 +245,13 @@ impl App {
             let weak = ui.visuals().weak_text_color();
             row(ui, |ui| {
                 ui.add_space(10.0);
-                lbl(ui, "SORT BY", 11.0, weak);
+                lbl(ui, &t!("top-sort-by-heading"), 11.0, weak);
             });
             for s in SortOrder::ALL {
                 if s == SortOrder::BestMatch && !searching {
                     continue;
                 }
-                if check_row(ui, s.label(), s == current).clicked() {
+                if check_row(ui, &s.label(), s == current).clicked() {
                     pick = Some(s);
                 }
             }
@@ -287,11 +303,11 @@ impl App {
             );
             let r = tip(
                 icons::pill(ui, Icon::Tag, job, c, sel),
-                tr(if sel {
-                    "Show all tags again"
+                &if sel {
+                    t!("tags-show-all")
                 } else {
-                    "Only items with this tag · right-click for more"
-                }),
+                    t!("tags-filter-tip")
+                },
             );
             if r.clicked() {
                 clicked = Some(t.clone());
@@ -299,7 +315,7 @@ impl App {
             r.context_menu(|ui| {
                 if ui
                     .button(txt(
-                        &trf("Remove #{tag} from all {n} items", &[("tag", t), ("n", n)]),
+                        &t!("tags-remove-everywhere", tag = t.as_str(), count = *n),
                         14.0,
                         None,
                     ))
@@ -315,7 +331,7 @@ impl App {
             .filter(|(t, _)| !is_active(t))
             .collect();
         if !rest.is_empty() {
-            let more = mode_button(ui, &trf("+{n} tags", &[("n", &rest.len())]), false);
+            let more = mode_button(ui, &t!("tags-more", count = rest.len()), false);
             egui::Popup::menu(&more).show(|ui| {
                 ui.set_width(MENU_W);
                 egui::ScrollArea::vertical()

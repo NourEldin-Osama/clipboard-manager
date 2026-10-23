@@ -41,13 +41,8 @@ pub(super) fn paint_card(
     // Header: kind chip at the reading start, pin and age at the far end.
     let pad = 16.0;
     let c = kind_color(it.kind);
-    let cg = ui.fonts_mut(|f| {
-        f.layout_job(bidi::job(
-            tr(it.kind.label()),
-            FontId::proportional(12.5),
-            c,
-        ))
-    });
+    let cg =
+        ui.fonts_mut(|f| f.layout_job(bidi::job(&it.kind.label(), FontId::proportional(12.5), c)));
     let chip_rect = m(Rect::from_min_size(
         Pos2::new(rect.left() + pad, rect.top() + 14.0),
         Vec2::new(cg.size().x + 12.0 + 6.0 + 16.0, cg.size().y + 6.0),
@@ -124,7 +119,7 @@ pub(super) fn paint_card(
         // As many tags as fit on the row; the rest become "+N tags".
         let gap = 6.0;
         let widths: Vec<f32> = galleys.iter().map(|(g, _)| g.size().x + 14.0).collect();
-        let more_w = |n: usize| pill(&trf("+{n} tags", &[("n", &n)]), weak).size().x + 14.0;
+        let more_w = |n: usize| pill(&t!("tags-more", count = n), weak).size().x + 14.0;
         let mut shown = galleys.len();
         while shown > 0 {
             let used: f32 =
@@ -162,7 +157,7 @@ pub(super) fn paint_card(
         if shown < galleys.len() {
             let rest = galleys.len() - shown;
             place(
-                pill(&trf("+{n} tags", &[("n", &rest)]), weak),
+                pill(&t!("tags-more", count = rest), weak),
                 weak,
                 weak.gamma_multiply(0.15),
             );
@@ -239,7 +234,7 @@ pub(super) fn paint_card(
                     .collect(),
             };
             let text = if text.trim().is_empty() {
-                tr("(empty)").to_string()
+                t!("item-empty")
             } else {
                 text
             };
@@ -404,15 +399,15 @@ impl App {
                         )
                     };
                     let pin = if it.pinned {
-                        (Icon::PinFilled, "Unpin")
+                        (Icon::PinFilled, t!("item-unpin"))
                     } else {
-                        (Icon::Pin, "Pin")
+                        (Icon::Pin, t!("item-pin"))
                     };
                     for (b, icon, tip, action) in [
                         (
                             at(rect.left() + 8.0),
                             Icon::Delete,
-                            "Delete",
+                            t!("item-delete"),
                             Command::Delete(it.id),
                         ),
                         (
@@ -424,22 +419,22 @@ impl App {
                         (
                             at(rect.right() - 8.0 - 2.0 * size - 4.0),
                             Icon::Copy,
-                            "Copy",
+                            t!("item-copy"),
                             Command::Copy(it.id),
                         ),
                         (
                             at(rect.right() - 8.0 - size),
                             Icon::Open,
-                            "Open details",
+                            t!("item-open-details"),
                             Command::Open(it.id),
                         ),
                     ] {
                         if icon_button_at(
                             ui,
                             b,
-                            egui::Id::unique(("card-action", it.id, tip)),
+                            egui::Id::unique(("card-action", it.id, &tip)),
                             icon,
-                            tip,
+                            &tip,
                         )
                         .clicked()
                         {

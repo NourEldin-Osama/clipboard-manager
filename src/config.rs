@@ -4,6 +4,8 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
+use crate::i18n::t;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum SearchMode {
     /// Reciprocal-rank fusion of keyword and embedding results.
@@ -257,13 +259,14 @@ impl SortOrder {
         Self::MostUsed,
     ];
 
-    pub fn label(self) -> &'static str {
+    /// Its name in the interface language.
+    pub fn label(self) -> String {
         match self {
-            Self::BestMatch => "Best match",
-            Self::Recent => "Recent",
-            Self::Oldest => "Oldest",
-            Self::AToZ => "A to Z",
-            Self::MostUsed => "Most used",
+            Self::BestMatch => t!("sort-best-match"),
+            Self::Recent => t!("sort-recent"),
+            Self::Oldest => t!("sort-oldest"),
+            Self::AToZ => t!("sort-a-to-z"),
+            Self::MostUsed => t!("sort-most-used"),
         }
     }
 }
@@ -282,11 +285,12 @@ pub enum ViewMode {
 impl ViewMode {
     pub const ALL: [ViewMode; 3] = [Self::Grid, Self::List, Self::Detail];
 
-    pub fn label(self) -> &'static str {
+    /// Its name in the interface language.
+    pub fn label(self) -> String {
         match self {
-            Self::Grid => "Grid",
-            Self::List => "List",
-            Self::Detail => "Detail",
+            Self::Grid => t!("view-grid"),
+            Self::List => t!("view-list"),
+            Self::Detail => t!("view-detail"),
         }
     }
 
@@ -415,8 +419,8 @@ impl Config {
     /// Reads the settings; a missing file means defaults. A file that can't be
     /// read is copied to `config.json.bad` before the defaults are used, so
     /// the next save doesn't silently destroy it, and the problem is returned
-    /// for the user.
-    pub fn load(path: &Path) -> (Self, Option<String>) {
+    /// for the app to show.
+    pub fn load(path: &Path) -> (Self, Option<LoadProblem>) {
         let parsed = match std::fs::read_to_string(path) {
             Ok(text) => serde_json::from_str(&text).map_err(anyhow::Error::from),
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => return (Self::default(), None),
@@ -426,12 +430,13 @@ impl Config {
             Ok(cfg) => (cfg, None),
             Err(e) => {
                 let bad = path.with_extension("json.bad");
-                let kept = match std::fs::copy(path, &bad) {
-                    Ok(_) => format!("a copy is in {}", bad.display()),
-                    Err(copy) => format!("it could not be copied either: {copy}"),
+                let copy = std::fs::copy(path, &bad)
+                    .map(|_| bad)
+                    .map_err(|e| e.to_string());
+                let problem = LoadProblem {
+                    error: e.to_string(),
+                    copy,
                 };
-                let problem = format!("settings could not be read ({e}); using defaults, {kept}");
-                log::error!("{problem}");
                 (Self::default(), Some(problem))
             }
         }
@@ -443,6 +448,15 @@ impl Config {
         std::fs::rename(tmp, path)?;
         Ok(())
     }
+}
+
+/// Why the settings file could not be read. The app words it, because the
+/// interface language is only known once the settings are read.
+#[derive(Debug, PartialEq)]
+pub struct LoadProblem {
+    pub error: String,
+    /// Where the unreadable file was copied, or why the copy failed.
+    pub copy: Result<PathBuf, String>,
 }
 
 /// Where everything lives: `%APPDATA%\clipboard-manager\data` on Windows.
@@ -596,7 +610,8 @@ mod tests {
         std::fs::write(&path, r#"{"max_items": "not a number"}"#).unwrap();
         let (cfg, problem) = Config::load(&path);
         assert_eq!(cfg, Config::default());
-        assert!(problem.is_some());
+        let problem = problem.expect("a damaged file is a problem");
+        assert_eq!(problem.copy, Ok(dir.join("config.json.bad")));
         let kept = std::fs::read_to_string(dir.join("config.json.bad")).unwrap();
         assert_eq!(kept, r#"{"max_items": "not a number"}"#);
 

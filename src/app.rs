@@ -14,12 +14,12 @@ use eframe::egui::{
 use global_hotkey::hotkey::HotKey;
 use global_hotkey::{GlobalHotKeyEvent, GlobalHotKeyManager, HotKeyState};
 
-use crate::clipboard::{self, Captured, Flags};
+use crate::clipboard::{self, Captured, Flags, SkipReason};
 use crate::config::{
     Config, EmbedBackend, LaunchConfig, Paths, SearchMode, ServerConfig, SortOrder, Theme, ViewMode,
 };
 use crate::embed::Embedding;
-use crate::i18n::{self, tr, trf};
+use crate::i18n::{self, log_error, t};
 use crate::images::ImageLoader;
 use crate::library::{Library, Removed};
 use crate::models::{self, Progress, SIGLIP_MODELS};
@@ -214,7 +214,7 @@ struct Toast {
     shown: Instant,
     how_long: Duration,
     /// The button's text and what it does.
-    action: Option<(&'static str, Command)>,
+    action: Option<(String, Command)>,
 }
 
 /// Everything the user can do to the history, from a row, a card, the
@@ -347,7 +347,7 @@ pub struct App {
     start_hidden: u8,
     /// The shortcut field listening for keys in Settings, and why the last try was refused.
     recording: Option<ShortcutField>,
-    record_problem: Option<&'static str>,
+    record_problem: Option<String>,
     update: UpdateState,
     update_rx: Option<Receiver<UpdateMsg>>,
     /// "Later" hides the update bar until the next change.
@@ -504,7 +504,19 @@ impl App {
             }
         }
         if let Some(problem) = settings_problem {
-            app.set_error(problem);
+            let message = match problem.copy {
+                Ok(copy) => log_error!(
+                    "error-settings-unreadable",
+                    error = problem.error,
+                    copy = copy.display().to_string()
+                ),
+                Err(reason) => log_error!(
+                    "error-settings-unreadable-no-copy",
+                    error = problem.error,
+                    reason = reason
+                ),
+            };
+            app.set_error(message);
         }
         let win = app.win.clone();
         app.instance.on_show_request(move || win.show());
@@ -533,7 +545,10 @@ impl App {
         let manager = match GlobalHotKeyManager::new() {
             Ok(m) => m,
             Err(e) => {
-                self.hotkey_error = Some(format!("global hotkeys unavailable: {e}"));
+                self.hotkey_error = Some(log_error!(
+                    "error-hotkeys-unavailable",
+                    error = e.to_string()
+                ));
                 return;
             }
         };
@@ -547,19 +562,24 @@ impl App {
                     // Windows refused it: another app (or Windows) holds these keys.
                     Err(global_hotkey::Error::AlreadyRegistered(_)) => {
                         self.hotkey_conflicts.push(s.trim().to_string());
-                        self.hotkey_error = Some(trf(
-                            "{keys} is already used by another app or by Windows. Choose other keys in Settings, Shortcuts.",
-                            &[("keys", &s.trim())],
-                        ));
+                        self.hotkey_error = Some(log_error!("error-hotkey-taken", keys = s.trim()));
                         None
                     }
                     Err(e) => {
-                        self.hotkey_error = Some(format!("{s}: {e}"));
+                        self.hotkey_error = Some(log_error!(
+                            "error-hotkey-invalid",
+                            keys = s.trim(),
+                            error = e.to_string()
+                        ));
                         None
                     }
                 },
                 Err(e) => {
-                    self.hotkey_error = Some(format!("{s}: {e}"));
+                    self.hotkey_error = Some(log_error!(
+                        "error-hotkey-invalid",
+                        keys = s.trim(),
+                        error = e.to_string()
+                    ));
                     None
                 }
             }
@@ -602,7 +622,10 @@ impl App {
                 c.request_repaint()
             }) {
                 Ok(t) => self.tray = Some(t),
-                Err(e) => self.set_error(format!("system tray unavailable: {e:#}")),
+                Err(e) => self.set_error(log_error!(
+                    "error-tray-unavailable",
+                    error = format!("{e:#}")
+                )),
             }
         }
         self.win.tray.store(self.tray.is_some(), Ordering::SeqCst);
@@ -845,12 +868,13 @@ impl App {
 
     fn save_config(&mut self) {
         if let Err(e) = self.cfg.save(&self.paths.config) {
-            self.set_error(format!("saving settings: {e}"));
+            self.set_error(log_error!("error-saving-settings", error = e.to_string()));
         }
     }
 
+    /// Shows `e` in the status bar. Make it with `log_error!`, which also
+    /// writes it to the log.
     fn set_error(&mut self, e: String) {
-        log::error!("{e}");
         self.error = Some((e, Instant::now()));
     }
 
@@ -858,11 +882,9 @@ impl App {
         self.toast_for(s, Duration::from_millis(1400));
     }
 
-    /// Shows `s`, translated when it's one of the fixed messages.
     fn toast_for(&mut self, s: impl Into<String>, how_long: Duration) {
-        let s = s.into();
         self.toast = Some(Toast {
-            text: tr(&s).to_string(),
+            text: s.into(),
             shown: Instant::now(),
             how_long,
             action: None,
@@ -891,7 +913,7 @@ impl App {
             Command::UndoDelete => self.undo_delete(),
             Command::SaveSkipped(text) => {
                 self.on_capture(Captured::Text(text));
-                self.toast("Saved");
+                self.toast(t!("toast-saved"));
             }
             Command::CopyText(text) => {
                 let flags = self.flags.clone();
@@ -913,7 +935,7 @@ impl App {
         let (id, kind) = (item.id, item.kind);
         // Saved before the jobs go out: the worker reads the item from the disk.
         if let Err(e) = self.library.add(item) {
-            self.set_error(format!("saving item: {e}"));
+            self.set_error(log_error!("error-saving-item", error = e.to_string()));
             return;
         }
         for job in self.indexing_jobs(id, kind) {
@@ -939,9 +961,13 @@ impl App {
         if let Captured::Skipped { reason, text } = c {
             // Longer when there is a button to reach.
             let how_long = Duration::from_secs(if text.is_some() { 8 } else { 4 });
-            self.toast_for(reason, how_long);
+            let message = match reason {
+                SkipReason::Private => t!("toast-skipped-private"),
+                SkipReason::Secret => t!("toast-skipped-secret"),
+            };
+            self.toast_for(message, how_long);
             if let Some(toast) = &mut self.toast {
-                toast.action = text.map(|t| ("Save anyway", Command::SaveSkipped(t)));
+                toast.action = text.map(|t| (t!("toast-save-anyway"), Command::SaveSkipped(t)));
             }
             return;
         }
@@ -951,7 +977,7 @@ impl App {
                 Ok(found) => found,
                 // Only saving the time of the item found can fail.
                 Err(e) => {
-                    self.set_error(format!("saving item: {e}"));
+                    self.set_error(log_error!("error-saving-item", error = e.to_string()));
                     true
                 }
             };
@@ -999,7 +1025,7 @@ impl App {
     fn prune(&mut self) {
         match self.library.prune(self.cfg.max_items) {
             Ok(removed) => self.drop_removed(&removed),
-            Err(e) => self.set_error(format!("delete failed: {e}")),
+            Err(e) => self.set_error(log_error!("error-deleting", error = e.to_string())),
         }
     }
 
@@ -1020,20 +1046,26 @@ impl App {
                 self.add_item(item);
                 self.prune();
             }
-            Done::ImageSaved { saved: Err(e), .. } => self.set_error(format!("saving image: {e}")),
+            Done::ImageSaved { saved: Err(e), .. } => {
+                self.set_error(log_error!("error-saving-image", error = e.to_string()))
+            }
             Done::Copied { id, result: Ok(()) } => {
                 if let Err(e) = self.library.record_use(id) {
-                    self.set_error(format!("saving item: {e}"));
+                    self.set_error(log_error!("error-saving-item", error = e.to_string()));
                 }
                 self.dirty = true;
-                self.toast("Copied");
+                self.toast(t!("toast-copied"));
                 if self.cfg.minimize_after_copy {
                     self.win.hide();
                 }
             }
-            Done::Copied { result: Err(e), .. } => self.set_error(format!("copy failed: {e}")),
-            Done::TextCopied(Ok(())) => self.toast("Copied text"),
-            Done::TextCopied(Err(e)) => self.set_error(format!("copy failed: {e}")),
+            Done::Copied { result: Err(e), .. } => {
+                self.set_error(log_error!("error-copying", error = e.to_string()))
+            }
+            Done::TextCopied(Ok(())) => self.toast(t!("toast-copied-text")),
+            Done::TextCopied(Err(e)) => {
+                self.set_error(log_error!("error-copying", error = e.to_string()))
+            }
             Done::Imported(batch) => match self.library.add_imported(batch) {
                 Ok(added) => {
                     // Files added in bulk wait behind new copies.
@@ -1045,16 +1077,16 @@ impl App {
                     self.imported += added.len();
                     self.dirty = true;
                 }
-                Err(e) => self.set_error(format!("saving item: {e}")),
+                Err(e) => self.set_error(log_error!("error-saving-item", error = e.to_string())),
             },
             Done::ImportFinished => {
                 self.imports_running = self.imports_running.saturating_sub(1);
                 if self.imports_running == 0 {
                     let n = std::mem::take(&mut self.imported);
-                    self.toast(trf("Imported {n} files", &[("n", &n)]));
+                    self.toast(t!("toast-imported", count = n));
                 }
             }
-            Done::Crashed => self.set_error("a background task crashed (see the log file)".into()),
+            Done::Crashed => self.set_error(log_error!("error-background-crash")),
         }
     }
 
@@ -1172,14 +1204,17 @@ impl App {
                 let d = self.download.take().unwrap();
                 match d.handle.join() {
                     Ok(Ok(())) => {
-                        self.toast(trf("Downloaded {name}", &[("name", &d.repo)]));
+                        self.toast(t!("toast-downloaded", model = d.repo.as_str()));
                         if matches!(&self.cfg.backend, EmbedBackend::SigLip { repo } if *repo == d.repo)
                         {
                             self.set_backend(self.cfg.backend.clone());
                         }
                     }
-                    Ok(Err(e)) => self.set_error(format!("download failed: {e:#}")),
-                    Err(_) => self.set_error("download thread crashed".into()),
+                    Ok(Err(e)) => self.set_error(log_error!(
+                        "error-download-failed",
+                        error = format!("{e:#}")
+                    )),
+                    Err(_) => self.set_error(log_error!("error-download-crashed")),
                 }
             }
         }
@@ -1315,21 +1350,21 @@ impl App {
 
     fn toggle_pin(&mut self, id: u64) {
         if let Err(e) = self.library.toggle_pin(id) {
-            self.set_error(format!("saving item: {e}"));
+            self.set_error(log_error!("error-saving-item", error = e.to_string()));
         }
         self.dirty = true;
     }
 
     fn add_tags(&mut self, id: u64, input: &str) {
         if let Err(e) = self.library.add_tags(id, input) {
-            self.set_error(format!("saving item: {e}"));
+            self.set_error(log_error!("error-saving-item", error = e.to_string()));
         }
         self.dirty = true;
     }
 
     fn remove_tag(&mut self, id: u64, tag: &str) {
         if let Err(e) = self.library.remove_tag(id, tag) {
-            self.set_error(format!("saving item: {e}"));
+            self.set_error(log_error!("error-saving-item", error = e.to_string()));
         }
         self.dirty = true;
         self.drop_stale_tag_filter();
@@ -1341,11 +1376,8 @@ impl App {
         self.dirty = true;
         self.drop_stale_tag_filter();
         match removed {
-            Ok(n) => self.toast(trf(
-                "Removed #{tag} from {n} items",
-                &[("tag", &tag), ("n", &n)],
-            )),
-            Err(e) => self.set_error(format!("saving item: {e}")),
+            Ok(n) => self.toast(t!("toast-tag-removed", tag = tag, count = n)),
+            Err(e) => self.set_error(log_error!("error-saving-item", error = e.to_string())),
         }
     }
 
@@ -1380,9 +1412,9 @@ impl App {
             removed,
             since: Instant::now(),
         });
-        self.toast_for("Deleted", UNDO_FOR);
+        self.toast_for(t!("toast-deleted"), UNDO_FOR);
         if let Some(toast) = &mut self.toast {
-            toast.action = Some(("Undo", Command::UndoDelete));
+            toast.action = Some((t!("toast-undo"), Command::UndoDelete));
         }
     }
 
@@ -1390,7 +1422,7 @@ impl App {
     pub(super) fn finish_delete(&mut self) {
         if let Some(pending) = self.pending_delete.take() {
             if let Err(e) = self.library.forget(pending.removed) {
-                self.set_error(format!("delete failed: {e}"));
+                self.set_error(log_error!("error-deleting", error = e.to_string()));
             }
         }
     }
@@ -1453,9 +1485,9 @@ impl App {
         match self.library.clear() {
             Ok(removed) => {
                 self.drop_removed(&removed);
-                self.toast(trf("Cleared {n} items", &[("n", &removed.len())]));
+                self.toast(t!("toast-cleared", count = removed.len()));
             }
-            Err(e) => self.set_error(format!("delete failed: {e}")),
+            Err(e) => self.set_error(log_error!("error-deleting", error = e.to_string())),
         }
     }
 }
