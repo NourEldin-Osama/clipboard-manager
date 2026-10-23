@@ -279,7 +279,7 @@ pub struct App {
 impl App {
     pub fn new(cc: &eframe::CreationContext<'_>, paths: Paths) -> anyhow::Result<Self> {
         let ctx = cc.egui_ctx.clone();
-        let cfg = Config::load(&paths.config);
+        let (cfg, settings_problem) = Config::load(&paths.config);
         i18n::set(cfg.language, cfg.time_format);
         add_fonts(&ctx);
         icons::register(&ctx);
@@ -405,6 +405,9 @@ impl App {
             if let Err(e) = crate::autostart::refresh() {
                 log::warn!("{e:#}");
             }
+        }
+        if let Some(problem) = settings_problem {
+            app.set_error(problem);
         }
         Ok(app)
     }

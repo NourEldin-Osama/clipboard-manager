@@ -31,7 +31,10 @@ pub enum EmbedBackend {
     Server(Box<ServerConfig>),
 }
 
+/// Fields missing from an older settings file take the defaults, so adding a
+/// field never makes saved server settings unreadable.
 #[derive(Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
 pub struct ServerConfig {
     pub base_url: String,
     /// Sent as `Authorization: Bearer <key>` when not empty. Encrypted in the
@@ -49,7 +52,8 @@ pub struct ServerConfig {
     pub launch: Option<LaunchConfig>,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
 pub struct LaunchConfig {
     pub llama_server: PathBuf,
     pub gguf: PathBuf,
@@ -57,6 +61,12 @@ pub struct LaunchConfig {
     pub mmproj: Option<PathBuf>,
     pub port: u16,
     pub extra_args: String,
+}
+
+impl Default for ServerConfig {
+    fn default() -> Self {
+        Self::plain("")
+    }
 }
 
 /// Written by hand so the API key never reaches a log.
@@ -402,11 +412,29 @@ impl Config {
         };
     }
 
-    pub fn load(path: &Path) -> Self {
-        std::fs::read_to_string(path)
-            .ok()
-            .and_then(|s| serde_json::from_str(&s).ok())
-            .unwrap_or_default()
+    /// Reads the settings; a missing file means defaults. A file that can't be
+    /// read is copied to `config.json.bad` before the defaults are used, so
+    /// the next save doesn't silently destroy it, and the problem is returned
+    /// for the user.
+    pub fn load(path: &Path) -> (Self, Option<String>) {
+        let parsed = match std::fs::read_to_string(path) {
+            Ok(text) => serde_json::from_str(&text).map_err(anyhow::Error::from),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return (Self::default(), None),
+            Err(e) => Err(e.into()),
+        };
+        match parsed {
+            Ok(cfg) => (cfg, None),
+            Err(e) => {
+                let bad = path.with_extension("json.bad");
+                let kept = match std::fs::copy(path, &bad) {
+                    Ok(_) => format!("a copy is in {}", bad.display()),
+                    Err(copy) => format!("it could not be copied either: {copy}"),
+                };
+                let problem = format!("settings could not be read ({e}); using defaults, {kept}");
+                log::error!("{problem}");
+                (Self::default(), Some(problem))
+            }
+        }
     }
 
     pub fn save(&self, path: &Path) -> anyhow::Result<()> {
@@ -538,10 +566,44 @@ mod tests {
     }
 
     #[test]
+    fn server_settings_missing_newer_fields_still_load() {
+        let json = r#"{"base_url":"http://x/v1","model":"m"}"#;
+        let s: ServerConfig = serde_json::from_str(json).unwrap();
+        assert_eq!(
+            (s.base_url.as_str(), s.model.as_str()),
+            ("http://x/v1", "m")
+        );
+        assert_eq!(s.launch, None);
+    }
+
+    #[test]
     fn a_plain_key_from_an_older_version_still_loads() {
         let json = r#"{"base_url":"http://x/v1","api_key":"old-key","model":"","query_prefix":"","document_prefix":"","images":false,"truncate_dims":0,"launch":null}"#;
         let s: ServerConfig = serde_json::from_str(json).unwrap();
         assert_eq!(s.api_key, "old-key");
+    }
+
+    #[test]
+    fn a_damaged_settings_file_is_kept_and_reported() {
+        let dir = std::env::temp_dir().join(format!("cbm-config-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("config.json");
+
+        let (cfg, problem) = Config::load(&path);
+        assert_eq!(cfg, Config::default());
+        assert!(problem.is_none(), "a missing file is not a problem");
+
+        std::fs::write(&path, r#"{"max_items": "not a number"}"#).unwrap();
+        let (cfg, problem) = Config::load(&path);
+        assert_eq!(cfg, Config::default());
+        assert!(problem.is_some());
+        let kept = std::fs::read_to_string(dir.join("config.json.bad")).unwrap();
+        assert_eq!(kept, r#"{"max_items": "not a number"}"#);
+
+        std::fs::write(&path, r#"{"max_items": 7}"#).unwrap();
+        let (cfg, problem) = Config::load(&path);
+        assert_eq!((cfg.max_items, problem), (7, None));
+        std::fs::remove_dir_all(dir).ok();
     }
 
     #[test]
