@@ -29,6 +29,10 @@ Status: `[ ]` to do, `[~]` in progress, `[x]` done, `[!]` waiting for a decision
 | D18 | Portable copies are encrypted too; a portable history opens only on the PC and account that made it | You | Decided |
 | D19 | Applying a search server that is not on this PC shows a warning and asks once | You | Decided |
 | D20 | The release job checks its own update signatures before publishing, done with 5.2 (was 8.3) | You | Decided |
+| D21 | Rules per app take simple patterns (* and ?) or regular expressions, with a switch per rule | You | Decided |
+| D22 | Uninstalling asks whether to delete the history and settings | You | Decided |
+| D23 | Each release starts its notes with its version's section of CHANGELOG.md | You | Decided |
+| D24 | Inno Setup is installed on this PC, so the installer is tested before a release | You | Decided |
 
 ## Order of work, and why
 
