@@ -49,6 +49,8 @@ Run every hook on every file with `prek run --all-files`.
 - Keep changes focused, and match the surrounding code's style and comment density.
 - For UI changes, add before/after screenshots.
 - Merging into `main` publishes a release automatically, so `main` should always be shippable.
+- A change people will notice gets a line in [`CHANGELOG.md`](CHANGELOG.md), under the version in `Cargo.toml`; the
+  release notes start with that section.
 
 ## Translations
 
