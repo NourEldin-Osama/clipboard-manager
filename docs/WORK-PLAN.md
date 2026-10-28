@@ -84,6 +84,8 @@ Status: `[ ]` to do, `[~]` in progress, `[x]` done, `[!]` waiting for a decision
 - [x] 2.28 A portable copy or a dev build (CLIPBOARD_MANAGER_HOME) kept its window state in the installed app's folder (found in the Phase 4 check)
 - [x] 2.29 The update banner and the update status in Settings cut a long Arabic message at its start, and a long message could run over the buttons or the version next to it (found in the Phase 4 check)
 - [x] 2.30 A global shortcut changed in Settings did nothing until a restart: the library keeps only the first event handler (found while adding the quick popup)
+- [x] 2.31 The quick popup closed the app when the full window was minimized: eframe 0.37 can't make a new window during such a frame (found in the Phase 6 check)
+- [x] 2.32 With the full window open, the popup's search field didn't get the keyboard (found in the Phase 6 check)
 
 ### Phase 3. Structure (no behavior change)
 - [x] 3.1 Split `view.rs` (theme, widgets, time format, top bar, list, grid, details, status bar, keyboard)
