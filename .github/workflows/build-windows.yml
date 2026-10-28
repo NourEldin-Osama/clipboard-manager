@@ -70,8 +70,11 @@ jobs:
           echo "tag=v$version-build.${{ github.run_number }}" >> "$GITHUB_OUTPUT"
           cp target/dist/clipboard-manager.exe clipboard-manager-windows-x64.exe
 
-      # The app installs an update only if this Ed25519 signature checks out
+      # The app installs an update only if its Ed25519 signature checks out
       # against the public key built into it. The private key is a repo secret.
+      # `signed` is the one line newer app versions read every value from, so
+      # a changed updater.json can't offer an older exe as new. Older versions
+      # read the other fields and check the exe's own signature.
       - name: Sign and describe the update
         shell: bash
         env:
@@ -82,10 +85,17 @@ jobs:
           key="$RUNNER_TEMP/update-key.pem"
           printf '%s\n' "$UPDATE_SIGNING_KEY" > "$key"
           exe=clipboard-manager-windows-x64.exe
-          openssl pkeyutl -sign -rawin -inkey "$key" -in "$exe" -out "$RUNNER_TEMP/exe.sig"
-          rm -f "$key"
           tag="${{ steps.version.outputs.tag }}"
           base="https://github.com/${{ github.repository }}/releases"
+          size=$(stat -c %s "$exe")
+          sha=$(sha256sum "$exe" | cut -d' ' -f1)
+          # src/update.rs reads this line, and its tests take the format from here.
+          printf 'clipboard-manager-release-v1 version=%s build=%s size=%s sha256=%s url=%s notes_url=%s' \
+            "${{ steps.version.outputs.version }}" "${{ github.run_number }}" "$size" "$sha" \
+            "$base/download/$tag/$exe" "$base/tag/$tag" > "$RUNNER_TEMP/release.txt"
+          openssl pkeyutl -sign -rawin -inkey "$key" -in "$exe" -out "$RUNNER_TEMP/exe.sig"
+          openssl pkeyutl -sign -rawin -inkey "$key" -in "$RUNNER_TEMP/release.txt" -out "$RUNNER_TEMP/release.sig"
+          rm -f "$key"
           cat > updater.json <<JSON
           {
             "version": "${{ steps.version.outputs.version }}",
@@ -93,12 +103,44 @@ jobs:
             "pub_date": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
             "notes_url": "$base/tag/$tag",
             "url": "$base/download/$tag/$exe",
-            "size": $(stat -c %s "$exe"),
-            "sha256": "$(sha256sum "$exe" | cut -d' ' -f1)",
-            "signature": "$(base64 -w0 "$RUNNER_TEMP/exe.sig")"
+            "size": $size,
+            "sha256": "$sha",
+            "signature": "$(base64 -w0 "$RUNNER_TEMP/exe.sig")",
+            "signed": "$(cat "$RUNNER_TEMP/release.txt")",
+            "signed_signature": "$(base64 -w0 "$RUNNER_TEMP/release.sig")"
           }
           JSON
           cat updater.json
+
+      # Checks what is about to be published: both signatures against the
+      # public key built into the app, and that the signed line describes this
+      # exe. A signing mistake then stops the release instead of shipping an
+      # update that every new version refuses.
+      - name: Check the update signatures
+        shell: bash
+        run: |
+          set -euo pipefail
+          exe=clipboard-manager-windows-x64.exe
+          public=$(sed -n 's/^const PUBLIC_KEY: &str = "\([^"]*\)".*/\1/p' src/update.rs)
+          test -n "$public" || { echo "PUBLIC_KEY not found in src/update.rs"; exit 1; }
+          # An Ed25519 public key in PEM form: a fixed 12-byte header, then the 32 key bytes.
+          pem="$RUNNER_TEMP/update-public.pem"
+          {
+            echo "-----BEGIN PUBLIC KEY-----"
+            { printf '\x30\x2a\x30\x05\x06\x03\x2b\x65\x70\x03\x21\x00'; printf '%s' "$public" | base64 -d; } | base64 -w0
+            echo
+            echo "-----END PUBLIC KEY-----"
+          } > "$pem"
+          # -j prints no line ending: jq.exe on Windows would end lines with CR,
+          # which base64 refuses.
+          jq -j .signature updater.json | base64 -d > "$RUNNER_TEMP/exe.sig.check"
+          openssl pkeyutl -verify -rawin -pubin -inkey "$pem" -in "$exe" -sigfile "$RUNNER_TEMP/exe.sig.check"
+          jq -j .signed updater.json > "$RUNNER_TEMP/release.check.txt"
+          jq -j .signed_signature updater.json | base64 -d > "$RUNNER_TEMP/release.sig.check"
+          openssl pkeyutl -verify -rawin -pubin -inkey "$pem" -in "$RUNNER_TEMP/release.check.txt" -sigfile "$RUNNER_TEMP/release.sig.check"
+          grep -q " size=$(stat -c %s "$exe") " "$RUNNER_TEMP/release.check.txt"
+          grep -q " sha256=$(sha256sum "$exe" | cut -d' ' -f1) " "$RUNNER_TEMP/release.check.txt"
+          echo "Both update signatures check out against the app's public key."
 
       # Package-manager manifests, attached to each release:
       #   scoop install https://github.com/<repo>/releases/latest/download/clipboard-manager.json

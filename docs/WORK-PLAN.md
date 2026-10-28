@@ -98,7 +98,7 @@ Status: `[ ]` to do, `[~]` in progress, `[x]` done, `[!]` waiting for a decision
 
 ### Phase 5. Security and privacy
 - [ ] 5.1 Encryption at rest for the history (D4, D11, D15 to D18)
-- [ ] 5.2 Updates: the signature also covers version and build; size limit; HTTPS only; the release job checks its own signatures (D20)
+- [x] 5.2 Updates: the signature also covers version and build; size limit; HTTPS only; the release job checks its own signatures (D20)
 - [x] 5.3 A warning when an embedding or OCR server is not on this PC, and a question on Apply (D19)
 - [x] 5.4 `tools/st_server.py`: Host and Origin checks, request size limit
 
@@ -119,7 +119,7 @@ Status: `[ ]` to do, `[~]` in progress, `[x]` done, `[!]` waiting for a decision
 ### Phase 8. Build, CI and tests
 - [ ] 8.1 One `tokenizers` version (no second copy, no C library build) if candle allows it
 - [ ] 8.2 GitHub Actions pinned to commit hashes
-- [ ] 8.3 The release job checks the update signature before publishing (moved into 5.2, D20)
+- [x] 8.3 The release job checks the update signature before publishing (moved into 5.2, D20)
 - [ ] 8.4 `cargo deny` for licenses and security advisories
 - [ ] 8.5 Clippy fails on warnings in CI
 - [ ] 8.6 More tests: worker, update install and rollback, settings migration, app logic

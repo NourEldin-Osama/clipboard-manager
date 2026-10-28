@@ -1,9 +1,14 @@
 //! Updates from GitHub Releases.
 //!
-//! Each release publishes `updater.json` next to the exe: version, build
-//! number, download URL, SHA-256 and an Ed25519 signature of the exe made with
-//! a key that only the release workflow has. A download is installed only if
-//! both match, checked against `PUBLIC_KEY` below.
+//! Each release publishes `updater.json` next to the exe. Its `signed` field is
+//! one line with every value this app uses: version, build number, size and
+//! SHA-256 of the exe, and the download and notes links. `signed_signature` is
+//! the Ed25519 signature of that line, made with a key that only the release
+//! workflow has. The app reads the values only from the signed line, so a
+//! changed file can't offer an older exe as a new one, and it installs a
+//! download only if its size and SHA-256 match. Older app versions read the
+//! file's other fields and check a signature of the exe itself; the workflow
+//! still writes those for them.
 //!
 //! Installing: Windows won't overwrite a running exe but will rename it, so the
 //! running exe becomes `clipboard-manager.old`, the new one takes its name, and
@@ -15,7 +20,7 @@ use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::time::Duration;
 
-use anyhow::{bail, Context, Result};
+use anyhow::{anyhow, bail, Context, Result};
 use base64::Engine as _;
 use serde::{Deserialize, Serialize};
 
@@ -26,6 +31,13 @@ const PUBLIC_KEY: &str = "87vyKkh1uUjEosXCDL+KH0+9XjQ6xu+MrlCB9ETs9TM=";
 
 const MANIFEST_URL: &str =
     "https://github.com/NourEldin-Osama/clipboard-manager/releases/latest/download/updater.json";
+
+/// The first word of the signed line. A later format gets a new word, which
+/// this version refuses instead of misreading.
+const SIGNED_FORMAT: &str = "clipboard-manager-release-v1";
+
+/// The exe is about 30 MB; a release that claims more than this is refused.
+const MAX_DOWNLOAD_BYTES: u64 = 200 * 1024 * 1024;
 
 /// Passed to the new exe after an update, so it waits for this one to exit.
 pub const AFTER_UPDATE_ARG: &str = "--after-update";
@@ -46,7 +58,16 @@ pub fn current_label() -> String {
     }
 }
 
+/// The part of `updater.json` this app reads. It is kept as it came, so a
+/// staged update can be checked again before it's installed.
 #[derive(Clone, Debug, Deserialize, Serialize)]
+struct Manifest {
+    signed: String,
+    signed_signature: String,
+}
+
+/// A release, with values taken from a manifest whose signature checked out.
+#[derive(Clone, Debug)]
 pub struct Release {
     pub version: String,
     pub build: u32,
@@ -54,7 +75,7 @@ pub struct Release {
     pub url: String,
     pub size: u64,
     pub sha256: String,
-    pub signature: String,
+    manifest: Manifest,
 }
 
 impl Release {
@@ -84,20 +105,96 @@ fn numbers(v: &str) -> Vec<u64> {
         .collect()
 }
 
+impl Manifest {
+    /// The release in the signed line, if `key` signed it and its values are
+    /// ones the app accepts: a size within the limit, and https links.
+    fn verify(self, key: &[u8; 32]) -> Result<Release> {
+        check_signature(key, self.signed.as_bytes(), &self.signed_signature)
+            .context("the update description isn't signed by this app's releases")?;
+        let line = self.signed.clone();
+        let mut words = line.split(' ');
+        if words.next() != Some(SIGNED_FORMAT) {
+            bail!("the update description has a format this version doesn't know");
+        }
+        let mut values = std::collections::HashMap::new();
+        for word in words {
+            let (name, value) = word
+                .split_once('=')
+                .context("the update description is damaged")?;
+            if values.insert(name, value).is_some() {
+                bail!("the update description repeats {name}");
+            }
+        }
+        let value = |name: &str| {
+            values
+                .get(name)
+                .copied()
+                .with_context(|| format!("the update description lacks {name}"))
+        };
+        let release = Release {
+            version: value("version")?.to_string(),
+            build: value("build")?
+                .parse()
+                .context("the update's build number")?,
+            notes_url: value("notes_url")?.to_string(),
+            url: value("url")?.to_string(),
+            size: value("size")?.parse().context("the update's size")?,
+            sha256: value("sha256")?.to_string(),
+            manifest: self,
+        };
+        if release.size == 0 || release.size > MAX_DOWNLOAD_BYTES {
+            bail!(
+                "the update claims {} bytes; at most {MAX_DOWNLOAD_BYTES} are allowed",
+                release.size
+            );
+        }
+        for link in [&release.url, &release.notes_url] {
+            if !link.starts_with("https://") {
+                bail!("the update's links must use https: {link}");
+            }
+        }
+        Ok(release)
+    }
+}
+
+/// `PUBLIC_KEY` as bytes.
+fn public_key() -> Result<[u8; 32]> {
+    base64::engine::general_purpose::STANDARD
+        .decode(PUBLIC_KEY)?
+        .try_into()
+        .map_err(|_| anyhow!("bad public key"))
+}
+
+/// `signature` (base64) is `key`'s Ed25519 signature of `message`.
+fn check_signature(key: &[u8; 32], message: &[u8], signature: &str) -> Result<()> {
+    let signature: [u8; 64] = base64::engine::general_purpose::STANDARD
+        .decode(signature.trim())?
+        .try_into()
+        .map_err(|_| anyhow!("bad signature"))?;
+    ed25519_dalek::VerifyingKey::from_bytes(key)?
+        .verify_strict(message, &ed25519_dalek::Signature::from_bytes(&signature))
+        .map_err(|_| anyhow!("bad signature"))
+}
+
 /// The latest release's manifest. `CLIPBOARD_MANAGER_UPDATE_URL` points
-/// elsewhere for testing; the signature check still applies.
+/// elsewhere for testing; the signature check still applies, and only a
+/// test server on this PC may use plain http.
 pub fn check() -> Result<Release> {
-    let url =
-        std::env::var("CLIPBOARD_MANAGER_UPDATE_URL").unwrap_or_else(|_| MANIFEST_URL.to_string());
+    let custom = std::env::var("CLIPBOARD_MANAGER_UPDATE_URL").ok();
+    let url = custom.as_deref().unwrap_or(MANIFEST_URL);
+    let https_only = custom.is_none() || !crate::net::is_on_this_pc(url);
     let mut resp = crate::net::quick()
-        .get(&url)
+        .get(url)
+        .config()
+        .https_only(https_only)
+        .build()
         .call()
         .with_context(|| format!("checking {url}"))?;
-    let release: Release = resp
+    let manifest: Manifest = resp
         .body_mut()
         .read_json()
         .context("reading the update manifest")?;
-    Ok(release)
+    manifest.verify(&public_key()?)
 }
 
 /// Where the next exe is put before it's swapped in: next to the running one.
@@ -126,10 +223,14 @@ pub fn download(r: &Release, p: &Arc<Progress>) -> Result<PathBuf> {
     // The exe is about 30 MB: half an hour covers a very slow line.
     let mut resp = crate::net::download(Duration::from_secs(30 * 60))
         .get(&r.url)
+        .config()
+        .https_only(true)
+        .build()
         .call()
         .with_context(|| format!("downloading {}", r.url))?;
     p.total.store(r.size, Ordering::Relaxed);
-    let mut reader = resp.body_mut().with_config().limit(u64::MAX).reader();
+    // More bytes than the signed size end the download with an error.
+    let mut reader = resp.body_mut().with_config().limit(r.size).reader();
     let mut bytes = Vec::with_capacity(r.size as usize);
     let mut buf = vec![0u8; 1 << 16];
     loop {
@@ -149,7 +250,7 @@ pub fn download(r: &Release, p: &Arc<Progress>) -> Result<PathBuf> {
     out.sync_all()?;
     drop(out);
     std::fs::rename(&part, &staged)?;
-    std::fs::write(staged_manifest_path()?, serde_json::to_vec(r)?)?;
+    std::fs::write(staged_manifest_path()?, serde_json::to_vec(&r.manifest)?)?;
     Ok(staged)
 }
 
@@ -164,7 +265,8 @@ pub fn install_staged() -> Result<Option<PathBuf>> {
     }
     let manifest =
         std::fs::read(staged_manifest_path()?).context("reading the staged update's manifest")?;
-    let release: Release = serde_json::from_slice(&manifest)?;
+    let manifest: Manifest = serde_json::from_slice(&manifest)?;
+    let release = manifest.verify(&public_key()?)?;
     if !release.is_newer() {
         return Ok(None);
     }
@@ -172,9 +274,17 @@ pub fn install_staged() -> Result<Option<PathBuf>> {
     install(&staged).map(Some)
 }
 
-/// The download is the one the release workflow signed, byte for byte.
+/// The download is the exe the release workflow signed: its size and SHA-256
+/// match the signed line.
 fn verify(bytes: &[u8], r: &Release) -> Result<()> {
     use sha2::{Digest, Sha256};
+    if bytes.len() as u64 != r.size {
+        bail!(
+            "the download is {} bytes, not the {} the release lists",
+            bytes.len(),
+            r.size
+        );
+    }
     let sum: String = Sha256::digest(bytes)
         .iter()
         .map(|b| format!("{b:02x}"))
@@ -182,18 +292,6 @@ fn verify(bytes: &[u8], r: &Release) -> Result<()> {
     if !sum.eq_ignore_ascii_case(r.sha256.trim()) {
         bail!("the download is damaged (checksum mismatch)");
     }
-    let b64 = base64::engine::general_purpose::STANDARD;
-    let key: [u8; 32] = b64
-        .decode(PUBLIC_KEY)?
-        .try_into()
-        .map_err(|_| anyhow::anyhow!("bad public key"))?;
-    let sig: [u8; 64] = b64
-        .decode(r.signature.trim())?
-        .try_into()
-        .map_err(|_| anyhow::anyhow!("bad signature"))?;
-    let key = ed25519_dalek::VerifyingKey::from_bytes(&key)?;
-    key.verify_strict(bytes, &ed25519_dalek::Signature::from_bytes(&sig))
-        .map_err(|_| anyhow::anyhow!("the download isn't signed by this app's releases"))?;
     Ok(())
 }
 
@@ -246,39 +344,139 @@ pub fn clean_up() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ed25519_dalek::Signer as _;
 
-    /// Signed with the real release key: `printf 'hello update\n' | openssl pkeyutl -sign -rawin`.
-    fn fixture() -> (Vec<u8>, Release) {
-        let r = Release {
-            version: "0.1.0".into(),
-            build: 1,
-            notes_url: String::new(),
-            url: String::new(),
-            size: 13,
-            sha256: "85ebff07175145475a29610a59842c3f0e9b74d72ce23b3c535bd01eeca62027".into(),
-            signature: "vh/Bl0j3js13ICyaRM0Nrhpn9KZJiFwXtNwYOonsEtsN4BpFSgeUFyeIDnXZV8PpdH4BZSWnrHSaGsbzX6lKAA==".into(),
-        };
-        (b"hello update\n".to_vec(), r)
+    /// Made with the real release key:
+    /// `printf 'hello update\n' | openssl pkeyutl -sign -rawin`.
+    const RELEASE_KEY_SIGNATURE: &str =
+        "vh/Bl0j3js13ICyaRM0Nrhpn9KZJiFwXtNwYOonsEtsN4BpFSgeUFyeIDnXZV8PpdH4BZSWnrHSaGsbzX6lKAA==";
+
+    #[test]
+    fn the_built_in_key_is_the_release_key() {
+        let key = public_key().unwrap();
+        check_signature(&key, b"hello update\n", RELEASE_KEY_SIGNATURE).unwrap();
+        assert!(check_signature(&key, b"hello update!\n", RELEASE_KEY_SIGNATURE).is_err());
+    }
+
+    /// A key for tests only; the real one never leaves the release workflow.
+    fn test_key() -> ed25519_dalek::SigningKey {
+        ed25519_dalek::SigningKey::from_bytes(&[7; 32])
+    }
+
+    fn test_public_key() -> [u8; 32] {
+        test_key().verifying_key().to_bytes()
+    }
+
+    fn signed(line: &str) -> Manifest {
+        Manifest {
+            signed: line.to_string(),
+            signed_signature: base64::engine::general_purpose::STANDARD
+                .encode(test_key().sign(line.as_bytes()).to_bytes()),
+        }
+    }
+
+    /// The line the release workflow signs, filled with test values. Its
+    /// format comes from the workflow file, so the two can't drift apart.
+    fn workflow_line(version: &str, build: u32, size: u64, sha256: &str) -> String {
+        let workflow = include_str!("../.github/workflows/build-windows.yml");
+        let start = workflow
+            .find(&format!("printf '{SIGNED_FORMAT} "))
+            .expect("the workflow signs a release line")
+            + "printf '".len();
+        let format = &workflow[start..start + workflow[start..].find('\'').unwrap()];
+        let values = [
+            version.to_string(),
+            build.to_string(),
+            size.to_string(),
+            sha256.to_string(),
+            "https://example.com/download/app.exe".to_string(),
+            "https://example.com/tag/v1".to_string(),
+        ];
+        let mut line = format.to_string();
+        for value in values {
+            line = line.replacen("%s", &value, 1);
+        }
+        assert!(
+            !line.contains('%'),
+            "the workflow line has values the test doesn't fill"
+        );
+        line
     }
 
     #[test]
-    fn accepts_a_signed_release() {
-        let (bytes, r) = fixture();
-        verify(&bytes, &r).unwrap();
+    fn the_signed_line_gives_the_release() {
+        let sha = "ab".repeat(32);
+        let line = workflow_line("0.3.0", 42, 1234, &sha);
+        let r = signed(&line).verify(&test_public_key()).unwrap();
+        assert_eq!((r.version.as_str(), r.build, r.size), ("0.3.0", 42, 1234));
+        assert_eq!(r.sha256, sha);
+        assert_eq!(r.url, "https://example.com/download/app.exe");
+        assert_eq!(r.notes_url, "https://example.com/tag/v1");
     }
 
     #[test]
-    fn rejects_tampering() {
-        let (mut bytes, mut r) = fixture();
-        bytes[0] ^= 1;
-        assert!(verify(&bytes, &r).is_err(), "changed bytes");
-        // Even with a matching checksum, the signature must hold.
+    fn a_changed_line_or_another_key_is_refused() {
+        let line = workflow_line("0.3.0", 42, 1234, &"ab".repeat(32));
+        let mut changed = signed(&line);
+        changed.signed = changed.signed.replace("build=42", "build=99");
+        assert!(changed.verify(&test_public_key()).is_err());
+        let release_key = public_key().unwrap();
+        assert!(signed(&line).verify(&release_key).is_err(), "another key");
+    }
+
+    #[test]
+    fn unsafe_values_are_refused() {
+        let sha = "ab".repeat(32);
+        let line = workflow_line("0.3.0", 42, 1234, &sha);
+        for (what, bad) in [
+            ("no size", line.replace("size=1234", "size=0")),
+            (
+                "too big",
+                line.replace("size=1234", &format!("size={}", MAX_DOWNLOAD_BYTES + 1)),
+            ),
+            (
+                "http download",
+                line.replacen("url=https://", "url=http://", 1),
+            ),
+            (
+                "http notes",
+                line.replace("notes_url=https://", "notes_url=http://"),
+            ),
+            (
+                "unknown format",
+                line.replacen(SIGNED_FORMAT, "clipboard-manager-release-v9", 1),
+            ),
+            ("missing value", line.replace(&format!(" sha256={sha}"), "")),
+            ("repeated value", format!("{line} build=43")),
+        ] {
+            assert!(signed(&bad).verify(&test_public_key()).is_err(), "{what}");
+        }
+    }
+
+    #[test]
+    fn a_download_must_match_the_signed_size_and_checksum() {
         use sha2::{Digest, Sha256};
-        r.sha256 = Sha256::digest(&bytes)
+        let bytes = b"new exe".to_vec();
+        let sha: String = Sha256::digest(&bytes)
             .iter()
             .map(|b| format!("{b:02x}"))
             .collect();
-        assert!(verify(&bytes, &r).is_err(), "re-hashed but unsigned");
+        let line = workflow_line("0.3.0", 42, bytes.len() as u64, &sha);
+        let r = signed(&line).verify(&test_public_key()).unwrap();
+        verify(&bytes, &r).unwrap();
+        assert!(verify(b"new exe!", &r).is_err(), "longer");
+        let mut changed = bytes.clone();
+        changed[0] ^= 1;
+        assert!(verify(&changed, &r).is_err(), "same size, other bytes");
+    }
+
+    #[test]
+    fn a_staged_manifest_is_checked_again() {
+        let line = workflow_line("0.3.0", 42, 1234, &"ab".repeat(32));
+        let r = signed(&line).verify(&test_public_key()).unwrap();
+        let saved: Manifest =
+            serde_json::from_slice(&serde_json::to_vec(&r.manifest).unwrap()).unwrap();
+        assert_eq!(saved.verify(&test_public_key()).unwrap().build, 42);
     }
 
     #[test]
@@ -286,15 +484,5 @@ mod tests {
         assert!(numbers("0.10.0") > numbers("0.9.9"));
         assert!((numbers("0.1.0"), 13) > (numbers("0.1.0"), 12));
         assert!((numbers("0.2.0"), 1) > (numbers("0.1.0"), 99));
-    }
-
-    #[test]
-    fn a_saved_manifest_still_verifies_its_download() {
-        let (bytes, r) = fixture();
-        let saved: Release = serde_json::from_slice(&serde_json::to_vec(&r).unwrap()).unwrap();
-        verify(&bytes, &saved).unwrap();
-        let mut tampered = bytes.clone();
-        tampered[0] ^= 1;
-        assert!(verify(&tampered, &saved).is_err());
     }
 }
