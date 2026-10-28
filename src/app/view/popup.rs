@@ -11,13 +11,27 @@ fn popup_id() -> egui::ViewportId {
     egui::ViewportId::from_hash_of("popup")
 }
 
+/// Whether the popup's window exists (it may be hidden).
+fn popup_made(ctx: &egui::Context) -> bool {
+    ctx.input(|i| i.raw.viewports.contains_key(&popup_id()))
+}
+
+fn popup_builder() -> egui::ViewportBuilder {
+    egui::ViewportBuilder::default()
+        .with_title(t!("app-title"))
+        .with_decorations(false)
+        .with_resizable(false)
+        .with_taskbar(false)
+        .with_window_level(egui::WindowLevel::AlwaysOnTop)
+        .with_inner_size(POPUP_SIZE)
+}
+
 impl App {
     /// The main window makes the popup's window while drawing, and draws
     /// nothing while minimised: one drawn frame is asked for so the popup
     /// can open. Runs from `logic`, which runs in every frame.
     pub(super) fn popup_logic(&mut self, ctx: &egui::Context) {
-        let made = ctx.input(|i| i.raw.viewports.contains_key(&popup_id()));
-        if self.win.is_popup_open() && !made {
+        if self.win.is_popup_open() && !popup_made(ctx) {
             ctx.send_viewport_cmd(egui::ViewportCommand::RequestPaintWhileHidden);
             ctx.request_repaint();
         }
@@ -27,6 +41,18 @@ impl App {
     /// the window.
     pub(super) fn popup_window(&mut self, ctx: &egui::Context) {
         if !self.win.is_popup_open() {
+            return;
+        }
+        if !popup_made(ctx) {
+            // eframe 0.37 makes the window of a "deferred" viewport itself,
+            // after the frame. An "immediate" one is made during the frame,
+            // which needs a context eframe lacks while the main window is
+            // hidden or minimised (it draws such a window from
+            // `check_redraw_requests` in its run.rs), and egui then panics.
+            // So the window is made empty and hidden first, and drawn
+            // immediately from the next frame on.
+            ctx.show_viewport_deferred(popup_id(), popup_builder().with_visible(false), |_, _| {});
+            ctx.request_repaint();
             return;
         }
         let placing = self.win.popup_placing.swap(false, Ordering::SeqCst);
@@ -39,26 +65,19 @@ impl App {
             self.popup_at = popup_corner(ctx);
             ctx.request_repaint();
         }
-        let mut builder = egui::ViewportBuilder::default()
-            .with_title(t!("app-title"))
-            .with_decorations(false)
-            .with_resizable(false)
-            .with_taskbar(false)
-            .with_window_level(egui::WindowLevel::AlwaysOnTop)
-            .with_inner_size(POPUP_SIZE)
-            // Shown from its second frame, once there is something drawn in it.
-            .with_visible(!placing);
+        // Shown from its second frame, once there is something drawn in it.
+        let mut builder = popup_builder().with_visible(!placing);
         if let Some(at) = self.popup_at {
             builder = builder.with_position(at);
         }
         let showing = self.popup_hidden_last_frame && !placing;
         self.popup_hidden_last_frame = placing;
-        ctx.show_viewport_immediate(popup_id(), builder, |ui, _| {
-            if showing {
-                ui.ctx().send_viewport_cmd(egui::ViewportCommand::Focus);
-            }
-            self.popup_ui(ui);
-        });
+        ctx.show_viewport_immediate(popup_id(), builder, |ui, _| self.popup_ui(ui));
+        if showing {
+            // Sent from the main window's frame: eframe drops what the popup's
+            // own frame sends while the main window is hidden or minimised.
+            ctx.send_viewport_cmd_to(popup_id(), egui::ViewportCommand::Focus);
+        }
     }
 
     /// The search field, a button for the full window, and the list. The
