@@ -51,7 +51,7 @@ impl App {
                             value = format!("{:.2}", min_similarity)
                         )
                     });
-                egui::ComboBox::from_id_salt("strict")
+                let menu = egui::ComboBox::from_id_salt("strict")
                     .selected_text(txt(&current, 14.0, None))
                     .width(150.0)
                     .show_ui(ui, |ui| {
@@ -59,6 +59,7 @@ impl App {
                             ui.selectable_value(min_similarity, v, txt(&l, 14.0, None));
                         }
                     });
+                set_choice_name(&menu.response, &row_title(ui), &current);
             },
         );
 
@@ -163,9 +164,22 @@ impl App {
 
     pub(super) fn builtin_models(&mut self, ui: &mut Ui, repo: &mut String) {
         note(ui, &t!("settings-builtin-note"));
+        // The page draws every frame; the files change only with a download,
+        // so the disk is checked once a second at most.
+        let fresh = self
+            .models_on_disk
+            .filter(|(at, _)| at.elapsed() < Duration::from_secs(1));
+        let on_disk = match fresh {
+            Some((_, on_disk)) => on_disk,
+            None => {
+                let on_disk =
+                    SIGLIP_MODELS.map(|m| models::siglip_ready(&self.paths.models, m.repo));
+                self.models_on_disk = Some((Instant::now(), on_disk));
+                on_disk
+            }
+        };
         let mut start: Option<String> = None;
-        for m in &SIGLIP_MODELS {
-            let ready = models::siglip_ready(&self.paths.models, m.repo);
+        for (m, ready) in SIGLIP_MODELS.iter().zip(on_disk) {
             let selected = *repo == m.repo;
             let size = format!("{:.1}", m.size_mb as f32 / 1000.0);
             choice_setting(
@@ -195,10 +209,14 @@ impl App {
                         ui.add(
                             egui::ProgressBar::new(done as f32 / total as f32)
                                 .desired_width(150.0)
-                                .text(t!(
-                                    "settings-model-progress",
-                                    done = done >> 20,
-                                    total = total >> 20
+                                .text(txt(
+                                    &t!(
+                                        "settings-model-progress",
+                                        done = done >> 20,
+                                        total = total >> 20
+                                    ),
+                                    13.0,
+                                    None,
                                 )),
                         );
                         ui.ctx().request_repaint_after(Duration::from_millis(250));

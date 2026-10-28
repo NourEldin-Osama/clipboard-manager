@@ -128,7 +128,7 @@ impl App {
                                         13.5,
                                         Some(text_color),
                                     ));
-                                    ui.add(egui::Spinner::new().size(14.0));
+                                    slow_spinner(ui, 14.0, None);
                                 } else {
                                     ui.label(txt(
                                         &t!("update-downloading", version = r.label()),
@@ -138,10 +138,14 @@ impl App {
                                     ui.add(
                                         egui::ProgressBar::new(done as f32 / total as f32)
                                             .desired_width(160.0)
-                                            .text(t!(
-                                                "update-progress",
-                                                done = done >> 20,
-                                                total = total >> 20
+                                            .text(txt(
+                                                &t!(
+                                                    "update-progress",
+                                                    done = done >> 20,
+                                                    total = total >> 20
+                                                ),
+                                                13.0,
+                                                None,
                                             )),
                                     );
                                 }
@@ -266,15 +270,22 @@ impl App {
                         self.open_settings(SettingsPage::Search);
                     }
                     if self.queue > 0 {
-                        ui.add(egui::Spinner::new().size(11.0).color(weak));
+                        let total = self.queue_total.max(self.queue);
+                        let done = total - self.queue;
+                        slow_spinner(ui, 11.0, Some(weak));
                         ui.label(txt(
-                            &t!("status-indexing", count = self.queue),
+                            &t!("status-indexing", done = done, total = total),
                             12.0,
                             Some(weak),
                         ));
+                        ui.add(
+                            egui::ProgressBar::new(done as f32 / total as f32)
+                                .desired_width(90.0)
+                                .desired_height(6.0),
+                        );
                     }
                     if self.imports_running > 0 {
-                        ui.add(egui::Spinner::new().size(11.0).color(weak));
+                        slow_spinner(ui, 11.0, Some(weak));
                         ui.label(txt(
                             &t!("status-adding-files", count = self.imported),
                             12.0,

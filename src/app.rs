@@ -33,8 +33,10 @@ use crate::worker::{Event, Job, Worker};
 const QUERY_DEBOUNCE: Duration = Duration::from_millis(180);
 /// While indexing, re-rank at most this often instead of after every vector.
 const RESEARCH_EVERY: Duration = Duration::from_millis(400);
-/// Thumbnail textures kept before the cache is dropped and refilled from what is visible.
+/// Thumbnail textures kept; past this the ones shown longest ago go, down
+/// to `THUMBS_KEPT`, so dropping happens now and then, not every frame.
 const MAX_THUMBS: usize = 300;
+const THUMBS_KEPT: usize = 240;
 
 /// Derived from the selected item once, not every frame.
 struct DetailText {
@@ -370,6 +372,8 @@ pub struct App {
     library: Library,
     backend: BackendState,
     queue: usize,
+    /// Items in the current indexing run, for its progress bar (`run_total`).
+    queue_total: usize,
     status: String,
     error: Option<(String, Instant)>,
     toast: Option<Toast>,
@@ -395,6 +399,15 @@ pub struct App {
     focused: Arc<AtomicBool>,
 
     thumbs: HashMap<u64, Option<TextureHandle>>,
+    /// The frame each image item was last drawn in, for dropping thumbnails.
+    thumb_seen: HashMap<u64, u64>,
+    /// Which built-in models are on disk, and when that was checked.
+    models_on_disk: Option<(Instant, [bool; SIGLIP_MODELS.len()])>,
+    /// Which paths of the item in the details pane are folders, by item.
+    folders_of: Option<(u64, Vec<bool>)>,
+    /// Tab moved the focus last, so the focused control is outlined; a
+    /// click hides the outline again.
+    keyboard_focus: bool,
     preview: Option<(u64, Option<TextureHandle>)>,
     loader: ImageLoader,
     detail: Option<DetailText>,
@@ -529,6 +542,7 @@ impl App {
             library,
             backend: BackendState::Off,
             queue: 0,
+            queue_total: 0,
             status: String::new(),
             error: None,
             toast: None,
@@ -552,6 +566,10 @@ impl App {
             focus_search,
             focused: Arc::new(AtomicBool::new(true)),
             thumbs: HashMap::new(),
+            thumb_seen: HashMap::new(),
+            models_on_disk: None,
+            folders_of: None,
+            keyboard_focus: false,
             preview: None,
             loader: {
                 let c = ctx.clone();
@@ -1345,7 +1363,10 @@ impl App {
             match e {
                 Event::Status(s) => self.status = s,
                 Event::Error(s) => self.set_error(s),
-                Event::Queue(n) => self.queue = n,
+                Event::Queue(n) => {
+                    self.queue_total = run_total(self.queue_total, self.queue, n);
+                    self.queue = n;
+                }
                 Event::BackendOff => {
                     self.backend = BackendState::Off;
                     self.status.clear();
@@ -1547,6 +1568,7 @@ impl App {
         self.results.retain(|h| !gone.contains(&h.id));
         for id in ids {
             self.thumbs.remove(id);
+            self.thumb_seen.remove(id);
         }
         self.dirty = true;
     }
@@ -1741,6 +1763,17 @@ impl App {
     }
 }
 
+/// The size of an indexing run when the worker reports `left` items to go
+/// (it reported `before` last time). Work added meanwhile adds to the
+/// run, so its progress bar never goes back; an empty queue ends it.
+fn run_total(total: usize, before: usize, left: usize) -> usize {
+    if left == 0 {
+        0
+    } else {
+        total + left.saturating_sub(before)
+    }
+}
+
 /// Writes to the clipboard from the background thread. The watcher skips
 /// the change this makes instead of recording it as a new copy.
 fn write_clipboard(
@@ -1765,3 +1798,24 @@ mod view;
 use background::{Background, Done};
 use settings::SettingsPage;
 use view::{add_fonts, apply_theme, looks_like_code, set_accent, style};
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn an_indexing_run_grows_with_new_work_and_ends_when_empty() {
+        let (mut total, mut left) = (0, 0);
+        let mut seen = Vec::new();
+        for next in [500, 400, 450, 10, 0, 3] {
+            total = run_total(total, left, next);
+            left = next;
+            seen.push((total - left, total));
+        }
+        // (done, total) after each report: new work never takes "done" back.
+        assert_eq!(
+            seen,
+            [(0, 500), (100, 500), (100, 550), (540, 550), (0, 0), (0, 3)]
+        );
+    }
+}

@@ -133,11 +133,18 @@ pub(crate) fn style(ctx: &egui::Context) {
     });
     // Input fields need a visible fill: the content panes are already the
     // lightest (or darkest) tone, so a default field would vanish into them.
+    // Gray text is dark (or light) enough to read on every background it
+    // sits on: egui's own weak text was about 3 to 1, and readable text
+    // needs 4.5 to 1 (WCAG AA). In the dark theme the normal text gets
+    // brighter too, to stay apart from the weak text.
     ctx.style_mut_of(egui::Theme::Light, |s| {
-        s.visuals.text_edit_bg_color = Some(Color32::from_gray(240))
+        s.visuals.text_edit_bg_color = Some(Color32::from_gray(240));
+        s.visuals.weak_text_color = Some(Color32::from_gray(100));
     });
     ctx.style_mut_of(egui::Theme::Dark, |s| {
-        s.visuals.text_edit_bg_color = Some(Color32::from_gray(38))
+        s.visuals.text_edit_bg_color = Some(Color32::from_gray(38));
+        s.visuals.widgets.noninteractive.fg_stroke.color = Color32::from_gray(180);
+        s.visuals.weak_text_color = Some(Color32::from_gray(150));
     });
 }
 
@@ -147,4 +154,80 @@ pub(crate) fn apply_theme(ctx: &egui::Context, t: Theme) {
         Theme::Light => egui::ThemePreference::Light,
         Theme::Dark => egui::ThemePreference::Dark,
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// WCAG relative luminance of an opaque colour.
+    fn luminance(c: Color32) -> f32 {
+        let linear = |v: u8| {
+            let v = f32::from(v) / 255.0;
+            if v <= 0.04045 {
+                v / 12.92
+            } else {
+                ((v + 0.055) / 1.055).powf(2.4)
+            }
+        };
+        0.2126 * linear(c.r()) + 0.7152 * linear(c.g()) + 0.0722 * linear(c.b())
+    }
+
+    /// WCAG contrast ratio: 4.5 or more is readable for normal text.
+    fn contrast(a: Color32, b: Color32) -> f32 {
+        let (a, b) = (luminance(a), luminance(b));
+        (a.max(b) + 0.05) / (a.min(b) + 0.05)
+    }
+
+    /// A see-through (premultiplied) colour painted over an opaque one.
+    fn over(top: Color32, under: Color32) -> Color32 {
+        let rest = 1.0 - f32::from(top.a()) / 255.0;
+        let mix = |t: u8, u: u8| (f32::from(t) + f32::from(u) * rest).round() as u8;
+        Color32::from_rgb(
+            mix(top.r(), under.r()),
+            mix(top.g(), under.g()),
+            mix(top.b(), under.b()),
+        )
+    }
+
+    #[test]
+    fn gray_text_is_readable_on_every_background() {
+        let ctx = egui::Context::default();
+        style(&ctx);
+        for theme in [egui::Theme::Light, egui::Theme::Dark] {
+            let v = ctx.style_of(theme).visuals.clone();
+            let mut backgrounds = vec![
+                ("panel", v.panel_fill),
+                ("content", v.extreme_bg_color),
+                ("field", v.text_edit_bg_color()),
+            ];
+            // Tints under text: a selected row and a changed setting, per accent.
+            for a in ACCENTS {
+                backgrounds.push(("selected row", over(a.gamma_multiply(0.13), v.panel_fill)));
+                let changed = if v.dark_mode { 0.14 } else { 0.07 };
+                backgrounds.push((
+                    "changed setting",
+                    over(a.gamma_multiply(changed), v.panel_fill),
+                ));
+            }
+            let weak = v.weak_text_color();
+            backgrounds.push((
+                "gray chip",
+                over(weak.gamma_multiply(0.14), v.extreme_bg_color),
+            ));
+            for (text, color) in [("normal", v.text_color()), ("weak", weak)] {
+                for (place, background) in &backgrounds {
+                    let ratio = contrast(over(color, *background), *background);
+                    assert!(
+                        ratio >= 4.5,
+                        "{theme:?}: {text} text on {place} is {ratio:.2} to 1"
+                    );
+                }
+            }
+            assert!(
+                contrast(weak, v.panel_fill) < contrast(v.text_color(), v.panel_fill),
+                "{theme:?}: weak text stays weaker than normal text"
+            );
+        }
+    }
 }

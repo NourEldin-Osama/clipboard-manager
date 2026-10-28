@@ -90,6 +90,7 @@ impl App {
                         .desired_width(150.0)
                         .font(FontId::proportional(13.0)),
                 );
+                set_name(&r, &t!("details-tag-hint"));
                 if std::mem::take(&mut self.tag_focus) || enter {
                     r.request_focus();
                 }
@@ -194,10 +195,12 @@ impl App {
                 icons::chip(ui, Icon::PinFilled, &t!("details-pinned"), accent());
             }
             if it.origin == Origin::Imported {
-                icons::chip(ui, Icon::Folder, &t!("details-from-files"), Color32::GRAY);
+                let weak = ui.visuals().weak_text_color();
+                icons::chip(ui, Icon::Folder, &t!("details-from-files"), weak);
             }
             if it.formatted {
-                icons::chip(ui, Icon::Text, &t!("details-formatted"), Color32::GRAY);
+                let weak = ui.visuals().weak_text_color();
+                icons::chip(ui, Icon::Text, &t!("details-formatted"), weak);
             }
             far(ui, |ui| {
                 let keys = self.cfg.keys.clone();
@@ -296,12 +299,28 @@ impl App {
             .show(ui, |ui| match it.kind {
                 Kind::Image => self.image_details(ui, &it),
                 Kind::Files => {
-                    for line in it.text.lines() {
+                    // Checked once per item: the pane draws every frame,
+                    // and a path on an unreachable drive can take seconds.
+                    if self.folders_of.as_ref().is_none_or(|(id, _)| *id != it.id) {
+                        let folders = it
+                            .text
+                            .lines()
+                            .map(|l| std::path::Path::new(l).is_dir())
+                            .collect();
+                        self.folders_of = Some((it.id, folders));
+                    }
+                    let folders = self
+                        .folders_of
+                        .as_ref()
+                        .map(|(_, f)| f.clone())
+                        .unwrap_or_default();
+                    for (index, line) in it.text.lines().enumerate() {
                         let p = PathBuf::from(line);
+                        let is_folder = folders.get(index).copied().unwrap_or(false);
                         row(ui, |ui| {
                             icons::glyph(
                                 ui,
-                                if p.is_dir() { Icon::Folder } else { Icon::File },
+                                if is_folder { Icon::Folder } else { Icon::File },
                                 15.0,
                                 ui.visuals().text_color(),
                             );
@@ -405,7 +424,7 @@ impl App {
             }
             Preview::Loading => {
                 ui.add_space(24.0);
-                ui.add(egui::Spinner::new().size(22.0));
+                slow_spinner(ui, 22.0, None);
             }
             Preview::Missing => {
                 lbl(

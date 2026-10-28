@@ -94,7 +94,8 @@ impl App {
         );
         // Made before the buttons, so they stay on top of it.
         let drag = ui
-            .interact(bar, ui.scope_id().with("move"), Sense::drag())
+            // Not in the Tab order: the keyboard has nothing to do there.
+            .interact(bar, ui.scope_id().with("move"), Sense::DRAG)
             .on_hover_cursor(egui::CursorIcon::Grab);
         if drag.drag_started() {
             self.popup_moving = true;
@@ -143,6 +144,7 @@ impl App {
             return;
         }
         let had_settings = self.draft.is_some();
+        self.keyboard_focus = keyboard_moved_focus(&ctx, self.keyboard_focus);
         self.keyboard(&ctx, true);
         let fill = ui.visuals().panel_fill;
         egui::Panel::top("popup-bar")
@@ -223,6 +225,10 @@ impl App {
             Stroke::new(1.0, edge),
             egui::StrokeKind::Inside,
         );
+        if self.keyboard_focus {
+            focus_outline(&ctx);
+        }
+        bidi::read_in_reading_order(&ctx);
     }
 }
 

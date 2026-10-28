@@ -35,6 +35,7 @@ Status: `[ ]` to do, `[~]` in progress, `[x]` done, `[!]` waiting for a decision
 | D24 | Inno Setup is installed on this PC, so the installer is tested before a release | You | Decided |
 | D25 | The quick popup is its own small window with no taskbar button; the full window never moves or changes size. One click selects; double-click or Enter pastes | You | Decided |
 | D26 | The popup has a bar at its top: Settings, the full window, a handle to move it, Close. A moved popup still opens at the mouse pointer the next time | You | Decided |
+| D27 | Gray text meets the 4.5 to 1 contrast minimum everywhere, in both themes; indexing shows a spinner that moves five times a second, and a progress bar | You | Decided |
 
 ## Order of work, and why
 
@@ -87,6 +88,7 @@ Status: `[ ]` to do, `[~]` in progress, `[x]` done, `[!]` waiting for a decision
 - [x] 2.30 A global shortcut changed in Settings did nothing until a restart: the library keeps only the first event handler (found while adding the quick popup)
 - [x] 2.31 The quick popup closed the app when the full window was minimized: eframe 0.37 can't make a new window during such a frame (found in the Phase 6 check)
 - [x] 2.32 With the full window open, the popup's search field didn't get the keyboard (found in the Phase 6 check)
+- [x] 2.33 A few Arabic texts went to egui without the reading-order handling: the "none" hint, the vector sizes and two download progress texts showed their words in the wrong order (found in Phase 7)
 
 ### Phase 3. Structure (no behavior change)
 - [x] 3.1 Split `view.rs` (theme, widgets, time format, top bar, list, grid, details, status bar, keyboard)
@@ -123,8 +125,8 @@ Status: `[ ]` to do, `[~]` in progress, `[x]` done, `[!]` waiting for a decision
 - [x] 6.9 A bar at the top of the quick popup: Settings, the full window, a handle to move it, Close (D26)
 
 ### Phase 7. Speed and accessibility
-- [ ] 7.1 No repaint loop while indexing, cached file checks, thumbnail cache that keeps visible images
-- [ ] 7.2 Screen reader labels, focus rings, readable contrast
+- [x] 7.1 No repaint loop while indexing, cached file checks, thumbnail cache that keeps visible images
+- [x] 7.2 Screen reader labels, focus rings, readable contrast
 
 ### Phase 8. Build, CI and tests
 - [ ] 8.1 One `tokenizers` version (no second copy, no C library build) if candle allows it

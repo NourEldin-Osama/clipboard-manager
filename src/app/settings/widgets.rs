@@ -3,13 +3,29 @@
 
 use super::*;
 
-/// iOS-style switch.
+fn row_title_id() -> egui::Id {
+    egui::Id::unique("setting-row-title")
+}
+
+/// The title of the setting row being drawn, to name its control for
+/// screen readers: a switch or a text field has no text of its own.
+pub(super) fn row_title(ui: &Ui) -> String {
+    ui.ctx()
+        .data(|d| d.get_temp::<String>(row_title_id()))
+        .unwrap_or_default()
+}
+
+/// iOS-style switch, named by its setting row for screen readers.
 pub(super) fn toggle(ui: &mut Ui, on: &mut bool) -> egui::Response {
     let (rect, mut resp) = ui.allocate_exact_size(Vec2::new(38.0, 22.0), Sense::click());
     if resp.clicked() {
         *on = !*on;
         resp.mark_changed();
     }
+    let (title, now_on) = (row_title(ui), *on);
+    resp.widget_info(|| {
+        egui::WidgetInfo::selected(egui::Role::Switch, ui.is_enabled(), now_on, &title)
+    });
     let t = ui.ctx().animate_bool(resp.id, *on);
     let off = ui.visuals().widgets.inactive.bg_fill;
     let bg = Color32::from_rgba_premultiplied(
@@ -178,7 +194,10 @@ pub(super) fn setting_row(
                     } else {
                         ui.add_space(28.0 + ui.spacing().item_spacing.x);
                     }
+                    ui.ctx()
+                        .data_mut(|d| d.insert_temp(row_title_id(), label.to_string()));
                     control(ui);
+                    ui.ctx().data_mut(|d| d.remove::<String>(row_title_id()));
                 });
             });
         });
@@ -207,10 +226,37 @@ pub(super) fn path_field(ui: &mut Ui, p: &mut PathBuf, ext: &[&str]) {
         }
     }
     let mut s = p.to_string_lossy().into_owned();
-    if ui
-        .add(egui::TextEdit::singleline(&mut s).desired_width(280.0))
-        .changed()
-    {
+    let field = ui.add(egui::TextEdit::singleline(&mut s).desired_width(280.0));
+    set_name(&field, &row_title(ui));
+    if field.changed() {
         *p = PathBuf::from(&s);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_switch_is_named_by_its_setting_row() {
+        let ctx = egui::Context::default();
+        ctx.enable_accesskit();
+        let mut on = true;
+        let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+            plain_setting(ui, "Read text in images", "", |ui| {
+                toggle(ui, &mut on);
+            });
+        });
+        // The font atlas upload no renderer takes here.
+        output.textures_delta.clear();
+        let update = output.platform_output.accesskit_update.expect("a tree");
+        let switch = update
+            .nodes
+            .iter()
+            .map(|(_, node)| node)
+            .find(|node| node.role() == egui::accesskit::Role::Switch)
+            .expect("a switch");
+        assert_eq!(switch.label(), Some("Read text in images"));
+        assert_eq!(switch.toggled(), Some(egui::accesskit::Toggled::True));
     }
 }

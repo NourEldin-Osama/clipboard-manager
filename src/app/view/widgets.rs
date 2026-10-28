@@ -7,6 +7,89 @@ pub(super) fn search_id() -> egui::Id {
     egui::Id::unique("search")
 }
 
+/// Names a widget for screen readers: a text field, a row or a switch has
+/// no text of its own that egui could use.
+pub(crate) fn set_name(resp: &egui::Response, name: &str) {
+    let name = name.to_string();
+    resp.ctx
+        .accesskit_node_builder(resp.id, |node| node.set_label(name));
+}
+
+/// Names a drop-down menu by its setting, with the chosen option as its
+/// value (egui names it by the option alone).
+pub(crate) fn set_choice_name(resp: &egui::Response, name: &str, chosen: &str) {
+    let (name, chosen) = (name.to_string(), chosen.to_string());
+    resp.ctx.accesskit_node_builder(resp.id, |node| {
+        node.set_label(name);
+        node.set_value(chosen);
+    });
+}
+
+/// Notes whether the keyboard (Tab) or the mouse moved the focus last.
+pub(super) fn keyboard_moved_focus(ctx: &egui::Context, before: bool) -> bool {
+    ctx.input(|i| {
+        if i.key_pressed(Key::Tab) {
+            true
+        } else if i.pointer.any_pressed() {
+            false
+        } else {
+            before
+        }
+    })
+}
+
+/// An accent outline around the control with the keyboard focus. egui's
+/// own widgets barely show the focus, and the app's drawn ones not at all.
+pub(super) fn focus_outline(ctx: &egui::Context) {
+    let Some(focused) = ctx
+        .memory(|m| m.focused())
+        .and_then(|id| ctx.read_response(id))
+    else {
+        return;
+    };
+    ctx.layer_painter(egui::LayerId::new(
+        egui::Order::Foreground,
+        egui::Id::unique("focus-outline"),
+    ))
+    .rect_stroke(
+        focused.interact_rect.expand(2.0),
+        6.0,
+        Stroke::new(2.0, accent()),
+        egui::StrokeKind::Outside,
+    );
+}
+
+/// How often `slow_spinner` moves.
+const SPINNER_STEP: Duration = Duration::from_millis(200);
+
+/// egui's spinner, moving in steps a few times a second. egui's own asks
+/// for a new frame every frame, so the window redrew nonstop while, say,
+/// a long indexing ran.
+pub(crate) fn slow_spinner(ui: &mut Ui, size: f32, color: Option<Color32>) -> egui::Response {
+    let (rect, response) = ui.allocate_exact_size(Vec2::splat(size), Sense::hover());
+    response.widget_info(|| egui::WidgetInfo::new(egui::Role::ProgressIndicator));
+    if ui.is_rect_visible(rect) {
+        ui.ctx().request_repaint_after(SPINNER_STEP);
+        let step = SPINNER_STEP.as_secs_f64();
+        let time = (ui.input(|i| i.time) / step).floor() * step;
+        let color = color.unwrap_or_else(|| ui.visuals().strong_text_color());
+        let radius = rect.height().min(rect.width()) * 0.5 - 2.0;
+        let n_points = (radius.round() as u32).clamp(8, 128);
+        let start = time * std::f64::consts::TAU;
+        let end = start + 240f64.to_radians() * time.sin();
+        let points = (0..n_points)
+            .map(|i| {
+                let angle = start + (end - start) * f64::from(i) / f64::from(n_points);
+                let (sin, cos) = angle.sin_cos();
+                rect.center() + radius * Vec2::new(cos as f32, sin as f32)
+            })
+            .collect();
+        ui.painter()
+            .add(egui::Shape::line(points, Stroke::new(3.0, color)));
+    }
+    response
+}
+
 /// Text for a label or button in display order. `None` keeps the widget's own colour.
 pub(crate) fn txt(text: &str, size: f32, color: Option<Color32>) -> egui::WidgetText {
     if bidi::has_rtl(text) {

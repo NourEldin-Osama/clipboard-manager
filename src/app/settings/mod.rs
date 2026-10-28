@@ -8,7 +8,7 @@ use super::icons::{self, Icon};
 use super::shortcut;
 use super::view::{
     accent, accent_name, chip, cut_line, far, flip, lbl, paint_text, primary_button, reveal, row,
-    start_anchor, tip, txt, ACCENTS, AMBER, GREEN, RED,
+    set_choice_name, set_name, start_anchor, tip, txt, ACCENTS, AMBER, GREEN, RED,
 };
 use super::*;
 use crate::config::{
@@ -280,6 +280,7 @@ impl App {
                     let sel = self.settings_page == page;
                     let (rect, r) = ui
                         .allocate_exact_size(Vec2::new(ui.available_width(), 36.0), Sense::click());
+                    r.widget_info(|| egui::WidgetInfo::selected(egui::Role::Tab, true, sel, &name));
                     let v = ui.visuals();
                     let color = if sel {
                         accent()
