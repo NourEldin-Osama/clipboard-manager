@@ -278,7 +278,7 @@ fn reader_server_settings(ui: &mut Ui, s: &mut ReaderServer, show_key: &mut bool
             ui.add(
                 egui::TextEdit::singleline(&mut s.api_key)
                     .password(!*show_key)
-                    .hint_text(t!("settings-server-optional"))
+                    .hint_text(txt(&t!("settings-server-optional"), 14.0, None))
                     .desired_width(300.0),
             );
         },
@@ -290,7 +290,7 @@ fn reader_server_settings(ui: &mut Ui, s: &mut ReaderServer, show_key: &mut bool
         |ui| {
             ui.add(
                 egui::TextEdit::singleline(&mut s.model)
-                    .hint_text(t!("settings-server-optional"))
+                    .hint_text(txt(&t!("settings-server-optional"), 14.0, None))
                     .desired_width(300.0),
             );
         },
@@ -321,12 +321,12 @@ fn rules_section(ui: &mut Ui, d: &mut Config) {
                 ui.add_space(10.0);
                 ui.add(
                     egui::TextEdit::singleline(&mut rule.app)
-                        .hint_text(t!("settings-rule-program"))
+                        .hint_text(txt(&t!("settings-rule-program"), 14.0, None))
                         .desired_width(150.0),
                 );
                 ui.add(
                     egui::TextEdit::singleline(&mut rule.pattern)
-                        .hint_text(t!("settings-rule-pattern"))
+                        .hint_text(txt(&t!("settings-rule-pattern"), 14.0, None))
                         .desired_width(220.0),
                 );
                 tip(

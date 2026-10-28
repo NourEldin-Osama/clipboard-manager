@@ -208,10 +208,14 @@ impl App {
                         ui.add(
                             egui::ProgressBar::new(done as f32 / total as f32)
                                 .desired_width(150.0)
-                                .text(t!(
-                                    "settings-model-progress",
-                                    done = done >> 20,
-                                    total = total >> 20
+                                .text(txt(
+                                    &t!(
+                                        "settings-model-progress",
+                                        done = done >> 20,
+                                        total = total >> 20
+                                    ),
+                                    13.0,
+                                    None,
                                 )),
                         );
                         ui.ctx().request_repaint_after(Duration::from_millis(250));

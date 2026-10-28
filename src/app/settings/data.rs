@@ -78,7 +78,7 @@ impl App {
                     {
                         clear = true;
                     }
-                    if ui.button(t!("common-cancel")).clicked() {
+                    if ui.button(txt(&t!("common-cancel"), 14.0, None)).clicked() {
                         self.confirm = None;
                     }
                 } else if ui
@@ -117,7 +117,7 @@ impl App {
                     {
                         reset = true;
                     }
-                    if ui.button(t!("common-cancel")).clicked() {
+                    if ui.button(txt(&t!("common-cancel"), 14.0, None)).clicked() {
                         self.confirm = None;
                     }
                 } else if ui

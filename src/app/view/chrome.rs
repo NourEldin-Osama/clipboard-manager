@@ -138,10 +138,14 @@ impl App {
                                     ui.add(
                                         egui::ProgressBar::new(done as f32 / total as f32)
                                             .desired_width(160.0)
-                                            .text(t!(
-                                                "update-progress",
-                                                done = done >> 20,
-                                                total = total >> 20
+                                            .text(txt(
+                                                &t!(
+                                                    "update-progress",
+                                                    done = done >> 20,
+                                                    total = total >> 20
+                                                ),
+                                                13.0,
+                                                None,
                                             )),
                                     );
                                 }

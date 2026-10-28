@@ -115,7 +115,7 @@ pub(super) fn server_settings(
             ui.add(
                 egui::TextEdit::singleline(&mut s.api_key)
                     .password(!list.show_key)
-                    .hint_text(t!("settings-server-optional"))
+                    .hint_text(txt(&t!("settings-server-optional"), 14.0, None))
                     .desired_width(300.0),
             );
         },
@@ -263,7 +263,7 @@ pub(super) fn server_settings(
                 |ui, prefix| {
                     ui.add(
                         egui::TextEdit::singleline(prefix)
-                            .hint_text(t!("settings-server-none"))
+                            .hint_text(txt(&t!("settings-server-none"), 14.0, None))
                             .desired_width(300.0),
                     )
                 },
@@ -277,7 +277,7 @@ pub(super) fn server_settings(
                 |ui, prefix| {
                     ui.add(
                         egui::TextEdit::singleline(prefix)
-                            .hint_text(t!("settings-server-none"))
+                            .hint_text(txt(&t!("settings-server-none"), 14.0, None))
                             .desired_width(300.0),
                     )
                 },
@@ -296,11 +296,11 @@ pub(super) fn server_settings(
                         .map(|(_, l)| l.clone())
                         .unwrap_or_else(|| t!("settings-vector-custom", count = *dims));
                     egui::ComboBox::from_id_salt("dims")
-                        .selected_text(current)
+                        .selected_text(txt(&current, 14.0, None))
                         .width(170.0)
                         .show_ui(ui, |ui| {
                             for (v, l) in sizes {
-                                ui.selectable_value(dims, v, l);
+                                ui.selectable_value(dims, v, txt(&l, 14.0, None));
                             }
                         });
                 },
