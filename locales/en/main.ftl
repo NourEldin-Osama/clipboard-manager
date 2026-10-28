@@ -99,6 +99,7 @@ list-no-matches = No matches for “{ $query }”
 list-meaning-finds-more = Searching by meaning finds related words too.
 list-set-up-meaning = Set up meaning search
 popup-open-window = Open the full window
+popup-close = Close
 list-try-smart = Try “Smart” search instead
 list-try-other-words = Try fewer or different words.
 list-search-all-not-text = Search all items, not just text

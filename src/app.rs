@@ -420,6 +420,8 @@ pub struct App {
     popup_at: Option<egui::Pos2>,
     /// The popup was made hidden in the last frame; it shows in this one.
     popup_hidden_last_frame: bool,
+    /// The popup's bar is being dragged: the next frame starts moving it.
+    popup_moving: bool,
     /// Grid and List views show the details pane only after "Open details".
     details_open: bool,
     /// Cards per row in the grid, from the last frame, for ↑ ↓ navigation.
@@ -571,6 +573,7 @@ impl App {
             popup_list_view: (0.0, 0.0),
             popup_at: None,
             popup_hidden_last_frame: false,
+            popup_moving: false,
             details_open: false,
             grid_cols: 1,
             update: UpdateState::Idle,

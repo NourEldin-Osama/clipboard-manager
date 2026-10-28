@@ -73,15 +73,65 @@ impl App {
         let showing = self.popup_hidden_last_frame && !placing;
         self.popup_hidden_last_frame = placing;
         ctx.show_viewport_immediate(popup_id(), builder, |ui, _| self.popup_ui(ui));
+        // Sent from the main window's frame: eframe drops what the popup's
+        // own frame sends while the main window is hidden or minimised.
         if showing {
-            // Sent from the main window's frame: eframe drops what the popup's
-            // own frame sends while the main window is hidden or minimised.
             ctx.send_viewport_cmd_to(popup_id(), egui::ViewportCommand::Focus);
+        }
+        if std::mem::take(&mut self.popup_moving) {
+            ctx.send_viewport_cmd_to(popup_id(), egui::ViewportCommand::StartDrag);
         }
     }
 
-    /// The search field, a button for the full window, and the list. The
-    /// keys work as in the full window.
+    /// The bar at the top: Settings and the full window at the start, a
+    /// handle in the middle, Close at the end. Dragging the handle, or any
+    /// empty part of the bar, moves the popup until it closes; it opens at
+    /// the mouse pointer again.
+    fn popup_bar(&mut self, ui: &mut Ui) {
+        let bar = Rect::from_min_size(
+            ui.available_rect_before_wrap().min,
+            Vec2::new(ui.available_width(), 30.0),
+        );
+        // Made before the buttons, so they stay on top of it.
+        let drag = ui
+            .interact(bar, ui.scope_id().with("move"), Sense::drag())
+            .on_hover_cursor(egui::CursorIcon::Grab);
+        if drag.drag_started() {
+            self.popup_moving = true;
+        }
+        let handle = Rect::from_center_size(bar.center(), Vec2::new(36.0, 4.0));
+        let weak = ui.visuals().weak_text_color();
+        ui.painter().rect_filled(handle, 2.0, weak);
+        row(ui, |ui| {
+            let small = Vec2::splat(30.0);
+            if icon_button_ex(
+                ui,
+                Icon::Settings,
+                &t!("top-settings"),
+                small,
+                15.0,
+                None,
+                None,
+            )
+            .clicked()
+            {
+                self.open_settings(SettingsPage::General);
+            }
+            let tip = hint(&t!("popup-open-window"), &self.cfg.window_hotkey);
+            if icon_button_ex(ui, Icon::Open, &tip, small, 15.0, None, None).clicked() {
+                self.win.show_full();
+            }
+            far(ui, |ui| {
+                let tip = hint(&t!("popup-close"), "Escape");
+                if icon_button_ex(ui, Icon::Close, &tip, small, 15.0, None, None).clicked() {
+                    self.win.hide();
+                }
+            });
+        });
+    }
+
+    /// The bar, the search field and the list. The keys work as in the full
+    /// window.
     fn popup_ui(&mut self, ui: &mut Ui) {
         let ctx = ui.ctx().clone();
         let focused = ctx.input(|i| i.viewport().focused.unwrap_or(false));
@@ -95,29 +145,34 @@ impl App {
         let had_settings = self.draft.is_some();
         self.keyboard(&ctx, true);
         let fill = ui.visuals().panel_fill;
+        egui::Panel::top("popup-bar")
+            .show_separator_line(false)
+            .frame(
+                Frame::new()
+                    .inner_margin(Margin {
+                        left: 6,
+                        right: 6,
+                        top: 4,
+                        bottom: 0,
+                    })
+                    .fill(fill),
+            )
+            .show(ui, |ui| self.popup_bar(ui));
         egui::Panel::top("popup-top")
             .show_separator_line(false)
             .frame(
                 Frame::new()
                     .inner_margin(Margin {
                         left: 10,
-                        right: 8,
-                        top: 10,
+                        right: 10,
+                        top: 4,
                         bottom: 6,
                     })
                     .fill(fill),
             )
             .show(ui, |ui| {
-                row(ui, |ui| {
-                    let width = (ui.available_width() - 44.0).max(160.0);
-                    self.search_field(ui, width);
-                    far(ui, |ui| {
-                        let tip = hint(&t!("popup-open-window"), &self.cfg.window_hotkey);
-                        if icons::icon_button(ui, Icon::Open, &tip).clicked() {
-                            self.win.show_full();
-                        }
-                    });
-                });
+                let width = ui.available_width();
+                self.search_field(ui, width);
             });
         if let Some((error, _)) = self.error.clone() {
             egui::Panel::bottom("popup-error")
