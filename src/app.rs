@@ -3,7 +3,7 @@
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::str::FromStr;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc::{channel, Receiver, TryRecvError};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -280,6 +280,17 @@ struct Hotkeys {
     _manager: GlobalHotKeyManager,
 }
 
+/// The ids of the registered global shortcuts, `NO_HOTKEY` when one isn't
+/// set. The global-hotkey library keeps only the first event handler it is
+/// given, so that handler reads the current ids from here.
+#[derive(Default)]
+struct HotkeyIds {
+    show: AtomicU64,
+    ignore: AtomicU64,
+}
+
+const NO_HOTKEY: u64 = u64::MAX;
+
 pub struct App {
     paths: Paths,
     cfg: Config,
@@ -327,6 +338,7 @@ pub struct App {
     last_search: Instant,
     download: Option<Download>,
     hotkeys: Option<Hotkeys>,
+    hotkey_ids: Arc<HotkeyIds>,
     /// Global shortcuts are off while one is being recorded in Settings.
     hotkeys_paused: bool,
     hotkey_error: Option<String>,
@@ -473,6 +485,7 @@ impl App {
             last_search: Instant::now(),
             download: None,
             hotkeys: None,
+            hotkey_ids: Arc::default(),
             hotkeys_paused: false,
             hotkey_error: None,
             hotkey_conflicts: Vec::new(),
@@ -605,23 +618,30 @@ impl App {
         let show = parse(&self.cfg.show_hotkey);
         let ignore = parse(&self.cfg.ignore_next_hotkey);
         let (show_id, ignore_id) = (show.map(|h| h.id()), ignore.map(|h| h.id()));
-        let (c, flags, focused, win) = (
+        let id = |h: Option<u32>| h.map_or(NO_HOTKEY, u64::from);
+        self.hotkey_ids.show.store(id(show_id), Ordering::SeqCst);
+        self.hotkey_ids
+            .ignore
+            .store(id(ignore_id), Ordering::SeqCst);
+        let (c, flags, focused, win, ids) = (
             ctx.clone(),
             self.flags.clone(),
             self.focused.clone(),
             self.win.clone(),
+            self.hotkey_ids.clone(),
         );
         GlobalHotKeyEvent::set_event_handler(Some(move |e: GlobalHotKeyEvent| {
             if e.state() != HotKeyState::Pressed {
                 return;
             }
-            if Some(e.id()) == show_id {
+            let pressed = u64::from(e.id());
+            if pressed == ids.show.load(Ordering::SeqCst) {
                 if focused.load(Ordering::SeqCst) && !win.hidden.load(Ordering::SeqCst) {
                     win.hide();
                 } else {
                     win.show();
                 }
-            } else if Some(e.id()) == ignore_id {
+            } else if pressed == ids.ignore.load(Ordering::SeqCst) {
                 flags.ignore_next.store(true, Ordering::SeqCst);
             }
             c.request_repaint();

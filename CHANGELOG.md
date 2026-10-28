@@ -6,6 +6,7 @@ the notes here before a push that makes a release.
 
 ## 0.4.0
 
+- Fix: a global shortcut changed in Settings worked only after a restart.
 - Formatting is kept: text copied with formatting (HTML or RTF, from a
   browser or Word, say) pastes back with it. The formatting is stored
   encrypted, apart from the list, and kept up to 2 MB per copy.
