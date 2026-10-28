@@ -100,7 +100,7 @@ Status: `[ ]` to do, `[~]` in progress, `[x]` done, `[!]` waiting for a decision
 - [ ] 5.1 Encryption at rest for the history (D4, D11, D15 to D18)
 - [ ] 5.2 Updates: the signature also covers version and build; size limit; HTTPS only; the release job checks its own signatures (D20)
 - [ ] 5.3 A warning when an embedding or OCR server is not on this PC, and a question on Apply (D19)
-- [ ] 5.4 `tools/st_server.py`: Host and Origin checks, request size limit
+- [x] 5.4 `tools/st_server.py`: Host and Origin checks, request size limit
 
 ### Phase 6. Features
 - [ ] 6.1 Paste straight into the app you were using

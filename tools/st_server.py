@@ -18,11 +18,14 @@ Endpoints
 The optional "X-Embedding-Role: query|document" header selects the model's own
 query/document prompt when it defines one (e.g. EmbeddingGemma).
 Multi-vector models (ColBERT/ColPali style) return one vector per token.
-Listens on 127.0.0.1 only by default; nothing is sent anywhere.
+Listens on 127.0.0.1 only by default; nothing is sent anywhere. It answers
+only requests addressed to it, and refuses requests from web pages and
+requests over 64 MB.
 """
 
 import argparse
 import base64
+import hmac
 import io
 import json
 import threading
@@ -33,6 +36,11 @@ import numpy as np
 MODELS = {}
 LOCK = threading.Lock()
 ARGS = None
+# Room for several images sent as base64.
+MAX_BODY_BYTES = 64 * 1024 * 1024
+LOOPBACK = ("127.0.0.1", "localhost", "::1")
+# The Host headers a client on this PC sends; set in main() from the port.
+ALLOWED_HOSTS = set()
 
 
 def load(name):
@@ -103,15 +111,32 @@ class Handler(BaseHTTPRequestHandler):
         if ARGS.verbose:
             super().log_message(fmt, *args)
 
+    def _allowed(self):
+        # A web page can reach this port through the browser: by a plain
+        # form post, or by DNS rebinding (its own host name pointed at
+        # 127.0.0.1). Browsers send an Origin header and the page's host
+        # name; the app sends neither.
+        if self.headers.get("Origin") is not None:
+            self._send(403, {"error": {"message": "requests from web pages are not accepted"}})
+            return False
+        host = self.headers.get("Host", "").lower()
+        if ARGS.host in LOOPBACK and host not in ALLOWED_HOSTS:
+            self._send(403, {"error": {"message": f"unexpected Host header: {host}"}})
+            return False
+        return True
+
     def _authorized(self):
         if not ARGS.api_key:
             return True
-        if self.headers.get("Authorization", "") == f"Bearer {ARGS.api_key}":
+        sent = self.headers.get("Authorization", "").encode()
+        if hmac.compare_digest(sent, f"Bearer {ARGS.api_key}".encode()):
             return True
         self._send(401, {"error": {"message": "invalid or missing API key"}})
         return False
 
     def do_GET(self):
+        if not self._allowed():
+            return
         path = self.path.rstrip("/")
         if path in ("/health", "/v1/health"):
             return self._send(200, {"status": "ok"})
@@ -122,12 +147,20 @@ class Handler(BaseHTTPRequestHandler):
         self._send(404, {"error": {"message": "not found"}})
 
     def do_POST(self):
+        if not self._allowed():
+            return
         if self.path.rstrip("/") not in ("/v1/embeddings", "/embeddings"):
             return self._send(404, {"error": {"message": "not found"}})
         if not self._authorized():
             return
         try:
-            req = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))) or b"{}")
+            length = int(self.headers.get("Content-Length", 0))
+        except ValueError:
+            return self._send(400, {"error": {"message": "invalid Content-Length"}})
+        if length > MAX_BODY_BYTES:
+            return self._send(413, {"error": {"message": f"requests are limited to {MAX_BODY_BYTES} bytes"}})
+        try:
+            req = json.loads(self.rfile.read(length) or b"{}")
             name = pick_model(req.get("model", ""))
             role = (self.headers.get("X-Embedding-Role") or "").lower()
             if "messages" in req:
@@ -160,6 +193,12 @@ def main():
     p.add_argument("--preload", action="store_true", help="load all models at start-up instead of on first use")
     p.add_argument("--verbose", action="store_true")
     ARGS = p.parse_args()
+    for name in ("127.0.0.1", "localhost", "[::1]"):
+        ALLOWED_HOSTS.add(f"{name}:{ARGS.port}")
+        if ARGS.port == 80:
+            ALLOWED_HOSTS.add(name)
+    if ARGS.host not in LOOPBACK and not ARGS.api_key:
+        print("warning: listening beyond this PC without --api-key: anyone who can reach it can use it", flush=True)
     if ARGS.preload:
         for n in ARGS.model:
             load(n)
