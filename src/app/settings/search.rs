@@ -100,7 +100,45 @@ impl App {
                 server_settings(ui, s, &mut d.server_profiles, &mut self.model_list)
             }
         }
-        if d.backend != self.cfg.backend {
+        // Applying a server outside this PC starts sending it the whole
+        // history, so it is asked about once.
+        let send_to = if self.confirm == Some(Confirm::SendToServer) {
+            self.unconfirmed_server(d)
+        } else {
+            None
+        };
+        if let Some(host) = send_to {
+            ui.add_space(8.0);
+            Frame::new()
+                .inner_margin(Margin::symmetric(10, 0))
+                .show(ui, |ui| {
+                    let strong = ui.visuals().strong_text_color();
+                    let question = t!("settings-server-send-question", host = host.as_str());
+                    super::bidi::paragraph(ui, &question, egui::FontId::proportional(13.5), strong);
+                });
+            ui.add_space(4.0);
+            row(ui, |ui| {
+                ui.add_space(10.0);
+                if primary_button(ui, &t!("settings-server-send")).clicked() {
+                    if let EmbedBackend::Server(s) = &d.backend {
+                        let url = s.base_url.clone();
+                        d.allow_server(&url);
+                    }
+                    *apply_model = true;
+                    self.confirm = None;
+                }
+                if ui
+                    .button(txt(&t!("settings-server-send-cancel"), 13.0, None))
+                    .clicked()
+                {
+                    d.backend = self.cfg.backend.clone();
+                    self.confirm = None;
+                }
+            });
+        } else if d.backend != self.cfg.backend {
+            if self.confirm == Some(Confirm::SendToServer) {
+                self.confirm = None;
+            }
             ui.add_space(8.0);
             row(ui, |ui| {
                 ui.add_space(10.0);

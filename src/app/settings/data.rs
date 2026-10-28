@@ -136,5 +136,14 @@ impl App {
             *d = Config::default();
         }
         note(ui, &t!("settings-privacy-note"));
+        if let EmbedBackend::Server(s) = &self.cfg.backend {
+            if !crate::net::is_on_this_pc(&s.base_url) {
+                let host = crate::net::host(&s.base_url);
+                note(
+                    ui,
+                    &format!("⚠ {}", t!("settings-privacy-remote", host = host)),
+                );
+            }
+        }
     }
 }

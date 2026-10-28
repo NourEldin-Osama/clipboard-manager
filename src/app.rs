@@ -242,11 +242,13 @@ pub(super) enum Command {
     CopyText(String),
 }
 
-/// A destructive action in Settings, waiting for its second click.
+/// An action in Settings waiting for its second click: a destructive one,
+/// or sending the history to a server outside this PC.
 #[derive(Clone, Copy, PartialEq)]
 enum Confirm {
     ClearHistory,
     ResetSettings,
+    SendToServer,
 }
 
 /// The shortcuts that can be changed in Settings.

@@ -68,8 +68,19 @@ impl App {
         self.confirm = None;
     }
 
-    /// Leaving settings applies everything, including model changes.
+    /// Leaving settings applies everything, including model changes. A
+    /// server outside this PC is asked about first: Settings then stays open
+    /// on the Search page, with the question.
     pub(super) fn close_settings(&mut self, ctx: &egui::Context) {
+        if self
+            .draft
+            .as_ref()
+            .is_some_and(|d| self.unconfirmed_server(d).is_some())
+        {
+            self.settings_page = SettingsPage::Search;
+            self.confirm = Some(Confirm::SendToServer);
+            return;
+        }
         if let Some(d) = self.draft.take() {
             self.apply_settings(d, ctx, true);
         }
@@ -78,6 +89,18 @@ impl App {
             ctx.request_repaint();
         }
         self.confirm = None;
+    }
+
+    /// The server outside this PC that applying `d` would start sending the
+    /// history to, as long as the user hasn't agreed to it yet.
+    fn unconfirmed_server(&self, d: &Config) -> Option<String> {
+        let EmbedBackend::Server(s) = &d.backend else {
+            return None;
+        };
+        let unconfirmed = d.backend != self.cfg.backend
+            && !crate::net::is_on_this_pc(&s.base_url)
+            && !d.is_server_allowed(&s.base_url);
+        unconfirmed.then(|| crate::net::host(&s.base_url).to_string())
     }
 
     fn apply_settings(&mut self, d: Config, ctx: &egui::Context, prune: bool) {
@@ -347,9 +370,14 @@ impl App {
             self.apply_settings(c, &ctx, false);
         }
         if apply_model {
-            let mut c = self.cfg.clone();
-            c.backend = d.backend.clone();
-            self.apply_settings(c, &ctx, false);
+            if self.unconfirmed_server(&d).is_some() {
+                self.settings_page = SettingsPage::Search;
+                self.confirm = Some(Confirm::SendToServer);
+            } else {
+                let mut c = self.cfg.clone();
+                c.backend = d.backend.clone();
+                self.apply_settings(c, &ctx, false);
+            }
         }
         if discard_model {
             d.backend = self.cfg.backend.clone();
