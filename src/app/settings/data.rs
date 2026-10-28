@@ -136,6 +136,9 @@ impl App {
             *d = Config::default();
         }
         note(ui, &t!("settings-privacy-note"));
+        if self.library.store().is_encrypted() {
+            note(ui, &t!("settings-privacy-encrypted"));
+        }
         if let EmbedBackend::Server(s) = &self.cfg.backend {
             if !crate::net::is_on_this_pc(&s.base_url) {
                 let host = crate::net::host(&s.base_url);

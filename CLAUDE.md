@@ -57,7 +57,9 @@ One egui `App` (`src/app.rs`) owns all state; background threads talk to it over
 - **Background** (`app/background.rs`): saving a copied image as PNG and copying an item back run in order on one
   thread; each import reads its files on its own thread and sends them in batches. Results come back as `Done`
   messages, and `App::finish` saves them through the `Library`.
-- **Store** (`store.rs`): redb; items as JSON (new fields need `#[serde(default)]`), images as PNG files beside it.
+- **Store** (`store.rs`): redb; items as JSON (new fields need `#[serde(default)]`), images as PNG files beside it. On Windows
+  both are encrypted with the history's key (`vault.rs`, sealed with DPAPI); read and write images only through
+  `store.images` (`ImageFiles`), never with `image::open` on an item's path.
 - **Library** (`library.rs`): the history in memory (items, their lower-cased search text, the current model's vectors)
   kept in step with the store. Every change to the history goes through it; it has no UI code and its own tests.
   Items sit behind `Arc`, so `snapshot()` hands a search the whole history without copying texts or vectors.

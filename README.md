@@ -42,7 +42,7 @@ public feature descriptions only, and it shares no code or assets with Planck an
 | **Built-in model (pure Rust)** | SigLIP (English or multilingual, Arabic included) runs inside the app on the CPU through [candle](https://github.com/huggingface/candle). It puts text and images in one shared space, so text can find images. |
 | **Your own model server** | Paste the URL of any local embedding server (llama.cpp `llama-server`, the bundled Sentence Transformers server, Ollama, LM Studio, vLLM) and pick the model from a dropdown filled by the server's model list. The app can also launch `llama-server` for you. Presets are included for **EmbeddingGemma**, **BiUltraVBERT** and **ColUltraVBERT**. Multi-vector (ColBERT-style) output is detected and scored with MaxSim, and Matryoshka truncation is supported. |
 | **Library import** | Drag files or folders onto the window, or use `＋ → Import folder…`. Images and text and code files are indexed alongside your clipboard. |
-| **Privacy** | Nothing leaves your machine. Clipboard content that password managers mark as sensitive (`ExcludeClipboardContentFromMonitorProcessing`) is never recorded. Neither is anything that looks like an API key, token, private key or random password (on by default; you can turn it off in Settings, or click **Save anyway** on the message when it guessed wrong). You can pause recording at any time. |
+| **Privacy** | Nothing leaves your machine, and on Windows your history is encrypted on disk with a key tied to your Windows account. Clipboard content that password managers mark as sensitive (`ExcludeClipboardContentFromMonitorProcessing`) is never recorded. Neither is anything that looks like an API key, token, private key or random password (on by default; you can turn it off in Settings, or click **Save anyway** on the message when it guessed wrong). You can pause recording at any time. |
 | **Smart ranking** | Image and text similarities are each scaled by their best match before being merged, because text-to-image similarity scores are naturally much lower than text-to-text ones. Without this, photos would be buried under text. |
 | **Look and feel** | A list grouped by Pinned / Today / Yesterday / This week, with kind icons, thumbnails, matched words highlighted and relevance bars while searching. Three layouts, switched with the view button beside the search box: **Grid** (cards), **List** (full-width rows) and **Detail** (list plus a details pane with a large preview). Hovering an item shows delete, pin, copy and open-details buttons (the card's content stays put). Light and dark themes, five accent colours, comfortable or compact density. |
 | **Settings that explain themselves** | Sections down the side (General, Search & AI model, Clipboard, Shortcuts, Appearance, Data & privacy). Every option has an ℹ explanation and plain-language choices. Settings you've changed are highlighted, each with a one-click reset. Changes apply instantly. |
@@ -192,12 +192,14 @@ the active model's index are embedded in the background, and the status bar show
 `%APPDATA%\clipboard-manager\data\` (open it from Settings → Data):
 
 - `history.redb` stores items, OCR text and embeddings ([redb](https://github.com/cberner/redb), a pure-Rust embedded database)
-- `images\` holds copied images as PNG files
+- `images\` holds copied images as PNG files (`.png.enc` when encrypted)
 - `models\` holds downloaded models
-- `config.json` holds settings
+- `config.json` holds settings, and `app.ron` the window's size and place
 - `clipboard-manager.log` is a log of the current run (the previous run's is kept as `clipboard-manager.old.log`). Open it from Settings → Data → *Show log* and attach it to bug reports.
 
-Set `CLIPBOARD_MANAGER_HOME` to use another folder, for example a portable install on a USB stick.
+On Windows the items and copied images are encrypted (AES-256-GCM) with a key that Windows itself protects for your account (DPAPI): only your account, on this PC, can open the history. The search vectors are not encrypted. A history from an older version is encrypted the first time a newer version opens it. A history that can't be opened, for example one copied from another PC or account, is moved aside as `history-unreadable-<date>.redb` and an empty one starts; the old one still opens on the account that made it.
+
+Set `CLIPBOARD_MANAGER_HOME` to use another folder, for example a portable install on a USB stick. Its history is encrypted too, so it opens only on the PC and account that made it.
 
 ## Architecture
 
@@ -213,7 +215,8 @@ src/
     server.rs    OpenAI-compatible client + optional llama-server launcher
   ocr.rs         ocrs wrapper
   search.rs      keyword scoring, similarity ranking with a word-match boost
-  store.rs       redb persistence
+  store.rs       redb persistence; items and copied images encrypted on Windows
+  vault.rs       the history's key (sealed with DPAPI) and its AES-256-GCM encryption
   library.rs     the history in memory and every change to it, kept in step with the store
   import.rs      files/folders -> items
   models.rs      model catalogue + atomic (temp-file then rename) downloads

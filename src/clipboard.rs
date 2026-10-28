@@ -6,7 +6,7 @@ use std::sync::mpsc::Sender;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use crate::store::{fnv1a, Item, Kind};
+use crate::store::{fnv1a, ImageFiles, Item, Kind};
 
 pub enum Captured {
     Text(String),
@@ -256,9 +256,9 @@ fn write(f: impl Fn(&mut arboard::Clipboard) -> Result<(), arboard::Error>) -> a
 }
 
 /// Puts an item from the history back on the clipboard. Slow for a big image
-/// (it is read from its PNG file), and it waits while another program holds
+/// (it is read from its file), and it waits while another program holds
 /// the clipboard open, so the window calls it from a background thread.
-pub fn copy_item(item: &Item) -> anyhow::Result<()> {
+pub fn copy_item(item: &Item, images: &ImageFiles) -> anyhow::Result<()> {
     match item.kind {
         Kind::Text | Kind::Link => copy_text(&item.text),
         Kind::Files => copy_files(&item.text.lines().map(PathBuf::from).collect::<Vec<_>>()),
@@ -267,7 +267,7 @@ pub fn copy_item(item: &Item) -> anyhow::Result<()> {
                 .image
                 .as_ref()
                 .ok_or_else(|| anyhow::anyhow!("missing image"))?;
-            copy_image(&image::open(path)?.into_rgba8())
+            copy_image(&images.open(item.id, path)?.into_rgba8())
         }
     }
 }

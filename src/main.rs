@@ -23,6 +23,7 @@ mod single_instance;
 mod store;
 mod tray;
 mod update;
+mod vault;
 mod worker;
 
 use eframe::egui;

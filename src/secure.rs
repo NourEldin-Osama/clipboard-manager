@@ -58,7 +58,7 @@ pub mod string {
 
 /// Encrypts `plain` for the current Windows user.
 #[cfg(windows)]
-fn protect(plain: &[u8]) -> anyhow::Result<Option<Vec<u8>>> {
+pub(crate) fn protect(plain: &[u8]) -> anyhow::Result<Option<Vec<u8>>> {
     use windows_sys::Win32::Security::Cryptography::{
         CryptProtectData, CRYPTPROTECT_UI_FORBIDDEN, CRYPT_INTEGER_BLOB,
     };
@@ -85,7 +85,7 @@ fn protect(plain: &[u8]) -> anyhow::Result<Option<Vec<u8>>> {
 
 /// Decrypts what `protect` returned for the same Windows user.
 #[cfg(windows)]
-fn unprotect(sealed: &[u8]) -> anyhow::Result<Vec<u8>> {
+pub(crate) fn unprotect(sealed: &[u8]) -> anyhow::Result<Vec<u8>> {
     use windows_sys::Win32::Security::Cryptography::{
         CryptUnprotectData, CRYPTPROTECT_UI_FORBIDDEN, CRYPT_INTEGER_BLOB,
     };
@@ -133,12 +133,12 @@ fn take(blob: windows_sys::Win32::Security::Cryptography::CRYPT_INTEGER_BLOB) ->
 }
 
 #[cfg(not(windows))]
-fn protect(_plain: &[u8]) -> anyhow::Result<Option<Vec<u8>>> {
+pub(crate) fn protect(_plain: &[u8]) -> anyhow::Result<Option<Vec<u8>>> {
     Ok(None)
 }
 
 #[cfg(not(windows))]
-fn unprotect(_sealed: &[u8]) -> anyhow::Result<Vec<u8>> {
+pub(crate) fn unprotect(_sealed: &[u8]) -> anyhow::Result<Vec<u8>> {
     anyhow::bail!("DPAPI is only available on Windows")
 }
 
