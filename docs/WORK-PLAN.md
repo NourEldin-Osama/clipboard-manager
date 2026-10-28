@@ -24,6 +24,11 @@ Status: `[ ]` to do, `[~]` in progress, `[x]` done, `[!]` waiting for a decision
 | D13 | Delete by age is off by default; pinned and tagged items are never deleted by it | You | Decided |
 | D14 | Rules per app: ignore an app, and ignore text that matches a pattern (for one app or all); a copy a rule skipped can be kept with "Save anyway" | You | Decided |
 | D15 | Image paths become relative to the data folder in the same one-time step as the encryption (5.1), so the history is migrated once | Claude | Decided |
+| D16 | Encryption covers items and images; search vectors stay unencrypted | You | Decided |
+| D17 | If the history key can't be opened (another PC or account), the old history is set aside and the app starts empty, with a message | You | Decided |
+| D18 | Portable copies are encrypted too; a portable history opens only on the PC and account that made it | You | Decided |
+| D19 | Applying a search server that is not on this PC shows a warning and asks once | You | Decided |
+| D20 | The release job checks its own update signatures before publishing, done with 5.2 (was 8.3) | You | Decided |
 
 ## Order of work, and why
 
@@ -92,9 +97,9 @@ Status: `[ ]` to do, `[~]` in progress, `[x]` done, `[!]` waiting for a decision
 - [x] 4.4 Guide: how to add a language
 
 ### Phase 5. Security and privacy
-- [ ] 5.1 Encryption at rest for the history (D4)
-- [ ] 5.2 Updates: the signature also covers version and build; size limit; HTTPS only
-- [ ] 5.3 A warning when an embedding or OCR server is not on this PC
+- [ ] 5.1 Encryption at rest for the history (D4, D11, D15 to D18)
+- [ ] 5.2 Updates: the signature also covers version and build; size limit; HTTPS only; the release job checks its own signatures (D20)
+- [ ] 5.3 A warning when an embedding or OCR server is not on this PC, and a question on Apply (D19)
 - [ ] 5.4 `tools/st_server.py`: Host and Origin checks, request size limit
 
 ### Phase 6. Features
@@ -114,7 +119,7 @@ Status: `[ ]` to do, `[~]` in progress, `[x]` done, `[!]` waiting for a decision
 ### Phase 8. Build, CI and tests
 - [ ] 8.1 One `tokenizers` version (no second copy, no C library build) if candle allows it
 - [ ] 8.2 GitHub Actions pinned to commit hashes
-- [ ] 8.3 The release job checks the update signature before publishing
+- [ ] 8.3 The release job checks the update signature before publishing (moved into 5.2, D20)
 - [ ] 8.4 `cargo deny` for licenses and security advisories
 - [ ] 8.5 Clippy fails on warnings in CI
 - [ ] 8.6 More tests: worker, update install and rollback, settings migration, app logic
