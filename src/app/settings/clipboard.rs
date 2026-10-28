@@ -112,7 +112,7 @@ impl App {
                             .join(",")
                     )
                 };
-                egui::ComboBox::from_id_salt("history")
+                let menu = egui::ComboBox::from_id_salt("history")
                     .selected_text(txt(&label(*max_items), 14.0, None))
                     .width(140.0)
                     .show_ui(ui, |ui| {
@@ -120,6 +120,7 @@ impl App {
                             ui.selectable_value(max_items, n, txt(&label(n), 14.0, None));
                         }
                     });
+                set_choice_name(&menu.response, &row_title(ui), &label(*max_items));
             },
         );
         setting_for(
@@ -129,7 +130,7 @@ impl App {
             &mut d.delete_after_days,
             def.delete_after_days,
             |ui, days| {
-                egui::ComboBox::from_id_salt("age")
+                let menu = egui::ComboBox::from_id_salt("age")
                     .selected_text(txt(&age_label(*days), 14.0, None))
                     .width(140.0)
                     .show_ui(ui, |ui| {
@@ -137,6 +138,7 @@ impl App {
                             ui.selectable_value(days, n, txt(&age_label(n), 14.0, None));
                         }
                     });
+                set_choice_name(&menu.response, &row_title(ui), &age_label(*days));
             },
         );
         rules_section(ui, d);
@@ -151,7 +153,7 @@ impl App {
             &t!("settings-reader"),
             &t!("settings-reader-help"),
             |ui| {
-                egui::ComboBox::from_id_salt("text-reader")
+                let menu = egui::ComboBox::from_id_salt("text-reader")
                     .selected_text(txt(&reader_label(&d.text_reader), 14.0, None))
                     .width(140.0)
                     .show_ui(ui, |ui| {
@@ -168,6 +170,11 @@ impl App {
                             }
                         }
                     });
+                set_choice_name(
+                    &menu.response,
+                    &row_title(ui),
+                    &reader_label(&d.text_reader),
+                );
             },
         );
         if let TextReader::Server(s) = &mut d.text_reader {
@@ -240,11 +247,12 @@ fn reader_server_settings(ui: &mut Ui, s: &mut ReaderServer, show_key: &mut bool
         &t!("settings-server-address"),
         &t!("settings-reader-address-help"),
         |ui| {
-            ui.add(
+            let field = ui.add(
                 egui::TextEdit::singleline(&mut s.base_url)
                     .hint_text("http://127.0.0.1:8080/v1")
                     .desired_width(300.0),
             );
+            set_name(&field, &row_title(ui));
         },
     );
     if !s.base_url.trim().is_empty() && !crate::net::is_on_this_pc(&s.base_url) {
@@ -275,12 +283,13 @@ fn reader_server_settings(ui: &mut Ui, s: &mut ReaderServer, show_key: &mut bool
             {
                 *show_key = !*show_key;
             }
-            ui.add(
+            let field = ui.add(
                 egui::TextEdit::singleline(&mut s.api_key)
                     .password(!*show_key)
                     .hint_text(txt(&t!("settings-server-optional"), 14.0, None))
                     .desired_width(300.0),
             );
+            set_name(&field, &row_title(ui));
         },
     );
     plain_setting(
@@ -288,11 +297,12 @@ fn reader_server_settings(ui: &mut Ui, s: &mut ReaderServer, show_key: &mut bool
         &t!("settings-server-model"),
         &t!("settings-reader-model-help"),
         |ui| {
-            ui.add(
+            let field = ui.add(
                 egui::TextEdit::singleline(&mut s.model)
                     .hint_text(txt(&t!("settings-server-optional"), 14.0, None))
                     .desired_width(300.0),
             );
+            set_name(&field, &row_title(ui));
         },
     );
     plain_setting(
@@ -300,11 +310,12 @@ fn reader_server_settings(ui: &mut Ui, s: &mut ReaderServer, show_key: &mut bool
         &t!("settings-reader-prompt"),
         &t!("settings-reader-prompt-help"),
         |ui| {
-            ui.add(
+            let field = ui.add(
                 egui::TextEdit::multiline(&mut s.prompt)
                     .desired_rows(2)
                     .desired_width(300.0),
             );
+            set_name(&field, &row_title(ui));
         },
     );
 }
@@ -319,16 +330,18 @@ fn rules_section(ui: &mut Ui, d: &mut Config) {
         ui.push_id(index, |ui| {
             row(ui, |ui| {
                 ui.add_space(10.0);
-                ui.add(
+                let program = ui.add(
                     egui::TextEdit::singleline(&mut rule.app)
                         .hint_text(txt(&t!("settings-rule-program"), 14.0, None))
                         .desired_width(150.0),
                 );
-                ui.add(
+                set_name(&program, &t!("settings-rule-program"));
+                let pattern = ui.add(
                     egui::TextEdit::singleline(&mut rule.pattern)
                         .hint_text(txt(&t!("settings-rule-pattern"), 14.0, None))
                         .desired_width(220.0),
                 );
+                set_name(&pattern, &t!("settings-rule-pattern"));
                 tip(
                     toggle(ui, &mut rule.is_regex),
                     &t!("settings-rule-regex-help"),

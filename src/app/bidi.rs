@@ -10,6 +10,7 @@
 //!
 //! Text without RTL characters takes egui's normal path.
 
+use std::cell::RefCell;
 use std::sync::Arc;
 
 use eframe::egui::text::{LayoutJob, TextFormat, TextWrapping};
@@ -17,6 +18,51 @@ use eframe::egui::{Galley, Pos2, Rect, Ui};
 use unicode_bidi::{BidiClass, Direction, Level, ParagraphBidiInfo};
 
 use super::*;
+
+thread_local! {
+    /// Arabic text drawn in this frame: display order to reading order
+    /// (see `read_in_reading_order`).
+    static DRAWN: RefCell<HashMap<String, String>> = RefCell::new(HashMap::new());
+}
+
+/// Starts a frame's list of Arabic text drawn.
+pub(super) fn forget_drawn() {
+    DRAWN.with(|drawn| drawn.borrow_mut().clear());
+}
+
+/// Gives screen readers this viewport's Arabic text in reading order.
+/// egui names a widget by the text it shows, which is in display order
+/// here, so a screen reader read the words reversed. While no screen
+/// reader listens, egui builds no accessibility tree and this does nothing.
+pub(super) fn read_in_reading_order(ctx: &egui::Context) {
+    type Fix = (egui::Id, Option<String>, Option<String>);
+    let fixes: Vec<Fix> = ctx.viewport(|v| {
+        let Some(state) = &v.this_pass.accesskit_state else {
+            return Vec::new();
+        };
+        DRAWN.with(|drawn| {
+            let drawn = drawn.borrow();
+            let logical = |text: Option<&str>| text.and_then(|t| drawn.get(t)).cloned();
+            state
+                .nodes
+                .iter()
+                // A label's text is its value; other widgets' is their label.
+                .map(|(id, node)| (*id, logical(node.label()), logical(node.value())))
+                .filter(|(_, label, value)| label.is_some() || value.is_some())
+                .collect()
+        })
+    });
+    for (id, label, value) in fixes {
+        ctx.accesskit_node_builder(id, |node| {
+            if let Some(label) = label {
+                node.set_label(label);
+            }
+            if let Some(value) = value {
+                node.set_value(value);
+            }
+        });
+    }
+}
 
 fn is_rtl_char(c: char) -> bool {
     matches!(c as u32, 0x0590..=0x08FF | 0xFB1D..=0xFDFF | 0xFE70..=0xFEFF | 0x10800..=0x10FFF | 0x1E800..=0x1EFFF)
@@ -269,6 +315,13 @@ pub(super) fn job(text: &str, font: FontId, color: Color32) -> LayoutJob {
             &[],
         );
     }
+    if job.text != text {
+        DRAWN.with(|drawn| {
+            drawn
+                .borrow_mut()
+                .insert(job.text.clone(), text.to_string())
+        });
+    }
     job
 }
 
@@ -290,6 +343,45 @@ pub(super) fn paragraph(ui: &mut Ui, text: &str, font: FontId, color: Color32) -
     );
     let h: f32 = lines.iter().map(|(g, _)| g.size().y).sum();
     let (rect, resp) = ui.allocate_exact_size(Vec2::new(width, h), Sense::hover());
+    resp.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Label, true, text));
     paint(ui.painter(), rect, lines, color, Some(rtl));
     resp
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The names a screen reader gets for one frame of `draw`.
+    fn spoken(draw: impl FnMut(&mut Ui)) -> Vec<String> {
+        let ctx = egui::Context::default();
+        ctx.enable_accesskit();
+        let mut output = ctx.run_ui(egui::RawInput::default(), draw);
+        // The font atlas upload no renderer takes here.
+        output.textures_delta.clear();
+        let update = output.platform_output.accesskit_update.expect("a tree");
+        update
+            .nodes
+            .iter()
+            .flat_map(|(_, node)| [node.label(), node.value()])
+            .flatten()
+            .map(str::to_string)
+            .collect()
+    }
+
+    #[test]
+    fn screen_readers_get_arabic_in_reading_order() {
+        let text = "سجل الحافظة";
+        let font = FontId::proportional(14.0);
+        let shown = job(text, font.clone(), Color32::WHITE).text;
+        assert_ne!(shown, text, "drawn in display order");
+        let names = spoken(|ui| {
+            forget_drawn();
+            ui.label(job(text, font.clone(), Color32::WHITE));
+            let _ = ui.button(job(text, font.clone(), Color32::WHITE));
+            read_in_reading_order(ui.ctx());
+        });
+        assert_eq!(names.iter().filter(|n| *n == text).count(), 2, "{names:?}");
+        assert!(!names.contains(&shown), "{names:?}");
+    }
 }

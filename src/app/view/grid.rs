@@ -383,6 +383,15 @@ impl App {
                 };
                 let thumb = thumb_for(it, thumbs, loader, (&mut *seen, frame));
                 let resp = ui.interact(rect, egui::Id::unique(("card", it.id)), Sense::click());
+                let chosen = Some(it.id) == selected;
+                resp.widget_info(|| {
+                    egui::WidgetInfo::selected(
+                        egui::Role::ListBoxOption,
+                        true,
+                        chosen,
+                        item_name(it),
+                    )
+                });
                 let hot = ui.rect_contains_pointer(rect);
                 paint_card(ui, rect, hot, it, thumb, Some(it.id) == selected, &terms);
                 if resp.clicked() {

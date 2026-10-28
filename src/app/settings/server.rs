@@ -76,12 +76,13 @@ pub(super) fn server_settings(
             {
                 list.fetch(s, ui.ctx());
             }
-            ui.add_enabled(
+            let field = ui.add_enabled(
                 editable,
                 egui::TextEdit::singleline(&mut s.base_url)
                     .hint_text("http://127.0.0.1:8080/v1")
                     .desired_width(300.0),
             );
+            set_name(&field, &row_title(ui));
         },
     );
     if !s.base_url.trim().is_empty() && !crate::net::is_on_this_pc(&s.base_url) {
@@ -112,12 +113,13 @@ pub(super) fn server_settings(
             {
                 list.show_key = !list.show_key;
             }
-            ui.add(
+            let field = ui.add(
                 egui::TextEdit::singleline(&mut s.api_key)
                     .password(!list.show_key)
                     .hint_text(txt(&t!("settings-server-optional"), 14.0, None))
                     .desired_width(300.0),
             );
+            set_name(&field, &row_title(ui));
         },
     );
     let default_name = list.found.default.clone();
@@ -172,12 +174,13 @@ pub(super) fn server_settings(
                 Some(dn) if !dn.is_empty() => t!("settings-server-default-hint", model = dn),
                 _ => t!("settings-server-default-lower"),
             };
-            ui.add_enabled(
+            let field = ui.add_enabled(
                 editable,
                 egui::TextEdit::singleline(&mut s.model)
                     .hint_text(hint)
                     .desired_width(300.0),
             );
+            set_name(&field, &row_title(ui));
         },
     );
     if reset_model {
@@ -261,11 +264,13 @@ pub(super) fn server_settings(
                 &mut s.query_prefix,
                 String::new(),
                 |ui, prefix| {
-                    ui.add(
+                    let field = ui.add(
                         egui::TextEdit::singleline(prefix)
                             .hint_text(txt(&t!("settings-server-none"), 14.0, None))
                             .desired_width(300.0),
-                    )
+                    );
+                    set_name(&field, &row_title(ui));
+                    field
                 },
             );
             setting_for(
@@ -275,11 +280,13 @@ pub(super) fn server_settings(
                 &mut s.document_prefix,
                 String::new(),
                 |ui, prefix| {
-                    ui.add(
+                    let field = ui.add(
                         egui::TextEdit::singleline(prefix)
                             .hint_text(txt(&t!("settings-server-none"), 14.0, None))
                             .desired_width(300.0),
-                    )
+                    );
+                    set_name(&field, &row_title(ui));
+                    field
                 },
             );
             setting_for(
@@ -295,7 +302,7 @@ pub(super) fn server_settings(
                         .find(|(v, _)| v == dims)
                         .map(|(_, l)| l.clone())
                         .unwrap_or_else(|| t!("settings-vector-custom", count = *dims));
-                    egui::ComboBox::from_id_salt("dims")
+                    let menu = egui::ComboBox::from_id_salt("dims")
                         .selected_text(txt(&current, 14.0, None))
                         .width(170.0)
                         .show_ui(ui, |ui| {
@@ -303,6 +310,7 @@ pub(super) fn server_settings(
                                 ui.selectable_value(dims, v, txt(&l, 14.0, None));
                             }
                         });
+                    set_choice_name(&menu.response, &row_title(ui), &current);
                 },
             );
             setting_for(
@@ -369,7 +377,10 @@ pub(super) fn server_settings(
                     &t!("settings-server-extra-args"),
                     &t!("settings-server-extra-args-help"),
                     |ui| {
-                        ui.add(egui::TextEdit::singleline(&mut l.extra_args).desired_width(300.0));
+                        let field = ui.add(
+                            egui::TextEdit::singleline(&mut l.extra_args).desired_width(300.0),
+                        );
+                        set_name(&field, &row_title(ui));
                     },
                 );
             }

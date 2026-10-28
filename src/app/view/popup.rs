@@ -94,7 +94,8 @@ impl App {
         );
         // Made before the buttons, so they stay on top of it.
         let drag = ui
-            .interact(bar, ui.scope_id().with("move"), Sense::drag())
+            // Not in the Tab order: the keyboard has nothing to do there.
+            .interact(bar, ui.scope_id().with("move"), Sense::DRAG)
             .on_hover_cursor(egui::CursorIcon::Grab);
         if drag.drag_started() {
             self.popup_moving = true;
@@ -223,6 +224,7 @@ impl App {
             Stroke::new(1.0, edge),
             egui::StrokeKind::Inside,
         );
+        bidi::read_in_reading_order(&ctx);
     }
 }
 

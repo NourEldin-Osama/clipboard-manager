@@ -135,6 +135,21 @@ pub(super) fn subtitle_detail(it: &Item) -> String {
     }
 }
 
+/// What a screen reader says for an item's row or card: its kind, title,
+/// details, whether it is pinned, and when it was copied.
+pub(super) fn item_name(it: &Item) -> String {
+    let mut parts = vec![format!("{}: {}", it.kind.label(), row_title(it))];
+    let detail = subtitle_detail(it);
+    if !detail.trim().is_empty() {
+        parts.push(detail);
+    }
+    if it.pinned {
+        parts.push(t!("details-pinned"));
+    }
+    parts.push(ago(it.created));
+    parts.join(", ")
+}
+
 pub(super) fn row_title(it: &Item) -> String {
     match it.kind {
         Kind::Link => {

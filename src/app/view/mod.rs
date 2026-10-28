@@ -43,7 +43,7 @@ pub(crate) use theme::{
 };
 pub(crate) use widgets::{
     chip, cut_line, far, flip, lbl, paint_text, primary_button, row, row_layout, row_wrapped,
-    slow_spinner, start_anchor, tip, txt,
+    set_choice_name, set_name, slow_spinner, start_anchor, tip, txt,
 };
 
 impl App {
@@ -227,6 +227,7 @@ impl eframe::App for App {
 
     fn ui(&mut self, ui: &mut Ui, _frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
+        bidi::forget_drawn();
         self.keyboard(&ctx, false);
         self.refresh_results();
         // Before the main window, so the popup's search field takes the
@@ -268,5 +269,6 @@ impl eframe::App for App {
             );
             icons::paint_icon_text(&p, row, Icon::Folder, 26.0, g, Color32::WHITE);
         }
+        bidi::read_in_reading_order(&ctx);
     }
 }

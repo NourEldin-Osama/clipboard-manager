@@ -90,6 +90,7 @@ impl App {
                         .desired_width(150.0)
                         .font(FontId::proportional(13.0)),
                 );
+                set_name(&r, &t!("details-tag-hint"));
                 if std::mem::take(&mut self.tag_focus) || enter {
                     r.request_focus();
                 }

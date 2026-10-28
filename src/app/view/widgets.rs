@@ -7,6 +7,24 @@ pub(super) fn search_id() -> egui::Id {
     egui::Id::unique("search")
 }
 
+/// Names a widget for screen readers: a text field, a row or a switch has
+/// no text of its own that egui could use.
+pub(crate) fn set_name(resp: &egui::Response, name: &str) {
+    let name = name.to_string();
+    resp.ctx
+        .accesskit_node_builder(resp.id, |node| node.set_label(name));
+}
+
+/// Names a drop-down menu by its setting, with the chosen option as its
+/// value (egui names it by the option alone).
+pub(crate) fn set_choice_name(resp: &egui::Response, name: &str, chosen: &str) {
+    let (name, chosen) = (name.to_string(), chosen.to_string());
+    resp.ctx.accesskit_node_builder(resp.id, |node| {
+        node.set_label(name);
+        node.set_value(chosen);
+    });
+}
+
 /// How often `slow_spinner` moves.
 const SPINNER_STEP: Duration = Duration::from_millis(200);
 

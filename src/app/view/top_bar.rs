@@ -151,6 +151,7 @@ impl App {
                         .layouter(&mut layouter)
                         .desired_width((ui.available_width() - 130.0).max(80.0));
                     let resp = ui.add(te);
+                    set_name(&resp, hint.trim_end_matches('…'));
                     // While the popup is open, its search field takes the
                     // keyboard, not the full window's: the popup's first
                     // frame may come after the full window's.

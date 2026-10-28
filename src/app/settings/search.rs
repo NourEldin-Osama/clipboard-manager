@@ -51,7 +51,7 @@ impl App {
                             value = format!("{:.2}", min_similarity)
                         )
                     });
-                egui::ComboBox::from_id_salt("strict")
+                let menu = egui::ComboBox::from_id_salt("strict")
                     .selected_text(txt(&current, 14.0, None))
                     .width(150.0)
                     .show_ui(ui, |ui| {
@@ -59,6 +59,7 @@ impl App {
                             ui.selectable_value(min_similarity, v, txt(&l, 14.0, None));
                         }
                     });
+                set_choice_name(&menu.response, &row_title(ui), &current);
             },
         );
 
