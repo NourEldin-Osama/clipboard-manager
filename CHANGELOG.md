@@ -22,8 +22,10 @@ the notes here before a push that makes a release.
 - Quick popup: Alt+V now opens a small window at the mouse pointer with
   the search field and the list. Pick an item and press Enter to paste it
   where you were. The popup closes when you paste, press Esc or click
-  elsewhere. Alt+Shift+V, or the button in the popup, opens the full
-  window. If you had changed Alt+V, your shortcut now opens the popup.
+  elsewhere. A bar at its top opens Settings or the full window, moves
+  the popup when you drag it, and closes it; a moved popup still opens
+  at the mouse pointer the next time. Alt+Shift+V opens the full window
+  too. If you had changed Alt+V, your shortcut now opens the popup.
 - Paste into the program you were using: open the window with the shortcut,
   pick an item and press Enter or double-click it. The window hides and the
   item is pasted where you were. Before, Enter and double-click only copied.

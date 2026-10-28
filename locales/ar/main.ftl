@@ -101,6 +101,7 @@ list-no-matches = لا نتائج لـ «{ $query }»
 list-meaning-finds-more = البحث بالمعنى يجد الكلمات المرتبطة أيضًا.
 list-set-up-meaning = فعّل البحث بالمعنى
 popup-open-window = فتح النافذة الكاملة
+popup-close = إغلاق
 list-try-smart = جرّب البحث «الذكي» بدلًا منه
 list-try-other-words = جرّب كلمات أقل أو مختلفة.
 list-search-all-not-text = ابحث في كل العناصر، لا في النصوص فقط

@@ -34,6 +34,7 @@ Status: `[ ]` to do, `[~]` in progress, `[x]` done, `[!]` waiting for a decision
 | D23 | Each release starts its notes with its version's section of CHANGELOG.md | You | Decided |
 | D24 | Inno Setup is installed on this PC, so the installer is tested before a release | You | Decided |
 | D25 | The quick popup is its own small window with no taskbar button; the full window never moves or changes size. One click selects; double-click or Enter pastes | You | Decided |
+| D26 | The popup has a bar at its top: Settings, the full window, a handle to move it, Close. A moved popup still opens at the mouse pointer the next time | You | Decided |
 
 ## Order of work, and why
 
@@ -119,6 +120,7 @@ Status: `[ ]` to do, `[~]` in progress, `[x]` done, `[!]` waiting for a decision
 - [x] 6.6 Delete by age
 - [x] 6.7 OCR providers: built-in, Windows OCR, or an OCR server with a custom prompt (DeepSeek-OCR, PaddleOCR-VL, llama.cpp, other vision models)
 - [x] 6.8 Register the app on the PC: Start menu and desktop shortcuts, an entry in Installed apps (D10)
+- [x] 6.9 A bar at the top of the quick popup: Settings, the full window, a handle to move it, Close (D26)
 
 ### Phase 7. Speed and accessibility
 - [ ] 7.1 No repaint loop while indexing, cached file checks, thumbnail cache that keeps visible images
