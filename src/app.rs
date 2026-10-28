@@ -605,6 +605,9 @@ impl App {
                 log::warn!("{e:#}");
             }
         }
+        if let Err(e) = crate::installed::refresh_version() {
+            log::warn!("updating the version in Installed apps: {e:#}");
+        }
         if let Some(problem) = settings_problem {
             let message = match problem.copy {
                 Ok(copy) => log_error!(

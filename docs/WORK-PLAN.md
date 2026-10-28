@@ -116,7 +116,7 @@ Status: `[ ]` to do, `[~]` in progress, `[x]` done, `[!]` waiting for a decision
 - [x] 6.5 Rules per app
 - [x] 6.6 Delete by age
 - [x] 6.7 OCR providers: built-in, Windows OCR, or an OCR server with a custom prompt (DeepSeek-OCR, PaddleOCR-VL, llama.cpp, other vision models)
-- [ ] 6.8 Register the app on the PC: Start menu and desktop shortcuts, an entry in Installed apps (D10)
+- [x] 6.8 Register the app on the PC: Start menu and desktop shortcuts, an entry in Installed apps (D10)
 
 ### Phase 7. Speed and accessibility
 - [ ] 7.1 No repaint loop while indexing, cached file checks, thumbnail cache that keeps visible images

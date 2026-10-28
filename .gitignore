@@ -1,3 +1,5 @@
 target/
 *.part
 dist/
+# What installer/clipboard-manager.iss builds.
+/clipboard-manager-windows-x64-setup.exe

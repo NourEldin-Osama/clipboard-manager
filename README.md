@@ -54,10 +54,15 @@ first. Everything else works without a network connection.
 
 ## Install on Windows
 
-### Option A: download the prebuilt `.exe`
+### Option A: download the installer or the prebuilt `.exe`
 Every change merged into `main` is built on GitHub's Windows machines and published on the
 [Releases page](https://github.com/NourEldin-Osama/clipboard-manager/releases/latest), with notes listing the pull requests it includes.
-Download **clipboard-manager-windows-x64.exe** from the latest release, or install it with [Scoop](https://scoop.sh):
+
+**clipboard-manager-windows-x64-setup.exe** installs the app for your Windows account, without administrator rights,
+in `%LOCALAPPDATA%\Programs\Clipboard Manager`, with Start menu and desktop shortcuts and an entry in *Installed apps*.
+Uninstalling asks whether to delete your history and settings too.
+
+Or download **clipboard-manager-windows-x64.exe** to run it without installing, or install it with [Scoop](https://scoop.sh):
 
 ```powershell
 scoop install https://github.com/NourEldin-Osama/clipboard-manager/releases/latest/download/clipboard-manager.json
@@ -230,6 +235,7 @@ src/
   i18n.rs        interface texts from locales/*/main.ftl (Project Fluent), local date/time display
   update.rs      self-update: release manifest, signed download, exe swap
   autostart.rs   start at sign-in (auto-launch: Run key / launch agent / XDG autostart)
+  installed.rs   keeps the version shown in Installed apps current as the installed app updates itself
 ```
 
 The GUI, database, clipboard handling, OCR and built-in model inference are all Rust. External model servers are optional and

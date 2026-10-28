@@ -7,6 +7,11 @@ the notes here before a push that makes a release.
 ## 0.4.0
 
 - Fix: a global shortcut changed in Settings worked only after a restart.
+- An installer: clipboard-manager-windows-x64-setup.exe installs the app
+  for your Windows account, without administrator rights, with Start menu
+  and desktop shortcuts and an entry in Installed apps. Uninstalling asks
+  whether to delete your history and settings too. The exe that runs
+  without installing stays, and both update themselves.
 - Choose what reads the text in images, in Settings, Clipboard: Windows'
   own reader, the built-in one, or a vision model on a server (such as
   DeepSeek-OCR or PaddleOCR-VL) with your own prompt. Windows' reader also
