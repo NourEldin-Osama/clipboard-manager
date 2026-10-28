@@ -209,6 +209,8 @@ src/
   main.rs        window setup
   app.rs         egui UI: search bar, filters, grid/list views, details pane, tags, settings
   clipboard.rs   watcher thread (arboard; clipboard sequence number + sensitive-format check on Windows)
+  paste.rs       pasting into the program the user was in (brings it to the front, presses Ctrl+V)
+  screen.rs      the mouse pointer and its screen, for placing the quick popup
   worker.rs      background indexer thread; owns the OCR engine + embedder; queries pre-empt indexing
   embed/
     mod.rs       Embedding (dense / multi-vector), cosine & MaxSim, Embedder trait
@@ -237,7 +239,6 @@ the UltraVBERT family).
 ## Roadmap
 - Native in-process GGUF inference for EmbeddingGemma (candle quantized backend)
 - Optional AES-GCM encryption at rest
-- Paste directly into the previous window (simulated `Ctrl+V`)
 - System tray icon and close-to-tray
 - PDF text extraction for imported folders
 
