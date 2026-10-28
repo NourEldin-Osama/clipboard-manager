@@ -103,3 +103,5 @@ server client with optional `llama-server` launcher), `import.rs` (files/folders
   `PUBLIC_KEY`, swaps the exe (running one renamed `.old`) and relaunches with `--after-update`. Local builds have no
   `BUILD_NUMBER` and never update. `CLIPBOARD_MANAGER_UPDATE_URL` points the check at a test server.
 - Bump the version in `Cargo.toml` for a release worth noticing (patch for fixes, minor for features).
+- Release notes come from `CHANGELOG.md`: the release job puts the section for the `Cargo.toml` version at the top.
+  Add the notes there before a push that makes a release.

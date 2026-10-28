@@ -223,16 +223,37 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
+      # The notes start with this version's section of CHANGELOG.md.
+      - name: Release notes
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="${{ steps.version.outputs.version }}"
+          awk -v heading="## $version" '
+            $0 == heading { found = 1; next }
+            found && /^## / { exit }
+            found { print }
+          ' CHANGELOG.md > section.md
+          {
+            if grep -q '[^[:space:]]' section.md; then
+              cat section.md
+            else
+              echo "CHANGELOG.md has no notes for $version yet."
+            fi
+            echo
+            echo '**Install:** download `clipboard-manager-windows-x64.exe` below and run it. No installer is needed; settings and history are kept in `%APPDATA%\clipboard-manager\data`.'
+            echo
+            echo 'Windows build of `${{ github.sha }}`.'
+          } > release-notes.md
+          cat release-notes.md
+
       - name: Publish release
         uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ steps.version.outputs.tag }}
           target_commitish: ${{ github.sha }}
           name: Clipboard Manager ${{ steps.version.outputs.version }} (build ${{ github.run_number }})
-          body: |
-            Windows build of `${{ github.sha }}`.
-
-            **Install:** download `clipboard-manager-windows-x64.exe` below and run it. No installer is needed; settings and history are kept in `%APPDATA%\clipboard-manager\data`.
+          body_path: release-notes.md
           # Adds "What's Changed": the pull requests merged since the previous release.
           generate_release_notes: true
           # updater.json is what the app reads from releases/latest/download/.
