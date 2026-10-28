@@ -108,7 +108,8 @@ impl App {
             return;
         }
         let backend_changed = d.backend != self.cfg.backend;
-        let keys_changed = d.show_hotkey != self.cfg.show_hotkey
+        let keys_changed = d.popup_hotkey != self.cfg.popup_hotkey
+            || d.window_hotkey != self.cfg.window_hotkey
             || d.ignore_next_hotkey != self.cfg.ignore_next_hotkey;
         if d.ocr_images && !self.cfg.ocr_images {
             for id in self.library.images_without_ocr() {
@@ -359,7 +360,8 @@ impl App {
         // Everything except the model and hotkeys applies immediately.
         let mut live = d.clone();
         live.backend = self.cfg.backend.clone();
-        live.show_hotkey = self.cfg.show_hotkey.clone();
+        live.popup_hotkey = self.cfg.popup_hotkey.clone();
+        live.window_hotkey = self.cfg.window_hotkey.clone();
         live.ignore_next_hotkey = self.cfg.ignore_next_hotkey.clone();
         if live != self.cfg {
             self.apply_settings(live, &ctx, false);
@@ -368,7 +370,8 @@ impl App {
         }
         if apply_keys {
             let mut c = self.cfg.clone();
-            c.show_hotkey = d.show_hotkey.clone();
+            c.popup_hotkey = d.popup_hotkey.clone();
+            c.window_hotkey = d.window_hotkey.clone();
             c.ignore_next_hotkey = d.ignore_next_hotkey.clone();
             self.apply_settings(c, &ctx, false);
         }

@@ -299,7 +299,8 @@ pub(super) fn one_line(
 }
 
 impl App {
-    pub(super) fn list(&mut self, ui: &mut Ui) {
+    /// The list of items; `in_popup` when it is the quick popup's.
+    pub(super) fn list(&mut self, ui: &mut Ui, in_popup: bool) {
         if self.results.is_empty() {
             // Until the first results come, show nothing rather than "no matches".
             if !self.searching {
@@ -312,8 +313,8 @@ impl App {
         let header_h = 30.0;
         let searching = !self.query.trim().is_empty();
         // The details pane is always beside the list in Detail view, so rows
-        // there don't need an "open" button.
-        let can_open = self.cfg.view != ViewMode::Detail;
+        // there don't need an "open" button; the popup has no details pane.
+        let can_open = self.cfg.view != ViewMode::Detail && !in_popup;
 
         // Rows, with date/pinned headers when browsing.
         let mut lines: Vec<Line> = Vec::with_capacity(self.results.len() + 8);
@@ -340,12 +341,20 @@ impl App {
         let total = y;
 
         let mut sa = egui::ScrollArea::vertical().auto_shrink([false, false]);
+        if in_popup {
+            // Its own scroll place, apart from the full window's list.
+            sa = sa.id_salt("popup-list");
+        }
         if self.scroll_to_selected {
             self.scroll_to_selected = false;
             if let Some(i) = lines.iter().position(
                 |l| matches!(l, Line::Row(r) if Some(self.results[*r].id) == self.selected),
             ) {
-                let (off, view_h) = self.list_view;
+                let (off, view_h) = if in_popup {
+                    self.popup_list_view
+                } else {
+                    self.list_view
+                };
                 let top = ys[i]
                     - if i > 0 && matches!(lines[i - 1], Line::Header(..)) {
                         header_h
@@ -502,7 +511,12 @@ impl App {
                 }
             }
         });
-        self.list_view = (out.state.clamped_offset().y, out.inner_rect.height());
+        let view = (out.state.clamped_offset().y, out.inner_rect.height());
+        if in_popup {
+            self.popup_list_view = view;
+        } else {
+            self.list_view = view;
+        }
         self.apply_actions(actions);
     }
 
@@ -516,7 +530,7 @@ impl App {
                 ui.add_space(8.0);
                 lbl(ui, &t!("list-empty-title"), 16.0, strong);
                 ui.add_space(4.0);
-                let help = t!("list-empty-help", key = self.cfg.show_hotkey.as_str());
+                let help = t!("list-empty-help", key = self.cfg.popup_hotkey.as_str());
                 ui.label(txt(&help, 14.0, Some(weak)));
             } else if !self.query.trim().is_empty() {
                 icons::glyph(ui, Icon::Search, 36.0, weak);

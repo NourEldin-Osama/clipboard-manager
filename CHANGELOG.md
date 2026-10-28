@@ -7,6 +7,11 @@ the notes here before a push that makes a release.
 ## 0.4.0
 
 - Fix: a global shortcut changed in Settings worked only after a restart.
+- Quick popup: Alt+V now opens a small window at the mouse pointer with
+  the search field and the list. Pick an item and press Enter to paste it
+  where you were. The popup closes when you paste, press Esc or click
+  elsewhere. Alt+Shift+V, or the button in the popup, opens the full
+  window. If you had changed Alt+V, your shortcut now opens the popup.
 - Paste into the program you were using: open the window with the shortcut,
   pick an item and press Enter or double-click it. The window hides and the
   item is pasted where you were. Before, Enter and double-click only copied.

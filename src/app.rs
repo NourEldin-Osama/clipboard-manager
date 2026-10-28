@@ -143,50 +143,86 @@ impl ModelList {
     }
 }
 
-/// Shows and hides the main window from any thread: hotkeys, the tray, the UI.
-/// With the tray on, hiding takes the window off the taskbar; otherwise it minimises.
+/// Shows and hides the main window and the quick popup from any thread:
+/// hotkeys, the tray, the UI. With the tray on, hiding takes the window off
+/// the taskbar; otherwise it minimises. The commands name the main window,
+/// because one may come while the popup is being drawn.
 #[derive(Clone)]
 struct WindowCtl {
     ctx: egui::Context,
     tray: Arc<AtomicBool>,
     hidden: Arc<AtomicBool>,
     focus_search: Arc<AtomicBool>,
-    /// Set by `show`: the next frame selects the top item.
+    /// Set by `show_over` and `show_popup`: the next frame selects the top item.
     opened: Arc<AtomicBool>,
-    /// The other program's window that was in front when the shortcut
-    /// opened this one: where pasting goes. `paste::NO_WINDOW` otherwise.
+    /// The other program's window that was in front when a shortcut opened
+    /// this app: where pasting goes. `paste::NO_WINDOW` otherwise.
     previous: Arc<AtomicIsize>,
+    /// The quick popup is open.
+    popup: Arc<AtomicBool>,
+    /// The popup has the keyboard.
+    popup_focused: Arc<AtomicBool>,
+    /// Set by `show_popup`: the next frame places the popup at the mouse
+    /// pointer and gives it the keyboard.
+    popup_placing: Arc<AtomicBool>,
 }
 
 impl WindowCtl {
-    /// Shows the window; with no program to go back to, pasting only copies.
+    /// Shows the full window; with no program to go back to, pasting only copies.
     fn show(&self) {
         self.show_over(paste::NO_WINDOW);
     }
 
-    /// Shows the window over `previous`, the window pasting goes to.
+    /// Shows the full window over `previous`, the window pasting goes to.
     fn show_over(&self, previous: paste::Window) {
         self.previous.store(previous, Ordering::SeqCst);
-        self.hidden.store(false, Ordering::SeqCst);
         self.opened.store(true, Ordering::SeqCst);
-        self.ctx
-            .send_viewport_cmd(egui::ViewportCommand::Visible(true));
-        self.ctx
-            .send_viewport_cmd(egui::ViewportCommand::Minimized(false));
-        self.ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
+        self.show_full();
+    }
+
+    /// Shows the full window and closes the popup; pasting still goes
+    /// where it went.
+    fn show_full(&self) {
+        self.popup.store(false, Ordering::SeqCst);
+        self.hidden.store(false, Ordering::SeqCst);
+        self.main_window(egui::ViewportCommand::Visible(true));
+        self.main_window(egui::ViewportCommand::Minimized(false));
+        self.main_window(egui::ViewportCommand::Focus);
         self.focus_search.store(true, Ordering::SeqCst);
         self.ctx.request_repaint();
     }
 
+    /// Opens the quick popup at the mouse pointer, over `previous`, the
+    /// window pasting goes to.
+    fn show_popup(&self, previous: paste::Window) {
+        self.previous.store(previous, Ordering::SeqCst);
+        self.opened.store(true, Ordering::SeqCst);
+        self.popup_focused.store(false, Ordering::SeqCst);
+        self.popup_placing.store(true, Ordering::SeqCst);
+        self.popup.store(true, Ordering::SeqCst);
+        self.focus_search.store(true, Ordering::SeqCst);
+        self.ctx.request_repaint();
+    }
+
+    fn is_popup_open(&self) -> bool {
+        self.popup.load(Ordering::SeqCst)
+    }
+
+    /// Closes the popup if it is open, else hides the full window.
     fn hide(&self) {
-        if self.tray.load(Ordering::SeqCst) {
+        if self.popup.swap(false, Ordering::SeqCst) {
+            self.ctx.request_repaint();
+        } else if self.tray.load(Ordering::SeqCst) {
             self.hidden.store(true, Ordering::SeqCst);
-            self.ctx
-                .send_viewport_cmd(egui::ViewportCommand::Visible(false));
+            self.main_window(egui::ViewportCommand::Visible(false));
         } else {
-            self.ctx
-                .send_viewport_cmd(egui::ViewportCommand::Minimized(true));
+            self.main_window(egui::ViewportCommand::Minimized(true));
         }
+    }
+
+    fn main_window(&self, command: egui::ViewportCommand) {
+        self.ctx
+            .send_viewport_cmd_to(egui::ViewportId::ROOT, command);
     }
 }
 
@@ -276,7 +312,8 @@ enum Confirm {
 /// The shortcuts that can be changed in Settings.
 #[derive(Clone, Copy, PartialEq)]
 enum ShortcutField {
-    Show,
+    Popup,
+    Window,
     IgnoreNext,
     Paste,
     PastePlain,
@@ -309,7 +346,8 @@ struct Hotkeys {
 /// given, so that handler reads the current ids from here.
 #[derive(Default)]
 struct HotkeyIds {
-    show: AtomicU64,
+    popup: AtomicU64,
+    window: AtomicU64,
     ignore: AtomicU64,
 }
 
@@ -374,6 +412,12 @@ pub struct App {
     confirm: Option<Confirm>,
     /// Scroll offset and visible height of the list, from the last frame.
     list_view: (f32, f32),
+    /// The same for the list in the popup.
+    popup_list_view: (f32, f32),
+    /// Where the popup last opened, in points.
+    popup_at: Option<egui::Pos2>,
+    /// The popup was made hidden in the last frame; it shows in this one.
+    popup_hidden_last_frame: bool,
     /// Grid and List views show the details pane only after "Open details".
     details_open: bool,
     /// Cards per row in the grid, from the last frame, for ↑ ↓ navigation.
@@ -452,6 +496,9 @@ impl App {
             focus_search: focus_search.clone(),
             opened: Arc::new(AtomicBool::new(false)),
             previous: Arc::new(AtomicIsize::new(paste::NO_WINDOW)),
+            popup: Arc::new(AtomicBool::new(false)),
+            popup_focused: Arc::new(AtomicBool::new(false)),
+            popup_placing: Arc::new(AtomicBool::new(false)),
         };
         let (tray_tx, tray_rx) = channel();
         let mut app = Self {
@@ -518,6 +565,9 @@ impl App {
             settings_page: SettingsPage::Search,
             confirm: None,
             list_view: (0.0, 0.0),
+            popup_list_view: (0.0, 0.0),
+            popup_at: None,
+            popup_hidden_last_frame: false,
             details_open: false,
             grid_cols: 1,
             update: UpdateState::Idle,
@@ -640,14 +690,14 @@ impl App {
                 }
             }
         };
-        let show = parse(&self.cfg.show_hotkey);
+        let popup = parse(&self.cfg.popup_hotkey);
+        let window = parse(&self.cfg.window_hotkey);
         let ignore = parse(&self.cfg.ignore_next_hotkey);
-        let (show_id, ignore_id) = (show.map(|h| h.id()), ignore.map(|h| h.id()));
-        let id = |h: Option<u32>| h.map_or(NO_HOTKEY, u64::from);
-        self.hotkey_ids.show.store(id(show_id), Ordering::SeqCst);
-        self.hotkey_ids
-            .ignore
-            .store(id(ignore_id), Ordering::SeqCst);
+        let id = |h: Option<HotKey>| h.map_or(NO_HOTKEY, |h| u64::from(h.id()));
+        let ids = &self.hotkey_ids;
+        ids.popup.store(id(popup), Ordering::SeqCst);
+        ids.window.store(id(window), Ordering::SeqCst);
+        ids.ignore.store(id(ignore), Ordering::SeqCst);
         let (c, flags, focused, win, ids) = (
             ctx.clone(),
             self.flags.clone(),
@@ -660,8 +710,16 @@ impl App {
                 return;
             }
             let pressed = u64::from(e.id());
-            if pressed == ids.show.load(Ordering::SeqCst) {
-                if focused.load(Ordering::SeqCst) && !win.hidden.load(Ordering::SeqCst) {
+            if pressed == ids.popup.load(Ordering::SeqCst) {
+                if win.is_popup_open() && win.popup_focused.load(Ordering::SeqCst) {
+                    win.hide();
+                } else {
+                    win.show_popup(paste::window_in_front());
+                }
+            } else if pressed == ids.window.load(Ordering::SeqCst) {
+                if win.is_popup_open() {
+                    win.show_full();
+                } else if focused.load(Ordering::SeqCst) && !win.hidden.load(Ordering::SeqCst) {
                     win.hide();
                 } else {
                     win.show_over(paste::window_in_front());
@@ -1078,6 +1136,14 @@ impl App {
         let ctx = self.win.ctx.clone();
         self.apply_settings(d, &ctx, false);
         self.toast_for(t!("toast-app-ignored", app = app), Duration::from_secs(6));
+    }
+
+    /// Pasting goes nowhere once the user is in another program: until a
+    /// shortcut opens this app again, pasting only copies.
+    fn left_for_another_program(&self) {
+        if paste::window_in_front() != paste::NO_WINDOW {
+            self.win.previous.store(paste::NO_WINDOW, Ordering::SeqCst);
+        }
     }
 
     /// Says a copy wasn't recorded. `kept` is offered back with "Save anyway".

@@ -96,10 +96,11 @@ top-results =
 list-empty-title = سيظهر سجل الحافظة هنا
 list-empty-help =
     انسخ أي شيء، أو أفلت الملفات هنا.
-    اضغط { $key } لفتح هذه النافذة من أي مكان.
+    اضغط { $key } في أي مكان لتختار نسخة وتلصقها.
 list-no-matches = لا نتائج لـ «{ $query }»
 list-meaning-finds-more = البحث بالمعنى يجد الكلمات المرتبطة أيضًا.
 list-set-up-meaning = فعّل البحث بالمعنى
+popup-open-window = فتح النافذة الكاملة
 list-try-smart = جرّب البحث «الذكي» بدلًا منه
 list-try-other-words = جرّب كلمات أقل أو مختلفة.
 list-search-all-not-text = ابحث في كل العناصر، لا في النصوص فقط
@@ -503,8 +504,10 @@ settings-server-port = المنفذ
 settings-server-extra-args = وسائط إضافية
 settings-server-extra-args-help = تُمرَّر إلى llama-server كما هي.
 settings-shortcuts-global = في أي مكان في ويندوز
-settings-shortcut-show = إظهار هذه النافذة أو إخفاؤها
-settings-shortcut-show-help = يفتح النافذة فوق ما تعمل عليه، واضغط مجددًا لإخفائها.
+settings-shortcut-popup = فتح النافذة السريعة
+settings-shortcut-popup-help = نافذة صغيرة عند مؤشر الماوس: ابحث، ثم الصق في البرنامج الذي أنت فيه. اضغط مرة أخرى لإغلاقها.
+settings-shortcut-window = فتح النافذة الكاملة
+settings-shortcut-window-help = النافذة التي فيها كل شيء: عوامل التصفية والتفاصيل والإعدادات. اضغط مرة أخرى لإخفائها.
 settings-shortcut-ignore = لا تسجّل النسخة التالية
 settings-shortcut-ignore-help = اضغطه قبل نسخ شيء خاص، فتُتجاهل النسخة التالية.
 settings-shortcut-not-usable = غير صالح

@@ -94,10 +94,11 @@ top-results =
 list-empty-title = Your clipboard history will appear here
 list-empty-help =
     Copy anything, or drop files here.
-    Press { $key } to open this window from anywhere.
+    Press { $key } anywhere to pick a copy and paste it.
 list-no-matches = No matches for “{ $query }”
 list-meaning-finds-more = Searching by meaning finds related words too.
 list-set-up-meaning = Set up meaning search
+popup-open-window = Open the full window
 list-try-smart = Try “Smart” search instead
 list-try-other-words = Try fewer or different words.
 list-search-all-not-text = Search all items, not just text
@@ -478,8 +479,10 @@ settings-server-port = Port
 settings-server-extra-args = Extra arguments
 settings-server-extra-args-help = Passed to llama-server as-is.
 settings-shortcuts-global = Anywhere in Windows
-settings-shortcut-show = Show or hide this window
-settings-shortcut-show-help = Opens the window over whatever you're doing; press again to hide it.
+settings-shortcut-popup = Open the quick popup
+settings-shortcut-popup-help = A small window at the mouse pointer: search, then paste into the program you are in. Press again to close it.
+settings-shortcut-window = Open the full window
+settings-shortcut-window-help = The window with everything: filters, details and settings. Press again to hide it.
 settings-shortcut-ignore = Don't record the next copy
 settings-shortcut-ignore-help = Press before copying something private: the next copy is skipped.
 settings-shortcut-not-usable = Not usable

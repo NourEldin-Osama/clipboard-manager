@@ -21,6 +21,7 @@ mod grid;
 mod items;
 mod keyboard;
 mod list;
+mod popup;
 mod theme;
 mod time_format;
 mod top_bar;
@@ -71,7 +72,7 @@ impl App {
                         })
                         .fill(fill),
                 )
-                .show(ui, |ui| self.list(ui));
+                .show(ui, |ui| self.list(ui, false));
             let detail_fill = ui.visuals().extreme_bg_color;
             egui::CentralPanel::default()
                 .frame(
@@ -126,7 +127,7 @@ impl App {
                 if self.cfg.view == ViewMode::Grid {
                     self.grid(ui)
                 } else {
-                    self.list(ui)
+                    self.list(ui, false)
                 }
             });
     }
@@ -197,12 +198,11 @@ impl eframe::App for App {
             ctx.request_repaint_after(AGE_PRUNE_EVERY);
         }
         self.window_logic(ctx);
+        self.popup_logic(ctx);
         self.handle_events(ctx);
         let focused = ctx.input(|i| i.viewport().focused.unwrap_or(false));
-        // Leaving the window for another program makes pasting only copy:
-        // the program it opened over may not be the one the user was in.
         if self.focused.swap(focused, Ordering::SeqCst) && !focused {
-            self.win.previous.store(paste::NO_WINDOW, Ordering::SeqCst);
+            self.left_for_another_program();
         }
         let dropped: Vec<PathBuf> = ctx.input(|i| {
             i.raw
@@ -228,8 +228,18 @@ impl eframe::App for App {
 
     fn ui(&mut self, ui: &mut Ui, _frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
-        self.keyboard(&ctx);
+        self.keyboard(&ctx, false);
         self.refresh_results();
+        // Before the main window, so the popup's search field takes the
+        // keyboard when it opens.
+        self.popup_window(&ctx);
+        // Hidden or minimised, the main window draws nothing; the popup may
+        // be open meanwhile.
+        if self.win.hidden.load(Ordering::SeqCst)
+            || ctx.input(|i| i.viewport().minimized == Some(true))
+        {
+            return;
+        }
         if self.draft.is_some() {
             self.settings_ui(ui);
         } else {

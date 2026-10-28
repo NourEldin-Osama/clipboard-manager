@@ -33,6 +33,7 @@ Status: `[ ]` to do, `[~]` in progress, `[x]` done, `[!]` waiting for a decision
 | D22 | Uninstalling asks whether to delete the history and settings | You | Decided |
 | D23 | Each release starts its notes with its version's section of CHANGELOG.md | You | Decided |
 | D24 | Inno Setup is installed on this PC, so the installer is tested before a release | You | Decided |
+| D25 | The quick popup is its own small window with no taskbar button; the full window never moves or changes size. One click selects; double-click or Enter pastes | You | Decided |
 
 ## Order of work, and why
 
@@ -111,7 +112,7 @@ Status: `[ ]` to do, `[~]` in progress, `[x]` done, `[!]` waiting for a decision
 - [x] 6.1 Paste straight into the app you were using
 - [x] 6.2 Paste as plain text
 - [x] 6.3 Keep formatting (HTML and RTF)
-- [ ] 6.4 Quick popup at the cursor with search, and a button to open the full window
+- [x] 6.4 Quick popup at the cursor with search, and a button to open the full window
 - [x] 6.5 Rules per app
 - [x] 6.6 Delete by age
 - [ ] 6.7 OCR providers: built-in, Windows OCR, or an OCR server with a custom prompt (DeepSeek-OCR, PaddleOCR-VL, llama.cpp, other vision models)

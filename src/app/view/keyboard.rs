@@ -70,8 +70,10 @@ fn shift_delete(event: egui::Event, modifiers: egui::Modifiers) -> egui::Event {
 }
 
 impl App {
-    pub(super) fn keyboard(&mut self, ctx: &egui::Context) {
-        if self.draft.is_some() {
+    /// The keys of the full window, or of the popup when `in_popup`: the same,
+    /// less those for what the popup doesn't have (details, tags, views).
+    pub(super) fn keyboard(&mut self, ctx: &egui::Context, in_popup: bool) {
+        if self.draft.is_some() && !in_popup {
             // Esc first closes what is open inside Settings: a shortcut field
             // listening (its "cancel"), a menu, or a text field being typed
             // in. Only an Esc with none of these leaves (and applies) Settings.
@@ -86,7 +88,7 @@ impl App {
         // The tag field belongs to the item in the details pane: selecting
         // another item or closing the pane closes it. Left open, it would
         // keep every shortcut off below.
-        let pane_shown = self.details_open || self.cfg.view == ViewMode::Detail;
+        let pane_shown = !in_popup && (self.details_open || self.cfg.view == ViewMode::Detail);
         if self
             .tag_input
             .as_ref()
@@ -139,7 +141,7 @@ impl App {
         } else {
             None
         };
-        if view {
+        if view && !in_popup {
             self.set_view(self.cfg.view.next());
         }
         if copy.is_some() || del || pin || tag {
@@ -148,7 +150,7 @@ impl App {
         }
         // In the grid ↑ ↓ move a whole row; ← → move one card, unless they
         // would be moving the cursor in a typed query.
-        let grid = self.cfg.view == ViewMode::Grid;
+        let grid = self.cfg.view == ViewMode::Grid && !in_popup;
         let step = if grid {
             self.grid_cols.max(1) as i32
         } else {
@@ -181,7 +183,7 @@ impl App {
             if pin {
                 self.run(Command::Pin(id));
             }
-            if tag {
+            if tag && !in_popup {
                 self.tag_input = Some((id, String::new()));
                 self.tag_focus = true;
                 self.details_open = true;
@@ -190,7 +192,7 @@ impl App {
         if esc {
             if self.tag_input.is_some() {
                 self.tag_input = None;
-            } else if self.details_open && self.cfg.view != ViewMode::Detail {
+            } else if !in_popup && self.details_open && self.cfg.view != ViewMode::Detail {
                 self.details_open = false;
             } else if self.query.is_empty() {
                 self.win.hide();

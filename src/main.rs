@@ -19,6 +19,7 @@ mod ocr;
 mod paste;
 mod privacy;
 mod rules;
+mod screen;
 mod search;
 mod secure;
 mod single_instance;

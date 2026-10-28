@@ -323,7 +323,12 @@ pub struct Config {
     pub ocr_images: bool,
     pub search_mode: SearchMode,
     pub theme: Theme,
-    pub show_hotkey: String,
+    /// Opens the quick popup. Settings from before the popup called it
+    /// `show_hotkey`, the key that opened the window.
+    #[serde(alias = "show_hotkey")]
+    pub popup_hotkey: String,
+    /// Opens the full window.
+    pub window_hotkey: String,
     pub ignore_next_hotkey: String,
     pub minimize_after_copy: bool,
     /// Don't record text that looks like a password, API key or token.
@@ -377,7 +382,8 @@ impl Default for Config {
             ocr_images: true,
             search_mode: SearchMode::Hybrid,
             theme: Theme::System,
-            show_hotkey: "Alt+V".into(),
+            popup_hotkey: "Alt+V".into(),
+            window_hotkey: "Alt+Shift+V".into(),
             ignore_next_hotkey: "Alt+C".into(),
             minimize_after_copy: true,
             skip_secrets: true,
@@ -604,6 +610,14 @@ mod tests {
         let cfg: Config = serde_json::from_str(old).unwrap();
         assert_eq!(cfg.max_items, 100);
         assert!(cfg.server_profiles.latest().is_none());
+    }
+
+    #[test]
+    fn the_old_window_shortcut_opens_the_popup() {
+        let old = r#"{"show_hotkey":"Ctrl+Shift+Space"}"#;
+        let cfg: Config = serde_json::from_str(old).unwrap();
+        assert_eq!(cfg.popup_hotkey, "Ctrl+Shift+Space");
+        assert_eq!(cfg.window_hotkey, Config::default().window_hotkey);
     }
 
     #[test]

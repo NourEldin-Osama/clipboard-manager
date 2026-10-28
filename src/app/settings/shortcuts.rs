@@ -9,12 +9,18 @@ impl App {
     pub(super) fn shortcuts_page(&mut self, ui: &mut Ui, d: &mut Config, apply_keys: &mut bool) {
         let def = Config::default();
         section(ui, &t!("settings-shortcuts-global"));
-        let globals: [(ShortcutField, String, String, KeyField); 2] = [
+        let globals: [(ShortcutField, String, String, KeyField); 3] = [
             (
-                ShortcutField::Show,
-                t!("settings-shortcut-show"),
-                t!("settings-shortcut-show-help"),
-                |c| &mut c.show_hotkey,
+                ShortcutField::Popup,
+                t!("settings-shortcut-popup"),
+                t!("settings-shortcut-popup-help"),
+                |c| &mut c.popup_hotkey,
+            ),
+            (
+                ShortcutField::Window,
+                t!("settings-shortcut-window"),
+                t!("settings-shortcut-window-help"),
+                |c| &mut c.window_hotkey,
             ),
             (
                 ShortcutField::IgnoreNext,
