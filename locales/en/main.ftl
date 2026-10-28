@@ -195,6 +195,8 @@ details-add-tag-tip = Add a tag
 details-close = Close details (Esc)
 details-pinned = Pinned
 details-from-files = From your files
+details-copied-from = Copied from { $app }
+details-ignore-app = Don't record copies from { $app }
 details-delete = Delete
 details-unpin = Unpin
 details-pin-keep = Pin: keep forever
@@ -345,6 +347,16 @@ settings-age-days =
         [one] 1 day
        *[other] { $count } days
     }
+settings-rules = Rules
+settings-rules-help = Copies a rule matches are not recorded. A program is its file name, such as chrome.exe; leave it empty for every program. Leave the pattern empty to skip everything from the program.
+settings-rule-program = Program
+settings-rule-pattern = Pattern
+settings-rule-regex = Regular expression
+settings-rule-regex-help = Off: * stands for any text and ? for one character, and the pattern must match the whole copy, so *word* finds a word anywhere. On: a regular expression, found anywhere in the copy.
+settings-rule-delete = Delete this rule
+settings-rule-add = Add a rule
+settings-rule-needs = Give a program, a pattern, or both. Until then this rule does nothing.
+settings-rule-bad-pattern = This regular expression can't be used, so the rule does nothing: { $error }
 settings-storage = Storage
 settings-data-folder = Data folder
 settings-data-folder-help = History, images, models and settings are stored here, on this PC only.
@@ -534,6 +546,8 @@ toast-tag-removed =
 toast-downloaded = Downloaded { $model }
 toast-skipped-private = Not saved: the app you copied from marked it as private
 toast-skipped-secret = Not saved: looks like a password or API key (see Settings)
+toast-skipped-rule = Not saved: one of your rules skips it
+toast-app-ignored = Copies from { $app } won't be recorded. You can remove the rule in Settings, Clipboard.
 tray-show = Show Clipboard Manager
 tray-pause-recording = Pause recording
 tray-resume-recording = Resume recording

@@ -8,6 +8,13 @@ use std::time::Duration;
 
 use crate::store::{fnv1a, ImageFiles, Item, Kind};
 
+/// A copy, with the program it came from.
+pub struct Capture {
+    pub content: Captured,
+    /// The program's file name, as in `chrome.exe`, when Windows says.
+    pub app: Option<String>,
+}
+
 pub enum Captured {
     Text(String),
     Image(image::RgbaImage),
@@ -64,7 +71,7 @@ pub struct Flags {
 /// Browsers and Office can take well over arboard's built-in ~25 ms.
 const BUSY_RETRY_FOR: Duration = Duration::from_secs(2);
 
-pub fn spawn_watcher(flags: Arc<Flags>, tx: Sender<Captured>, wake: impl Fn() + Send + 'static) {
+pub fn spawn_watcher(flags: Arc<Flags>, tx: Sender<Capture>, wake: impl Fn() + Send + 'static) {
     std::thread::Builder::new()
         .name("clipboard".into())
         .spawn(move || {
@@ -141,7 +148,11 @@ pub fn spawn_watcher(flags: Arc<Flags>, tx: Sender<Captured>, wake: impl Fn() + 
                 if let Captured::Skipped { reason, .. } = &c {
                     log::info!("copy not saved: {reason:?}");
                 }
-                if tx.send(c).is_err() {
+                let capture = Capture {
+                    content: c,
+                    app: source_app(),
+                };
+                if tx.send(capture).is_err() {
                     return;
                 }
                 wake();
@@ -225,6 +236,51 @@ fn is_sensitive() -> bool {
 #[cfg(not(windows))]
 fn is_sensitive() -> bool {
     false
+}
+
+/// The file name of the program that put the content on the clipboard:
+/// the clipboard's owner, or the window in front when there is none.
+#[cfg(windows)]
+fn source_app() -> Option<String> {
+    use windows_sys::Win32::Foundation::CloseHandle;
+    use windows_sys::Win32::System::DataExchange::GetClipboardOwner;
+    use windows_sys::Win32::System::Threading::{
+        OpenProcess, QueryFullProcessImageNameW, PROCESS_QUERY_LIMITED_INFORMATION,
+    };
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        GetForegroundWindow, GetWindowThreadProcessId,
+    };
+    // SAFETY: plain Win32 calls; the process handle is closed before returning,
+    // and `name` holds `size` UTF-16 units, as QueryFullProcessImageNameW is told.
+    unsafe {
+        let mut window = GetClipboardOwner();
+        if window.is_null() {
+            window = GetForegroundWindow();
+        }
+        let mut process_id = 0;
+        GetWindowThreadProcessId(window, &mut process_id);
+        if process_id == 0 {
+            return None;
+        }
+        let process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, process_id);
+        if process.is_null() {
+            return None;
+        }
+        let mut name = [0u16; 1024];
+        let mut size = name.len() as u32;
+        let found = QueryFullProcessImageNameW(process, 0, name.as_mut_ptr(), &mut size);
+        CloseHandle(process);
+        if found == 0 {
+            return None;
+        }
+        let path = PathBuf::from(String::from_utf16_lossy(&name[..size as usize]));
+        Some(path.file_name()?.to_string_lossy().into_owned())
+    }
+}
+
+#[cfg(not(windows))]
+fn source_app() -> Option<String> {
+    None
 }
 
 /// One long-lived handle for writing. On Linux the copied data is served by

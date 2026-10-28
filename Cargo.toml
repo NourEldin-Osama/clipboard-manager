@@ -32,6 +32,8 @@ redb = "4.4"
 # Encrypts the history (AES-256-GCM) and makes its key; already built in for HTTPS.
 ring = "0.17"
 rfd = "0.17"
+# The patterns of rules per app; already built in for logging.
+regex = "1"
 rten = { version = "0.26", default-features = false, features = ["rten_format"] }
 serde = { version = "1", features = ["derive", "rc"] }
 serde_json = "1"
@@ -58,7 +60,7 @@ winresource = { version = "0.1", default-features = false }
 clipboard-win = "5"
 # DPAPI, which encrypts API keys for the signed-in Windows user (secure.rs),
 # and the named mutex and event that keep one running copy (single_instance.rs).
-windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Security", "Win32_Security_Cryptography", "Win32_System_Threading"] }
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Security", "Win32_Security_Cryptography", "Win32_System_DataExchange", "Win32_System_Threading", "Win32_UI_WindowsAndMessaging"] }
 # Reads the sign-in entry without turning it on (autostart.rs); auto-launch uses it too.
 windows-registry = "0.6"
 

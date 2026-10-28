@@ -6,6 +6,11 @@ the notes here before a push that makes a release.
 
 ## 0.4.0
 
+- Rules per app: Settings, Clipboard can skip every copy from a program, or
+  text that matches a pattern, from one program or any. A pattern is simple
+  (with * and ?) or a regular expression. A skipped copy can still be kept
+  with "Save anyway". The details show which program a copy came from, with
+  a link to stop recording that program.
 - Delete by age: Settings, Clipboard can delete items older than a day, a
   week, a month, 3 months or a year. It is off unless you choose a time,
   and it never deletes pinned or tagged items, or files you added.

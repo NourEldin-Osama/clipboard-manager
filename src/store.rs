@@ -97,6 +97,9 @@ pub struct Item {
     /// Times it was copied back from the list ("Most used").
     #[serde(default)]
     pub uses: u32,
+    /// The program it was copied from, as in `chrome.exe`, when known.
+    #[serde(default)]
+    pub app: Option<String>,
 }
 
 impl Item {
@@ -117,6 +120,7 @@ impl Item {
             source: None,
             tags: Vec::new(),
             uses: 0,
+            app: None,
         }
     }
 

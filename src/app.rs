@@ -14,7 +14,7 @@ use eframe::egui::{
 use global_hotkey::hotkey::HotKey;
 use global_hotkey::{GlobalHotKeyEvent, GlobalHotKeyManager, HotKeyState};
 
-use crate::clipboard::{self, Captured, Flags, SkipReason};
+use crate::clipboard::{self, Capture, Captured, Flags, SkipReason};
 use crate::config::{
     Config, EmbedBackend, LaunchConfig, Paths, SearchMode, ServerConfig, SortOrder, Theme, ViewMode,
 };
@@ -236,8 +236,8 @@ pub(super) enum Command {
     ClearHistory,
     /// Brings back the item just deleted.
     UndoDelete,
-    /// Records a copy the secret filter held back.
-    SaveSkipped(String),
+    /// Records a copy that the secret filter or a rule held back.
+    SaveSkipped(Capture),
     /// Copies text read from an image; it is not recorded as a new copy.
     CopyText(String),
 }
@@ -286,7 +286,9 @@ pub struct App {
     draft: Option<Config>,
     worker: Worker,
     events: Receiver<Event>,
-    captures: Receiver<Captured>,
+    captures: Receiver<Capture>,
+    /// `cfg.rules`, ready to match copies.
+    rules: crate::rules::Rules,
     flags: Arc<Flags>,
 
     /// The clipboard history and every change to it.
@@ -433,6 +435,7 @@ impl App {
             worker,
             events,
             captures,
+            rules: crate::rules::Rules::new(&cfg.rules),
             flags,
             library,
             backend: BackendState::Off,
@@ -931,8 +934,8 @@ impl App {
             Command::Import(paths) => self.import(paths),
             Command::ClearHistory => self.clear_history(),
             Command::UndoDelete => self.undo_delete(),
-            Command::SaveSkipped(text) => {
-                self.on_capture(Captured::Text(text));
+            Command::SaveSkipped(capture) => {
+                self.record(capture);
                 self.toast(t!("toast-saved"));
             }
             Command::CopyText(text) => {
@@ -977,20 +980,60 @@ impl App {
         jobs
     }
 
-    fn on_capture(&mut self, c: Captured) {
-        if let Captured::Skipped { reason, text } = c {
-            // Longer when there is a button to reach.
-            let how_long = Duration::from_secs(if text.is_some() { 8 } else { 4 });
+    /// A copy from the clipboard: recorded, unless the secret filter or a
+    /// rule holds it back.
+    fn on_capture(&mut self, capture: Capture) {
+        let Capture { content, app } = capture;
+        if let Captured::Skipped { reason, text } = content {
             let message = match reason {
                 SkipReason::Private => t!("toast-skipped-private"),
                 SkipReason::Secret => t!("toast-skipped-secret"),
             };
-            self.toast_for(message, how_long);
-            if let Some(toast) = &mut self.toast {
-                toast.action = text.map(|t| (t!("toast-save-anyway"), Command::SaveSkipped(t)));
-            }
+            let kept = text.map(|t| Capture {
+                content: Captured::Text(t),
+                app,
+            });
+            self.skipped(message, kept);
             return;
         }
+        let text = match &content {
+            Captured::Text(t) => Some(t.as_str()),
+            _ => None,
+        };
+        if self.rules.skips(app.as_deref(), text) {
+            log::info!("copy not saved: a rule matched");
+            self.skipped(t!("toast-skipped-rule"), Some(Capture { content, app }));
+            return;
+        }
+        self.record(Capture { content, app });
+    }
+
+    /// Stops recording copies from `app`, with a rule the user can remove
+    /// in Settings.
+    fn ignore_app(&mut self, app: &str) {
+        let mut d = self.cfg.clone();
+        d.rules.push(crate::rules::Rule {
+            app: app.to_string(),
+            ..Default::default()
+        });
+        let ctx = self.win.ctx.clone();
+        self.apply_settings(d, &ctx, false);
+        self.toast_for(t!("toast-app-ignored", app = app), Duration::from_secs(6));
+    }
+
+    /// Says a copy wasn't recorded. `kept` is offered back with "Save anyway".
+    fn skipped(&mut self, message: String, kept: Option<Capture>) {
+        // Longer when there is a button to reach.
+        let how_long = Duration::from_secs(if kept.is_some() { 8 } else { 4 });
+        self.toast_for(message, how_long);
+        if let Some(toast) = &mut self.toast {
+            toast.action = kept.map(|c| (t!("toast-save-anyway"), Command::SaveSkipped(c)));
+        }
+    }
+
+    /// Adds a copy to the history, or moves its duplicate to the top.
+    fn record(&mut self, capture: Capture) {
+        let Capture { content: c, app } = capture;
         let hash = c.hash();
         if self.cfg.dedupe {
             let found = match self.library.touch_duplicate(hash) {
@@ -1010,6 +1053,7 @@ impl App {
         let mut item = Item::new(id, Kind::Text, Origin::Clipboard, "".into());
         // The capture's own hash, which also covers image pixels and file lists.
         item.hash = hash;
+        item.app = app;
         match c {
             Captured::Text(t) => {
                 item.kind = if looks_like_link(&t) {
@@ -1023,7 +1067,7 @@ impl App {
                 item.kind = Kind::Files;
                 item.text = clipboard::join_paths(&f).into();
             }
-            Captured::Skipped { .. } => unreachable!(),
+            Captured::Skipped { .. } => return,
             Captured::Image(img) => {
                 item.kind = Kind::Image;
                 item.width = img.width();

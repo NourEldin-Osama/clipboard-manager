@@ -269,6 +269,24 @@ impl App {
         let meta = self.meta_line(&it);
         let weak = ui.visuals().weak_text_color();
         row(ui, |ui| ui.label(txt(&meta, 12.5, Some(weak))));
+        if let Some(app) = &it.app {
+            let ignored = self.cfg.rules.iter().any(|r| r.skips_app(app));
+            let mut ignore = false;
+            row(ui, |ui| {
+                ui.label(txt(
+                    &t!("details-copied-from", app = app.as_str()),
+                    12.5,
+                    Some(weak),
+                ));
+                if !ignored {
+                    let link = t!("details-ignore-app", app = app.as_str());
+                    ignore = ui.link(txt(&link, 12.5, None)).clicked();
+                }
+            });
+            if ignore {
+                self.ignore_app(app);
+            }
+        }
         ui.add_space(6.0);
         self.tag_editor(ui, &it);
         ui.add_space(10.0);

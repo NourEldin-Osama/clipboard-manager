@@ -111,4 +111,68 @@ pub(super) fn clipboard_page(ui: &mut Ui, d: &mut Config) {
                 });
         },
     );
+    rules_section(ui, d);
+}
+
+/// The rules for copies that aren't recorded: one row each, then "Add a rule".
+fn rules_section(ui: &mut Ui, d: &mut Config) {
+    section(ui, &t!("settings-rules"));
+    note(ui, &t!("settings-rules-help"));
+    ui.add_space(4.0);
+    let mut remove = None;
+    for (index, rule) in d.rules.iter_mut().enumerate() {
+        ui.push_id(index, |ui| {
+            row(ui, |ui| {
+                ui.add_space(10.0);
+                ui.add(
+                    egui::TextEdit::singleline(&mut rule.app)
+                        .hint_text(t!("settings-rule-program"))
+                        .desired_width(150.0),
+                );
+                ui.add(
+                    egui::TextEdit::singleline(&mut rule.pattern)
+                        .hint_text(t!("settings-rule-pattern"))
+                        .desired_width(220.0),
+                );
+                tip(
+                    toggle(ui, &mut rule.is_regex),
+                    &t!("settings-rule-regex-help"),
+                );
+                lbl(
+                    ui,
+                    &t!("settings-rule-regex"),
+                    13.0,
+                    ui.visuals().text_color(),
+                );
+                far(ui, |ui| {
+                    if icons::icon_button(ui, Icon::Delete, &t!("settings-rule-delete")).clicked() {
+                        remove = Some(index);
+                    }
+                });
+            });
+            match rule.compile() {
+                Err(crate::rules::Problem::Empty) => note(ui, &t!("settings-rule-needs")),
+                Err(crate::rules::Problem::BadPattern(error)) => note(
+                    ui,
+                    &format!(
+                        "⚠ {}",
+                        t!("settings-rule-bad-pattern", error = error.as_str())
+                    ),
+                ),
+                Ok(_) => {}
+            }
+        });
+    }
+    if let Some(index) = remove {
+        d.rules.remove(index);
+    }
+    row(ui, |ui| {
+        ui.add_space(10.0);
+        if ui
+            .button(txt(&t!("settings-rule-add"), 13.0, None))
+            .clicked()
+        {
+            d.rules.push(crate::rules::Rule::default());
+        }
+    });
 }

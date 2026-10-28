@@ -796,6 +796,7 @@ dependencies = [
  "log",
  "ocrs",
  "redb",
+ "regex",
  "rfd",
  "ring",
  "rten",

@@ -202,6 +202,8 @@ details-add-tag-tip = إضافة وسم
 details-close = إغلاق التفاصيل (Esc)
 details-pinned = المثبتة
 details-from-files = من ملفاتك
+details-copied-from = منسوخ من { $app }
+details-ignore-app = عدم تسجيل النسخ من { $app }
 details-delete = حذف
 details-unpin = إلغاء التثبيت
 details-pin-keep = تثبيت: احتفظ به دائمًا
@@ -364,6 +366,16 @@ settings-age-days =
         [few] { $count } أيام
        *[other] { $count } يومًا
     }
+settings-rules = القواعد
+settings-rules-help = لا تُسجَّل النسخ التي تطابقها قاعدة. البرنامج هو اسم ملفه، مثل chrome.exe؛ اتركه فارغًا لكل البرامج. اترك النمط فارغًا لتخطي كل ما يُنسخ من البرنامج.
+settings-rule-program = البرنامج
+settings-rule-pattern = النمط
+settings-rule-regex = تعبير نمطي
+settings-rule-regex-help = عند الإيقاف: * تعني أي نص و? تعني حرفًا واحدًا، ويجب أن يطابق النمط النسخة كلها، لذا *كلمة* تجد الكلمة في أي مكان. عند التشغيل: تعبير نمطي يُبحث عنه في أي مكان من النسخة.
+settings-rule-delete = حذف هذه القاعدة
+settings-rule-add = إضافة قاعدة
+settings-rule-needs = أدخل برنامجًا أو نمطًا أو كليهما. حتى ذلك الحين لا تفعل هذه القاعدة شيئًا.
+settings-rule-bad-pattern = لا يمكن استخدام هذا التعبير النمطي، لذا لا تفعل القاعدة شيئًا: { $error }
 settings-storage = التخزين
 settings-data-folder = مجلد البيانات
 settings-data-folder-help = يُحفظ السجل والصور والنماذج والإعدادات هنا، على هذا الجهاز فقط.
@@ -565,6 +577,8 @@ toast-tag-removed =
 toast-downloaded = تم تنزيل { $model }
 toast-skipped-private = لم يُحفظ: التطبيق الذي نسخت منه وسمه بأنه خاص
 toast-skipped-secret = لم يُحفظ: يبدو كلمة مرور أو مفتاح API (راجع الإعدادات)
+toast-skipped-rule = لم يُحفظ: إحدى قواعدك تتخطاه
+toast-app-ignored = لن تُسجَّل النسخ من { $app }. يمكنك حذف القاعدة من الإعدادات، الحافظة.
 tray-show = إظهار مدير الحافظة
 tray-pause-recording = إيقاف التسجيل مؤقتًا
 tray-resume-recording = استئناف التسجيل

@@ -103,7 +103,7 @@ impl App {
         unconfirmed.then(|| crate::net::host(&s.base_url).to_string())
     }
 
-    fn apply_settings(&mut self, d: Config, ctx: &egui::Context, prune: bool) {
+    pub(super) fn apply_settings(&mut self, d: Config, ctx: &egui::Context, prune: bool) {
         if d == self.cfg && !prune {
             return;
         }
@@ -122,6 +122,9 @@ impl App {
         i18n::set(d.language, d.time_format);
         let search_changed =
             d.search_mode != self.cfg.search_mode || d.min_similarity != self.cfg.min_similarity;
+        if d.rules != self.cfg.rules {
+            self.rules = crate::rules::Rules::new(&d.rules);
+        }
         self.cfg = d;
         self.flags
             .enabled

@@ -354,6 +354,8 @@ pub struct Config {
     /// Servers outside this PC that the user agreed to send the history to,
     /// so applying one of them asks only once.
     pub allowed_servers: Vec<String>,
+    /// Copies that aren't recorded (see `rules`).
+    pub rules: Vec<crate::rules::Rule>,
 }
 
 impl Default for Config {
@@ -390,6 +392,7 @@ impl Default for Config {
             server_profiles: ServerProfiles::default(),
             builtin_repo: None,
             allowed_servers: Vec::new(),
+            rules: Vec::new(),
         }
     }
 }

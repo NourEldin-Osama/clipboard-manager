@@ -17,6 +17,7 @@ mod models;
 mod net;
 mod ocr;
 mod privacy;
+mod rules;
 mod search;
 mod secure;
 mod single_instance;
