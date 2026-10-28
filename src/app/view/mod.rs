@@ -151,7 +151,9 @@ impl App {
             self.run(command);
         }
         if self.thumbs.len() > MAX_THUMBS {
-            for id in self.thumbs.drain().map(|(id, _)| id).collect::<Vec<_>>() {
+            for id in thumbs_to_drop(&self.thumb_seen, self.thumbs.keys().copied(), THUMBS_KEPT) {
+                self.thumbs.remove(&id);
+                self.thumb_seen.remove(&id);
                 self.loader.forget(id, false);
             }
         }

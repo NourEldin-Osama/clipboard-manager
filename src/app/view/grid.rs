@@ -353,12 +353,14 @@ impl App {
             vec![]
         };
         let mut actions = Vec::new();
-        let (library, results, thumbs, loader, selected) = (
+        let frame = ui.ctx().cumulative_pass_nr();
+        let (library, results, thumbs, loader, selected, seen) = (
             &self.library,
             &self.results,
             &self.thumbs,
             &mut self.loader,
             self.selected,
+            &mut self.thumb_seen,
         );
         let out = sa.show_viewport(ui, |ui, viewport| {
             ui.set_height(total);
@@ -379,7 +381,7 @@ impl App {
                 let Some(it) = library.get(hit.id) else {
                     continue;
                 };
-                let thumb = thumb_for(it, thumbs, loader);
+                let thumb = thumb_for(it, thumbs, loader, (&mut *seen, frame));
                 let resp = ui.interact(rect, egui::Id::unique(("card", it.id)), Sense::click());
                 let hot = ui.rect_contains_pointer(rect);
                 paint_card(ui, rect, hot, it, thumb, Some(it.id) == selected, &terms);

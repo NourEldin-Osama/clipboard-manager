@@ -33,8 +33,10 @@ use crate::worker::{Event, Job, Worker};
 const QUERY_DEBOUNCE: Duration = Duration::from_millis(180);
 /// While indexing, re-rank at most this often instead of after every vector.
 const RESEARCH_EVERY: Duration = Duration::from_millis(400);
-/// Thumbnail textures kept before the cache is dropped and refilled from what is visible.
+/// Thumbnail textures kept; past this the ones shown longest ago go, down
+/// to `THUMBS_KEPT`, so dropping happens now and then, not every frame.
 const MAX_THUMBS: usize = 300;
+const THUMBS_KEPT: usize = 240;
 
 /// Derived from the selected item once, not every frame.
 struct DetailText {
@@ -397,6 +399,8 @@ pub struct App {
     focused: Arc<AtomicBool>,
 
     thumbs: HashMap<u64, Option<TextureHandle>>,
+    /// The frame each image item was last drawn in, for dropping thumbnails.
+    thumb_seen: HashMap<u64, u64>,
     preview: Option<(u64, Option<TextureHandle>)>,
     loader: ImageLoader,
     detail: Option<DetailText>,
@@ -555,6 +559,7 @@ impl App {
             focus_search,
             focused: Arc::new(AtomicBool::new(true)),
             thumbs: HashMap::new(),
+            thumb_seen: HashMap::new(),
             preview: None,
             loader: {
                 let c = ctx.clone();
@@ -1553,6 +1558,7 @@ impl App {
         self.results.retain(|h| !gone.contains(&h.id));
         for id in ids {
             self.thumbs.remove(id);
+            self.thumb_seen.remove(id);
         }
         self.dirty = true;
     }

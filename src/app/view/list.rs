@@ -29,11 +29,17 @@ pub(super) fn with_headers(labels: impl Iterator<Item = Group>) -> Vec<Line> {
 }
 
 /// The item's thumbnail texture, queuing a decode the first time it's seen.
+/// `seen` notes the frame it was drawn in (see `thumbs_to_drop`).
 pub(super) fn thumb_for(
     it: &Item,
     thumbs: &HashMap<u64, Option<TextureHandle>>,
     loader: &mut ImageLoader,
+    seen: (&mut HashMap<u64, u64>, u64),
 ) -> Option<TextureHandle> {
+    if it.kind == Kind::Image {
+        let (seen, frame) = seen;
+        seen.insert(it.id, frame);
+    }
     match (it.kind, thumbs.get(&it.id), &it.image) {
         (Kind::Image, Some(t), _) => t.clone(),
         (Kind::Image, None, Some(p)) => {
@@ -42,6 +48,21 @@ pub(super) fn thumb_for(
         }
         _ => None,
     }
+}
+
+/// The thumbnails to drop so that `keep` stay: those drawn longest ago
+/// first. The ones on screen were drawn last, so they stay.
+pub(super) fn thumbs_to_drop(
+    seen: &HashMap<u64, u64>,
+    ids: impl Iterator<Item = u64>,
+    keep: usize,
+) -> Vec<u64> {
+    let mut by_age: Vec<(u64, u64)> = ids
+        .map(|id| (seen.get(&id).copied().unwrap_or(0), id))
+        .collect();
+    let extra = by_age.len().saturating_sub(keep);
+    by_age.sort_unstable();
+    by_age.into_iter().take(extra).map(|(_, id)| id).collect()
 }
 
 /// `hot` while the pointer is over the row: its hover buttons then take the
@@ -384,12 +405,14 @@ impl App {
             vec![]
         };
         let mut actions = Vec::new();
-        let (library, results, thumbs, loader, selected) = (
+        let frame = ui.ctx().cumulative_pass_nr();
+        let (library, results, thumbs, loader, selected, seen) = (
             &self.library,
             &self.results,
             &self.thumbs,
             &mut self.loader,
             self.selected,
+            &mut self.thumb_seen,
         );
         let out = sa.show_viewport(ui, |ui, viewport| {
             ui.set_height(total);
@@ -442,7 +465,7 @@ impl App {
                         let Some(it) = library.get(hit.id) else {
                             continue;
                         };
-                        let thumb = thumb_for(it, thumbs, loader);
+                        let thumb = thumb_for(it, thumbs, loader, (&mut *seen, frame));
                         let resp =
                             ui.interact(rect, egui::Id::unique(("row", it.id)), Sense::click());
                         let hot = ui.rect_contains_pointer(rect);
@@ -601,6 +624,19 @@ fn none_yet(filter: Filter) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_thumbnails_drawn_longest_ago_are_dropped_first() {
+        // Items 1 to 5, drawn in frames 10 to 50; 6 never drawn.
+        let seen: HashMap<u64, u64> = (1..=5).map(|id| (id, id * 10)).collect();
+        let mut dropped = thumbs_to_drop(&seen, 1..=6, 3);
+        dropped.sort_unstable();
+        assert_eq!(dropped, [1, 2, 6]);
+        assert!(
+            thumbs_to_drop(&seen, 1..=3, 3).is_empty(),
+            "nothing over the limit"
+        );
+    }
 
     #[test]
     fn headers_count_their_rows() {
