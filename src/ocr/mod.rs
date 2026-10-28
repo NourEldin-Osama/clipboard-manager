@@ -1,4 +1,6 @@
-//! On-device text recognition for images (ocrs + rten, pure Rust).
+//! Reading text in images, with the reader chosen in Settings: the one built
+//! into the app (ocrs + rten, pure Rust, below), Windows' own, or a vision
+//! model on a server.
 
 use std::path::Path;
 
@@ -6,6 +8,34 @@ use anyhow::Result;
 use ocrs::{ImageSource, OcrEngine, OcrEngineParams};
 use rten::Model;
 
+mod server;
+#[cfg(windows)]
+mod windows_reader;
+
+pub use server::ServerReader;
+#[cfg(windows)]
+pub use windows_reader::WindowsReader;
+
+/// A text reader, ready to use.
+pub enum Reader {
+    BuiltIn(Ocr),
+    #[cfg(windows)]
+    Windows(WindowsReader),
+    Server(ServerReader),
+}
+
+impl Reader {
+    pub fn recognize(&self, img: &image::DynamicImage) -> Result<String> {
+        match self {
+            Self::BuiltIn(ocr) => ocr.recognize(img),
+            #[cfg(windows)]
+            Self::Windows(reader) => reader.recognize(img),
+            Self::Server(reader) => reader.recognize(img),
+        }
+    }
+}
+
+/// The reader built into the app. It reads Latin letters.
 pub struct Ocr {
     engine: OcrEngine,
 }

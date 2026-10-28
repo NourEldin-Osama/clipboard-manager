@@ -307,6 +307,8 @@ enum Confirm {
     ClearHistory,
     ResetSettings,
     SendToServer,
+    /// Sending copied images to a text reader outside this PC.
+    SendImagesToServer,
 }
 
 /// The shortcuts that can be changed in Settings.
@@ -477,6 +479,7 @@ impl App {
         let worker = Worker::spawn(
             library.store().clone(),
             paths.models.clone(),
+            cfg.text_reader.clone(),
             ev_tx,
             move || c.request_repaint(),
         );

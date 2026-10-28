@@ -11,7 +11,9 @@ use super::view::{
     start_anchor, tip, txt, ACCENTS, AMBER, GREEN, RED,
 };
 use super::*;
-use crate::config::{BackendKind, Density, Language, ServerProfiles, TimeFormat};
+use crate::config::{
+    BackendKind, Density, Language, ReaderServer, ServerProfiles, TextReader, TimeFormat,
+};
 
 mod appearance;
 mod clipboard;
@@ -24,7 +26,6 @@ mod widgets;
 
 // The helpers of every page, for this file and the pages.
 use appearance::*;
-use clipboard::*;
 use server::*;
 use widgets::*;
 
@@ -81,6 +82,15 @@ impl App {
             self.confirm = Some(Confirm::SendToServer);
             return;
         }
+        if self
+            .draft
+            .as_ref()
+            .is_some_and(|d| self.unconfirmed_reader(d).is_some())
+        {
+            self.settings_page = SettingsPage::Clipboard;
+            self.confirm = Some(Confirm::SendImagesToServer);
+            return;
+        }
         if let Some(d) = self.draft.take() {
             self.apply_settings(d, ctx, true);
         }
@@ -103,6 +113,18 @@ impl App {
         unconfirmed.then(|| crate::net::host(&s.base_url).to_string())
     }
 
+    /// The text reader outside this PC that applying `d` would start sending
+    /// copied images to, as long as the user hasn't agreed to it yet.
+    fn unconfirmed_reader(&self, d: &Config) -> Option<String> {
+        let TextReader::Server(s) = &d.text_reader else {
+            return None;
+        };
+        let unconfirmed = d.text_reader != self.cfg.text_reader
+            && !crate::net::is_on_this_pc(&s.base_url)
+            && !d.is_server_allowed(&s.base_url);
+        unconfirmed.then(|| crate::net::host(&s.base_url).to_string())
+    }
+
     pub(super) fn apply_settings(&mut self, d: Config, ctx: &egui::Context, prune: bool) {
         if d == self.cfg && !prune {
             return;
@@ -111,6 +133,9 @@ impl App {
         let keys_changed = d.popup_hotkey != self.cfg.popup_hotkey
             || d.window_hotkey != self.cfg.window_hotkey
             || d.ignore_next_hotkey != self.cfg.ignore_next_hotkey;
+        if d.text_reader != self.cfg.text_reader {
+            self.worker.send(Job::SetTextReader(d.text_reader.clone()));
+        }
         if d.ocr_images && !self.cfg.ocr_images {
             for id in self.library.images_without_ocr() {
                 self.worker.send_backfill(Job::Ocr(id));
@@ -178,6 +203,7 @@ impl App {
         };
         let mut close = false;
         let mut apply_model = false;
+        let mut apply_reader = false;
         let mut discard_model = false;
         let mut apply_keys = false;
         let model_pending = d.backend != self.cfg.backend;
@@ -341,7 +367,9 @@ impl App {
                         {
                             SettingsPage::General => self.general_page(ui, &mut d),
                             SettingsPage::Search => self.search_page(ui, &mut d, &mut apply_model),
-                            SettingsPage::Clipboard => clipboard_page(ui, &mut d),
+                            SettingsPage::Clipboard => {
+                                self.clipboard_page(ui, &mut d, &mut apply_reader)
+                            }
                             SettingsPage::Shortcuts => {
                                 self.shortcuts_page(ui, &mut d, &mut apply_keys)
                             }
@@ -357,9 +385,11 @@ impl App {
             self.close_settings(&ctx);
             return;
         }
-        // Everything except the model and hotkeys applies immediately.
+        // Everything except the model, the text reader and the hotkeys
+        // applies immediately.
         let mut live = d.clone();
         live.backend = self.cfg.backend.clone();
+        live.text_reader = self.cfg.text_reader.clone();
         live.popup_hotkey = self.cfg.popup_hotkey.clone();
         live.window_hotkey = self.cfg.window_hotkey.clone();
         live.ignore_next_hotkey = self.cfg.ignore_next_hotkey.clone();
@@ -387,6 +417,16 @@ impl App {
         }
         if discard_model {
             d.backend = self.cfg.backend.clone();
+        }
+        if apply_reader {
+            if self.unconfirmed_reader(&d).is_some() {
+                self.settings_page = SettingsPage::Clipboard;
+                self.confirm = Some(Confirm::SendImagesToServer);
+            } else {
+                let mut c = self.cfg.clone();
+                c.text_reader = d.text_reader.clone();
+                self.apply_settings(c, &ctx, false);
+            }
         }
         // App::logic turns the global shortcuts back on in the next frame.
         if self.hotkeys_paused && self.recording.is_none() {

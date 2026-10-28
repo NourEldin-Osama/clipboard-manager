@@ -36,7 +36,7 @@ public feature descriptions only, and it shares no code or assets with Planck an
 | **English and Arabic** | Switch the language in *Settings → General*. Arabic lays the whole window out right to left, and Arabic text, whether part of the interface or something you copied, is shaped, ordered and wrapped correctly, even when it mixes in numbers or English. To add a language, see [docs/TRANSLATING.md](docs/TRANSLATING.md). A bundled Arabic font ([Noto Sans Arabic](https://github.com/notofonts/arabic), SIL Open Font License) means it doesn't depend on the PC's fonts. |
 | **12- or 24-hour clock** | Times are stored in UTC and shown in your time zone, including daylight saving, with the clock you choose in *Settings → General*. |
 | **System tray and start at sign-in** | In *Settings → General*: keep the app running in the system tray (closing or minimising the window hides it there; click the icon to open it, right-click to pause recording or quit), and start it hidden when you sign in. |
-| **On-device OCR** | Text in images and screenshots becomes searchable ([ocrs](https://github.com/robertknight/ocrs), pure Rust). |
+| **Text in images** | Text in images and screenshots becomes searchable. *Settings → Clipboard* chooses the reader: Windows' own (the default for new installs; it reads the languages installed in Windows), the built-in one ([ocrs](https://github.com/robertknight/ocrs), pure Rust, Latin letters), or a vision model on a server you choose (llama.cpp, vLLM with DeepSeek-OCR or PaddleOCR-VL, Ollama) with your own prompt. |
 | **Sort by** | The menu at the end of the filter row: *Best match* (while searching), *Recent*, *Oldest*, *A to Z* and *Most used* (items you copy back from the list most often). Searching and browsing each remember their own choice. *Settings → Appearance → Pinned on top* keeps pinned items first while browsing (not while searching). |
 | **Semantic search** | Smart mode ranks by meaning (similarity), with a boost for items that contain your words; results are ordered best first and the relevance bars match that order. You can also choose *Meaning* or *Keyword* only. |
 | **Built-in model (pure Rust)** | SigLIP (English or multilingual, Arabic included) runs inside the app on the CPU through [candle](https://github.com/huggingface/candle). It puts text and images in one shared space, so text can find images. |
@@ -47,9 +47,10 @@ public feature descriptions only, and it shares no code or assets with Planck an
 | **Look and feel** | A list grouped by Pinned / Today / Yesterday / This week, with kind icons, thumbnails, matched words highlighted and relevance bars while searching. Three layouts, switched with the view button beside the search box: **Grid** (cards), **List** (full-width rows) and **Detail** (list plus a details pane with a large preview). Hovering an item shows delete, pin, copy and open-details buttons (the card's content stays put). Light and dark themes, five accent colours, comfortable or compact density. |
 | **Settings that explain themselves** | Sections down the side (General, Search & AI model, Clipboard, Shortcuts, Appearance, Data & privacy). Every option has an ℹ explanation and plain-language choices. Settings you've changed are highlighted, each with a one-click reset. Changes apply instantly. |
 
-The only network access is the one-time model downloads you start yourself in Settings, a 12 MB OCR model download
-the first time an image is processed (turn OCR off to avoid it), and the update check described below (it can be turned off).
-Nothing you copy is ever sent. Everything else works without a network connection.
+The only network access is the one-time model downloads you start yourself in Settings, a 12 MB download the first
+time the built-in text reader reads an image, and the update check described below (it can be turned off). Nothing you
+copy is sent, unless you choose a search or text reader server outside this PC: the app warns about that and asks
+first. Everything else works without a network connection.
 
 ## Install on Windows
 
@@ -213,7 +214,10 @@ src/
     mod.rs       Embedding (dense / multi-vector), cosine & MaxSim, Embedder trait
     siglip.rs    in-process SigLIP via candle
     server.rs    OpenAI-compatible client + optional llama-server launcher
-  ocr.rs         ocrs wrapper
+  ocr/
+    mod.rs       the chosen text reader; the built-in one (ocrs)
+    windows_reader.rs  Windows' own text reader (Windows.Media.Ocr)
+    server.rs    a vision model on a server, through /chat/completions
   search.rs      keyword scoring, similarity ranking with a word-match boost
   store.rs       redb persistence; items and copied images encrypted on Windows
   vault.rs       the history's key (sealed with DPAPI) and its AES-256-GCM encryption

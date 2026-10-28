@@ -115,7 +115,7 @@ Status: `[ ]` to do, `[~]` in progress, `[x]` done, `[!]` waiting for a decision
 - [x] 6.4 Quick popup at the cursor with search, and a button to open the full window
 - [x] 6.5 Rules per app
 - [x] 6.6 Delete by age
-- [ ] 6.7 OCR providers: built-in, Windows OCR, or an OCR server with a custom prompt (DeepSeek-OCR, PaddleOCR-VL, llama.cpp, other vision models)
+- [x] 6.7 OCR providers: built-in, Windows OCR, or an OCR server with a custom prompt (DeepSeek-OCR, PaddleOCR-VL, llama.cpp, other vision models)
 - [ ] 6.8 Register the app on the PC: Start menu and desktop shortcuts, an entry in Installed apps (D10)
 
 ### Phase 7. Speed and accessibility

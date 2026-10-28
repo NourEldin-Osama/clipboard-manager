@@ -54,6 +54,82 @@ pub struct ServerConfig {
     pub launch: Option<LaunchConfig>,
 }
 
+/// What reads the text in images.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub enum TextReader {
+    /// Windows' own reader, in the languages installed in Windows.
+    Windows,
+    /// The reader built into the app: Latin letters, after a download.
+    BuiltIn,
+    /// A vision model on a server, asked with a prompt.
+    Server(ReaderServer),
+}
+
+impl TextReader {
+    /// New settings use Windows' reader where there is one.
+    fn for_new_settings() -> Self {
+        if cfg!(windows) {
+            Self::Windows
+        } else {
+            Self::BuiltIn
+        }
+    }
+
+    /// Settings from before the choice used the built-in reader, and keep it.
+    fn for_older_settings() -> Self {
+        Self::BuiltIn
+    }
+}
+
+/// A server that reads text in images: any OpenAI-style chat server with a
+/// vision model.
+#[derive(Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ReaderServer {
+    pub base_url: String,
+    /// Sent as `Authorization: Bearer <key>` when not empty. Encrypted in the
+    /// settings file (see secure.rs).
+    #[serde(default, with = "crate::secure::string")]
+    pub api_key: String,
+    /// Empty for the server's default model.
+    pub model: String,
+    /// What the model is asked, with the image.
+    pub prompt: String,
+}
+
+impl ReaderServer {
+    pub const PROMPT: &'static str =
+        "Read all the text in this image. Reply with the text only, line by line.";
+}
+
+impl Default for ReaderServer {
+    fn default() -> Self {
+        Self {
+            base_url: "http://127.0.0.1:8080/v1".into(),
+            api_key: String::new(),
+            model: String::new(),
+            prompt: Self::PROMPT.into(),
+        }
+    }
+}
+
+/// Written by hand so the API key never reaches a log.
+impl std::fmt::Debug for ReaderServer {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let key = if self.api_key.is_empty() {
+            ""
+        } else {
+            "<hidden>"
+        };
+        f.debug_struct("ReaderServer")
+            .field("base_url", &self.base_url)
+            .field("api_key", &key)
+            .field("model", &self.model)
+            .field("prompt", &self.prompt)
+            .finish()
+    }
+}
+
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct LaunchConfig {
@@ -321,6 +397,9 @@ pub struct Config {
     pub delete_after_days: u32,
     pub dedupe: bool,
     pub ocr_images: bool,
+    /// What reads the text in images.
+    #[serde(default = "TextReader::for_older_settings")]
+    pub text_reader: TextReader,
     pub search_mode: SearchMode,
     pub theme: Theme,
     /// Opens the quick popup. Settings from before the popup called it
@@ -380,6 +459,7 @@ impl Default for Config {
             delete_after_days: 0,
             dedupe: true,
             ocr_images: true,
+            text_reader: TextReader::for_new_settings(),
             search_mode: SearchMode::Hybrid,
             theme: Theme::System,
             popup_hotkey: "Alt+V".into(),
@@ -610,6 +690,29 @@ mod tests {
         let cfg: Config = serde_json::from_str(old).unwrap();
         assert_eq!(cfg.max_items, 100);
         assert!(cfg.server_profiles.latest().is_none());
+    }
+
+    #[test]
+    fn older_settings_keep_the_built_in_reader() {
+        let old: Config = serde_json::from_str(r#"{"ocr_images":true}"#).unwrap();
+        assert_eq!(old.text_reader, TextReader::BuiltIn);
+        assert_eq!(
+            Config::default().text_reader,
+            TextReader::for_new_settings()
+        );
+        let cfg = Config {
+            text_reader: TextReader::Server(ReaderServer {
+                api_key: "reader-key".into(),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        let json = serde_json::to_string(&cfg).unwrap();
+        let back: Config = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.text_reader, cfg.text_reader);
+        if cfg!(windows) {
+            assert!(!json.contains("reader-key"), "the key is encrypted");
+        }
     }
 
     #[test]

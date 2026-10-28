@@ -7,6 +7,13 @@ the notes here before a push that makes a release.
 ## 0.4.0
 
 - Fix: a global shortcut changed in Settings worked only after a restart.
+- Choose what reads the text in images, in Settings, Clipboard: Windows'
+  own reader, the built-in one, or a vision model on a server (such as
+  DeepSeek-OCR or PaddleOCR-VL) with your own prompt. Windows' reader also
+  reads Arabic when it is installed in Windows. New installs use it;
+  existing ones keep the built-in reader until you change it. A server
+  outside this PC gets a warning, and the app asks before it sends images
+  there.
 - Quick popup: Alt+V now opens a small window at the mouse pointer with
   the search field and the list. Pick an item and press Enter to paste it
   where you were. The popup closes when you paste, press Esc or click
