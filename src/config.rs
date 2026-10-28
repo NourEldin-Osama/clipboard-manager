@@ -349,6 +349,9 @@ pub struct Config {
     pub server_profiles: ServerProfiles,
     /// The built-in model last used, picked again when "Built-in" is chosen.
     pub builtin_repo: Option<String>,
+    /// Servers outside this PC that the user agreed to send the history to,
+    /// so applying one of them asks only once.
+    pub allowed_servers: Vec<String>,
 }
 
 impl Default for Config {
@@ -383,11 +386,24 @@ impl Default for Config {
             skipped_update: String::new(),
             server_profiles: ServerProfiles::default(),
             builtin_repo: None,
+            allowed_servers: Vec::new(),
         }
     }
 }
 
 impl Config {
+    /// Whether the user agreed to send the history to the server at `url`.
+    pub fn is_server_allowed(&self, url: &str) -> bool {
+        self.allowed_servers.contains(&address_key(url))
+    }
+
+    pub fn allow_server(&mut self, url: &str) {
+        let key = address_key(url);
+        if !self.allowed_servers.contains(&key) {
+            self.allowed_servers.push(key);
+        }
+    }
+
     /// Switches meaning search to `kind`. The settings of the backend being
     /// left are kept, so choosing it again restores them.
     pub fn choose_backend(&mut self, kind: BackendKind) {
@@ -634,5 +650,16 @@ mod tests {
     #[test]
     fn debug_output_hides_the_api_key() {
         assert!(!format!("{:?}", unsloth()).contains("unsloth-key"));
+    }
+
+    #[test]
+    fn an_agreed_server_is_remembered_by_its_address() {
+        let mut cfg = Config::default();
+        assert!(!cfg.is_server_allowed("https://api.example.com/v1"));
+        cfg.allow_server("https://API.example.com/v1/");
+        assert!(cfg.is_server_allowed("https://api.example.com/v1"));
+        assert!(!cfg.is_server_allowed("https://other.example.com/v1"));
+        cfg.allow_server("https://api.example.com/v1");
+        assert_eq!(cfg.allowed_servers.len(), 1);
     }
 }

@@ -242,11 +242,13 @@ pub(super) enum Command {
     CopyText(String),
 }
 
-/// A destructive action in Settings, waiting for its second click.
+/// An action in Settings waiting for its second click: a destructive one,
+/// or sending the history to a server outside this PC.
 #[derive(Clone, Copy, PartialEq)]
 enum Confirm {
     ClearHistory,
     ResetSettings,
+    SendToServer,
 }
 
 /// The shortcuts that can be changed in Settings.
@@ -382,6 +384,7 @@ impl App {
         apply_theme(&ctx, cfg.theme);
 
         let library = Library::open(Arc::new(Store::open(&paths.db, &paths.images)?))?;
+        let image_files = library.store().images.clone();
 
         let (ev_tx, events) = channel();
         let c = ctx.clone();
@@ -455,7 +458,7 @@ impl App {
             preview: None,
             loader: {
                 let c = ctx.clone();
-                ImageLoader::new(move || c.request_repaint())
+                ImageLoader::new(image_files, move || c.request_repaint())
             },
             detail: None,
             research_pending: false,
@@ -516,6 +519,13 @@ impl App {
                     reason = reason
                 ),
             };
+            app.set_error(message);
+        }
+        if let Some(aside) = app.library.store().moved_aside.clone() {
+            let message = log_error!(
+                "error-history-moved-aside",
+                file = aside.display().to_string()
+            );
             app.set_error(message);
         }
         let win = app.win.clone();
@@ -669,6 +679,11 @@ impl App {
         if self.win.opened.swap(false, Ordering::SeqCst) {
             self.selected = None;
             self.dirty = true;
+            // An error from while the window was hidden (such as after starting
+            // at sign-in) gets its full time on screen.
+            if let Some((_, at)) = &mut self.error {
+                *at = Instant::now();
+            }
         }
         if self.start_hidden > 0 {
             self.start_hidden -= 1;
@@ -1012,7 +1027,7 @@ impl App {
                 // the history once the file is saved (`Done::ImageSaved`).
                 let store = self.library.store().clone();
                 self.background.run(move || {
-                    let saved = store.save_png(id, &img).map_err(|e| format!("{e:#}"));
+                    let saved = store.images.save(id, &img).map_err(|e| format!("{e:#}"));
                     Done::ImageSaved { item, saved }
                 });
                 return;
@@ -1342,9 +1357,10 @@ impl App {
             return;
         };
         let flags = self.flags.clone();
+        let images = self.library.store().images.clone();
         self.background.run(move || Done::Copied {
             id,
-            result: write_clipboard(&flags, || clipboard::copy_item(&item)),
+            result: write_clipboard(&flags, || clipboard::copy_item(&item, &images)),
         });
     }
 

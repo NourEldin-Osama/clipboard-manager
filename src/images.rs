@@ -1,11 +1,13 @@
 //! Decodes thumbnails and previews on background threads so scrolling and
-//! selection never wait for a large PNG or JPEG.
+//! selection never wait for a large PNG or JPEG (or for decrypting one).
 
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{channel, Receiver, Sender};
 
 use eframe::egui::ColorImage;
+
+use crate::store::ImageFiles;
 
 /// Large enough for grid cards; list rows scale it down.
 pub const THUMB_PX: u32 = 280;
@@ -28,11 +30,18 @@ pub struct ImageLoader {
 }
 
 impl ImageLoader {
-    pub fn new(wake: impl Fn() + Send + Clone + 'static) -> Self {
+    pub fn new(files: ImageFiles, wake: impl Fn() + Send + Clone + 'static) -> Self {
         let (done_tx, done) = channel();
         // Separate threads, so a long queue of thumbnails never delays the preview.
-        let thumbs = spawn("thumbnails", THUMB_PX, false, done_tx.clone(), wake.clone());
-        let previews = spawn("preview", PREVIEW_PX, true, done_tx, wake);
+        let thumbs = spawn(
+            "thumbnails",
+            THUMB_PX,
+            false,
+            files.clone(),
+            done_tx.clone(),
+            wake.clone(),
+        );
+        let previews = spawn("preview", PREVIEW_PX, true, files, done_tx, wake);
         Self {
             thumbs,
             previews,
@@ -66,6 +75,7 @@ fn spawn(
     name: &str,
     max: u32,
     preview: bool,
+    files: ImageFiles,
     done: Sender<Loaded>,
     wake: impl Fn() + Send + 'static,
 ) -> Sender<(u64, PathBuf)> {
@@ -87,7 +97,7 @@ fn spawn(
                         path = p;
                     }
                 }
-                let image = decode(&path, max);
+                let image = decode(&files, id, &path, max);
                 if done
                     .send(Loaded {
                         id,
@@ -106,8 +116,8 @@ fn spawn(
     tx
 }
 
-fn decode(path: &Path, max: u32) -> Option<ColorImage> {
-    let img = image::open(path).ok()?;
+fn decode(files: &ImageFiles, id: u64, path: &Path, max: u32) -> Option<ColorImage> {
+    let img = files.open(id, path).ok()?;
     let img = if img.width() > max || img.height() > max {
         img.thumbnail(max, max)
     } else {

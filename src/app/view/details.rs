@@ -222,7 +222,8 @@ impl App {
                             .set_file_name(format!("clip-{}.png", it.id))
                             .save_file(),
                     ) {
-                        if let Err(e) = image::open(src).and_then(|i| i.save(&dst)) {
+                        let images = &self.library.store().images;
+                        if let Err(e) = images.open(it.id, src).and_then(|i| Ok(i.save(&dst)?)) {
                             self.set_error(log_error!("error-saving-image", error = e.to_string()));
                         }
                     }

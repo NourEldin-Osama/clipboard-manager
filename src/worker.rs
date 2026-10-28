@@ -422,7 +422,7 @@ impl State {
         if item.ocr.is_some() {
             return Ok(());
         }
-        let img = image::open(&path)?;
+        let img = self.store.images.open(id, &path)?;
         let text = match self.ensure_ocr() {
             Some(ocr) => ocr.recognize(&img)?,
             None => return Ok(()),
@@ -477,7 +477,7 @@ impl State {
                     .image
                     .clone()
                     .ok_or_else(|| anyhow!("image item without file"))
-                    .and_then(|p| Ok(image::open(p)?))
+                    .and_then(|p| self.store.images.open(id, &p))
                     .and_then(|img| emb.embed_image(&img));
                 self.finish(&key, id, r);
             } else {

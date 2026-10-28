@@ -84,6 +84,20 @@ pub(super) fn server_settings(
             );
         },
     );
+    if !s.base_url.trim().is_empty() && !crate::net::is_on_this_pc(&s.base_url) {
+        let host = crate::net::host(&s.base_url);
+        let text = if s
+            .base_url
+            .trim()
+            .to_ascii_lowercase()
+            .starts_with("http://")
+        {
+            t!("settings-server-remote-http", host = host)
+        } else {
+            t!("settings-server-remote", host = host)
+        };
+        note(ui, &format!("⚠ {text}"));
+    }
     plain_setting(
         ui,
         &t!("settings-server-key"),
