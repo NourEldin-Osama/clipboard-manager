@@ -405,7 +405,7 @@ impl App {
             }
             Preview::Loading => {
                 ui.add_space(24.0);
-                ui.add(egui::Spinner::new().size(22.0));
+                slow_spinner(ui, 22.0, None);
             }
             Preview::Missing => {
                 lbl(

@@ -7,6 +7,37 @@ pub(super) fn search_id() -> egui::Id {
     egui::Id::unique("search")
 }
 
+/// How often `slow_spinner` moves.
+const SPINNER_STEP: Duration = Duration::from_millis(200);
+
+/// egui's spinner, moving in steps a few times a second. egui's own asks
+/// for a new frame every frame, so the window redrew nonstop while, say,
+/// a long indexing ran.
+pub(crate) fn slow_spinner(ui: &mut Ui, size: f32, color: Option<Color32>) -> egui::Response {
+    let (rect, response) = ui.allocate_exact_size(Vec2::splat(size), Sense::hover());
+    response.widget_info(|| egui::WidgetInfo::new(egui::Role::ProgressIndicator));
+    if ui.is_rect_visible(rect) {
+        ui.ctx().request_repaint_after(SPINNER_STEP);
+        let step = SPINNER_STEP.as_secs_f64();
+        let time = (ui.input(|i| i.time) / step).floor() * step;
+        let color = color.unwrap_or_else(|| ui.visuals().strong_text_color());
+        let radius = rect.height().min(rect.width()) * 0.5 - 2.0;
+        let n_points = (radius.round() as u32).clamp(8, 128);
+        let start = time * std::f64::consts::TAU;
+        let end = start + 240f64.to_radians() * time.sin();
+        let points = (0..n_points)
+            .map(|i| {
+                let angle = start + (end - start) * f64::from(i) / f64::from(n_points);
+                let (sin, cos) = angle.sin_cos();
+                rect.center() + radius * Vec2::new(cos as f32, sin as f32)
+            })
+            .collect();
+        ui.painter()
+            .add(egui::Shape::line(points, Stroke::new(3.0, color)));
+    }
+    response
+}
+
 /// Text for a label or button in display order. `None` keeps the widget's own colour.
 pub(crate) fn txt(text: &str, size: f32, color: Option<Color32>) -> egui::WidgetText {
     if bidi::has_rtl(text) {

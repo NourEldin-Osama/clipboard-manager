@@ -186,7 +186,7 @@ pub(super) fn server_settings(
     super::view::row_wrapped(ui, |ui| {
         ui.add_space(10.0);
         if list.pending.is_some() {
-            ui.add(egui::Spinner::new().size(12.0));
+            super::view::slow_spinner(ui, 12.0, None);
             lbl(
                 ui,
                 &t!("settings-server-checking"),

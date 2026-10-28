@@ -43,7 +43,7 @@ pub(crate) use theme::{
 };
 pub(crate) use widgets::{
     chip, cut_line, far, flip, lbl, paint_text, primary_button, row, row_layout, row_wrapped,
-    start_anchor, tip, txt,
+    slow_spinner, start_anchor, tip, txt,
 };
 
 impl App {
@@ -220,9 +220,6 @@ impl eframe::App for App {
         }
         if self.research_pending {
             ctx.request_repaint_after(RESEARCH_EVERY);
-        }
-        if self.queue > 0 || self.backend == BackendState::Loading {
-            ctx.request_repaint_after(Duration::from_millis(500));
         }
     }
 
