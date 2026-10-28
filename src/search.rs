@@ -389,6 +389,7 @@ mod tests {
             tags: Vec::new(),
             uses: 0,
             app: None,
+            formatted: false,
         }
     }
 

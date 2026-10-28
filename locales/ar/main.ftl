@@ -202,6 +202,7 @@ details-add-tag-tip = إضافة وسم
 details-close = إغلاق التفاصيل (Esc)
 details-pinned = المثبتة
 details-from-files = من ملفاتك
+details-formatted = مع التنسيق
 details-copied-from = منسوخ من { $app }
 details-ignore-app = عدم تسجيل النسخ من { $app }
 details-delete = حذف

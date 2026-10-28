@@ -983,7 +983,11 @@ impl App {
     /// A copy from the clipboard: recorded, unless the secret filter or a
     /// rule holds it back.
     fn on_capture(&mut self, capture: Capture) {
-        let Capture { content, app } = capture;
+        let Capture {
+            content,
+            app,
+            formats,
+        } = capture;
         if let Captured::Skipped { reason, text } = content {
             let message = match reason {
                 SkipReason::Private => t!("toast-skipped-private"),
@@ -992,6 +996,7 @@ impl App {
             let kept = text.map(|t| Capture {
                 content: Captured::Text(t),
                 app,
+                formats,
             });
             self.skipped(message, kept);
             return;
@@ -1002,10 +1007,19 @@ impl App {
         };
         if self.rules.skips(app.as_deref(), text) {
             log::info!("copy not saved: a rule matched");
-            self.skipped(t!("toast-skipped-rule"), Some(Capture { content, app }));
+            let kept = Capture {
+                content,
+                app,
+                formats,
+            };
+            self.skipped(t!("toast-skipped-rule"), Some(kept));
             return;
         }
-        self.record(Capture { content, app });
+        self.record(Capture {
+            content,
+            app,
+            formats,
+        });
     }
 
     /// Stops recording copies from `app`, with a rule the user can remove
@@ -1033,7 +1047,11 @@ impl App {
 
     /// Adds a copy to the history, or moves its duplicate to the top.
     fn record(&mut self, capture: Capture) {
-        let Capture { content: c, app } = capture;
+        let Capture {
+            content: c,
+            app,
+            formats,
+        } = capture;
         let hash = c.hash();
         if self.cfg.dedupe {
             let found = match self.library.touch_duplicate(hash) {
@@ -1056,6 +1074,13 @@ impl App {
         item.app = app;
         match c {
             Captured::Text(t) => {
+                // Saved before the item, which then says it has them.
+                if let Some(formats) = &formats {
+                    match self.library.store().put_formats(id, formats) {
+                        Ok(()) => item.formatted = true,
+                        Err(e) => log::warn!("keeping the formatting failed: {e:#}"),
+                    }
+                }
                 item.kind = if looks_like_link(&t) {
                     Kind::Link
                 } else {
@@ -1416,10 +1441,20 @@ impl App {
             return;
         };
         let flags = self.flags.clone();
-        let images = self.library.store().images.clone();
-        self.background.run(move || Done::Copied {
-            id,
-            result: write_clipboard(&flags, || clipboard::copy_item(&item, &images)),
+        let store = self.library.store().clone();
+        self.background.run(move || {
+            let formats = if item.formatted {
+                store.formats(id).unwrap_or_else(|e| {
+                    log::warn!("reading the formatting failed: {e:#}");
+                    None
+                })
+            } else {
+                None
+            };
+            let result = write_clipboard(&flags, || {
+                clipboard::copy_item(&item, &store.images, formats.as_ref(), false)
+            });
+            Done::Copied { id, result }
         });
     }
 

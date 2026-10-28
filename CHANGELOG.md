@@ -6,6 +6,9 @@ the notes here before a push that makes a release.
 
 ## 0.4.0
 
+- Formatting is kept: text copied with formatting (HTML or RTF, from a
+  browser or Word, say) pastes back with it. The formatting is stored
+  encrypted, apart from the list, and kept up to 2 MB per copy.
 - Rules per app: Settings, Clipboard can skip every copy from a program, or
   text that matches a pattern, from one program or any. A pattern is simple
   (with * and ?) or a regular expression. A skipped copy can still be kept

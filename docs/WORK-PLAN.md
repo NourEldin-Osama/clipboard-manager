@@ -109,7 +109,7 @@ Status: `[ ]` to do, `[~]` in progress, `[x]` done, `[!]` waiting for a decision
 ### Phase 6. Features
 - [ ] 6.1 Paste straight into the app you were using
 - [ ] 6.2 Paste as plain text
-- [ ] 6.3 Keep formatting (HTML and RTF)
+- [x] 6.3 Keep formatting (HTML and RTF)
 - [ ] 6.4 Quick popup at the cursor with search, and a button to open the full window
 - [x] 6.5 Rules per app
 - [x] 6.6 Delete by age

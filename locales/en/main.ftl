@@ -195,6 +195,7 @@ details-add-tag-tip = Add a tag
 details-close = Close details (Esc)
 details-pinned = Pinned
 details-from-files = From your files
+details-formatted = With formatting
 details-copied-from = Copied from { $app }
 details-ignore-app = Don't record copies from { $app }
 details-delete = Delete

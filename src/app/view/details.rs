@@ -196,6 +196,9 @@ impl App {
             if it.origin == Origin::Imported {
                 icons::chip(ui, Icon::Folder, &t!("details-from-files"), Color32::GRAY);
             }
+            if it.formatted {
+                icons::chip(ui, Icon::Text, &t!("details-formatted"), Color32::GRAY);
+            }
             far(ui, |ui| {
                 let keys = self.cfg.keys.clone();
                 if icons::icon_button(ui, Icon::Delete, &hint(&t!("details-delete"), &keys.delete))

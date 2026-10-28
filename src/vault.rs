@@ -101,6 +101,11 @@ pub fn item_context(id: u64) -> Vec<u8> {
     [b"item ".as_slice(), &id.to_le_bytes()].concat()
 }
 
+/// What a text's formatting row is bound to.
+pub fn formats_context(id: u64) -> Vec<u8> {
+    [b"formats ".as_slice(), &id.to_le_bytes()].concat()
+}
+
 /// What an image file is bound to.
 pub fn image_context(id: u64) -> Vec<u8> {
     [b"image ".as_slice(), &id.to_le_bytes()].concat()

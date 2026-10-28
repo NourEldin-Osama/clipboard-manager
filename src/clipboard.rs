@@ -6,13 +6,19 @@ use std::sync::mpsc::Sender;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use crate::store::{fnv1a, ImageFiles, Item, Kind};
+use crate::store::{fnv1a, Formats, ImageFiles, Item, Kind};
+
+/// Formatting bigger than this (HTML and RTF together) isn't kept: the
+/// copy pastes as plain text instead.
+const MAX_FORMATS_BYTES: usize = 2 * 1024 * 1024;
 
 /// A copy, with the program it came from.
 pub struct Capture {
     pub content: Captured,
     /// The program's file name, as in `chrome.exe`, when Windows says.
     pub app: Option<String>,
+    /// The HTML and RTF versions of a text copy, if it had any.
+    pub formats: Option<Formats>,
 }
 
 pub enum Captured {
@@ -148,9 +154,15 @@ pub fn spawn_watcher(flags: Arc<Flags>, tx: Sender<Capture>, wake: impl Fn() + S
                 if let Captured::Skipped { reason, .. } = &c {
                     log::info!("copy not saved: {reason:?}");
                 }
+                let formats = match &c {
+                    // Only kept when the clipboard didn't change meanwhile.
+                    Captured::Text(_) => read_formats().filter(|_| sequence_number() == seq),
+                    _ => None,
+                };
                 let capture = Capture {
                     content: c,
                     app: source_app(),
+                    formats,
                 };
                 if tx.send(capture).is_err() {
                     return;
@@ -283,6 +295,74 @@ fn source_app() -> Option<String> {
     None
 }
 
+/// The clipboard's names for the formatted versions of text.
+#[cfg(windows)]
+const FORMAT_NAMES: [&str; 2] = ["HTML Format", "Rich Text Format"];
+
+/// The HTML and RTF on the clipboard, as raw bytes, if there are any and
+/// they fit in `MAX_FORMATS_BYTES` together.
+#[cfg(windows)]
+fn read_formats() -> Option<Formats> {
+    use clipboard_win::raw;
+    let _open = clipboard_win::Clipboard::new_attempts(10).ok()?;
+    let mut found = [None, None];
+    let mut total = 0;
+    for (name, slot) in FORMAT_NAMES.iter().zip(&mut found) {
+        let Some(format) = raw::register_format(name) else {
+            continue;
+        };
+        let Some(size) = raw::size(format.get()) else {
+            continue;
+        };
+        total += size.get();
+        if total > MAX_FORMATS_BYTES {
+            return None;
+        }
+        let mut data = Vec::new();
+        if raw::get_vec(format.get(), &mut data).is_ok() {
+            *slot = Some(data);
+        }
+    }
+    let [html, rtf] = found;
+    (html.is_some() || rtf.is_some()).then_some(Formats { html, rtf })
+}
+
+#[cfg(not(windows))]
+fn read_formats() -> Option<Formats> {
+    None
+}
+
+/// Puts text and its formatted versions on the clipboard together, so the
+/// app pasted into picks the richest one it understands.
+#[cfg(windows)]
+fn copy_formatted(text: &str, formats: &Formats) -> anyhow::Result<()> {
+    use clipboard_win::{options::NoClear, raw};
+    let start = std::time::Instant::now();
+    let _open = loop {
+        match clipboard_win::Clipboard::new_attempts(10) {
+            Ok(open) => break open,
+            Err(_) if start.elapsed() < BUSY_RETRY_FOR => {
+                std::thread::sleep(Duration::from_millis(50))
+            }
+            Err(_) => anyhow::bail!("the clipboard is busy (another program is holding it open)"),
+        }
+    };
+    let failed = |e: clipboard_win::ErrorCode| anyhow::anyhow!("writing to the clipboard: {e}");
+    raw::empty().map_err(failed)?;
+    raw::set_string_with(text, NoClear).map_err(failed)?;
+    for (name, data) in FORMAT_NAMES.iter().zip([&formats.html, &formats.rtf]) {
+        if let (Some(format), Some(data)) = (raw::register_format(name), data) {
+            raw::set_without_clear(format.get(), data).map_err(failed)?;
+        }
+    }
+    Ok(())
+}
+
+#[cfg(not(windows))]
+fn copy_formatted(text: &str, _formats: &Formats) -> anyhow::Result<()> {
+    copy_text(text)
+}
+
 /// One long-lived handle for writing. On Linux the copied data is served by
 /// this handle, so dropping it right after a copy would make the data vanish.
 static WRITER: Mutex<Option<arboard::Clipboard>> = Mutex::new(None);
@@ -314,9 +394,18 @@ fn write(f: impl Fn(&mut arboard::Clipboard) -> Result<(), arboard::Error>) -> a
 /// Puts an item from the history back on the clipboard. Slow for a big image
 /// (it is read from its file), and it waits while another program holds
 /// the clipboard open, so the window calls it from a background thread.
-pub fn copy_item(item: &Item, images: &ImageFiles) -> anyhow::Result<()> {
+/// `formats` are the text's formatted versions; `plain` leaves them out.
+pub fn copy_item(
+    item: &Item,
+    images: &ImageFiles,
+    formats: Option<&Formats>,
+    plain: bool,
+) -> anyhow::Result<()> {
     match item.kind {
-        Kind::Text | Kind::Link => copy_text(&item.text),
+        Kind::Text | Kind::Link => match formats {
+            Some(formats) if !plain => copy_formatted(&item.text, formats),
+            _ => copy_text(&item.text),
+        },
         Kind::Files => copy_files(&item.text.lines().map(PathBuf::from).collect::<Vec<_>>()),
         Kind::Image => {
             let path = item
