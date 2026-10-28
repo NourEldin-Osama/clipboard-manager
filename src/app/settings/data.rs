@@ -135,18 +135,18 @@ impl App {
             self.confirm = None;
             *d = Config::default();
         }
-        note(ui, &t!("settings-privacy-note"));
+        // "Nothing you copy is sent anywhere" stops being true while the
+        // search model runs on a server outside this PC.
+        match &self.cfg.backend {
+            EmbedBackend::Server(s) if !crate::net::is_on_this_pc(&s.base_url) => {
+                let host = crate::net::host(&s.base_url);
+                let text = t!("settings-privacy-note-remote", host = host);
+                note(ui, &format!("⚠ {text}"));
+            }
+            _ => note(ui, &t!("settings-privacy-note")),
+        }
         if self.library.store().is_encrypted() {
             note(ui, &t!("settings-privacy-encrypted"));
-        }
-        if let EmbedBackend::Server(s) = &self.cfg.backend {
-            if !crate::net::is_on_this_pc(&s.base_url) {
-                let host = crate::net::host(&s.base_url);
-                note(
-                    ui,
-                    &format!("⚠ {}", t!("settings-privacy-remote", host = host)),
-                );
-            }
         }
     }
 }
