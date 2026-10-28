@@ -457,7 +457,7 @@ impl App {
                             end,
                             n.to_string(),
                             FontId::proportional(11.5),
-                            weak.gamma_multiply(0.7),
+                            weak,
                         );
                     }
                     Line::Row(r) => {

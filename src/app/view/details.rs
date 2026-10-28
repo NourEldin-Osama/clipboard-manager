@@ -195,10 +195,12 @@ impl App {
                 icons::chip(ui, Icon::PinFilled, &t!("details-pinned"), accent());
             }
             if it.origin == Origin::Imported {
-                icons::chip(ui, Icon::Folder, &t!("details-from-files"), Color32::GRAY);
+                let weak = ui.visuals().weak_text_color();
+                icons::chip(ui, Icon::Folder, &t!("details-from-files"), weak);
             }
             if it.formatted {
-                icons::chip(ui, Icon::Text, &t!("details-formatted"), Color32::GRAY);
+                let weak = ui.visuals().weak_text_color();
+                icons::chip(ui, Icon::Text, &t!("details-formatted"), weak);
             }
             far(ui, |ui| {
                 let keys = self.cfg.keys.clone();
