@@ -218,7 +218,14 @@ pub enum TimeFormat {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Keys {
-    pub copy: String,
+    /// Pastes into the program the window opened over. Settings from before
+    /// pasting called it `copy`.
+    #[serde(alias = "copy")]
+    pub paste: String,
+    /// Pastes the text without its formatting.
+    pub paste_plain: String,
+    /// Only copies.
+    pub copy_only: String,
     pub pin: String,
     pub delete: String,
     pub tag: String,
@@ -228,7 +235,9 @@ pub struct Keys {
 impl Default for Keys {
     fn default() -> Self {
         Self {
-            copy: "Enter".into(),
+            paste: "Enter".into(),
+            paste_plain: "Shift+Enter".into(),
+            copy_only: "Ctrl+Enter".into(),
             pin: "Ctrl+P".into(),
             delete: "Shift+Delete".into(),
             tag: "Ctrl+T".into(),
@@ -595,6 +604,16 @@ mod tests {
         let cfg: Config = serde_json::from_str(old).unwrap();
         assert_eq!(cfg.max_items, 100);
         assert!(cfg.server_profiles.latest().is_none());
+    }
+
+    #[test]
+    fn the_old_copy_key_becomes_the_paste_key() {
+        let old = r#"{"keys":{"copy":"Ctrl+Space","pin":"Ctrl+P"}}"#;
+        let cfg: Config = serde_json::from_str(old).unwrap();
+        assert_eq!(cfg.keys.paste, "Ctrl+Space");
+        assert_eq!(cfg.keys.copy_only, Keys::default().copy_only);
+        let back: Config = serde_json::from_str(&serde_json::to_string(&cfg).unwrap()).unwrap();
+        assert_eq!(back.keys, cfg.keys);
     }
 
     #[cfg(windows)]

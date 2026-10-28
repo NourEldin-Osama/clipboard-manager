@@ -387,7 +387,7 @@ impl App {
                     actions.push(Command::Select(it.id));
                 }
                 if resp.double_clicked() {
-                    actions.push(Command::Copy(it.id));
+                    actions.push(Command::Copy(it.id, Paste::Yes));
                 }
                 if hot {
                     let size = 30.0;
@@ -420,7 +420,7 @@ impl App {
                             at(rect.right() - 8.0 - 2.0 * size - 4.0),
                             Icon::Copy,
                             t!("item-copy"),
-                            Command::Copy(it.id),
+                            Command::Copy(it.id, Paste::No),
                         ),
                         (
                             at(rect.right() - 8.0 - size),

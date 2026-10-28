@@ -16,6 +16,7 @@ mod library;
 mod models;
 mod net;
 mod ocr;
+mod paste;
 mod privacy;
 mod rules;
 mod search;

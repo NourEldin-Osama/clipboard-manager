@@ -198,10 +198,12 @@ impl eframe::App for App {
         }
         self.window_logic(ctx);
         self.handle_events(ctx);
-        self.focused.store(
-            ctx.input(|i| i.viewport().focused.unwrap_or(false)),
-            Ordering::SeqCst,
-        );
+        let focused = ctx.input(|i| i.viewport().focused.unwrap_or(false));
+        // Leaving the window for another program makes pasting only copy:
+        // the program it opened over may not be the one the user was in.
+        if self.focused.swap(focused, Ordering::SeqCst) && !focused {
+            self.win.previous.store(paste::NO_WINDOW, Ordering::SeqCst);
+        }
         let dropped: Vec<PathBuf> = ctx.input(|i| {
             i.raw
                 .dropped_files

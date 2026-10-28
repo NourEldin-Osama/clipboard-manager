@@ -394,17 +394,16 @@ fn write(f: impl Fn(&mut arboard::Clipboard) -> Result<(), arboard::Error>) -> a
 /// Puts an item from the history back on the clipboard. Slow for a big image
 /// (it is read from its file), and it waits while another program holds
 /// the clipboard open, so the window calls it from a background thread.
-/// `formats` are the text's formatted versions; `plain` leaves them out.
+/// `formats` are the text's formatted versions, if it goes back with them.
 pub fn copy_item(
     item: &Item,
     images: &ImageFiles,
     formats: Option<&Formats>,
-    plain: bool,
 ) -> anyhow::Result<()> {
     match item.kind {
         Kind::Text | Kind::Link => match formats {
-            Some(formats) if !plain => copy_formatted(&item.text, formats),
-            _ => copy_text(&item.text),
+            Some(formats) => copy_formatted(&item.text, formats),
+            None => copy_text(&item.text),
         },
         Kind::Files => copy_files(&item.text.lines().map(PathBuf::from).collect::<Vec<_>>()),
         Kind::Image => {

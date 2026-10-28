@@ -453,7 +453,7 @@ impl App {
                             actions.push(Command::Select(it.id));
                         }
                         if resp.double_clicked() {
-                            actions.push(Command::Copy(it.id));
+                            actions.push(Command::Copy(it.id, Paste::Yes));
                         }
                         if hot {
                             // Hover actions replace the time at the right edge.
@@ -465,7 +465,7 @@ impl App {
                             let mut buttons = vec![
                                 (Icon::Delete, t!("item-delete"), Command::Delete(it.id)),
                                 (pin.0, pin.1, Command::Pin(it.id)),
-                                (Icon::Copy, t!("item-copy"), Command::Copy(it.id)),
+                                (Icon::Copy, t!("item-copy"), Command::Copy(it.id, Paste::No)),
                             ];
                             if can_open {
                                 buttons.push((

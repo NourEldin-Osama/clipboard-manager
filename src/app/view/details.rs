@@ -249,10 +249,7 @@ impl App {
                 {
                     ctx.open_url(egui::OpenUrl::new_tab(it.text.trim()));
                 }
-                let copy_tip = t!(
-                    "details-copy-tip",
-                    action = hint(&t!("details-copy"), &keys.copy)
-                );
+                let copy_tip = hint(&t!("details-copy"), &keys.copy_only);
                 if icon_button_ex(
                     ui,
                     Icon::Copy,
@@ -264,7 +261,7 @@ impl App {
                 )
                 .clicked()
                 {
-                    self.run(Command::Copy(it.id));
+                    self.run(Command::Copy(it.id, Paste::No));
                 }
             });
         });
@@ -460,7 +457,9 @@ impl App {
             let k = &self.cfg.keys;
             let rows = [
                 ("Up+Down", t!("details-key-move")),
-                (k.copy.as_str(), t!("details-key-copy")),
+                (k.paste.as_str(), t!("details-key-paste")),
+                (k.paste_plain.as_str(), t!("details-key-paste-plain")),
+                (k.copy_only.as_str(), t!("details-key-copy-only")),
                 (k.pin.as_str(), t!("details-key-pin")),
                 (k.tag.as_str(), t!("details-key-tag")),
                 (k.delete.as_str(), t!("details-key-delete")),

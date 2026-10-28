@@ -7,6 +7,13 @@ the notes here before a push that makes a release.
 ## 0.4.0
 
 - Fix: a global shortcut changed in Settings worked only after a restart.
+- Paste into the program you were using: open the window with the shortcut,
+  pick an item and press Enter or double-click it. The window hides and the
+  item is pasted where you were. Before, Enter and double-click only copied.
+  Shift+Enter pastes text without its formatting, and Ctrl+Enter only
+  copies. Programs that run as administrator get only the copy, because
+  Windows doesn't let the app press keys there. The keys can be changed in
+  Settings, Shortcuts.
 - Formatting is kept: text copied with formatting (HTML or RTF, from a
   browser or Word, say) pastes back with it. The formatting is stored
   encrypted, apart from the list, and kept up to 2 MB per copy.

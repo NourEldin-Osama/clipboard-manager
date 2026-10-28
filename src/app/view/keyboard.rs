@@ -114,18 +114,35 @@ impl App {
             })
         };
         let k = self.cfg.keys.clone();
-        let on = |s: &str| !typing && shortcut::pressed(ctx, s);
-        let (enter, del, pin, tag, view) = (
-            on(&k.copy),
-            on(&k.delete),
-            on(&k.pin),
-            on(&k.tag),
-            on(&k.view),
-        );
+        let [paste, paste_plain, copy_only, del, pin, tag, view] = if typing {
+            [false; 7]
+        } else {
+            shortcut::pressed_each(
+                ctx,
+                [
+                    &k.paste,
+                    &k.paste_plain,
+                    &k.copy_only,
+                    &k.delete,
+                    &k.pin,
+                    &k.tag,
+                    &k.view,
+                ],
+            )
+        };
+        let copy = if paste {
+            Some(Paste::Yes)
+        } else if paste_plain {
+            Some(Paste::Plain)
+        } else if copy_only {
+            Some(Paste::No)
+        } else {
+            None
+        };
         if view {
             self.set_view(self.cfg.view.next());
         }
-        if enter || del || pin || tag {
+        if copy.is_some() || del || pin || tag {
             // These act on the selected item: let it follow what was just typed.
             self.finish_search();
         }
@@ -155,8 +172,8 @@ impl App {
             }
         }
         if let Some(id) = self.selected {
-            if enter {
-                self.run(Command::Copy(id));
+            if let Some(paste) = copy {
+                self.run(Command::Copy(id, paste));
             }
             if del {
                 self.run(Command::Delete(id));

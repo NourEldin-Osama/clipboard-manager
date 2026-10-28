@@ -108,8 +108,8 @@ Status: `[ ]` to do, `[~]` in progress, `[x]` done, `[!]` waiting for a decision
 - [x] 5.4 `tools/st_server.py`: Host and Origin checks, request size limit
 
 ### Phase 6. Features
-- [ ] 6.1 Paste straight into the app you were using
-- [ ] 6.2 Paste as plain text
+- [x] 6.1 Paste straight into the app you were using
+- [x] 6.2 Paste as plain text
 - [x] 6.3 Keep formatting (HTML and RTF)
 - [ ] 6.4 Quick popup at the cursor with search, and a button to open the full window
 - [x] 6.5 Rules per app

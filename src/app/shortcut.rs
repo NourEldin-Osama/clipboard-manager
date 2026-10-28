@@ -59,6 +59,19 @@ pub(super) fn pressed(ctx: &egui::Context, s: &str) -> bool {
     parse(s).is_some_and(|sc| ctx.input_mut(|i| i.consume_shortcut(&sc)))
 }
 
+/// `pressed` for several shortcuts. egui lets an extra Shift or Alt through
+/// ("Enter" also takes Shift+Enter), so the shortcuts with more keys are
+/// checked first and keep their own presses.
+pub(super) fn pressed_each<const N: usize>(ctx: &egui::Context, shortcuts: [&str; N]) -> [bool; N] {
+    let mut order: Vec<usize> = (0..N).collect();
+    order.sort_by_key(|&i| std::cmp::Reverse(shortcuts[i].split('+').count()));
+    let mut each = [false; N];
+    for i in order {
+        each[i] = pressed(ctx, shortcuts[i]);
+    }
+    each
+}
+
 fn is_modifier(k: egui::Key) -> bool {
     let n = k.name();
     ["Control", "Shift", "Alt", "Super", "Meta", "Command"]
@@ -305,4 +318,52 @@ pub(super) fn recorder(
         out = Recorded::Cancelled;
     }
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Which of `shortcuts` one press of Enter with `modifiers` sets off.
+    fn press_enter(modifiers: Modifiers, shortcuts: [&str; 3]) -> [bool; 3] {
+        let input = egui::RawInput {
+            events: vec![Event::Key {
+                key: egui::Key::Enter,
+                physical_key: None,
+                pressed: true,
+                repeat: false,
+                modifiers,
+            }],
+            focused: true,
+            ..Default::default()
+        };
+        let mut each = [false; 3];
+        let mut output = egui::Context::default().run_ui(input, |ui| {
+            each = pressed_each(ui.ctx(), shortcuts);
+        });
+        // The font atlas upload no renderer takes here.
+        output.textures_delta.clear();
+        each
+    }
+
+    #[test]
+    fn a_press_sets_off_only_the_shortcut_with_its_keys() {
+        let ctrl = Modifiers {
+            ctrl: true,
+            command: true,
+            ..Modifiers::NONE
+        };
+        let shortcuts = ["Enter", "Shift+Enter", "Ctrl+Enter"];
+        assert_eq!(
+            press_enter(Modifiers::NONE, shortcuts),
+            [true, false, false]
+        );
+        assert_eq!(
+            press_enter(Modifiers::SHIFT, shortcuts),
+            [false, true, false]
+        );
+        assert_eq!(press_enter(ctrl, shortcuts), [false, false, true]);
+        let swapped = ["Shift+Enter", "Enter", "Ctrl+Enter"];
+        assert_eq!(press_enter(Modifiers::SHIFT, swapped), [true, false, false]);
+    }
 }

@@ -3,7 +3,7 @@
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::str::FromStr;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicIsize, AtomicU64, Ordering};
 use std::sync::mpsc::{channel, Receiver, TryRecvError};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -23,6 +23,7 @@ use crate::i18n::{self, log_error, t};
 use crate::images::ImageLoader;
 use crate::library::{Library, Removed};
 use crate::models::{self, Progress, SIGLIP_MODELS};
+use crate::paste;
 use crate::search::{self, Filter, Hit, Searcher};
 use crate::store::{looks_like_link, Item, Kind, Origin, Store};
 use crate::tray::{Tray, TrayCmd};
@@ -152,10 +153,20 @@ struct WindowCtl {
     focus_search: Arc<AtomicBool>,
     /// Set by `show`: the next frame selects the top item.
     opened: Arc<AtomicBool>,
+    /// The other program's window that was in front when the shortcut
+    /// opened this one: where pasting goes. `paste::NO_WINDOW` otherwise.
+    previous: Arc<AtomicIsize>,
 }
 
 impl WindowCtl {
+    /// Shows the window; with no program to go back to, pasting only copies.
     fn show(&self) {
+        self.show_over(paste::NO_WINDOW);
+    }
+
+    /// Shows the window over `previous`, the window pasting goes to.
+    fn show_over(&self, previous: paste::Window) {
+        self.previous.store(previous, Ordering::SeqCst);
         self.hidden.store(false, Ordering::SeqCst);
         self.opened.store(true, Ordering::SeqCst);
         self.ctx
@@ -222,7 +233,8 @@ struct Toast {
 /// instead of changing the history themselves.
 pub(super) enum Command {
     Select(u64),
-    Copy(u64),
+    /// Puts the item back on the clipboard, and maybe pastes it.
+    Copy(u64, Paste),
     Delete(u64),
     Pin(u64),
     /// Shows the item in the details pane.
@@ -242,6 +254,16 @@ pub(super) enum Command {
     CopyText(String),
 }
 
+/// Whether putting an item back on the clipboard also pastes it into the
+/// program the window opened over. Without such a program it only copies.
+#[derive(Clone, Copy, PartialEq)]
+pub(super) enum Paste {
+    No,
+    Yes,
+    /// Pastes text without its formatting.
+    Plain,
+}
+
 /// An action in Settings waiting for its second click: a destructive one,
 /// or sending the history to a server outside this PC.
 #[derive(Clone, Copy, PartialEq)]
@@ -256,7 +278,9 @@ enum Confirm {
 enum ShortcutField {
     Show,
     IgnoreNext,
-    Copy,
+    Paste,
+    PastePlain,
+    CopyOnly,
     Pin,
     Delete,
     Tag,
@@ -427,6 +451,7 @@ impl App {
             hidden: Arc::new(AtomicBool::new(false)),
             focus_search: focus_search.clone(),
             opened: Arc::new(AtomicBool::new(false)),
+            previous: Arc::new(AtomicIsize::new(paste::NO_WINDOW)),
         };
         let (tray_tx, tray_rx) = channel();
         let mut app = Self {
@@ -639,7 +664,7 @@ impl App {
                 if focused.load(Ordering::SeqCst) && !win.hidden.load(Ordering::SeqCst) {
                     win.hide();
                 } else {
-                    win.show();
+                    win.show_over(paste::window_in_front());
                 }
             } else if pressed == ids.ignore.load(Ordering::SeqCst) {
                 flags.ignore_next.store(true, Ordering::SeqCst);
@@ -938,9 +963,9 @@ impl App {
     fn run(&mut self, command: Command) {
         match command {
             Command::Select(id) => self.selected = Some(id),
-            Command::Copy(id) => {
+            Command::Copy(id, paste) => {
                 self.selected = Some(id);
-                self.copy(id);
+                self.copy(id, paste);
             }
             Command::Delete(id) => self.delete(id),
             Command::Pin(id) => self.toggle_pin(id),
@@ -1168,14 +1193,32 @@ impl App {
             Done::ImageSaved { saved: Err(e), .. } => {
                 self.set_error(log_error!("error-saving-image", error = e.to_string()))
             }
-            Done::Copied { id, result: Ok(()) } => {
+            Done::Copied {
+                id,
+                paste: how,
+                result: Ok(()),
+            } => {
                 if let Err(e) = self.library.record_use(id) {
                     self.set_error(log_error!("error-saving-item", error = e.to_string()));
                 }
                 self.dirty = true;
-                self.toast(t!("toast-copied"));
-                if self.cfg.minimize_after_copy {
+                let target = self.win.previous.load(Ordering::SeqCst);
+                if how == Paste::No || !paste::exists(target) {
+                    self.toast(t!("toast-copied"));
+                    if self.cfg.minimize_after_copy {
+                        self.win.hide();
+                    }
+                } else if paste::is_out_of_reach(target) {
+                    // Windows doesn't let this app press keys there: the
+                    // window stays to say so, and the user pastes.
+                    self.toast_for(t!("toast-copied-admin"), Duration::from_secs(8));
+                } else {
                     self.win.hide();
+                    std::thread::spawn(move || {
+                        if let Err(e) = paste::paste_into(target) {
+                            log::warn!("pasting failed, the item is copied: {e:#}");
+                        }
+                    });
                 }
             }
             Done::Copied { result: Err(e), .. } => {
@@ -1455,15 +1498,16 @@ impl App {
         self.dirty = true;
     }
 
-    /// Puts the item on the clipboard in the background; `finish` reports it.
-    fn copy(&mut self, id: u64) {
+    /// Puts the item on the clipboard in the background; `finish` reports it
+    /// and pastes it.
+    fn copy(&mut self, id: u64, paste: Paste) {
         let Some(item) = self.library.get(id).cloned() else {
             return;
         };
         let flags = self.flags.clone();
         let store = self.library.store().clone();
         self.background.run(move || {
-            let formats = if item.formatted {
+            let formats = if item.formatted && paste != Paste::Plain {
                 store.formats(id).unwrap_or_else(|e| {
                     log::warn!("reading the formatting failed: {e:#}");
                     None
@@ -1472,9 +1516,9 @@ impl App {
                 None
             };
             let result = write_clipboard(&flags, || {
-                clipboard::copy_item(&item, &store.images, formats.as_ref(), false)
+                clipboard::copy_item(&item, &store.images, formats.as_ref())
             });
-            Done::Copied { id, result }
+            Done::Copied { id, paste, result }
         });
     }
 
