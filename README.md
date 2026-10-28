@@ -31,12 +31,12 @@ public feature descriptions only, and it shares no code or assets with Planck an
 |---|---|
 | **Clipboard history** | Text, links, images and copied files. Duplicate copies are merged and moved to the top. Pin items to keep them forever. |
 | **Tags** | Label any item with one or more tags (`Ctrl+T`, or *Add tag* in the details pane; existing tags are suggested as you type). The most used tags appear as filters beside the kind filters, tags are searchable (`work` or `#work`), and tagged items, like pinned ones, are never pruned or cleared. Right-click a tag filter to remove it from every item. |
-| **Global hotkeys** | `Alt+V` shows/hides the window, `Alt+C` skips recording the next copy. Both can be changed in Settings. |
-| **Keyboard-first** | Type to search, `↑/↓` to move, `Enter` (or double-click) copies and hides the window so you can paste right away, `Ctrl+P` pins, `Ctrl+T` tags, `Shift+Del` deletes, `Ctrl+L` switches layout, `Esc` closes the details pane, clears the search or hides the window. In the grid, `↑/↓` move a row and `←/→` one card. Every shortcut except the arrows and `Esc` can be changed in *Settings → Shortcuts*: click it and press the new keys. |
+| **Global hotkeys** | `Alt+V` opens a quick popup at the mouse pointer to search and paste, `Alt+Shift+V` opens the full window, `Alt+C` skips recording the next copy. All three can be changed in Settings. |
+| **Keyboard-first** | Type to search, `↑/↓` to move, `Enter` (or double-click) pastes into the program you opened the window from with the shortcut, `Shift+Enter` pastes text without its formatting, `Ctrl+Enter` only copies, `Ctrl+P` pins, `Ctrl+T` tags, `Shift+Del` deletes, `Ctrl+L` switches layout, `Esc` closes the details pane, clears the search or hides the window. In the grid, `↑/↓` move a row and `←/→` one card. Every shortcut except the arrows and `Esc` can be changed in *Settings → Shortcuts*: click it and press the new keys. |
 | **English and Arabic** | Switch the language in *Settings → General*. Arabic lays the whole window out right to left, and Arabic text, whether part of the interface or something you copied, is shaped, ordered and wrapped correctly, even when it mixes in numbers or English. To add a language, see [docs/TRANSLATING.md](docs/TRANSLATING.md). A bundled Arabic font ([Noto Sans Arabic](https://github.com/notofonts/arabic), SIL Open Font License) means it doesn't depend on the PC's fonts. |
 | **12- or 24-hour clock** | Times are stored in UTC and shown in your time zone, including daylight saving, with the clock you choose in *Settings → General*. |
 | **System tray and start at sign-in** | In *Settings → General*: keep the app running in the system tray (closing or minimising the window hides it there; click the icon to open it, right-click to pause recording or quit), and start it hidden when you sign in. |
-| **On-device OCR** | Text in images and screenshots becomes searchable ([ocrs](https://github.com/robertknight/ocrs), pure Rust). |
+| **Text in images** | Text in images and screenshots becomes searchable. *Settings → Clipboard* chooses the reader: Windows' own (the default for new installs; it reads the languages installed in Windows), the built-in one ([ocrs](https://github.com/robertknight/ocrs), pure Rust, Latin letters), or a vision model on a server you choose (llama.cpp, vLLM with DeepSeek-OCR or PaddleOCR-VL, Ollama) with your own prompt. |
 | **Sort by** | The menu at the end of the filter row: *Best match* (while searching), *Recent*, *Oldest*, *A to Z* and *Most used* (items you copy back from the list most often). Searching and browsing each remember their own choice. *Settings → Appearance → Pinned on top* keeps pinned items first while browsing (not while searching). |
 | **Semantic search** | Smart mode ranks by meaning (similarity), with a boost for items that contain your words; results are ordered best first and the relevance bars match that order. You can also choose *Meaning* or *Keyword* only. |
 | **Built-in model (pure Rust)** | SigLIP (English or multilingual, Arabic included) runs inside the app on the CPU through [candle](https://github.com/huggingface/candle). It puts text and images in one shared space, so text can find images. |
@@ -47,16 +47,22 @@ public feature descriptions only, and it shares no code or assets with Planck an
 | **Look and feel** | A list grouped by Pinned / Today / Yesterday / This week, with kind icons, thumbnails, matched words highlighted and relevance bars while searching. Three layouts, switched with the view button beside the search box: **Grid** (cards), **List** (full-width rows) and **Detail** (list plus a details pane with a large preview). Hovering an item shows delete, pin, copy and open-details buttons (the card's content stays put). Light and dark themes, five accent colours, comfortable or compact density. |
 | **Settings that explain themselves** | Sections down the side (General, Search & AI model, Clipboard, Shortcuts, Appearance, Data & privacy). Every option has an ℹ explanation and plain-language choices. Settings you've changed are highlighted, each with a one-click reset. Changes apply instantly. |
 
-The only network access is the one-time model downloads you start yourself in Settings, a 12 MB OCR model download
-the first time an image is processed (turn OCR off to avoid it), and the update check described below (it can be turned off).
-Nothing you copy is ever sent. Everything else works without a network connection.
+The only network access is the one-time model downloads you start yourself in Settings, a 12 MB download the first
+time the built-in text reader reads an image, and the update check described below (it can be turned off). Nothing you
+copy is sent, unless you choose a search or text reader server outside this PC: the app warns about that and asks
+first. Everything else works without a network connection.
 
 ## Install on Windows
 
-### Option A: download the prebuilt `.exe`
+### Option A: download the installer or the prebuilt `.exe`
 Every change merged into `main` is built on GitHub's Windows machines and published on the
 [Releases page](https://github.com/NourEldin-Osama/clipboard-manager/releases/latest), with notes listing the pull requests it includes.
-Download **clipboard-manager-windows-x64.exe** from the latest release, or install it with [Scoop](https://scoop.sh):
+
+**clipboard-manager-windows-x64-setup.exe** installs the app for your Windows account, without administrator rights,
+in `%LOCALAPPDATA%\Programs\Clipboard Manager`, with Start menu and desktop shortcuts and an entry in *Installed apps*.
+Uninstalling asks whether to delete your history and settings too.
+
+Or download **clipboard-manager-windows-x64.exe** to run it without installing, or install it with [Scoop](https://scoop.sh):
 
 ```powershell
 scoop install https://github.com/NourEldin-Osama/clipboard-manager/releases/latest/download/clipboard-manager.json
@@ -208,12 +214,17 @@ src/
   main.rs        window setup
   app.rs         egui UI: search bar, filters, grid/list views, details pane, tags, settings
   clipboard.rs   watcher thread (arboard; clipboard sequence number + sensitive-format check on Windows)
+  paste.rs       pasting into the program the user was in (brings it to the front, presses Ctrl+V)
+  screen.rs      the mouse pointer and its screen, for placing the quick popup
   worker.rs      background indexer thread; owns the OCR engine + embedder; queries pre-empt indexing
   embed/
     mod.rs       Embedding (dense / multi-vector), cosine & MaxSim, Embedder trait
     siglip.rs    in-process SigLIP via candle
     server.rs    OpenAI-compatible client + optional llama-server launcher
-  ocr.rs         ocrs wrapper
+  ocr/
+    mod.rs       the chosen text reader; the built-in one (ocrs)
+    windows_reader.rs  Windows' own text reader (Windows.Media.Ocr)
+    server.rs    a vision model on a server, through /chat/completions
   search.rs      keyword scoring, similarity ranking with a word-match boost
   store.rs       redb persistence; items and copied images encrypted on Windows
   vault.rs       the history's key (sealed with DPAPI) and its AES-256-GCM encryption
@@ -224,6 +235,7 @@ src/
   i18n.rs        interface texts from locales/*/main.ftl (Project Fluent), local date/time display
   update.rs      self-update: release manifest, signed download, exe swap
   autostart.rs   start at sign-in (auto-launch: Run key / launch agent / XDG autostart)
+  installed.rs   keeps the version shown in Installed apps current as the installed app updates itself
 ```
 
 The GUI, database, clipboard handling, OCR and built-in model inference are all Rust. External model servers are optional and
@@ -233,7 +245,6 @@ the UltraVBERT family).
 ## Roadmap
 - Native in-process GGUF inference for EmbeddingGemma (candle quantized backend)
 - Optional AES-GCM encryption at rest
-- Paste directly into the previous window (simulated `Ctrl+V`)
 - System tray icon and close-to-tray
 - PDF text extraction for imported folders
 

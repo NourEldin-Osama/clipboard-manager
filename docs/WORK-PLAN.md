@@ -33,6 +33,7 @@ Status: `[ ]` to do, `[~]` in progress, `[x]` done, `[!]` waiting for a decision
 | D22 | Uninstalling asks whether to delete the history and settings | You | Decided |
 | D23 | Each release starts its notes with its version's section of CHANGELOG.md | You | Decided |
 | D24 | Inno Setup is installed on this PC, so the installer is tested before a release | You | Decided |
+| D25 | The quick popup is its own small window with no taskbar button; the full window never moves or changes size. One click selects; double-click or Enter pastes | You | Decided |
 
 ## Order of work, and why
 
@@ -82,6 +83,9 @@ Status: `[ ]` to do, `[~]` in progress, `[x]` done, `[!]` waiting for a decision
 - [x] 2.27 In the status bar a long error ran over the item count, and an Arabic error would show its words in the wrong order (found in the Phase 4 check)
 - [x] 2.28 A portable copy or a dev build (CLIPBOARD_MANAGER_HOME) kept its window state in the installed app's folder (found in the Phase 4 check)
 - [x] 2.29 The update banner and the update status in Settings cut a long Arabic message at its start, and a long message could run over the buttons or the version next to it (found in the Phase 4 check)
+- [x] 2.30 A global shortcut changed in Settings did nothing until a restart: the library keeps only the first event handler (found while adding the quick popup)
+- [x] 2.31 The quick popup closed the app when the full window was minimized: eframe 0.37 can't make a new window during such a frame (found in the Phase 6 check)
+- [x] 2.32 With the full window open, the popup's search field didn't get the keyboard (found in the Phase 6 check)
 
 ### Phase 3. Structure (no behavior change)
 - [x] 3.1 Split `view.rs` (theme, widgets, time format, top bar, list, grid, details, status bar, keyboard)
@@ -107,14 +111,14 @@ Status: `[ ]` to do, `[~]` in progress, `[x]` done, `[!]` waiting for a decision
 - [x] 5.4 `tools/st_server.py`: Host and Origin checks, request size limit
 
 ### Phase 6. Features
-- [ ] 6.1 Paste straight into the app you were using
-- [ ] 6.2 Paste as plain text
-- [ ] 6.3 Keep formatting (HTML and RTF)
-- [ ] 6.4 Quick popup at the cursor with search, and a button to open the full window
-- [ ] 6.5 Rules per app
-- [ ] 6.6 Delete by age
-- [ ] 6.7 OCR providers: built-in, Windows OCR, or an OCR server with a custom prompt (DeepSeek-OCR, PaddleOCR-VL, llama.cpp, other vision models)
-- [ ] 6.8 Register the app on the PC: Start menu and desktop shortcuts, an entry in Installed apps (D10)
+- [x] 6.1 Paste straight into the app you were using
+- [x] 6.2 Paste as plain text
+- [x] 6.3 Keep formatting (HTML and RTF)
+- [x] 6.4 Quick popup at the cursor with search, and a button to open the full window
+- [x] 6.5 Rules per app
+- [x] 6.6 Delete by age
+- [x] 6.7 OCR providers: built-in, Windows OCR, or an OCR server with a custom prompt (DeepSeek-OCR, PaddleOCR-VL, llama.cpp, other vision models)
+- [x] 6.8 Register the app on the PC: Start menu and desktop shortcuts, an entry in Installed apps (D10)
 
 ### Phase 7. Speed and accessibility
 - [ ] 7.1 No repaint loop while indexing, cached file checks, thumbnail cache that keeps visible images

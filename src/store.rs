@@ -29,6 +29,8 @@ const MODELS: TableDefinition<&str, ()> = TableDefinition::new("models");
 const META: TableDefinition<&str, u64> = TableDefinition::new("meta");
 /// The history's key, sealed for the Windows account (`HISTORY_KEY`).
 const SECRETS: TableDefinition<&str, &[u8]> = TableDefinition::new("secrets");
+/// The formatted versions of text items (`Formats`), read only to paste.
+const FORMATS: TableDefinition<u64, &[u8]> = TableDefinition::new("formats");
 const HISTORY_KEY: &str = "history_key";
 
 /// The stored format. `migrate` brings an older file up to it, and a newer
@@ -97,6 +99,12 @@ pub struct Item {
     /// Times it was copied back from the list ("Most used").
     #[serde(default)]
     pub uses: u32,
+    /// The program it was copied from, as in `chrome.exe`, when known.
+    #[serde(default)]
+    pub app: Option<String>,
+    /// It has formatted versions in the store (`Store::formats`).
+    #[serde(default)]
+    pub formatted: bool,
 }
 
 impl Item {
@@ -117,6 +125,8 @@ impl Item {
             source: None,
             tags: Vec::new(),
             uses: 0,
+            app: None,
+            formatted: false,
         }
     }
 
@@ -175,6 +185,54 @@ impl Item {
             out.push('…');
         }
         out
+    }
+}
+
+/// The formatted versions of a text copy, as the clipboard had them, so a
+/// paste can give them back unchanged.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Formats {
+    /// The clipboard's "HTML Format" data, header included.
+    pub html: Option<Vec<u8>>,
+    /// The clipboard's "Rich Text Format" data.
+    pub rtf: Option<Vec<u8>>,
+}
+
+impl Formats {
+    /// Each version as a presence byte, a length and the bytes.
+    fn encode(&self) -> Vec<u8> {
+        let mut out = Vec::new();
+        for part in [&self.html, &self.rtf] {
+            match part {
+                Some(bytes) => {
+                    out.push(1);
+                    out.extend_from_slice(&(bytes.len() as u32).to_le_bytes());
+                    out.extend_from_slice(bytes);
+                }
+                None => out.push(0),
+            }
+        }
+        out
+    }
+
+    fn decode(mut bytes: &[u8]) -> Result<Self> {
+        let mut part = || -> Result<Option<Vec<u8>>> {
+            let (&present, rest) = bytes.split_first().context("formatting is cut short")?;
+            bytes = rest;
+            if present == 0 {
+                return Ok(None);
+            }
+            let length = bytes.get(..4).context("formatting is cut short")?;
+            let length = u32::from_le_bytes(length.try_into()?) as usize;
+            let data = bytes
+                .get(4..4 + length)
+                .context("formatting is cut short")?;
+            bytes = &bytes[4 + length..];
+            Ok(Some(data.to_vec()))
+        };
+        let html = part()?;
+        let rtf = part()?;
+        Ok(Self { html, rtf })
     }
 }
 
@@ -332,6 +390,33 @@ impl Store {
         Ok(Some(saved))
     }
 
+    /// Saves the formatted versions of a text item.
+    pub fn put_formats(&self, id: u64, formats: &Formats) -> Result<()> {
+        let bytes = formats.encode();
+        let stored = match &self.vault {
+            Some(vault) => vault.seal(&vault::formats_context(id), &bytes)?,
+            None => bytes,
+        };
+        let txn = self.db.begin_write()?;
+        txn.open_table(FORMATS)?.insert(id, stored.as_slice())?;
+        txn.commit()?;
+        Ok(())
+    }
+
+    /// The formatted versions of a text item, if it has any.
+    pub fn formats(&self, id: u64) -> Result<Option<Formats>> {
+        let txn = self.db.begin_read()?;
+        let table = txn.open_table(FORMATS)?;
+        let Some(stored) = table.get(id)? else {
+            return Ok(None);
+        };
+        let bytes = match &self.vault {
+            Some(vault) => vault.unseal(&vault::formats_context(id), stored.value())?,
+            None => stored.value().to_vec(),
+        };
+        Formats::decode(&bytes).map(Some)
+    }
+
     pub fn delete(&self, item: &Item) -> Result<()> {
         self.delete_many(std::slice::from_ref(item))
     }
@@ -352,8 +437,10 @@ impl Store {
                 .collect();
             let mut table = txn.open_table(ITEMS)?;
             let mut vectors = txn.open_table(EMBEDDINGS)?;
+            let mut formats = txn.open_table(FORMATS)?;
             for item in items {
                 table.remove(item.id)?;
+                formats.remove(item.id)?;
                 for model in &models {
                     vectors.remove((model.as_str(), item.id))?;
                 }
@@ -491,6 +578,7 @@ fn migrate(db: &Database) -> Result<()> {
     {
         txn.open_table(ITEMS)?;
         txn.open_table(SECRETS)?;
+        txn.open_table(FORMATS)?;
         let embeddings = txn.open_table(EMBEDDINGS)?;
         let mut models = txn.open_table(MODELS)?;
         let mut meta = txn.open_table(META)?;
@@ -651,6 +739,20 @@ fn write_encrypted_copy(
             for row in read.open_table(MODELS)?.iter()? {
                 models.insert(row?.0.value(), ())?;
             }
+            // A history from before formatting was kept has no such table.
+            let mut formats = write.open_table(FORMATS)?;
+            match read.open_table(FORMATS) {
+                Ok(plain_formats) => {
+                    for row in plain_formats.iter()? {
+                        let (id, bytes) = row?;
+                        let id = id.value();
+                        let sealed = vault.seal(&vault::formats_context(id), bytes.value())?;
+                        formats.insert(id, sealed.as_slice())?;
+                    }
+                }
+                Err(redb::TableError::TableDoesNotExist(_)) => {}
+                Err(e) => return Err(e.into()),
+            }
             write
                 .open_table(META)?
                 .insert("schema_version", SCHEMA_VERSION)?;
@@ -758,6 +860,59 @@ mod tests {
     fn file_contains(path: &Path, text: &str) -> bool {
         let bytes = std::fs::read(path).unwrap();
         bytes.windows(text.len()).any(|w| w == text.as_bytes())
+    }
+
+    #[test]
+    fn formats_keep_each_version_or_its_absence() {
+        for formats in [
+            Formats::default(),
+            Formats {
+                html: Some(b"<b>hi</b>".to_vec()),
+                rtf: None,
+            },
+            Formats {
+                html: None,
+                rtf: Some(b"{\\rtf1 hi}".to_vec()),
+            },
+            Formats {
+                html: Some(Vec::new()),
+                rtf: Some(b"x".to_vec()),
+            },
+        ] {
+            assert_eq!(Formats::decode(&formats.encode()).unwrap(), formats);
+        }
+        assert!(
+            Formats::decode(&[1, 9, 0, 0, 0, b'x']).is_err(),
+            "cut short"
+        );
+    }
+
+    #[test]
+    fn formatting_is_stored_apart_and_deleted_with_its_item() {
+        let dir = temp_dir("formats");
+        let path = dir.join("history.redb");
+        let store = Store::open(&path, &dir).unwrap();
+        let mut it = item(1, "bold words");
+        it.formatted = true;
+        store.put(&it).unwrap();
+        let formats = Formats {
+            html: Some(b"<b>bold words in a formatted copy</b>".to_vec()),
+            rtf: Some(b"{\\rtf1 {\\b bold words in a formatted copy}}".to_vec()),
+        };
+        store.put_formats(1, &formats).unwrap();
+        assert_eq!(store.formats(1).unwrap(), Some(formats));
+        assert_eq!(store.formats(2).unwrap(), None);
+        if store.is_encrypted() {
+            drop(store);
+            assert!(!file_contains(&path, "formatted copy"));
+            let store = Store::open(&path, &dir).unwrap();
+            store.delete(&it).unwrap();
+            assert_eq!(store.formats(1).unwrap(), None);
+        } else {
+            store.delete(&it).unwrap();
+            assert_eq!(store.formats(1).unwrap(), None);
+        }
+        std::fs::remove_dir_all(dir).ok();
     }
 
     #[cfg(windows)]

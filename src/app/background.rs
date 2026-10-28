@@ -9,6 +9,7 @@ use std::sync::mpsc::{channel, Receiver, Sender};
 
 use eframe::egui;
 
+use super::Paste;
 use crate::store::Item;
 
 /// A finished piece of background work.
@@ -19,7 +20,11 @@ pub(super) enum Done {
         saved: Result<PathBuf, String>,
     },
     /// An item put back on the clipboard, or why it wasn't.
-    Copied { id: u64, result: Result<(), String> },
+    Copied {
+        id: u64,
+        paste: Paste,
+        result: Result<(), String>,
+    },
     /// Text read from an image put on the clipboard, or why it wasn't.
     TextCopied(Result<(), String>),
     /// Files read by an import, not saved yet.
@@ -116,11 +121,13 @@ mod tests {
         let background = Background::spawn(egui::Context::default());
         background.run(|| Done::Copied {
             id: 1,
+            paste: Paste::No,
             result: Ok(()),
         });
         background.run(|| panic!("a task that crashes"));
         background.run(|| Done::Copied {
             id: 2,
+            paste: Paste::No,
             result: Ok(()),
         });
         assert!(matches!(next(&background), Done::Copied { id: 1, .. }));

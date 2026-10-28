@@ -215,11 +215,27 @@ jobs:
           YAML
           (cd winget && 7z a -tzip ../winget-manifests.zip . > /dev/null)
 
+      # The per-user installer (installer/clipboard-manager.iss). Its Arabic
+      # texts need Inno Setup 6.5 or newer, so the newest one is installed.
+      - name: Installer
+        shell: pwsh
+        run: |
+          choco upgrade innosetup -y --no-progress
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" /Q `
+            "/DAppVersion=${{ steps.version.outputs.version }}" `
+            "/DAppBuild=${{ github.run_number }}" `
+            "/DSourceExe=..\clipboard-manager-windows-x64.exe" `
+            installer\clipboard-manager.iss
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
       - name: Upload exe
         uses: actions/upload-artifact@v7
         with:
           name: clipboard-manager-windows-x64-${{ github.sha }}
-          path: clipboard-manager-windows-x64.exe
+          path: |
+            clipboard-manager-windows-x64.exe
+            clipboard-manager-windows-x64-setup.exe
           if-no-files-found: error
           retention-days: 30
 
@@ -241,7 +257,7 @@ jobs:
               echo "CHANGELOG.md has no notes for $version yet."
             fi
             echo
-            echo '**Install:** download `clipboard-manager-windows-x64.exe` below and run it. No installer is needed; settings and history are kept in `%APPDATA%\clipboard-manager\data`.'
+            echo '**Install:** download `clipboard-manager-windows-x64-setup.exe` below to install the app for your Windows account, with Start menu and desktop shortcuts and an entry in Installed apps. No administrator rights are needed. Or download `clipboard-manager-windows-x64.exe` and run it without installing. Either way the app updates itself, and settings and history are kept in `%APPDATA%\clipboard-manager\data`.'
             echo
             echo 'Windows build of `${{ github.sha }}`.'
           } > release-notes.md
@@ -259,6 +275,7 @@ jobs:
           # updater.json is what the app reads from releases/latest/download/.
           files: |
             clipboard-manager-windows-x64.exe
+            clipboard-manager-windows-x64-setup.exe
             updater.json
             clipboard-manager.json
             winget-manifests.zip

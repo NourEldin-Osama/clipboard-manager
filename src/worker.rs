@@ -10,10 +10,11 @@ use std::sync::Arc;
 use anyhow::{anyhow, Result};
 
 use crate::config::EmbedBackend;
+use crate::config::TextReader;
 use crate::embed::{server::ServerEmbedder, siglip::SigLip, Embedder, Embedding, TextRole};
 use crate::i18n::{log_error, t};
 use crate::models;
-use crate::ocr::Ocr;
+use crate::ocr::{Ocr, Reader};
 use crate::store::{Kind, Store};
 
 /// Items embedded per model call while indexing.
@@ -23,6 +24,7 @@ pub enum Job {
     Ocr(u64),
     Embed(u64),
     SetBackend(EmbedBackend),
+    SetTextReader(TextReader),
 }
 
 pub enum Event {
@@ -77,6 +79,7 @@ impl Worker {
     pub fn spawn(
         store: Arc<Store>,
         models_dir: PathBuf,
+        text_reader: TextReader,
         events: Sender<Event>,
         wake: impl Fn() + Send + 'static,
     ) -> Self {
@@ -91,8 +94,10 @@ impl Worker {
                     models_dir,
                     events,
                     wake: Box::new(wake),
+                    text_reader,
                     ocr: None,
                     ocr_failed: false,
+                    ocr_error_shown: false,
                     embedder: None,
                     backend: None,
                     have: HashSet::new(),
@@ -118,7 +123,7 @@ impl Worker {
     }
 
     fn push(&self, job: Job, priority: Priority) {
-        if !matches!(job, Job::SetBackend(_)) {
+        if !matches!(job, Job::SetBackend(_) | Job::SetTextReader(_)) {
             self.pending
                 .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         }
@@ -137,6 +142,7 @@ impl Worker {
 struct Queues {
     query: Option<(u64, String)>,
     backend: Option<EmbedBackend>,
+    reader: Option<TextReader>,
     fresh: VecDeque<Job>,
     backfill: VecDeque<Job>,
 }
@@ -144,6 +150,7 @@ struct Queues {
 enum Next {
     Query(u64, String),
     Backend(EmbedBackend),
+    Reader(TextReader),
     Ocr(u64),
     Embed(Vec<u64>),
 }
@@ -154,6 +161,7 @@ impl Queues {
             // Only the newest search and the latest model choice matter.
             Message::Query(seq, text) => self.query = Some((seq, text)),
             Message::Job(Job::SetBackend(b), _) => self.backend = Some(b),
+            Message::Job(Job::SetTextReader(r), _) => self.reader = Some(r),
             Message::Job(job, Priority::Fresh) => self.fresh.push_back(job),
             Message::Job(job, Priority::Backfill) => self.backfill.push_back(job),
         }
@@ -162,6 +170,7 @@ impl Queues {
     fn is_empty(&self) -> bool {
         self.query.is_none()
             && self.backend.is_none()
+            && self.reader.is_none()
             && self.fresh.is_empty()
             && self.backfill.is_empty()
     }
@@ -172,6 +181,9 @@ impl Queues {
         }
         if let Some(b) = self.backend.take() {
             return Some(Next::Backend(b));
+        }
+        if let Some(r) = self.reader.take() {
+            return Some(Next::Reader(r));
         }
         let queue = if self.fresh.is_empty() {
             &mut self.backfill
@@ -195,6 +207,7 @@ impl Queues {
                 Some(Next::Embed(ids))
             }
             Job::SetBackend(b) => Some(Next::Backend(b)),
+            Job::SetTextReader(r) => Some(Next::Reader(r)),
         }
     }
 }
@@ -205,7 +218,7 @@ impl Next {
         match self {
             Next::Ocr(id) => vec![*id],
             Next::Embed(ids) => ids.clone(),
-            Next::Query(..) | Next::Backend(_) => Vec::new(),
+            Next::Query(..) | Next::Backend(_) | Next::Reader(_) => Vec::new(),
         }
     }
 }
@@ -215,8 +228,12 @@ struct State {
     models_dir: PathBuf,
     events: Sender<Event>,
     wake: Box<dyn Fn() + Send>,
-    ocr: Option<Ocr>,
+    /// The reader chosen in Settings; `ocr` is that reader once made.
+    text_reader: TextReader,
+    ocr: Option<Reader>,
     ocr_failed: bool,
+    /// A failure to read an image was shown since the reader was chosen.
+    ocr_error_shown: bool,
     embedder: Option<Box<dyn Embedder>>,
     /// The model last asked for, to load again if a panic loses it.
     backend: Option<EmbedBackend>,
@@ -274,9 +291,24 @@ impl State {
         match next {
             Next::Query(seq, text) => self.run_query(seq, &text),
             Next::Backend(b) => self.set_backend(b),
+            Next::Reader(r) => {
+                self.text_reader = r;
+                self.ocr = None;
+                self.ocr_failed = false;
+                self.ocr_error_shown = false;
+            }
             Next::Ocr(id) => {
                 if let Err(e) = self.do_ocr(id) {
-                    log::warn!("OCR failed: {e:#}");
+                    // A server can fail for every image: the first failure shows.
+                    if self.ocr_error_shown {
+                        log::warn!("reading text in an image failed: {e:#}");
+                    } else {
+                        self.ocr_error_shown = true;
+                        self.emit(Event::Error(log_error!(
+                            "error-ocr-unavailable",
+                            error = format!("{e:#}")
+                        )));
+                    }
                 }
             }
             Next::Embed(ids) => self.embed_batch(&ids),
@@ -386,14 +418,27 @@ impl State {
         }
     }
 
-    fn ensure_ocr(&mut self) -> Option<&Ocr> {
+    fn ensure_ocr(&mut self) -> Option<&Reader> {
         if self.ocr.is_none() && !self.ocr_failed {
-            let r = (|| -> Result<Ocr> {
-                if !models::ocr_ready(&self.models_dir) {
-                    self.emit(Event::Status(t!("status-downloading-ocr")));
-                    models::download_ocr(&self.models_dir, &Arc::default())?;
+            let r = (|| -> Result<Reader> {
+                match self.text_reader.clone() {
+                    TextReader::BuiltIn => {
+                        if !models::ocr_ready(&self.models_dir) {
+                            self.emit(Event::Status(t!("status-downloading-ocr")));
+                            models::download_ocr(&self.models_dir, &Arc::default())?;
+                        }
+                        Ok(Reader::BuiltIn(Ocr::load(&models::ocr_dir(
+                            &self.models_dir,
+                        ))?))
+                    }
+                    #[cfg(windows)]
+                    TextReader::Windows => Ok(Reader::Windows(crate::ocr::WindowsReader::new()?)),
+                    #[cfg(not(windows))]
+                    TextReader::Windows => anyhow::bail!("Windows' reader works only on Windows"),
+                    TextReader::Server(cfg) => {
+                        Ok(Reader::Server(crate::ocr::ServerReader::new(cfg)))
+                    }
                 }
-                Ocr::load(&models::ocr_dir(&self.models_dir))
             })();
             match r {
                 Ok(o) => self.ocr = Some(o),
@@ -567,10 +612,26 @@ mod tests {
             .map(|next| match next {
                 Next::Query(seq, _) => format!("query {seq}"),
                 Next::Backend(_) => "backend".into(),
+                Next::Reader(_) => "reader".into(),
                 Next::Ocr(id) => format!("ocr {id}"),
                 Next::Embed(ids) => format!("embed {ids:?}"),
             })
             .collect()
+    }
+
+    #[test]
+    fn the_latest_reader_choice_comes_before_the_images_waiting() {
+        let mut queues = Queues::default();
+        queues.push(job(Job::Ocr(1), Priority::Fresh));
+        queues.push(job(
+            Job::SetTextReader(TextReader::Windows),
+            Priority::Fresh,
+        ));
+        queues.push(job(
+            Job::SetTextReader(TextReader::BuiltIn),
+            Priority::Fresh,
+        ));
+        assert_eq!(order(&mut queues), ["reader", "ocr 1"]);
     }
 
     #[test]
@@ -633,8 +694,10 @@ mod tests {
             models_dir: dir.clone(),
             events,
             wake: Box::new(|| {}),
+            text_reader: TextReader::BuiltIn,
             ocr: None,
             ocr_failed: false,
+            ocr_error_shown: false,
             embedder: Some(Box::new(Fragile)),
             backend: None,
             have: HashSet::new(),

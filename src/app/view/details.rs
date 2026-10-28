@@ -196,6 +196,9 @@ impl App {
             if it.origin == Origin::Imported {
                 icons::chip(ui, Icon::Folder, &t!("details-from-files"), Color32::GRAY);
             }
+            if it.formatted {
+                icons::chip(ui, Icon::Text, &t!("details-formatted"), Color32::GRAY);
+            }
             far(ui, |ui| {
                 let keys = self.cfg.keys.clone();
                 if icons::icon_button(ui, Icon::Delete, &hint(&t!("details-delete"), &keys.delete))
@@ -246,10 +249,7 @@ impl App {
                 {
                     ctx.open_url(egui::OpenUrl::new_tab(it.text.trim()));
                 }
-                let copy_tip = t!(
-                    "details-copy-tip",
-                    action = hint(&t!("details-copy"), &keys.copy)
-                );
+                let copy_tip = hint(&t!("details-copy"), &keys.copy_only);
                 if icon_button_ex(
                     ui,
                     Icon::Copy,
@@ -261,7 +261,7 @@ impl App {
                 )
                 .clicked()
                 {
-                    self.run(Command::Copy(it.id));
+                    self.run(Command::Copy(it.id, Paste::No));
                 }
             });
         });
@@ -269,6 +269,24 @@ impl App {
         let meta = self.meta_line(&it);
         let weak = ui.visuals().weak_text_color();
         row(ui, |ui| ui.label(txt(&meta, 12.5, Some(weak))));
+        if let Some(app) = &it.app {
+            let ignored = self.cfg.rules.iter().any(|r| r.skips_app(app));
+            let mut ignore = false;
+            row(ui, |ui| {
+                ui.label(txt(
+                    &t!("details-copied-from", app = app.as_str()),
+                    12.5,
+                    Some(weak),
+                ));
+                if !ignored {
+                    let link = t!("details-ignore-app", app = app.as_str());
+                    ignore = ui.link(txt(&link, 12.5, None)).clicked();
+                }
+            });
+            if ignore {
+                self.ignore_app(app);
+            }
+        }
         ui.add_space(6.0);
         self.tag_editor(ui, &it);
         ui.add_space(10.0);
@@ -439,7 +457,9 @@ impl App {
             let k = &self.cfg.keys;
             let rows = [
                 ("Up+Down", t!("details-key-move")),
-                (k.copy.as_str(), t!("details-key-copy")),
+                (k.paste.as_str(), t!("details-key-paste")),
+                (k.paste_plain.as_str(), t!("details-key-paste-plain")),
+                (k.copy_only.as_str(), t!("details-key-copy-only")),
                 (k.pin.as_str(), t!("details-key-pin")),
                 (k.tag.as_str(), t!("details-key-tag")),
                 (k.delete.as_str(), t!("details-key-delete")),

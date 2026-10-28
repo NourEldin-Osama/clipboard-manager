@@ -3,7 +3,7 @@
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::str::FromStr;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicIsize, AtomicU64, Ordering};
 use std::sync::mpsc::{channel, Receiver, TryRecvError};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -14,7 +14,7 @@ use eframe::egui::{
 use global_hotkey::hotkey::HotKey;
 use global_hotkey::{GlobalHotKeyEvent, GlobalHotKeyManager, HotKeyState};
 
-use crate::clipboard::{self, Captured, Flags, SkipReason};
+use crate::clipboard::{self, Capture, Captured, Flags, SkipReason};
 use crate::config::{
     Config, EmbedBackend, LaunchConfig, Paths, SearchMode, ServerConfig, SortOrder, Theme, ViewMode,
 };
@@ -23,6 +23,7 @@ use crate::i18n::{self, log_error, t};
 use crate::images::ImageLoader;
 use crate::library::{Library, Removed};
 use crate::models::{self, Progress, SIGLIP_MODELS};
+use crate::paste;
 use crate::search::{self, Filter, Hit, Searcher};
 use crate::store::{looks_like_link, Item, Kind, Origin, Store};
 use crate::tray::{Tray, TrayCmd};
@@ -142,40 +143,86 @@ impl ModelList {
     }
 }
 
-/// Shows and hides the main window from any thread: hotkeys, the tray, the UI.
-/// With the tray on, hiding takes the window off the taskbar; otherwise it minimises.
+/// Shows and hides the main window and the quick popup from any thread:
+/// hotkeys, the tray, the UI. With the tray on, hiding takes the window off
+/// the taskbar; otherwise it minimises. The commands name the main window,
+/// because one may come while the popup is being drawn.
 #[derive(Clone)]
 struct WindowCtl {
     ctx: egui::Context,
     tray: Arc<AtomicBool>,
     hidden: Arc<AtomicBool>,
     focus_search: Arc<AtomicBool>,
-    /// Set by `show`: the next frame selects the top item.
+    /// Set by `show_over` and `show_popup`: the next frame selects the top item.
     opened: Arc<AtomicBool>,
+    /// The other program's window that was in front when a shortcut opened
+    /// this app: where pasting goes. `paste::NO_WINDOW` otherwise.
+    previous: Arc<AtomicIsize>,
+    /// The quick popup is open.
+    popup: Arc<AtomicBool>,
+    /// The popup has the keyboard.
+    popup_focused: Arc<AtomicBool>,
+    /// Set by `show_popup`: the next frame places the popup at the mouse
+    /// pointer and gives it the keyboard.
+    popup_placing: Arc<AtomicBool>,
 }
 
 impl WindowCtl {
+    /// Shows the full window; with no program to go back to, pasting only copies.
     fn show(&self) {
-        self.hidden.store(false, Ordering::SeqCst);
+        self.show_over(paste::NO_WINDOW);
+    }
+
+    /// Shows the full window over `previous`, the window pasting goes to.
+    fn show_over(&self, previous: paste::Window) {
+        self.previous.store(previous, Ordering::SeqCst);
         self.opened.store(true, Ordering::SeqCst);
-        self.ctx
-            .send_viewport_cmd(egui::ViewportCommand::Visible(true));
-        self.ctx
-            .send_viewport_cmd(egui::ViewportCommand::Minimized(false));
-        self.ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
+        self.show_full();
+    }
+
+    /// Shows the full window and closes the popup; pasting still goes
+    /// where it went.
+    fn show_full(&self) {
+        self.popup.store(false, Ordering::SeqCst);
+        self.hidden.store(false, Ordering::SeqCst);
+        self.main_window(egui::ViewportCommand::Visible(true));
+        self.main_window(egui::ViewportCommand::Minimized(false));
+        self.main_window(egui::ViewportCommand::Focus);
         self.focus_search.store(true, Ordering::SeqCst);
         self.ctx.request_repaint();
     }
 
+    /// Opens the quick popup at the mouse pointer, over `previous`, the
+    /// window pasting goes to.
+    fn show_popup(&self, previous: paste::Window) {
+        self.previous.store(previous, Ordering::SeqCst);
+        self.opened.store(true, Ordering::SeqCst);
+        self.popup_focused.store(false, Ordering::SeqCst);
+        self.popup_placing.store(true, Ordering::SeqCst);
+        self.popup.store(true, Ordering::SeqCst);
+        self.focus_search.store(true, Ordering::SeqCst);
+        self.ctx.request_repaint();
+    }
+
+    fn is_popup_open(&self) -> bool {
+        self.popup.load(Ordering::SeqCst)
+    }
+
+    /// Closes the popup if it is open, else hides the full window.
     fn hide(&self) {
-        if self.tray.load(Ordering::SeqCst) {
+        if self.popup.swap(false, Ordering::SeqCst) {
+            self.ctx.request_repaint();
+        } else if self.tray.load(Ordering::SeqCst) {
             self.hidden.store(true, Ordering::SeqCst);
-            self.ctx
-                .send_viewport_cmd(egui::ViewportCommand::Visible(false));
+            self.main_window(egui::ViewportCommand::Visible(false));
         } else {
-            self.ctx
-                .send_viewport_cmd(egui::ViewportCommand::Minimized(true));
+            self.main_window(egui::ViewportCommand::Minimized(true));
         }
+    }
+
+    fn main_window(&self, command: egui::ViewportCommand) {
+        self.ctx
+            .send_viewport_cmd_to(egui::ViewportId::ROOT, command);
     }
 }
 
@@ -222,7 +269,8 @@ struct Toast {
 /// instead of changing the history themselves.
 pub(super) enum Command {
     Select(u64),
-    Copy(u64),
+    /// Puts the item back on the clipboard, and maybe pastes it.
+    Copy(u64, Paste),
     Delete(u64),
     Pin(u64),
     /// Shows the item in the details pane.
@@ -236,10 +284,20 @@ pub(super) enum Command {
     ClearHistory,
     /// Brings back the item just deleted.
     UndoDelete,
-    /// Records a copy the secret filter held back.
-    SaveSkipped(String),
+    /// Records a copy that the secret filter or a rule held back.
+    SaveSkipped(Capture),
     /// Copies text read from an image; it is not recorded as a new copy.
     CopyText(String),
+}
+
+/// Whether putting an item back on the clipboard also pastes it into the
+/// program the window opened over. Without such a program it only copies.
+#[derive(Clone, Copy, PartialEq)]
+pub(super) enum Paste {
+    No,
+    Yes,
+    /// Pastes text without its formatting.
+    Plain,
 }
 
 /// An action in Settings waiting for its second click: a destructive one,
@@ -249,14 +307,19 @@ enum Confirm {
     ClearHistory,
     ResetSettings,
     SendToServer,
+    /// Sending copied images to a text reader outside this PC.
+    SendImagesToServer,
 }
 
 /// The shortcuts that can be changed in Settings.
 #[derive(Clone, Copy, PartialEq)]
 enum ShortcutField {
-    Show,
+    Popup,
+    Window,
     IgnoreNext,
-    Copy,
+    Paste,
+    PastePlain,
+    CopyOnly,
     Pin,
     Delete,
     Tag,
@@ -265,6 +328,8 @@ enum ShortcutField {
 
 /// How long a deleted item can still be brought back.
 const UNDO_FOR: Duration = Duration::from_secs(8);
+/// How often deleting by age runs while it is on.
+const AGE_PRUNE_EVERY: Duration = Duration::from_secs(60 * 60);
 
 /// The last deleted item, kept for "Undo" until its toast ends; only then is
 /// it removed from the database, with its vectors and image file.
@@ -278,13 +343,27 @@ struct Hotkeys {
     _manager: GlobalHotKeyManager,
 }
 
+/// The ids of the registered global shortcuts, `NO_HOTKEY` when one isn't
+/// set. The global-hotkey library keeps only the first event handler it is
+/// given, so that handler reads the current ids from here.
+#[derive(Default)]
+struct HotkeyIds {
+    popup: AtomicU64,
+    window: AtomicU64,
+    ignore: AtomicU64,
+}
+
+const NO_HOTKEY: u64 = u64::MAX;
+
 pub struct App {
     paths: Paths,
     cfg: Config,
     draft: Option<Config>,
     worker: Worker,
     events: Receiver<Event>,
-    captures: Receiver<Captured>,
+    captures: Receiver<Capture>,
+    /// `cfg.rules`, ready to match copies.
+    rules: crate::rules::Rules,
     flags: Arc<Flags>,
 
     /// The clipboard history and every change to it.
@@ -295,6 +374,8 @@ pub struct App {
     error: Option<(String, Instant)>,
     toast: Option<Toast>,
     pending_delete: Option<PendingDelete>,
+    /// When deleting by age runs next; `None` runs it at the next frame.
+    next_age_prune: Option<Instant>,
 
     query: String,
     query_changed: Option<Instant>,
@@ -321,6 +402,7 @@ pub struct App {
     last_search: Instant,
     download: Option<Download>,
     hotkeys: Option<Hotkeys>,
+    hotkey_ids: Arc<HotkeyIds>,
     /// Global shortcuts are off while one is being recorded in Settings.
     hotkeys_paused: bool,
     hotkey_error: Option<String>,
@@ -332,6 +414,12 @@ pub struct App {
     confirm: Option<Confirm>,
     /// Scroll offset and visible height of the list, from the last frame.
     list_view: (f32, f32),
+    /// The same for the list in the popup.
+    popup_list_view: (f32, f32),
+    /// Where the popup last opened, in points.
+    popup_at: Option<egui::Pos2>,
+    /// The popup was made hidden in the last frame; it shows in this one.
+    popup_hidden_last_frame: bool,
     /// Grid and List views show the details pane only after "Open details".
     details_open: bool,
     /// Cards per row in the grid, from the last frame, for ↑ ↓ navigation.
@@ -391,6 +479,7 @@ impl App {
         let worker = Worker::spawn(
             library.store().clone(),
             paths.models.clone(),
+            cfg.text_reader.clone(),
             ev_tx,
             move || c.request_repaint(),
         );
@@ -409,6 +498,10 @@ impl App {
             hidden: Arc::new(AtomicBool::new(false)),
             focus_search: focus_search.clone(),
             opened: Arc::new(AtomicBool::new(false)),
+            previous: Arc::new(AtomicIsize::new(paste::NO_WINDOW)),
+            popup: Arc::new(AtomicBool::new(false)),
+            popup_focused: Arc::new(AtomicBool::new(false)),
+            popup_placing: Arc::new(AtomicBool::new(false)),
         };
         let (tray_tx, tray_rx) = channel();
         let mut app = Self {
@@ -429,6 +522,7 @@ impl App {
             worker,
             events,
             captures,
+            rules: crate::rules::Rules::new(&cfg.rules),
             flags,
             library,
             backend: BackendState::Off,
@@ -437,6 +531,7 @@ impl App {
             error: None,
             toast: None,
             pending_delete: None,
+            next_age_prune: None,
             query: String::new(),
             query_changed: None,
             query_seq: 0,
@@ -465,6 +560,7 @@ impl App {
             last_search: Instant::now(),
             download: None,
             hotkeys: None,
+            hotkey_ids: Arc::default(),
             hotkeys_paused: false,
             hotkey_error: None,
             hotkey_conflicts: Vec::new(),
@@ -472,6 +568,9 @@ impl App {
             settings_page: SettingsPage::Search,
             confirm: None,
             list_view: (0.0, 0.0),
+            popup_list_view: (0.0, 0.0),
+            popup_at: None,
+            popup_hidden_last_frame: false,
             details_open: false,
             grid_cols: 1,
             update: UpdateState::Idle,
@@ -505,6 +604,9 @@ impl App {
             if let Err(e) = crate::autostart::refresh() {
                 log::warn!("{e:#}");
             }
+        }
+        if let Err(e) = crate::installed::refresh_version() {
+            log::warn!("updating the version in Installed apps: {e:#}");
         }
         if let Some(problem) = settings_problem {
             let message = match problem.copy {
@@ -594,26 +696,41 @@ impl App {
                 }
             }
         };
-        let show = parse(&self.cfg.show_hotkey);
+        let popup = parse(&self.cfg.popup_hotkey);
+        let window = parse(&self.cfg.window_hotkey);
         let ignore = parse(&self.cfg.ignore_next_hotkey);
-        let (show_id, ignore_id) = (show.map(|h| h.id()), ignore.map(|h| h.id()));
-        let (c, flags, focused, win) = (
+        let id = |h: Option<HotKey>| h.map_or(NO_HOTKEY, |h| u64::from(h.id()));
+        let ids = &self.hotkey_ids;
+        ids.popup.store(id(popup), Ordering::SeqCst);
+        ids.window.store(id(window), Ordering::SeqCst);
+        ids.ignore.store(id(ignore), Ordering::SeqCst);
+        let (c, flags, focused, win, ids) = (
             ctx.clone(),
             self.flags.clone(),
             self.focused.clone(),
             self.win.clone(),
+            self.hotkey_ids.clone(),
         );
         GlobalHotKeyEvent::set_event_handler(Some(move |e: GlobalHotKeyEvent| {
             if e.state() != HotKeyState::Pressed {
                 return;
             }
-            if Some(e.id()) == show_id {
-                if focused.load(Ordering::SeqCst) && !win.hidden.load(Ordering::SeqCst) {
+            let pressed = u64::from(e.id());
+            if pressed == ids.popup.load(Ordering::SeqCst) {
+                if win.is_popup_open() && win.popup_focused.load(Ordering::SeqCst) {
                     win.hide();
                 } else {
-                    win.show();
+                    win.show_popup(paste::window_in_front());
                 }
-            } else if Some(e.id()) == ignore_id {
+            } else if pressed == ids.window.load(Ordering::SeqCst) {
+                if win.is_popup_open() {
+                    win.show_full();
+                } else if focused.load(Ordering::SeqCst) && !win.hidden.load(Ordering::SeqCst) {
+                    win.hide();
+                } else {
+                    win.show_over(paste::window_in_front());
+                }
+            } else if pressed == ids.ignore.load(Ordering::SeqCst) {
                 flags.ignore_next.store(true, Ordering::SeqCst);
             }
             c.request_repaint();
@@ -910,9 +1027,9 @@ impl App {
     fn run(&mut self, command: Command) {
         match command {
             Command::Select(id) => self.selected = Some(id),
-            Command::Copy(id) => {
+            Command::Copy(id, paste) => {
                 self.selected = Some(id);
-                self.copy(id);
+                self.copy(id, paste);
             }
             Command::Delete(id) => self.delete(id),
             Command::Pin(id) => self.toggle_pin(id),
@@ -926,8 +1043,8 @@ impl App {
             Command::Import(paths) => self.import(paths),
             Command::ClearHistory => self.clear_history(),
             Command::UndoDelete => self.undo_delete(),
-            Command::SaveSkipped(text) => {
-                self.on_capture(Captured::Text(text));
+            Command::SaveSkipped(capture) => {
+                self.record(capture);
                 self.toast(t!("toast-saved"));
             }
             Command::CopyText(text) => {
@@ -972,20 +1089,86 @@ impl App {
         jobs
     }
 
-    fn on_capture(&mut self, c: Captured) {
-        if let Captured::Skipped { reason, text } = c {
-            // Longer when there is a button to reach.
-            let how_long = Duration::from_secs(if text.is_some() { 8 } else { 4 });
+    /// A copy from the clipboard: recorded, unless the secret filter or a
+    /// rule holds it back.
+    fn on_capture(&mut self, capture: Capture) {
+        let Capture {
+            content,
+            app,
+            formats,
+        } = capture;
+        if let Captured::Skipped { reason, text } = content {
             let message = match reason {
                 SkipReason::Private => t!("toast-skipped-private"),
                 SkipReason::Secret => t!("toast-skipped-secret"),
             };
-            self.toast_for(message, how_long);
-            if let Some(toast) = &mut self.toast {
-                toast.action = text.map(|t| (t!("toast-save-anyway"), Command::SaveSkipped(t)));
-            }
+            let kept = text.map(|t| Capture {
+                content: Captured::Text(t),
+                app,
+                formats,
+            });
+            self.skipped(message, kept);
             return;
         }
+        let text = match &content {
+            Captured::Text(t) => Some(t.as_str()),
+            _ => None,
+        };
+        if self.rules.skips(app.as_deref(), text) {
+            log::info!("copy not saved: a rule matched");
+            let kept = Capture {
+                content,
+                app,
+                formats,
+            };
+            self.skipped(t!("toast-skipped-rule"), Some(kept));
+            return;
+        }
+        self.record(Capture {
+            content,
+            app,
+            formats,
+        });
+    }
+
+    /// Stops recording copies from `app`, with a rule the user can remove
+    /// in Settings.
+    fn ignore_app(&mut self, app: &str) {
+        let mut d = self.cfg.clone();
+        d.rules.push(crate::rules::Rule {
+            app: app.to_string(),
+            ..Default::default()
+        });
+        let ctx = self.win.ctx.clone();
+        self.apply_settings(d, &ctx, false);
+        self.toast_for(t!("toast-app-ignored", app = app), Duration::from_secs(6));
+    }
+
+    /// Pasting goes nowhere once the user is in another program: until a
+    /// shortcut opens this app again, pasting only copies.
+    fn left_for_another_program(&self) {
+        if paste::window_in_front() != paste::NO_WINDOW {
+            self.win.previous.store(paste::NO_WINDOW, Ordering::SeqCst);
+        }
+    }
+
+    /// Says a copy wasn't recorded. `kept` is offered back with "Save anyway".
+    fn skipped(&mut self, message: String, kept: Option<Capture>) {
+        // Longer when there is a button to reach.
+        let how_long = Duration::from_secs(if kept.is_some() { 8 } else { 4 });
+        self.toast_for(message, how_long);
+        if let Some(toast) = &mut self.toast {
+            toast.action = kept.map(|c| (t!("toast-save-anyway"), Command::SaveSkipped(c)));
+        }
+    }
+
+    /// Adds a copy to the history, or moves its duplicate to the top.
+    fn record(&mut self, capture: Capture) {
+        let Capture {
+            content: c,
+            app,
+            formats,
+        } = capture;
         let hash = c.hash();
         if self.cfg.dedupe {
             let found = match self.library.touch_duplicate(hash) {
@@ -1005,8 +1188,16 @@ impl App {
         let mut item = Item::new(id, Kind::Text, Origin::Clipboard, "".into());
         // The capture's own hash, which also covers image pixels and file lists.
         item.hash = hash;
+        item.app = app;
         match c {
             Captured::Text(t) => {
+                // Saved before the item, which then says it has them.
+                if let Some(formats) = &formats {
+                    match self.library.store().put_formats(id, formats) {
+                        Ok(()) => item.formatted = true,
+                        Err(e) => log::warn!("keeping the formatting failed: {e:#}"),
+                    }
+                }
                 item.kind = if looks_like_link(&t) {
                     Kind::Link
                 } else {
@@ -1018,7 +1209,7 @@ impl App {
                 item.kind = Kind::Files;
                 item.text = clipboard::join_paths(&f).into();
             }
-            Captured::Skipped { .. } => unreachable!(),
+            Captured::Skipped { .. } => return,
             Captured::Image(img) => {
                 item.kind = Kind::Image;
                 item.width = img.width();
@@ -1037,8 +1228,18 @@ impl App {
         self.prune();
     }
 
+    /// Deletes what is over the history size and, when it is on, what is
+    /// older than the chosen number of days.
     fn prune(&mut self) {
-        match self.library.prune(self.cfg.max_items) {
+        let days = i64::from(self.cfg.delete_after_days);
+        let pruned = self.library.prune(self.cfg.max_items).and_then(|mut ids| {
+            if days > 0 {
+                let cutoff = crate::store::now() - days * 24 * 60 * 60;
+                ids.extend(self.library.prune_older_than(cutoff)?);
+            }
+            Ok(ids)
+        });
+        match pruned {
             Ok(removed) => self.drop_removed(&removed),
             Err(e) => self.set_error(log_error!("error-deleting", error = e.to_string())),
         }
@@ -1064,14 +1265,32 @@ impl App {
             Done::ImageSaved { saved: Err(e), .. } => {
                 self.set_error(log_error!("error-saving-image", error = e.to_string()))
             }
-            Done::Copied { id, result: Ok(()) } => {
+            Done::Copied {
+                id,
+                paste: how,
+                result: Ok(()),
+            } => {
                 if let Err(e) = self.library.record_use(id) {
                     self.set_error(log_error!("error-saving-item", error = e.to_string()));
                 }
                 self.dirty = true;
-                self.toast(t!("toast-copied"));
-                if self.cfg.minimize_after_copy {
+                let target = self.win.previous.load(Ordering::SeqCst);
+                if how == Paste::No || !paste::exists(target) {
+                    self.toast(t!("toast-copied"));
+                    if self.cfg.minimize_after_copy {
+                        self.win.hide();
+                    }
+                } else if paste::is_out_of_reach(target) {
+                    // Windows doesn't let this app press keys there: the
+                    // window stays to say so, and the user pastes.
+                    self.toast_for(t!("toast-copied-admin"), Duration::from_secs(8));
+                } else {
                     self.win.hide();
+                    std::thread::spawn(move || {
+                        if let Err(e) = paste::paste_into(target) {
+                            log::warn!("pasting failed, the item is copied: {e:#}");
+                        }
+                    });
                 }
             }
             Done::Copied { result: Err(e), .. } => {
@@ -1351,16 +1570,27 @@ impl App {
         self.dirty = true;
     }
 
-    /// Puts the item on the clipboard in the background; `finish` reports it.
-    fn copy(&mut self, id: u64) {
+    /// Puts the item on the clipboard in the background; `finish` reports it
+    /// and pastes it.
+    fn copy(&mut self, id: u64, paste: Paste) {
         let Some(item) = self.library.get(id).cloned() else {
             return;
         };
         let flags = self.flags.clone();
-        let images = self.library.store().images.clone();
-        self.background.run(move || Done::Copied {
-            id,
-            result: write_clipboard(&flags, || clipboard::copy_item(&item, &images)),
+        let store = self.library.store().clone();
+        self.background.run(move || {
+            let formats = if item.formatted && paste != Paste::Plain {
+                store.formats(id).unwrap_or_else(|e| {
+                    log::warn!("reading the formatting failed: {e:#}");
+                    None
+                })
+            } else {
+                None
+            };
+            let result = write_clipboard(&flags, || {
+                clipboard::copy_item(&item, &store.images, formats.as_ref())
+            });
+            Done::Copied { id, paste, result }
         });
     }
 

@@ -9,12 +9,18 @@ impl App {
     pub(super) fn shortcuts_page(&mut self, ui: &mut Ui, d: &mut Config, apply_keys: &mut bool) {
         let def = Config::default();
         section(ui, &t!("settings-shortcuts-global"));
-        let globals: [(ShortcutField, String, String, KeyField); 2] = [
+        let globals: [(ShortcutField, String, String, KeyField); 3] = [
             (
-                ShortcutField::Show,
-                t!("settings-shortcut-show"),
-                t!("settings-shortcut-show-help"),
-                |c| &mut c.show_hotkey,
+                ShortcutField::Popup,
+                t!("settings-shortcut-popup"),
+                t!("settings-shortcut-popup-help"),
+                |c| &mut c.popup_hotkey,
+            ),
+            (
+                ShortcutField::Window,
+                t!("settings-shortcut-window"),
+                t!("settings-shortcut-window-help"),
+                |c| &mut c.window_hotkey,
             ),
             (
                 ShortcutField::IgnoreNext,
@@ -65,28 +71,55 @@ impl App {
         }
 
         section(ui, &t!("settings-shortcuts-local"));
-        let locals: [(ShortcutField, String, KeyField); 5] = [
-            (ShortcutField::Copy, t!("settings-shortcut-copy"), |c| {
-                &mut c.keys.copy
-            }),
-            (ShortcutField::Pin, t!("settings-shortcut-pin"), |c| {
-                &mut c.keys.pin
-            }),
-            (ShortcutField::Delete, t!("settings-shortcut-delete"), |c| {
-                &mut c.keys.delete
-            }),
-            (ShortcutField::Tag, t!("settings-shortcut-tag"), |c| {
-                &mut c.keys.tag
-            }),
-            (ShortcutField::View, t!("settings-shortcut-view"), |c| {
-                &mut c.keys.view
-            }),
+        let locals: [(ShortcutField, String, String, KeyField); 7] = [
+            (
+                ShortcutField::Paste,
+                t!("settings-shortcut-paste"),
+                t!("settings-shortcut-paste-help"),
+                |c| &mut c.keys.paste,
+            ),
+            (
+                ShortcutField::PastePlain,
+                t!("settings-shortcut-paste-plain"),
+                String::new(),
+                |c| &mut c.keys.paste_plain,
+            ),
+            (
+                ShortcutField::CopyOnly,
+                t!("settings-shortcut-copy-only"),
+                String::new(),
+                |c| &mut c.keys.copy_only,
+            ),
+            (
+                ShortcutField::Pin,
+                t!("settings-shortcut-pin"),
+                String::new(),
+                |c| &mut c.keys.pin,
+            ),
+            (
+                ShortcutField::Delete,
+                t!("settings-shortcut-delete"),
+                String::new(),
+                |c| &mut c.keys.delete,
+            ),
+            (
+                ShortcutField::Tag,
+                t!("settings-shortcut-tag"),
+                String::new(),
+                |c| &mut c.keys.tag,
+            ),
+            (
+                ShortcutField::View,
+                t!("settings-shortcut-view"),
+                String::new(),
+                |c| &mut c.keys.view,
+            ),
         ];
         let current: Vec<(ShortcutField, String)> = locals
             .iter()
-            .map(|(id, _, f)| (*id, f(&mut d.clone()).clone()))
+            .map(|(id, _, _, f)| (*id, f(&mut d.clone()).clone()))
             .collect();
-        for (id, label, field) in locals {
+        for (id, label, help, field) in locals {
             let default = field(&mut def.clone()).clone();
             let value = field(d);
             let clash = !value.is_empty()
@@ -94,7 +127,7 @@ impl App {
                     .iter()
                     .any(|(other, v)| *other != id && v.eq_ignore_ascii_case(value));
             let mut result = shortcut::Recorded::Nothing;
-            let reset = setting(ui, &label, "", *value != default, |ui| {
+            let reset = setting(ui, &label, &help, *value != default, |ui| {
                 result = shortcut::recorder(
                     ui,
                     value,

@@ -54,6 +54,82 @@ pub struct ServerConfig {
     pub launch: Option<LaunchConfig>,
 }
 
+/// What reads the text in images.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub enum TextReader {
+    /// Windows' own reader, in the languages installed in Windows.
+    Windows,
+    /// The reader built into the app: Latin letters, after a download.
+    BuiltIn,
+    /// A vision model on a server, asked with a prompt.
+    Server(ReaderServer),
+}
+
+impl TextReader {
+    /// New settings use Windows' reader where there is one.
+    fn for_new_settings() -> Self {
+        if cfg!(windows) {
+            Self::Windows
+        } else {
+            Self::BuiltIn
+        }
+    }
+
+    /// Settings from before the choice used the built-in reader, and keep it.
+    fn for_older_settings() -> Self {
+        Self::BuiltIn
+    }
+}
+
+/// A server that reads text in images: any OpenAI-style chat server with a
+/// vision model.
+#[derive(Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ReaderServer {
+    pub base_url: String,
+    /// Sent as `Authorization: Bearer <key>` when not empty. Encrypted in the
+    /// settings file (see secure.rs).
+    #[serde(default, with = "crate::secure::string")]
+    pub api_key: String,
+    /// Empty for the server's default model.
+    pub model: String,
+    /// What the model is asked, with the image.
+    pub prompt: String,
+}
+
+impl ReaderServer {
+    pub const PROMPT: &'static str =
+        "Read all the text in this image. Reply with the text only, line by line.";
+}
+
+impl Default for ReaderServer {
+    fn default() -> Self {
+        Self {
+            base_url: "http://127.0.0.1:8080/v1".into(),
+            api_key: String::new(),
+            model: String::new(),
+            prompt: Self::PROMPT.into(),
+        }
+    }
+}
+
+/// Written by hand so the API key never reaches a log.
+impl std::fmt::Debug for ReaderServer {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let key = if self.api_key.is_empty() {
+            ""
+        } else {
+            "<hidden>"
+        };
+        f.debug_struct("ReaderServer")
+            .field("base_url", &self.base_url)
+            .field("api_key", &key)
+            .field("model", &self.model)
+            .field("prompt", &self.prompt)
+            .finish()
+    }
+}
+
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct LaunchConfig {
@@ -218,7 +294,14 @@ pub enum TimeFormat {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Keys {
-    pub copy: String,
+    /// Pastes into the program the window opened over. Settings from before
+    /// pasting called it `copy`.
+    #[serde(alias = "copy")]
+    pub paste: String,
+    /// Pastes the text without its formatting.
+    pub paste_plain: String,
+    /// Only copies.
+    pub copy_only: String,
     pub pin: String,
     pub delete: String,
     pub tag: String,
@@ -228,7 +311,9 @@ pub struct Keys {
 impl Default for Keys {
     fn default() -> Self {
         Self {
-            copy: "Enter".into(),
+            paste: "Enter".into(),
+            paste_plain: "Shift+Enter".into(),
+            copy_only: "Ctrl+Enter".into(),
             pin: "Ctrl+P".into(),
             delete: "Shift+Delete".into(),
             tag: "Ctrl+T".into(),
@@ -308,11 +393,21 @@ impl ViewMode {
 pub struct Config {
     pub monitor_clipboard: bool,
     pub max_items: usize,
+    /// Items older than this many days are deleted; 0 is off.
+    pub delete_after_days: u32,
     pub dedupe: bool,
     pub ocr_images: bool,
+    /// What reads the text in images.
+    #[serde(default = "TextReader::for_older_settings")]
+    pub text_reader: TextReader,
     pub search_mode: SearchMode,
     pub theme: Theme,
-    pub show_hotkey: String,
+    /// Opens the quick popup. Settings from before the popup called it
+    /// `show_hotkey`, the key that opened the window.
+    #[serde(alias = "show_hotkey")]
+    pub popup_hotkey: String,
+    /// Opens the full window.
+    pub window_hotkey: String,
     pub ignore_next_hotkey: String,
     pub minimize_after_copy: bool,
     /// Don't record text that looks like a password, API key or token.
@@ -352,6 +447,8 @@ pub struct Config {
     /// Servers outside this PC that the user agreed to send the history to,
     /// so applying one of them asks only once.
     pub allowed_servers: Vec<String>,
+    /// Copies that aren't recorded (see `rules`).
+    pub rules: Vec<crate::rules::Rule>,
 }
 
 impl Default for Config {
@@ -359,11 +456,14 @@ impl Default for Config {
         Self {
             monitor_clipboard: true,
             max_items: 5000,
+            delete_after_days: 0,
             dedupe: true,
             ocr_images: true,
+            text_reader: TextReader::for_new_settings(),
             search_mode: SearchMode::Hybrid,
             theme: Theme::System,
-            show_hotkey: "Alt+V".into(),
+            popup_hotkey: "Alt+V".into(),
+            window_hotkey: "Alt+Shift+V".into(),
             ignore_next_hotkey: "Alt+C".into(),
             minimize_after_copy: true,
             skip_secrets: true,
@@ -387,6 +487,7 @@ impl Default for Config {
             server_profiles: ServerProfiles::default(),
             builtin_repo: None,
             allowed_servers: Vec::new(),
+            rules: Vec::new(),
         }
     }
 }
@@ -589,6 +690,47 @@ mod tests {
         let cfg: Config = serde_json::from_str(old).unwrap();
         assert_eq!(cfg.max_items, 100);
         assert!(cfg.server_profiles.latest().is_none());
+    }
+
+    #[test]
+    fn older_settings_keep_the_built_in_reader() {
+        let old: Config = serde_json::from_str(r#"{"ocr_images":true}"#).unwrap();
+        assert_eq!(old.text_reader, TextReader::BuiltIn);
+        assert_eq!(
+            Config::default().text_reader,
+            TextReader::for_new_settings()
+        );
+        let cfg = Config {
+            text_reader: TextReader::Server(ReaderServer {
+                api_key: "reader-key".into(),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        let json = serde_json::to_string(&cfg).unwrap();
+        let back: Config = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.text_reader, cfg.text_reader);
+        if cfg!(windows) {
+            assert!(!json.contains("reader-key"), "the key is encrypted");
+        }
+    }
+
+    #[test]
+    fn the_old_window_shortcut_opens_the_popup() {
+        let old = r#"{"show_hotkey":"Ctrl+Shift+Space"}"#;
+        let cfg: Config = serde_json::from_str(old).unwrap();
+        assert_eq!(cfg.popup_hotkey, "Ctrl+Shift+Space");
+        assert_eq!(cfg.window_hotkey, Config::default().window_hotkey);
+    }
+
+    #[test]
+    fn the_old_copy_key_becomes_the_paste_key() {
+        let old = r#"{"keys":{"copy":"Ctrl+Space","pin":"Ctrl+P"}}"#;
+        let cfg: Config = serde_json::from_str(old).unwrap();
+        assert_eq!(cfg.keys.paste, "Ctrl+Space");
+        assert_eq!(cfg.keys.copy_only, Keys::default().copy_only);
+        let back: Config = serde_json::from_str(&serde_json::to_string(&cfg).unwrap()).unwrap();
+        assert_eq!(back.keys, cfg.keys);
     }
 
     #[cfg(windows)]
