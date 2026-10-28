@@ -354,6 +354,12 @@ impl Library {
         self.remove_where(|i| doomed.contains(&i.id))
     }
 
+    /// Deletes the clearable items copied before `cutoff` (Unix seconds).
+    /// Returns the removed ids.
+    pub fn prune_older_than(&mut self, cutoff: i64) -> Result<Vec<u64>> {
+        self.remove_where(|i| is_clearable(i) && i.created < cutoff)
+    }
+
     /// Deletes every clearable item. Returns the removed ids.
     pub fn clear(&mut self) -> Result<Vec<u64>> {
         self.remove_where(is_clearable)
@@ -449,6 +455,31 @@ mod tests {
         assert_eq!(lib.all_tags(), [("Work".to_string(), 2)]);
         assert_eq!(lib.delete_tag("WORK").unwrap(), 2);
         assert!(!lib.any_has_tag("work"));
+        drop(lib);
+        std::fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn deleting_by_age_keeps_pinned_tagged_and_imported_items() {
+        let (dir, mut lib) = open("age");
+        let old = add(&mut lib, "old", 100);
+        let pinned = add(&mut lib, "pinned", 100);
+        let tagged = add(&mut lib, "tagged", 100);
+        let mut file = Item::new(lib.new_id(), Kind::Text, Origin::Imported, "a file".into());
+        file.created = 100;
+        let imported = file.id;
+        lib.add(file).unwrap();
+        let new = add(&mut lib, "new", 500);
+        lib.toggle_pin(pinned).unwrap();
+        lib.add_tags(tagged, "keep").unwrap();
+        assert_eq!(lib.prune_older_than(300).unwrap(), [old]);
+        let mut left: Vec<u64> = lib.items().iter().map(|i| i.id).collect();
+        left.sort();
+        assert_eq!(left, [pinned, tagged, imported, new]);
+        assert!(
+            lib.store.get(old).unwrap().is_none(),
+            "gone from the disk too"
+        );
         drop(lib);
         std::fs::remove_dir_all(dir).ok();
     }

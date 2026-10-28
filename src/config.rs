@@ -308,6 +308,8 @@ impl ViewMode {
 pub struct Config {
     pub monitor_clipboard: bool,
     pub max_items: usize,
+    /// Items older than this many days are deleted; 0 is off.
+    pub delete_after_days: u32,
     pub dedupe: bool,
     pub ocr_images: bool,
     pub search_mode: SearchMode,
@@ -359,6 +361,7 @@ impl Default for Config {
         Self {
             monitor_clipboard: true,
             max_items: 5000,
+            delete_after_days: 0,
             dedupe: true,
             ocr_images: true,
             search_mode: SearchMode::Hybrid,

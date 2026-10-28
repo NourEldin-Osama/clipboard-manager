@@ -4,6 +4,12 @@ What changed in each version, for the people who use the app. Each release
 starts its notes with the section of the version it was built from, so add
 the notes here before a push that makes a release.
 
+## 0.4.0
+
+- Delete by age: Settings, Clipboard can delete items older than a day, a
+  week, a month, 3 months or a year. It is off unless you choose a time,
+  and it never deletes pinned or tagged items, or files you added.
+
 ## 0.3.0
 
 **Your history is now encrypted.** On Windows, the text and images you copy

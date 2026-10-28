@@ -332,6 +332,19 @@ settings-history-size = History size
 settings-keep-up-to = Keep up to
 settings-keep-up-to-help = When there are more, the oldest are deleted. Pinned and tagged items, and files you added, are never deleted.
 settings-history-items = { $size } items
+settings-delete-older = Delete items older than
+settings-delete-older-help = Off unless you choose a time. Older items are deleted when you leave Settings, then every hour. Pinned and tagged items, and files you added, are never deleted.
+settings-age-off = Off
+settings-age-day = 1 day
+settings-age-week = 1 week
+settings-age-month = 1 month
+settings-age-three-months = 3 months
+settings-age-year = 1 year
+settings-age-days =
+    { $count ->
+        [one] 1 day
+       *[other] { $count } days
+    }
 settings-storage = Storage
 settings-data-folder = Data folder
 settings-data-folder-help = History, images, models and settings are stored here, on this PC only.

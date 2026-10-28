@@ -349,6 +349,21 @@ settings-history-size = حجم السجل
 settings-keep-up-to = الاحتفاظ بما يصل إلى
 settings-keep-up-to-help = عند تجاوز العدد يُحذف الأقدم. لا تُحذف أبدًا العناصر المثبتة والموسومة والملفات التي أضفتها.
 settings-history-items = { $size } عنصر
+settings-delete-older = حذف العناصر الأقدم من
+settings-delete-older-help = متوقف ما لم تختر مدة. تُحذف العناصر الأقدم عند مغادرة الإعدادات، ثم كل ساعة. لا تُحذف أبدًا العناصر المثبتة والموسومة والملفات التي أضفتها.
+settings-age-off = متوقف
+settings-age-day = يوم واحد
+settings-age-week = أسبوع واحد
+settings-age-month = شهر واحد
+settings-age-three-months = 3 أشهر
+settings-age-year = سنة واحدة
+settings-age-days =
+    { $count ->
+        [one] يوم واحد
+        [two] يومان
+        [few] { $count } أيام
+       *[other] { $count } يومًا
+    }
 settings-storage = التخزين
 settings-data-folder = مجلد البيانات
 settings-data-folder-help = يُحفظ السجل والصور والنماذج والإعدادات هنا، على هذا الجهاز فقط.

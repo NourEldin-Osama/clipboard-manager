@@ -188,6 +188,14 @@ impl eframe::App for App {
                 ctx.request_repaint_after(left);
             }
         }
+        // Deleting by age runs at start and then every hour, also while hidden.
+        if self.cfg.delete_after_days > 0
+            && self.next_age_prune.is_none_or(|at| Instant::now() >= at)
+        {
+            self.next_age_prune = Some(Instant::now() + AGE_PRUNE_EVERY);
+            self.prune();
+            ctx.request_repaint_after(AGE_PRUNE_EVERY);
+        }
         self.window_logic(ctx);
         self.handle_events(ctx);
         self.focused.store(

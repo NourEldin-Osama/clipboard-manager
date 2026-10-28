@@ -265,6 +265,8 @@ enum ShortcutField {
 
 /// How long a deleted item can still be brought back.
 const UNDO_FOR: Duration = Duration::from_secs(8);
+/// How often deleting by age runs while it is on.
+const AGE_PRUNE_EVERY: Duration = Duration::from_secs(60 * 60);
 
 /// The last deleted item, kept for "Undo" until its toast ends; only then is
 /// it removed from the database, with its vectors and image file.
@@ -295,6 +297,8 @@ pub struct App {
     error: Option<(String, Instant)>,
     toast: Option<Toast>,
     pending_delete: Option<PendingDelete>,
+    /// When deleting by age runs next; `None` runs it at the next frame.
+    next_age_prune: Option<Instant>,
 
     query: String,
     query_changed: Option<Instant>,
@@ -437,6 +441,7 @@ impl App {
             error: None,
             toast: None,
             pending_delete: None,
+            next_age_prune: None,
             query: String::new(),
             query_changed: None,
             query_seq: 0,
@@ -1037,8 +1042,18 @@ impl App {
         self.prune();
     }
 
+    /// Deletes what is over the history size and, when it is on, what is
+    /// older than the chosen number of days.
     fn prune(&mut self) {
-        match self.library.prune(self.cfg.max_items) {
+        let days = i64::from(self.cfg.delete_after_days);
+        let pruned = self.library.prune(self.cfg.max_items).and_then(|mut ids| {
+            if days > 0 {
+                let cutoff = crate::store::now() - days * 24 * 60 * 60;
+                ids.extend(self.library.prune_older_than(cutoff)?);
+            }
+            Ok(ids)
+        });
+        match pruned {
             Ok(removed) => self.drop_removed(&removed),
             Err(e) => self.set_error(log_error!("error-deleting", error = e.to_string())),
         }
