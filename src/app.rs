@@ -679,6 +679,11 @@ impl App {
         if self.win.opened.swap(false, Ordering::SeqCst) {
             self.selected = None;
             self.dirty = true;
+            // An error from while the window was hidden (such as after starting
+            // at sign-in) gets its full time on screen.
+            if let Some((_, at)) = &mut self.error {
+                *at = Instant::now();
+            }
         }
         if self.start_hidden > 0 {
             self.start_hidden -= 1;
