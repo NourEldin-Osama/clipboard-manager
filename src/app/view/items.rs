@@ -139,7 +139,15 @@ pub(super) fn subtitle_detail(it: &Item) -> String {
 /// details, whether it is pinned, and when it was copied.
 pub(super) fn item_name(it: &Item) -> String {
     let mut parts = vec![format!("{}: {}", it.kind.label(), row_title(it))];
-    let detail = subtitle_detail(it);
+    let detail = match it.kind {
+        // An image's details repeat its title (its read text, or its size
+        // when it has none); its size is the one thing they add.
+        Kind::Image if it.ocr.as_deref().is_some_and(|o| !o.trim().is_empty()) => {
+            format!("{} × {}", it.width, it.height)
+        }
+        Kind::Image => String::new(),
+        _ => subtitle_detail(it),
+    };
     if !detail.trim().is_empty() {
         parts.push(detail);
     }
@@ -168,5 +176,28 @@ pub(super) fn row_title(it: &Item) -> String {
                 .unwrap_or_else(|| first.to_string())
         }
         _ => it.title(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::store::Origin;
+
+    #[test]
+    fn an_image_card_says_its_size_once() {
+        let mut it = Item::new(1, Kind::Image, Origin::Clipboard, "".into());
+        it.width = 420;
+        it.height = 90;
+        let size = format!("{} × {}", it.width, it.height);
+        let name = item_name(&it);
+        assert_eq!(name.matches("420").count(), 1, "{name}");
+        it.ocr = Some("Frame test 007".into());
+        let name = item_name(&it);
+        assert!(
+            name.contains("Frame test 007") && name.contains(&size),
+            "{name}"
+        );
+        assert_eq!(name.matches("Frame test 007").count(), 1, "{name}");
     }
 }
