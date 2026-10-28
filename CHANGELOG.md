@@ -7,6 +7,21 @@ the notes here before a push that makes a release.
 ## 0.4.0
 
 - Fix: a global shortcut changed in Settings worked only after a restart.
+- Fix: a few Arabic texts showed their words in the wrong order: a hint
+  in the server settings, the vector sizes and two download progress
+  texts.
+- Lighter while indexing: the window drew about 60 frames a second the
+  whole time; now about 8. The status bar shows the run's progress with a
+  bar, as "done of total".
+- Thumbnails on screen no longer flicker and load again when there are
+  many images.
+- Screen readers: list rows and cards, the Settings pages, switches,
+  text fields and menus have names, and Arabic is read in reading order.
+  The control with the keyboard focus gets an outline after Tab; list rows
+  and cards leave the Tab order, since the arrow keys move through them.
+- Gray text (help texts, times, hints) is easier to read: it now meets the
+  usual minimum contrast in both themes, and normal text is a little
+  brighter in the dark theme.
 - An installer: clipboard-manager-windows-x64-setup.exe installs the app
   for your Windows account, without administrator rights, with Start menu
   and desktop shortcuts and an entry in Installed apps. Uninstalling asks
