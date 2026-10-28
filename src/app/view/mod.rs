@@ -228,6 +228,7 @@ impl eframe::App for App {
     fn ui(&mut self, ui: &mut Ui, _frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
         bidi::forget_drawn();
+        self.keyboard_focus = keyboard_moved_focus(&ctx, self.keyboard_focus);
         self.keyboard(&ctx, false);
         self.refresh_results();
         // Before the main window, so the popup's search field takes the
@@ -268,6 +269,9 @@ impl eframe::App for App {
                 Vec2::new(26.0 + 6.0 + g.size().x, g.size().y.max(26.0)),
             );
             icons::paint_icon_text(&p, row, Icon::Folder, 26.0, g, Color32::WHITE);
+        }
+        if self.keyboard_focus {
+            focus_outline(&ctx);
         }
         bidi::read_in_reading_order(&ctx);
     }

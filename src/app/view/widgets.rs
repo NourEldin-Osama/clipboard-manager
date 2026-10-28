@@ -25,6 +25,40 @@ pub(crate) fn set_choice_name(resp: &egui::Response, name: &str, chosen: &str) {
     });
 }
 
+/// Notes whether the keyboard (Tab) or the mouse moved the focus last.
+pub(super) fn keyboard_moved_focus(ctx: &egui::Context, before: bool) -> bool {
+    ctx.input(|i| {
+        if i.key_pressed(Key::Tab) {
+            true
+        } else if i.pointer.any_pressed() {
+            false
+        } else {
+            before
+        }
+    })
+}
+
+/// An accent outline around the control with the keyboard focus. egui's
+/// own widgets barely show the focus, and the app's drawn ones not at all.
+pub(super) fn focus_outline(ctx: &egui::Context) {
+    let Some(focused) = ctx
+        .memory(|m| m.focused())
+        .and_then(|id| ctx.read_response(id))
+    else {
+        return;
+    };
+    ctx.layer_painter(egui::LayerId::new(
+        egui::Order::Foreground,
+        egui::Id::unique("focus-outline"),
+    ))
+    .rect_stroke(
+        focused.interact_rect.expand(2.0),
+        6.0,
+        Stroke::new(2.0, accent()),
+        egui::StrokeKind::Outside,
+    );
+}
+
 /// How often `slow_spinner` moves.
 const SPINNER_STEP: Duration = Duration::from_millis(200);
 

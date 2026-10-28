@@ -467,7 +467,7 @@ impl App {
                         };
                         let thumb = thumb_for(it, thumbs, loader, (&mut *seen, frame));
                         let resp =
-                            ui.interact(rect, egui::Id::unique(("row", it.id)), Sense::click());
+                            ui.interact(rect, egui::Id::unique(("row", it.id)), Sense::CLICK);
                         let chosen = Some(it.id) == selected;
                         resp.widget_info(|| {
                             egui::WidgetInfo::selected(

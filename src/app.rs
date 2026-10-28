@@ -405,6 +405,9 @@ pub struct App {
     models_on_disk: Option<(Instant, [bool; SIGLIP_MODELS.len()])>,
     /// Which paths of the item in the details pane are folders, by item.
     folders_of: Option<(u64, Vec<bool>)>,
+    /// Tab moved the focus last, so the focused control is outlined; a
+    /// click hides the outline again.
+    keyboard_focus: bool,
     preview: Option<(u64, Option<TextureHandle>)>,
     loader: ImageLoader,
     detail: Option<DetailText>,
@@ -566,6 +569,7 @@ impl App {
             thumb_seen: HashMap::new(),
             models_on_disk: None,
             folders_of: None,
+            keyboard_focus: false,
             preview: None,
             loader: {
                 let c = ctx.clone();

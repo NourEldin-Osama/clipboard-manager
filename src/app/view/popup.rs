@@ -144,6 +144,7 @@ impl App {
             return;
         }
         let had_settings = self.draft.is_some();
+        self.keyboard_focus = keyboard_moved_focus(&ctx, self.keyboard_focus);
         self.keyboard(&ctx, true);
         let fill = ui.visuals().panel_fill;
         egui::Panel::top("popup-bar")
@@ -224,6 +225,9 @@ impl App {
             Stroke::new(1.0, edge),
             egui::StrokeKind::Inside,
         );
+        if self.keyboard_focus {
+            focus_outline(&ctx);
+        }
         bidi::read_in_reading_order(&ctx);
     }
 }
