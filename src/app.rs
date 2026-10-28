@@ -401,6 +401,10 @@ pub struct App {
     thumbs: HashMap<u64, Option<TextureHandle>>,
     /// The frame each image item was last drawn in, for dropping thumbnails.
     thumb_seen: HashMap<u64, u64>,
+    /// Which built-in models are on disk, and when that was checked.
+    models_on_disk: Option<(Instant, [bool; SIGLIP_MODELS.len()])>,
+    /// Which paths of the item in the details pane are folders, by item.
+    folders_of: Option<(u64, Vec<bool>)>,
     preview: Option<(u64, Option<TextureHandle>)>,
     loader: ImageLoader,
     detail: Option<DetailText>,
@@ -560,6 +564,8 @@ impl App {
             focused: Arc::new(AtomicBool::new(true)),
             thumbs: HashMap::new(),
             thumb_seen: HashMap::new(),
+            models_on_disk: None,
+            folders_of: None,
             preview: None,
             loader: {
                 let c = ctx.clone();

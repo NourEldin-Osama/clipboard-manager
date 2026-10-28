@@ -163,9 +163,22 @@ impl App {
 
     pub(super) fn builtin_models(&mut self, ui: &mut Ui, repo: &mut String) {
         note(ui, &t!("settings-builtin-note"));
+        // The page draws every frame; the files change only with a download,
+        // so the disk is checked once a second at most.
+        let fresh = self
+            .models_on_disk
+            .filter(|(at, _)| at.elapsed() < Duration::from_secs(1));
+        let on_disk = match fresh {
+            Some((_, on_disk)) => on_disk,
+            None => {
+                let on_disk =
+                    SIGLIP_MODELS.map(|m| models::siglip_ready(&self.paths.models, m.repo));
+                self.models_on_disk = Some((Instant::now(), on_disk));
+                on_disk
+            }
+        };
         let mut start: Option<String> = None;
-        for m in &SIGLIP_MODELS {
-            let ready = models::siglip_ready(&self.paths.models, m.repo);
+        for (m, ready) in SIGLIP_MODELS.iter().zip(on_disk) {
             let selected = *repo == m.repo;
             let size = format!("{:.1}", m.size_mb as f32 / 1000.0);
             choice_setting(

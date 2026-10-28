@@ -296,12 +296,28 @@ impl App {
             .show(ui, |ui| match it.kind {
                 Kind::Image => self.image_details(ui, &it),
                 Kind::Files => {
-                    for line in it.text.lines() {
+                    // Checked once per item: the pane draws every frame,
+                    // and a path on an unreachable drive can take seconds.
+                    if self.folders_of.as_ref().is_none_or(|(id, _)| *id != it.id) {
+                        let folders = it
+                            .text
+                            .lines()
+                            .map(|l| std::path::Path::new(l).is_dir())
+                            .collect();
+                        self.folders_of = Some((it.id, folders));
+                    }
+                    let folders = self
+                        .folders_of
+                        .as_ref()
+                        .map(|(_, f)| f.clone())
+                        .unwrap_or_default();
+                    for (index, line) in it.text.lines().enumerate() {
                         let p = PathBuf::from(line);
+                        let is_folder = folders.get(index).copied().unwrap_or(false);
                         row(ui, |ui| {
                             icons::glyph(
                                 ui,
-                                if p.is_dir() { Icon::Folder } else { Icon::File },
+                                if is_folder { Icon::Folder } else { Icon::File },
                                 15.0,
                                 ui.visuals().text_color(),
                             );
