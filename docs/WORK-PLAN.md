@@ -37,6 +37,9 @@ Status: `[ ]` to do, `[~]` in progress, `[x]` done, `[!]` waiting for a decision
 | D26 | The popup has a bar at its top: Settings, the full window, a handle to move it, Close. A moved popup still opens at the mouse pointer the next time | You | Decided |
 | D27 | Gray text meets the 4.5 to 1 contrast minimum everywhere, in both themes; indexing shows a spinner that moves five times a second, and a progress bar | You | Decided |
 | D28 | Colored text (accent, status, kind and tag colors, links, selected text) meets the 4.5 to 1 minimum in both themes; buttons with white text get a deeper fill | You | Decided |
+| D29 | candle comes from its code on GitHub at a fixed commit until a release after 0.11.0: one `tokenizers` and no C library build. Back to crates.io when that release is out | You | Decided |
+| D30 | The dependency check (cargo-deny) is its own job, also run weekly: advisories, licenses and crate sources fail it; unmaintained crates and duplicate versions only warn | You | Decided |
+| D31 | No tests through the screen for now (they would need egui_kittest): the new tests cover the update steps, old settings and the worker | You | Decided |
 
 ## Order of work, and why
 
@@ -131,12 +134,12 @@ Status: `[ ]` to do, `[~]` in progress, `[x]` done, `[!]` waiting for a decision
 - [x] 7.3 Readable colored text (D28); gray text on a selected row in the dark theme and on search hits, which the first test did not measure
 
 ### Phase 8. Build, CI and tests
-- [ ] 8.1 One `tokenizers` version (no second copy, no C library build) if candle allows it
-- [ ] 8.2 GitHub Actions pinned to commit hashes
+- [x] 8.1 One `tokenizers` version (no second copy, no C library build): candle from GitHub at a fixed commit (D29)
+- [x] 8.2 GitHub Actions pinned to commit hashes; the push hook reads the release from the comment and reports a candle release newer than the git commit
 - [x] 8.3 The release job checks the update signature before publishing (moved into 5.2, D20)
-- [ ] 8.4 `cargo deny` for licenses and security advisories
-- [ ] 8.5 Clippy fails on warnings in CI
-- [ ] 8.6 More tests: worker, update install and rollback, settings migration, app logic
+- [x] 8.4 `cargo deny` for licenses and security advisories (D30)
+- [x] 8.5 Clippy fails on warnings in CI
+- [x] 8.6 More tests: installing, rolling back and cleaning up an update, a staged update, a 0.2.1 settings file, a search server the worker can't reach (D31)
 - [!] 8.7 Code signing with SignPath, after your application is approved (D7: later)
 
 ## Change log

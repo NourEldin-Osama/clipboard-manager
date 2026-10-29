@@ -11,8 +11,11 @@ anyhow = "1"
 arboard = "3.7"
 auto-launch = "0.6"
 base64 = "0.23"
-candle-core = "0.11"
-candle-nn = "0.11"
+# candle from its code on GitHub, at a fixed commit: release 0.11.0 needs
+# tokenizers 0.22 with the onig C library, a second tokenizers next to ours.
+# Back to a crates.io release once one comes out after 0.11.0.
+candle-core = { git = "https://github.com/huggingface/candle", rev = "12bb5d1f6350f4ea9827d9086f213feec1f0af6a" }
+candle-nn = { git = "https://github.com/huggingface/candle", rev = "12bb5d1f6350f4ea9827d9086f213feec1f0af6a" }
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
 directories = "6"
 eframe = { version = "0.37", default-features = false, features = ["accesskit", "clipboard", "default_fonts", "links", "system_fonts", "glow", "persistence", "wayland", "x11"] }

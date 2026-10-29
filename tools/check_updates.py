@@ -50,32 +50,58 @@ def crate_updates() -> tuple[list[str], list[str]]:
     return compatible, breaking
 
 
-def latest_major(repo: str) -> int | None:
-    """The major version of an action's latest release."""
+def get_json(url: str) -> dict:
     request = urllib.request.Request(
-        f"https://api.github.com/repos/{repo}/releases/latest",
-        headers={"Accept": "application/vnd.github+json"},
+        url,
+        headers={
+            "Accept": "application/vnd.github+json",
+            # crates.io refuses requests without one.
+            "User-Agent": "clipboard-manager check_updates.py",
+        },
     )
     token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
-    if token:
+    if token and url.startswith("https://api.github.com/"):
         request.add_header("Authorization", f"Bearer {token}")
     with urllib.request.urlopen(request, timeout=10) as response:
-        tag = json.load(response)["tag_name"]
-    match = re.match(r"v(\d+)", tag)
-    return int(match.group(1)) if match else None
+        return json.load(response)
+
+
+def version(text: str) -> tuple[int, ...]:
+    """`v7.0.1` or `0.11.0` as numbers, for comparing."""
+    return tuple(int(number) for number in re.findall(r"\d+", text))
 
 
 def action_updates() -> list[str]:
-    """Actions pinned to a major version (`@v5`) that has a newer major."""
-    used: dict[str, int] = {}
+    """Actions pinned to a commit, with the release in a comment
+    (`@<commit> # v7.0.1`), that have a newer release."""
+    used: dict[str, str] = {}
     for workflow in (ROOT / ".github" / "workflows").glob("*.yml"):
-        for repo, major in re.findall(r"uses:\s*([\w.-]+/[\w.-]+)@v(\d+)\b", workflow.read_text()):
-            used[repo] = int(major)
+        pins = re.findall(
+            r"uses:\s*([\w.-]+/[\w.-]+)@[0-9a-f]{40}\s+#\s*(v\d[\w.]*)", workflow.read_text()
+        )
+        used.update(pins)
     found = []
-    for repo, major in sorted(used.items()):
-        latest = latest_major(repo)
-        if latest is not None and latest > major:
-            found.append(f"{repo} v{major} -> v{latest}")
+    for repo, tag in sorted(used.items()):
+        latest = get_json(f"https://api.github.com/repos/{repo}/releases/latest")["tag_name"]
+        if version(latest) > version(tag):
+            found.append(f"{repo} {tag} -> {latest}")
+    return found
+
+
+def git_crate_updates() -> list[str]:
+    """Crates taken from a git commit until their next release: a newer
+    release on crates.io means Cargo.toml can go back to it."""
+    metadata = run_cargo("metadata", "--format-version", "1", "--locked")
+    if metadata.returncode != 0:
+        raise RuntimeError(metadata.stderr.strip().splitlines()[-1])
+    found = []
+    for package in json.loads(metadata.stdout)["packages"]:
+        if not (package.get("source") or "").startswith("git+"):
+            continue
+        crate = get_json(f"https://crates.io/api/v1/crates/{package['name']}")["crate"]
+        newest = crate.get("max_stable_version") or crate["max_version"]
+        if version(newest) > version(package["version"]):
+            found.append(f"{package['name']} {package['version']} from git -> {newest}")
     return found
 
 
@@ -97,8 +123,15 @@ def main() -> None:
         print(f"Could not check the crates: {error}")
         nothing_new = False
     try:
+        from_git = git_crate_updates()
+        show("Crates from git with a newer release on crates.io", from_git)
+        nothing_new = nothing_new and not from_git
+    except (OSError, RuntimeError, subprocess.SubprocessError, ValueError) as error:
+        print(f"Could not check the crates from git (offline?): {error}")
+        nothing_new = False
+    try:
         actions = action_updates()
-        show("GitHub Actions with a newer major version", actions)
+        show("GitHub Actions with a newer release", actions)
         nothing_new = nothing_new and not actions
     except (OSError, ValueError) as error:
         print(f"Could not check the GitHub Actions (offline?): {error}")
