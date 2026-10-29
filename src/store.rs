@@ -4,8 +4,7 @@
 //! metadata, OCR text and one embedding per (model, item).
 //!
 //! On Windows the items and the copied images' files are encrypted with the
-//! history's key (see `vault`); the embeddings are not. A plain history from
-//! an older version is encrypted once, when it is first opened.
+//! history's key (see `vault`); the embeddings are not.
 
 use std::borrow::Cow;
 use std::io::Cursor;
@@ -33,12 +32,10 @@ const SECRETS: TableDefinition<&str, &[u8]> = TableDefinition::new("secrets");
 const FORMATS: TableDefinition<u64, &[u8]> = TableDefinition::new("formats");
 const HISTORY_KEY: &str = "history_key";
 
-/// The stored format. `migrate` brings an older file up to it, and a newer
-/// file (from a later app version) is refused rather than misread.
-/// 1: items and embeddings. 2: adds the models and meta tables. 3: adds the
-/// secrets table; where it holds a key, item rows and the copied images'
-/// files are encrypted, and those images' paths are relative to the images
-/// folder.
+/// The stored format. A file from a later app version is refused rather
+/// than misread. Where the secrets table holds a key, item rows and the
+/// copied images' files are encrypted, and those images' paths are
+/// relative to the images folder.
 const SCHEMA_VERSION: u64 = 3;
 
 /// redb's page cache defaults to 1 GiB, on top of the history the app already
@@ -247,8 +244,8 @@ pub struct Store {
 
 impl Store {
     /// Opens the history, creating it if needed. On Windows it is encrypted:
-    /// a plain one from an older version is encrypted once, and one whose key
-    /// this account can't open is moved aside for a new, empty one.
+    /// one whose key this account can't open, or a plain one an older version
+    /// wrote, is moved aside for a new, empty one.
     pub fn open(db_path: &Path, images_dir: &Path) -> Result<Self> {
         let mut db = open_database(db_path)?;
         let mut moved_aside = None;
@@ -263,18 +260,15 @@ impl Store {
                     new_key(&db)?
                 }
             },
-            None if has_items(&db)? => match Vault::create()? {
-                Some((vault, sealed)) => {
-                    drop(db);
-                    if let Err(e) = encrypt_history(db_path, images_dir, &vault, &sealed) {
-                        log::error!("encrypting the history failed; it stays plain until the next start: {e:#}");
-                    }
-                    db = open_database(db_path)?;
-                    // The file holds the key only if encrypting worked.
-                    stored_key(&db)?.map(|_| vault)
-                }
-                None => None,
-            },
+            // Without DPAPI a history is always plain; on Windows a plain one
+            // with items was written by an older version, which isn't read.
+            None if cfg!(windows) && has_items(&db)? => {
+                log::error!("the history was written by an older version; starting a new one");
+                drop(db);
+                moved_aside = Some(move_aside(db_path, images_dir)?);
+                db = open_database(db_path)?;
+                new_key(&db)?
+            }
             None => new_key(&db)?,
         };
         let vault = vault.map(Arc::new);
@@ -567,35 +561,24 @@ fn open_database(path: &Path) -> Result<Database> {
         .set_cache_size(CACHE_BYTES)
         .create(path)
         .context("opening database")?;
-    migrate(&db)?;
+    create_tables(&db)?;
     Ok(db)
 }
 
-/// Creates missing tables and brings an older file up to SCHEMA_VERSION,
-/// in one transaction: an interrupted migration leaves the old file as it was.
-fn migrate(db: &Database) -> Result<()> {
+/// Creates missing tables and stamps the file with SCHEMA_VERSION; a file
+/// from a later version is refused.
+fn create_tables(db: &Database) -> Result<()> {
     let txn = db.begin_write()?;
     {
         txn.open_table(ITEMS)?;
         txn.open_table(SECRETS)?;
         txn.open_table(FORMATS)?;
-        let embeddings = txn.open_table(EMBEDDINGS)?;
-        let mut models = txn.open_table(MODELS)?;
+        txn.open_table(EMBEDDINGS)?;
+        txn.open_table(MODELS)?;
         let mut meta = txn.open_table(META)?;
         let version = meta.get("schema_version")?.map_or(1, |v| v.value());
         if version > SCHEMA_VERSION {
             bail!("the history was saved by a newer version of the app (format {version}); update the app");
-        }
-        if version < 2 {
-            // One scan to list the models; put_embeddings keeps the list after this.
-            let keys: std::collections::BTreeSet<String> = embeddings
-                .iter()?
-                .filter_map(|row| row.ok())
-                .map(|(k, _)| k.value().0.to_string())
-                .collect();
-            for key in &keys {
-                models.insert(key.as_str(), ())?;
-            }
         }
         meta.insert("schema_version", SCHEMA_VERSION)?;
     }
@@ -641,183 +624,6 @@ fn move_aside(db_path: &Path, images_dir: &Path) -> Result<PathBuf> {
         std::fs::create_dir_all(images_dir)?;
     }
     Ok(aside)
-}
-
-/// Encrypts a plain history: writes an encrypted copy next to it, with the
-/// copied images' files encrypted too, checks that the copy reads back the
-/// same, then puts it in place and deletes the plain files. Anything that
-/// fails before that leaves the history as it was.
-fn encrypt_history(
-    db_path: &Path,
-    images_dir: &Path,
-    vault: &Vault,
-    sealed_key: &[u8],
-) -> Result<()> {
-    let copy_path = db_path.with_extension("redb.encrypting");
-    let _ = std::fs::remove_file(&copy_path);
-    let mut new_files = Vec::new();
-    let plain_images = match write_encrypted_copy(
-        db_path,
-        &copy_path,
-        images_dir,
-        vault,
-        sealed_key,
-        &mut new_files,
-    ) {
-        Ok(plain_images) => plain_images,
-        Err(e) => {
-            for file in std::iter::once(&copy_path).chain(&new_files) {
-                let _ = std::fs::remove_file(file);
-            }
-            return Err(e);
-        }
-    };
-    // The plain file stays until the copy has taken its place.
-    let plain_path = db_path.with_extension("redb.plain");
-    std::fs::rename(db_path, &plain_path).context("moving the plain history aside")?;
-    if let Err(e) = std::fs::rename(&copy_path, db_path) {
-        std::fs::rename(&plain_path, db_path).context("putting the plain history back")?;
-        for file in &new_files {
-            let _ = std::fs::remove_file(file);
-        }
-        return Err(e).context("putting the encrypted history in place");
-    }
-    for file in std::iter::once(plain_path).chain(plain_images) {
-        if let Err(e) = std::fs::remove_file(&file) {
-            log::warn!("deleting the plain {}: {e}", file.display());
-        }
-    }
-    log::info!("the history is encrypted now");
-    Ok(())
-}
-
-/// Writes the encrypted copy of a plain history and checks it. Returns the
-/// plain image files to delete once the copy is in place.
-fn write_encrypted_copy(
-    plain_path: &Path,
-    copy_path: &Path,
-    images_dir: &Path,
-    vault: &Vault,
-    sealed_key: &[u8],
-    new_files: &mut Vec<PathBuf>,
-) -> Result<Vec<PathBuf>> {
-    let plain = Database::open(plain_path).context("opening the plain history")?;
-    let copy = redb::Builder::new()
-        .set_cache_size(CACHE_BYTES)
-        .create(copy_path)
-        .context("creating the encrypted copy")?;
-    // What each row and image must read back as.
-    let mut rows: Vec<(u64, Vec<u8>)> = Vec::new();
-    let mut images: Vec<(u64, PathBuf, PathBuf)> = Vec::new();
-    {
-        let read = plain.begin_read()?;
-        let write = copy.begin_write()?;
-        {
-            let mut items = write.open_table(ITEMS)?;
-            for row in read.open_table(ITEMS)?.iter()? {
-                let (id, stored) = row?;
-                let id = id.value();
-                let mut json = stored.value().to_vec();
-                // A row that doesn't parse is kept as it is, as reading skips it anyway.
-                if let Ok(mut item) = serde_json::from_slice::<Item>(&json) {
-                    if let Some(name) =
-                        encrypt_image(&item, images_dir, vault, new_files, &mut images)?
-                    {
-                        item.image = Some(name);
-                        json = serde_json::to_vec(&item)?;
-                    }
-                }
-                items.insert(id, vault.seal(&vault::item_context(id), &json)?.as_slice())?;
-                rows.push((id, json));
-            }
-            let mut vectors = write.open_table(EMBEDDINGS)?;
-            for row in read.open_table(EMBEDDINGS)?.iter()? {
-                let (key, vector) = row?;
-                vectors.insert(key.value(), vector.value())?;
-            }
-            let mut models = write.open_table(MODELS)?;
-            for row in read.open_table(MODELS)?.iter()? {
-                models.insert(row?.0.value(), ())?;
-            }
-            // A history from before formatting was kept has no such table.
-            let mut formats = write.open_table(FORMATS)?;
-            match read.open_table(FORMATS) {
-                Ok(plain_formats) => {
-                    for row in plain_formats.iter()? {
-                        let (id, bytes) = row?;
-                        let id = id.value();
-                        let sealed = vault.seal(&vault::formats_context(id), bytes.value())?;
-                        formats.insert(id, sealed.as_slice())?;
-                    }
-                }
-                Err(redb::TableError::TableDoesNotExist(_)) => {}
-                Err(e) => return Err(e.into()),
-            }
-            write
-                .open_table(META)?
-                .insert("schema_version", SCHEMA_VERSION)?;
-            write.open_table(SECRETS)?.insert(HISTORY_KEY, sealed_key)?;
-        }
-        write.commit()?;
-    }
-    // The check: every row and every image decrypts to what was written.
-    let read = copy.begin_read()?;
-    let items = read.open_table(ITEMS)?;
-    if items.len()? != rows.len() as u64 {
-        bail!(
-            "the encrypted copy has {} items, not {}",
-            items.len()?,
-            rows.len()
-        );
-    }
-    for (id, json) in &rows {
-        let stored = items
-            .get(*id)?
-            .context("an item is missing from the encrypted copy")?;
-        if vault.unseal(&vault::item_context(*id), stored.value())? != *json {
-            bail!("item {id} reads back differently from the encrypted copy");
-        }
-    }
-    let mut plain_images = Vec::new();
-    for (id, plain_file, encrypted_file) in images {
-        let png = vault.unseal(&vault::image_context(id), &std::fs::read(&encrypted_file)?)?;
-        if png != std::fs::read(&plain_file)? {
-            bail!("image {id} reads back differently from the encrypted copy");
-        }
-        plain_images.push(plain_file);
-    }
-    Ok(plain_images)
-}
-
-/// Encrypts a copied image's PNG into `<id>.png.enc` in the images folder.
-/// Returns the path to store, or `None` for images that stay as they are:
-/// imported ones (the user's own files) and files that are gone. A file
-/// recorded under another data folder is looked for in this one, by name.
-fn encrypt_image(
-    item: &Item,
-    images_dir: &Path,
-    vault: &Vault,
-    new_files: &mut Vec<PathBuf>,
-    images: &mut Vec<(u64, PathBuf, PathBuf)>,
-) -> Result<Option<PathBuf>> {
-    let Some(recorded) = &item.image else {
-        return Ok(None);
-    };
-    if item.origin != Origin::Clipboard {
-        return Ok(None);
-    }
-    let plain_file = match recorded.file_name() {
-        _ if recorded.starts_with(images_dir) && recorded.is_file() => recorded.clone(),
-        Some(name) if images_dir.join(name).is_file() => images_dir.join(name),
-        _ => return Ok(None),
-    };
-    let name = PathBuf::from(format!("{}.png.enc", item.id));
-    let encrypted_file = images_dir.join(&name);
-    let sealed = vault.seal(&vault::image_context(item.id), &std::fs::read(&plain_file)?)?;
-    std::fs::write(&encrypted_file, sealed)?;
-    new_files.push(encrypted_file.clone());
-    images.push((item.id, plain_file, encrypted_file));
-    Ok(Some(name))
 }
 
 /// FNV-1a: a stable hash for de-duplication (std's hasher may change between releases).
@@ -941,63 +747,33 @@ mod tests {
 
     #[cfg(windows)]
     #[test]
-    fn a_plain_history_is_encrypted_once_and_reads_the_same() {
+    fn a_plain_history_from_an_older_version_is_moved_aside() {
         let dir = temp_dir("plain");
         let path = dir.join("history.redb");
         let images_dir = dir.join("images");
         std::fs::create_dir_all(&images_dir).unwrap();
-        let picture = image::RgbaImage::from_pixel(4, 3, image::Rgba([10, 20, 30, 255]));
-        let copied_png = images_dir.join("2.png");
-        picture.save(&copied_png).unwrap();
-        // An image the user added from their own folder stays theirs.
-        let users_png = dir.join("holiday.png");
-        picture.save(&users_png).unwrap();
-        // A history as an older version wrote it: plain rows, absolute paths.
-        let mut copied = Item::new(2, Kind::Image, Origin::Clipboard, "".into());
-        copied.image = Some(copied_png.clone());
-        copied.ocr = Some("text in a screenshot".into());
-        let mut imported = Item::new(3, Kind::Image, Origin::Imported, "".into());
-        imported.image = Some(users_png.clone());
+        // Plain rows and no key, as an older version wrote them.
         {
             let db = Database::create(&path).unwrap();
             let txn = db.begin_write().unwrap();
             {
                 let mut items = txn.open_table(ITEMS).unwrap();
-                for it in [item(1, "plain secret text"), copied, imported] {
-                    items
-                        .insert(it.id, serde_json::to_vec(&it).unwrap().as_slice())
-                        .unwrap();
-                }
-                let mut vectors = txn.open_table(EMBEDDINGS).unwrap();
-                let v = Embedding::Dense(vec![1.0]).to_bytes();
-                vectors.insert(("m", 1u64), v.as_slice()).unwrap();
+                let it = item(1, "plain text");
+                items
+                    .insert(it.id, serde_json::to_vec(&it).unwrap().as_slice())
+                    .unwrap();
             }
             txn.commit().unwrap();
         }
-
         let store = Store::open(&path, &images_dir).unwrap();
+        let aside = store
+            .moved_aside
+            .clone()
+            .expect("the old history is moved aside");
+        assert!(file_contains(&aside, "plain text"), "kept as it was");
         assert!(store.is_encrypted());
-        let items = store.all_items().unwrap();
-        assert_eq!(items.len(), 3);
-        assert_eq!(&*store.get(1).unwrap().unwrap().text, "plain secret text");
-        let copied = store.get(2).unwrap().unwrap();
-        assert_eq!(copied.ocr.as_deref(), Some("text in a screenshot"));
-        assert_eq!(copied.image.as_deref(), Some(Path::new("2.png.enc")));
-        let shown = store
-            .images
-            .open(2, copied.image.as_ref().unwrap())
-            .unwrap();
-        assert_eq!(shown.into_rgba8(), picture);
-        assert!(!copied_png.exists(), "the plain image is deleted");
-        let imported = store.get(3).unwrap().unwrap();
-        assert_eq!(imported.image.as_ref(), Some(&users_png));
-        assert!(users_png.exists(), "the user's own file stays");
-        assert_eq!(store.embeddings("m").unwrap().len(), 1);
+        assert!(store.all_items().unwrap().is_empty());
         drop(store);
-        assert!(!file_contains(&path, "plain secret text"));
-        assert!(!file_contains(&path, "text in a screenshot"));
-        assert!(!path.with_extension("redb.encrypting").exists());
-        assert!(!path.with_extension("redb.plain").exists());
         std::fs::remove_dir_all(dir).ok();
     }
 
@@ -1035,28 +811,17 @@ mod tests {
     }
 
     #[test]
-    fn an_old_file_is_migrated_and_deletes_reach_every_model() {
-        let dir = temp_dir("migrate");
-        let path = dir.join("old.redb");
-        // A format-1 file: only the items and embeddings tables.
-        {
-            let db = Database::create(&path).unwrap();
-            let txn = db.begin_write().unwrap();
-            {
-                let mut items = txn.open_table(ITEMS).unwrap();
-                let bytes = serde_json::to_vec(&item(1, "a")).unwrap();
-                items.insert(1, bytes.as_slice()).unwrap();
-                let mut vectors = txn.open_table(EMBEDDINGS).unwrap();
-                for model in ["m1", "m2"] {
-                    let v = Embedding::Dense(vec![1.0]).to_bytes();
-                    vectors.insert((model, 1u64), v.as_slice()).unwrap();
-                }
-            }
-            txn.commit().unwrap();
+    fn deletes_reach_every_model() {
+        let dir = temp_dir("models");
+        let store = Store::open(&dir.join("t.redb"), &dir).unwrap();
+        let it = item(1, "a");
+        store.put(&it).unwrap();
+        for model in ["m1", "m2"] {
+            store
+                .put_embedding(model, 1, &Embedding::Dense(vec![1.0]))
+                .unwrap();
         }
-        let store = Store::open(&path, &dir).unwrap();
-        assert_eq!(store.all_items().unwrap().len(), 1);
-        store.delete(&item(1, "a")).unwrap();
+        store.delete(&it).unwrap();
         assert!(store.embeddings("m1").unwrap().is_empty());
         assert!(store.embeddings("m2").unwrap().is_empty());
         drop(store);

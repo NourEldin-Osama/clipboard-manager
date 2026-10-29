@@ -99,8 +99,8 @@ server client with optional `llama-server` launcher), `import.rs` (files/folders
   clippy on Windows with `ci/fast-build.toml`) must pass. Checks also run on pushes to `main` to keep the cache warm.
 - `dependencies.yml` runs cargo-deny (`deny.toml`) when the crates change and every Monday; it is not a required
   check. An advisory that can't affect the app goes in `advisories.ignore` with the reason.
-- Every push to `main` that changes code runs `build-windows.yml`, which builds with `BUILD_NUMBER`, signs the exe with
-  the Ed25519 `UPDATE_SIGNING_KEY` secret, and publishes release `v<Cargo version>-build.<run>` with the exe,
+- Every push to `main` that changes code runs `build-windows.yml`, which builds with `BUILD_NUMBER`, signs the release
+  line (version, build, size, SHA-256, links) with the Ed25519 `UPDATE_SIGNING_KEY` secret, and publishes release `v<Cargo version>-build.<run>` with the exe,
   `updater.json`, a Scoop manifest and winget manifests (schema 1.12.0). Docs-only pushes don't release.
 - Self-update (`update.rs`) reads `releases/latest/download/updater.json`, verifies SHA-256 and the signature against
   `PUBLIC_KEY`, swaps the exe (running one renamed `.old`) and relaunches with `--after-update`. Local builds have no

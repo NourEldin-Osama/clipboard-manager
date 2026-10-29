@@ -69,10 +69,9 @@ the notes here before a push that makes a release.
 
 **Your history is now encrypted.** On Windows, the text and images you copy
 are encrypted on disk with a key that only your Windows account on this PC
-can open. The first start of this version encrypts your existing history
-once. Back up `%APPDATA%\clipboard-manager\data` before you update. A history
-copied to another PC or Windows account can't be opened there: the app keeps
-it aside and starts a new one.
+can open. A history from an older version, or one copied to another PC or
+Windows account, can't be opened: the app keeps it aside and starts a new
+one.
 
 - Updates are safer: everything the app reads about a new version is signed,
   so an older version can't be offered as a new one.

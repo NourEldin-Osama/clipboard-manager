@@ -76,9 +76,8 @@ jobs:
 
       # The app installs an update only if its Ed25519 signature checks out
       # against the public key built into it. The private key is a repo secret.
-      # `signed` is the one line newer app versions read every value from, so
-      # a changed updater.json can't offer an older exe as new. Older versions
-      # read the other fields and check the exe's own signature.
+      # `signed` is the one line the app reads every value from, so a changed
+      # updater.json can't offer an older exe as new.
       - name: Sign and describe the update
         shell: bash
         env:
@@ -97,30 +96,21 @@ jobs:
           printf 'clipboard-manager-release-v1 version=%s build=%s size=%s sha256=%s url=%s notes_url=%s' \
             "${{ steps.version.outputs.version }}" "${{ github.run_number }}" "$size" "$sha" \
             "$base/download/$tag/$exe" "$base/tag/$tag" > "$RUNNER_TEMP/release.txt"
-          openssl pkeyutl -sign -rawin -inkey "$key" -in "$exe" -out "$RUNNER_TEMP/exe.sig"
           openssl pkeyutl -sign -rawin -inkey "$key" -in "$RUNNER_TEMP/release.txt" -out "$RUNNER_TEMP/release.sig"
           rm -f "$key"
           cat > updater.json <<JSON
           {
-            "version": "${{ steps.version.outputs.version }}",
-            "build": ${{ github.run_number }},
-            "pub_date": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
-            "notes_url": "$base/tag/$tag",
-            "url": "$base/download/$tag/$exe",
-            "size": $size,
-            "sha256": "$sha",
-            "signature": "$(base64 -w0 "$RUNNER_TEMP/exe.sig")",
             "signed": "$(cat "$RUNNER_TEMP/release.txt")",
             "signed_signature": "$(base64 -w0 "$RUNNER_TEMP/release.sig")"
           }
           JSON
           cat updater.json
 
-      # Checks what is about to be published: both signatures against the
-      # public key built into the app, and that the signed line describes this
-      # exe. A signing mistake then stops the release instead of shipping an
-      # update that every new version refuses.
-      - name: Check the update signatures
+      # Checks what is about to be published: the signature against the public
+      # key built into the app, and that the signed line describes this exe. A
+      # signing mistake then stops the release instead of shipping an update
+      # that the app refuses.
+      - name: Check the update signature
         shell: bash
         run: |
           set -euo pipefail
@@ -137,14 +127,12 @@ jobs:
           } > "$pem"
           # -j prints no line ending: jq.exe on Windows would end lines with CR,
           # which base64 refuses.
-          jq -j .signature updater.json | base64 -d > "$RUNNER_TEMP/exe.sig.check"
-          openssl pkeyutl -verify -rawin -pubin -inkey "$pem" -in "$exe" -sigfile "$RUNNER_TEMP/exe.sig.check"
           jq -j .signed updater.json > "$RUNNER_TEMP/release.check.txt"
           jq -j .signed_signature updater.json | base64 -d > "$RUNNER_TEMP/release.sig.check"
           openssl pkeyutl -verify -rawin -pubin -inkey "$pem" -in "$RUNNER_TEMP/release.check.txt" -sigfile "$RUNNER_TEMP/release.sig.check"
           grep -q " size=$(stat -c %s "$exe") " "$RUNNER_TEMP/release.check.txt"
           grep -q " sha256=$(sha256sum "$exe" | cut -d' ' -f1) " "$RUNNER_TEMP/release.check.txt"
-          echo "Both update signatures check out against the app's public key."
+          echo "The update signature checks out against the app's public key."
 
       # Package-manager manifests, attached to each release:
       #   scoop install https://github.com/<repo>/releases/latest/download/clipboard-manager.json

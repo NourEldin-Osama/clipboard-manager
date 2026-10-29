@@ -4,8 +4,9 @@
 
 use base64::Engine as _;
 
-/// Marks an encrypted value. A value without it is plain text, from an older
-/// version or another platform, and is encrypted at the next save.
+/// Marks an encrypted value. A value without it is plain text: saved on a
+/// platform without DPAPI, or when encrypting failed. Windows encrypts it at
+/// the next save.
 const PREFIX: &str = "dpapi:";
 
 /// The stored form of `value`: `dpapi:<base64>` on Windows, else `value` as is.
@@ -147,7 +148,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn plain_values_from_older_versions_are_read_as_is() {
+    fn plain_values_are_read_as_is() {
         assert_eq!(open("sk-plain-key"), "sk-plain-key");
         assert_eq!(open(""), "");
     }

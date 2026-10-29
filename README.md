@@ -203,7 +203,7 @@ the active model's index are embedded in the background, and the status bar show
 - `config.json` holds settings, and `app.ron` the window's size and place
 - `clipboard-manager.log` is a log of the current run (the previous run's is kept as `clipboard-manager.old.log`). Open it from Settings → Data → *Show log* and attach it to bug reports.
 
-On Windows the items and copied images are encrypted (AES-256-GCM) with a key that Windows itself protects for your account (DPAPI): only your account, on this PC, can open the history. The search vectors are not encrypted. A history from an older version is encrypted the first time a newer version opens it. A history that can't be opened, for example one copied from another PC or account, is moved aside as `history-unreadable-<date>.redb` and an empty one starts; the old one still opens on the account that made it.
+On Windows the items and copied images are encrypted (AES-256-GCM) with a key that Windows itself protects for your account (DPAPI): only your account, on this PC, can open the history. The search vectors are not encrypted. A history that can't be opened, for example one from an older version or one copied from another PC or account, is moved aside as `history-unreadable-<date>.redb` and an empty one starts; one from another account still opens on the account that made it.
 
 Set `CLIPBOARD_MANAGER_HOME` to use another folder, for example a portable install on a USB stick. Its history is encrypted too, so it opens only on the PC and account that made it.
 

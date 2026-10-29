@@ -23,7 +23,8 @@ Only the latest release gets fixes. The app updates itself, so most people are o
 
 ## How updates are verified
 
-Each release's `.exe` is signed by the release workflow with an Ed25519 key kept as a GitHub Actions secret
-(`UPDATE_SIGNING_KEY`). `updater.json` carries its SHA-256 and signature. The app installs a download only if both
-match the public key compiled into it ([`src/update.rs`](src/update.rs)); anything else is refused and the running
-version is kept.
+For each release the release workflow signs one line with its version, build number, size, SHA-256 and links, with
+an Ed25519 key kept as a GitHub Actions secret (`UPDATE_SIGNING_KEY`). `updater.json` carries that line and its
+signature. The app installs a download only if the signature matches the public key compiled into it
+([`src/update.rs`](src/update.rs)) and the download's size and SHA-256 match the line; anything else is refused and
+the running version is kept.
