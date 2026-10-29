@@ -3,6 +3,8 @@ name: Checks
 # Format, tests and lint for pull requests; no exe and no release (those run on main only).
 # Pushes to main run it too, only so that main holds a warm build cache: GitHub
 # lets a pull request use caches saved on main, not ones from other pull requests.
+# Actions are pinned to a commit, with its release in a comment: a tag can
+# be moved to other code, a commit can't. Dependabot updates both.
 on:
   pull_request:
     branches: [main]
@@ -36,7 +38,7 @@ jobs:
     env:
       CARGO_TERM_COLOR: always
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # A pull request is compared with its base, which needs the history.
           fetch-depth: 0
@@ -57,7 +59,7 @@ jobs:
             echo "Only non-code files changed: skipping format, tests and lint."
           fi
       - if: steps.changes.outputs.code == 'true'
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable branch, 2026-10-16
         with:
           components: clippy, rustfmt
       # First, because it needs no build and fails in seconds.
@@ -65,7 +67,7 @@ jobs:
         if: steps.changes.outputs.code == 'true'
         run: cargo fmt --check
       - if: steps.changes.outputs.code == 'true'
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           # Only main saves the cache; pull requests just restore it.
           save-if: ${{ github.ref == 'refs/heads/main' }}

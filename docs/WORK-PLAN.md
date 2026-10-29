@@ -133,7 +133,7 @@ Status: `[ ]` to do, `[~]` in progress, `[x]` done, `[!]` waiting for a decision
 
 ### Phase 8. Build, CI and tests
 - [x] 8.1 One `tokenizers` version (no second copy, no C library build): candle from GitHub at a fixed commit (D29)
-- [ ] 8.2 GitHub Actions pinned to commit hashes
+- [x] 8.2 GitHub Actions pinned to commit hashes; the push hook reads the release from the comment and reports a candle release newer than the git commit
 - [x] 8.3 The release job checks the update signature before publishing (moved into 5.2, D20)
 - [ ] 8.4 `cargo deny` for licenses and security advisories
 - [ ] 8.5 Clippy fails on warnings in CI
