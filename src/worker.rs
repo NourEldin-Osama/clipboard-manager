@@ -673,6 +673,59 @@ mod tests {
         }
     }
 
+    /// The worker's state as `spawn` makes it, without the thread.
+    fn state(store: Arc<Store>, dir: &std::path::Path, events: Sender<Event>) -> State {
+        State {
+            store,
+            models_dir: dir.to_path_buf(),
+            events,
+            wake: Box::new(|| {}),
+            text_reader: TextReader::BuiltIn,
+            ocr: None,
+            ocr_failed: false,
+            ocr_error_shown: false,
+            embedder: None,
+            backend: None,
+            have: HashSet::new(),
+            failed: HashSet::new(),
+            pending: Arc::default(),
+        }
+    }
+
+    #[test]
+    fn a_server_it_cannot_reach_turns_meaning_search_off_with_an_error() {
+        let dir = std::env::temp_dir().join(format!("cbm-worker-server-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let store = Arc::new(Store::open(&dir.join("t.redb"), &dir).unwrap());
+        let (events, rx) = channel();
+        let mut st = state(store.clone(), &dir, events);
+        st.embedder = Some(Box::new(Fragile));
+        // A port on this PC that nothing listens on: the connection is refused.
+        let port = std::net::TcpListener::bind("127.0.0.1:0")
+            .unwrap()
+            .local_addr()
+            .unwrap()
+            .port();
+        let server = crate::config::ServerConfig {
+            base_url: format!("http://127.0.0.1:{port}/v1"),
+            ..Default::default()
+        };
+        st.set_backend(EmbedBackend::Server(Box::new(server)));
+        assert!(st.embedder.is_none(), "the previous model is not kept");
+        let seen: Vec<&str> = rx
+            .try_iter()
+            .map(|event| match event {
+                Event::Status(_) => "status",
+                Event::Error(_) => "error",
+                Event::BackendOff => "off",
+                _ => "other",
+            })
+            .collect();
+        assert_eq!(seen, ["status", "error", "off"]);
+        drop((st, store));
+        std::fs::remove_dir_all(dir).ok();
+    }
+
     #[test]
     fn a_panic_skips_its_items_and_indexing_goes_on() {
         let dir = std::env::temp_dir().join(format!("cbm-worker-{}", std::process::id()));
@@ -689,21 +742,8 @@ mod tests {
             store.put(&it).unwrap();
         }
         let (events, _rx) = channel();
-        let mut st = State {
-            store: store.clone(),
-            models_dir: dir.clone(),
-            events,
-            wake: Box::new(|| {}),
-            text_reader: TextReader::BuiltIn,
-            ocr: None,
-            ocr_failed: false,
-            ocr_error_shown: false,
-            embedder: Some(Box::new(Fragile)),
-            backend: None,
-            have: HashSet::new(),
-            failed: HashSet::new(),
-            pending: Arc::default(),
-        };
+        let mut st = state(store.clone(), &dir, events);
+        st.embedder = Some(Box::new(Fragile));
         // What `run` does for each step, without the thread.
         for next in [Next::Embed(vec![1, 2]), Next::Embed(vec![3])] {
             let ids = next.ids();
