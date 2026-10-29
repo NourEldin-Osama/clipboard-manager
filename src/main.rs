@@ -158,56 +158,6 @@ pub fn icon_rgba() -> (Vec<u8>, u32) {
     (rgba, n)
 }
 
-/// Gives the window its large icon too, which Windows shows in the taskbar
-/// and in Alt+Tab: egui sets only the small one, in the title bar, and the
-/// exe has no icon of its own yet.
-#[cfg(windows)]
-pub fn set_taskbar_icon(window: &impl raw_window_handle::HasWindowHandle) {
-    use raw_window_handle::RawWindowHandle;
-    use windows_sys::Win32::UI::WindowsAndMessaging::{
-        CreateIcon, SendMessageW, ICON_BIG, WM_SETICON,
-    };
-    let Ok(handle) = window.window_handle() else {
-        return;
-    };
-    let RawWindowHandle::Win32(handle) = handle.as_raw() else {
-        return;
-    };
-    let (mut rgba, n) = icon_rgba();
-    // Windows wants blue, green, red, alpha. It draws by the alpha channel,
-    // so the mask (one bit a pixel, in rows of two bytes) stays empty.
-    for px in rgba.as_chunks_mut::<4>().0 {
-        px.swap(0, 2);
-    }
-    let mask = vec![0u8; (n as usize).div_ceil(16) * 2 * n as usize];
-    // SAFETY: both buffers hold the n by n pixels CreateIcon reads.
-    let icon = unsafe {
-        CreateIcon(
-            std::ptr::null_mut(),
-            n as i32,
-            n as i32,
-            1,
-            32,
-            mask.as_ptr(),
-            rgba.as_ptr(),
-        )
-    };
-    if icon.is_null() {
-        log::warn!("the taskbar icon could not be made");
-        return;
-    }
-    // SAFETY: a message to this app's own window. The icon stays for as long
-    // as the app runs.
-    unsafe {
-        SendMessageW(
-            handle.hwnd.get() as _,
-            WM_SETICON,
-            ICON_BIG as usize,
-            icon as isize,
-        )
-    };
-}
-
 fn rounded(x: f32, y: f32, x0: f32, y0: f32, x1: f32, y1: f32, r: f32) -> bool {
     if x < x0 || x > x1 || y < y0 || y > y1 {
         return false;

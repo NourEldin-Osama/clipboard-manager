@@ -478,8 +478,6 @@ impl App {
         instance: crate::single_instance::Guard,
     ) -> anyhow::Result<Self> {
         let ctx = cc.egui_ctx.clone();
-        #[cfg(windows)]
-        crate::set_taskbar_icon(cc);
         let (cfg, settings_problem) = Config::load(&paths.config);
         i18n::set(cfg.language, cfg.time_format);
         add_fonts(&ctx);
