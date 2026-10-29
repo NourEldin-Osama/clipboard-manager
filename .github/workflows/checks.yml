@@ -21,7 +21,9 @@ on:
       - ".github/pull_request_template.md"
       - ".github/dependabot.yml"
       - ".github/workflows/build-windows.yml"
+      - ".github/workflows/dependencies.yml"
       - "prek.toml"
+      - "deny.toml"
       - "tools/**"
 
 concurrency:
@@ -48,7 +50,7 @@ jobs:
         id: changes
         shell: bash
         env:
-          NOT_CODE: '^(.*\.md|docs/.*|LICENSE-.*|\.gitignore|\.github/ISSUE_TEMPLATE/.*|\.github/pull_request_template\.md|\.github/dependabot\.yml|\.github/workflows/build-windows\.yml|prek\.toml|tools/.*)$'
+          NOT_CODE: '^(.*\.md|docs/.*|LICENSE-.*|\.gitignore|\.github/ISSUE_TEMPLATE/.*|\.github/pull_request_template\.md|\.github/dependabot\.yml|\.github/workflows/build-windows\.yml|\.github/workflows/dependencies\.yml|prek\.toml|deny\.toml|tools/.*)$'
         run: |
           if [ "${{ github.event_name }}" != pull_request ]; then
             echo "code=true" >> "$GITHUB_OUTPUT"

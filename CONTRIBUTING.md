@@ -43,6 +43,12 @@ prek install
 
 Run every hook on every file with `prek run --all-files`.
 
+## Dependency check
+
+[cargo-deny](https://embarkstudios.github.io/cargo-deny) checks the licenses of the crates, security advisories,
+duplicate versions and where crates come from, with the settings in `deny.toml`. GitHub runs it when the crates
+change and every Monday. Run it yourself with `cargo deny check -W unmaintained`.
+
 ## Pull requests
 
 - Branch from `main` and open a pull request against it; checks (tests, lint) run on every pull request.

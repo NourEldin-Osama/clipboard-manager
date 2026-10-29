@@ -14,6 +14,7 @@ cargo test search::tests::hybrid_is_ordered_by_relevance   # one test
 cargo clippy --all-targets --config ci/fast-build.toml
 cargo check --target x86_64-pc-windows-gnu  # Windows-only code paths from Linux (needs mingw-w64 for ring's build script)
 prek run --all-files                        # every git hook: file checks, fmt, clippy -D warnings (see CONTRIBUTING.md)
+cargo deny check -W unmaintained            # licenses, advisories, duplicates, crate sources (deny.toml)
 ```
 
 - Three tests are `#[ignore]` and need local assets: `OCR_DIR=… cargo test -- --ignored ocr_reads_text`,
@@ -96,6 +97,8 @@ server client with optional `llama-server` launcher), `import.rs` (files/folders
 
 - `main` is protected: changes go through a pull request, and the `check` job (`.github/workflows/checks.yml`: tests and
   clippy on Windows with `ci/fast-build.toml`) must pass. Checks also run on pushes to `main` to keep the cache warm.
+- `dependencies.yml` runs cargo-deny (`deny.toml`) when the crates change and every Monday; it is not a required
+  check. An advisory that can't affect the app goes in `advisories.ignore` with the reason.
 - Every push to `main` that changes code runs `build-windows.yml`, which builds with `BUILD_NUMBER`, signs the exe with
   the Ed25519 `UPDATE_SIGNING_KEY` secret, and publishes release `v<Cargo version>-build.<run>` with the exe,
   `updater.json`, a Scoop manifest and winget manifests (schema 1.12.0). Docs-only pushes don't release.

@@ -1,0 +1,56 @@
+# Checks the crates the app is built from with cargo-deny
+# (https://embarkstudios.github.io/cargo-deny): licenses, security advisories,
+# duplicate versions and where crates come from. GitHub runs it in
+# .github/workflows/dependencies.yml. Here, with the same flag:
+#   cargo deny check -W unmaintained
+
+[graph]
+# Only Windows builds are released.
+targets = ["x86_64-pc-windows-msvc"]
+
+[advisories]
+# A known vulnerability fails the check (always, unless listed in `ignore`
+# with a reason), and so does a soundness bug in any crate. Unmaintained
+# crates are reported for every crate; `-W unmaintained` makes them
+# warnings, which never fail the check.
+unsound = "all"
+unmaintained = "all"
+ignore = [
+  # zip 8 comes with candle, which only reads archive entries and never calls
+  # extract(), the function these three are about; the app loads only
+  # safetensors files. Remove them once candle moves to zip 9.
+  { id = "RUSTSEC-2026-0367", reason = "extract() is never called" },
+  { id = "RUSTSEC-2026-0368", reason = "extract() is never called" },
+  { id = "RUSTSEC-2026-0369", reason = "extract() is never called" },
+]
+
+[licenses]
+# Permissive licenses, and MPL-2.0 (copyleft for its own files only) for
+# option-ext, which `directories` uses to find the AppData folder.
+allow = [
+  "Apache-2.0",
+  "BSD-2-Clause",
+  "BSD-3-Clause",
+  "BSL-1.0",
+  "CDLA-Permissive-2.0",
+  "ISC",
+  "MIT",
+  "MPL-2.0",
+  "Unicode-3.0",
+  "Zlib",
+]
+exceptions = [
+  # The fonts egui builds in.
+  { crate = "epaint_default_fonts", allow = ["OFL-1.1", "Ubuntu-font-1.0"] },
+]
+
+[bans]
+# Two versions of one crate make the exe bigger, but are often unavoidable.
+multiple-versions = "warn"
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+# candle's code at a fixed commit, until its next release (see Cargo.toml).
+allow-git = ["https://github.com/huggingface/candle"]
+required-git-spec = "rev"
