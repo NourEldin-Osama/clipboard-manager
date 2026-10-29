@@ -19,7 +19,10 @@ impl App {
             )
             .show(ui, |ui| {
                 row(ui, |ui| {
-                    let actions_w = 4.0 * 40.0;
+                    // The four 34 px buttons at the far end, each after the
+                    // usual gap, and the search field's outline (up to 1.5 px
+                    // on each side).
+                    let actions_w = 4.0 * (34.0 + ui.spacing().item_spacing.x) + 3.0;
                     let w = (ui.available_width() - actions_w).max(200.0);
                     self.search_field(ui, w);
                     far(ui, |ui| {
