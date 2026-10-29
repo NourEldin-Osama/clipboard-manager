@@ -37,6 +37,65 @@ pub(crate) const AMBER: Color32 = Color32::from_rgb(214, 140, 20);
 
 pub(crate) const RED: Color32 = Color32::from_rgb(214, 60, 60);
 
+/// `color` moved toward black on a light `background`, or toward white on a
+/// dark one, just enough for text to read on it: 4.5 to 1, the WCAG AA
+/// minimum for normal text.
+pub(crate) fn readable(color: Color32, background: Color32) -> Color32 {
+    // Above about 0.18, black text has more contrast than white.
+    let toward = if luminance(background) > 0.18 {
+        Color32::BLACK
+    } else {
+        Color32::WHITE
+    };
+    (0..=50)
+        .map(|step| color.lerp_to_gamma(toward, step as f32 / 50.0))
+        .find(|c| contrast(*c, background) >= 4.5)
+        .unwrap_or(toward)
+}
+
+/// `color` for text: darker in the light theme, lighter in the dark one.
+/// Coloured text also sits on tinted chips, rows and buttons; these grays are
+/// as hard to read on as the hardest of them (the tests check each place).
+/// Fills, outlines and icons on their own keep the plain colour.
+pub(crate) fn text_shade(color: Color32, dark_mode: bool) -> Color32 {
+    readable(color, Color32::from_gray(if dark_mode { 56 } else { 220 }))
+}
+
+/// `color` as the fill behind white text, darkened just enough to read.
+pub(crate) fn button_fill(color: Color32) -> Color32 {
+    readable(color, Color32::WHITE)
+}
+
+/// WCAG relative luminance of an opaque colour.
+fn luminance(c: Color32) -> f32 {
+    let linear = |v: u8| {
+        let v = f32::from(v) / 255.0;
+        if v <= 0.04045 {
+            v / 12.92
+        } else {
+            ((v + 0.055) / 1.055).powf(2.4)
+        }
+    };
+    0.2126 * linear(c.r()) + 0.7152 * linear(c.g()) + 0.0722 * linear(c.b())
+}
+
+/// WCAG contrast ratio: 4.5 or more is readable for normal text.
+fn contrast(a: Color32, b: Color32) -> f32 {
+    let (a, b) = (luminance(a), luminance(b));
+    (a.max(b) + 0.05) / (a.min(b) + 0.05)
+}
+
+/// A see-through (premultiplied) colour painted over an opaque one.
+fn over(top: Color32, under: Color32) -> Color32 {
+    let rest = 1.0 - f32::from(top.a()) / 255.0;
+    let mix = |t: u8, u: u8| (f32::from(t) + f32::from(u) * rest).round() as u8;
+    Color32::from_rgb(
+        mix(top.r(), under.r()),
+        mix(top.g(), under.g()),
+        mix(top.b(), under.b()),
+    )
+}
+
 pub(crate) fn kind_color(k: Kind) -> Color32 {
     match k {
         Kind::Text => Color32::from_rgb(90, 120, 230),
@@ -46,20 +105,22 @@ pub(crate) fn kind_color(k: Kind) -> Color32 {
     }
 }
 
+/// The tag colours; `tag_color` picks one for each tag.
+const TAG_COLORS: [Color32; 8] = [
+    Color32::from_rgb(88, 101, 242),
+    Color32::from_rgb(14, 140, 214),
+    Color32::from_rgb(16, 150, 110),
+    Color32::from_rgb(200, 120, 10),
+    Color32::from_rgb(210, 60, 120),
+    Color32::from_rgb(130, 90, 210),
+    Color32::from_rgb(20, 150, 170),
+    Color32::from_rgb(200, 80, 50),
+];
+
 /// A stable colour per tag, so "#work" looks the same everywhere.
 pub(crate) fn tag_color(tag: &str) -> Color32 {
-    const PALETTE: [Color32; 8] = [
-        Color32::from_rgb(88, 101, 242),
-        Color32::from_rgb(14, 140, 214),
-        Color32::from_rgb(16, 150, 110),
-        Color32::from_rgb(200, 120, 10),
-        Color32::from_rgb(210, 60, 120),
-        Color32::from_rgb(130, 90, 210),
-        Color32::from_rgb(20, 150, 170),
-        Color32::from_rgb(200, 80, 50),
-    ];
     let h = crate::store::fnv1a(tag.to_lowercase().as_bytes());
-    PALETTE[(h % PALETTE.len() as u64) as usize]
+    TAG_COLORS[(h % TAG_COLORS.len() as u64) as usize]
 }
 
 pub(super) fn filter_icon(f: Filter) -> Icon {
@@ -127,9 +188,6 @@ pub(crate) fn style(ctx: &egui::Context) {
         s.visuals.widgets.noninteractive.bg_stroke = Stroke::NONE;
         s.visuals.window_corner_radius = CornerRadius::same(12);
         s.visuals.menu_corner_radius = CornerRadius::same(10);
-        s.visuals.selection.bg_fill = a.gamma_multiply(0.35);
-        s.visuals.selection.stroke = Stroke::new(1.0, a);
-        s.visuals.hyperlink_color = a;
     });
     // Input fields need a visible fill: the content panes are already the
     // lightest (or darkest) tone, so a default field would vanish into them.
@@ -146,6 +204,22 @@ pub(crate) fn style(ctx: &egui::Context) {
         s.visuals.widgets.noninteractive.fg_stroke.color = Color32::from_gray(180);
         s.visuals.weak_text_color = Some(Color32::from_gray(150));
     });
+    for theme in [egui::Theme::Light, egui::Theme::Dark] {
+        ctx.style_mut_of(theme, |s| accent_visuals(&mut s.visuals, a));
+    }
+}
+
+/// The accent's parts of egui's own style. Links take the accent's text
+/// shade. egui draws selected text, a selected menu entry and a progress
+/// bar's label in the selection stroke colour on the selection tint, so that
+/// colour is the accent shade that reads on the tint.
+fn accent_visuals(v: &mut egui::Visuals, a: Color32) {
+    v.hyperlink_color = text_shade(a, v.dark_mode);
+    v.selection.bg_fill = a.gamma_multiply(0.35);
+    // The tint is hardest to read on over a text field, the background
+    // nearest to middle gray in both themes.
+    let tint = over(v.selection.bg_fill, v.text_edit_bg_color());
+    v.selection.stroke = Stroke::new(1.0, readable(a, tint));
 }
 
 pub(crate) fn apply_theme(ctx: &egui::Context, t: Theme) {
@@ -159,36 +233,6 @@ pub(crate) fn apply_theme(ctx: &egui::Context, t: Theme) {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    /// WCAG relative luminance of an opaque colour.
-    fn luminance(c: Color32) -> f32 {
-        let linear = |v: u8| {
-            let v = f32::from(v) / 255.0;
-            if v <= 0.04045 {
-                v / 12.92
-            } else {
-                ((v + 0.055) / 1.055).powf(2.4)
-            }
-        };
-        0.2126 * linear(c.r()) + 0.7152 * linear(c.g()) + 0.0722 * linear(c.b())
-    }
-
-    /// WCAG contrast ratio: 4.5 or more is readable for normal text.
-    fn contrast(a: Color32, b: Color32) -> f32 {
-        let (a, b) = (luminance(a), luminance(b));
-        (a.max(b) + 0.05) / (a.min(b) + 0.05)
-    }
-
-    /// A see-through (premultiplied) colour painted over an opaque one.
-    fn over(top: Color32, under: Color32) -> Color32 {
-        let rest = 1.0 - f32::from(top.a()) / 255.0;
-        let mix = |t: u8, u: u8| (f32::from(t) + f32::from(u) * rest).round() as u8;
-        Color32::from_rgb(
-            mix(top.r(), under.r()),
-            mix(top.g(), under.g()),
-            mix(top.b(), under.b()),
-        )
-    }
 
     /// Every place gray text sits on, per accent: the plain backgrounds, the
     /// tints of a selected row (`list`), a chosen search mode (`mode_option`)
@@ -253,6 +297,122 @@ mod tests {
                 contrast(weak, panel) < contrast(v.text_color(), panel),
                 "{theme:?}: weak text stays weaker than normal text"
             );
+        }
+    }
+
+    /// Coloured text in its text shade on every background it sits on, as the
+    /// chips, pills, rows, menus and setting rows draw them; white text on the
+    /// main and delete buttons; egui's selected text. For every accent.
+    #[test]
+    fn colored_text_is_readable_on_every_background() {
+        let ctx = egui::Context::default();
+        style(&ctx);
+        for theme in [egui::Theme::Light, egui::Theme::Dark] {
+            let base = ctx.style_of(theme).visuals.clone();
+            let dark = base.dark_mode;
+            let (panel, content) = (base.panel_fill, base.extreme_bg_color);
+            // (what and where, text colour, background)
+            let mut cases: Vec<(String, Color32, Color32)> = Vec::new();
+            let kinds = [Kind::Text, Kind::Link, Kind::Image, Kind::Files].map(kind_color);
+            for c in kinds.into_iter().chain(TAG_COLORS) {
+                let text = text_shade(c, dark);
+                let tint = if dark { 0.25 } else { 0.13 };
+                for (place, background) in [
+                    ("chip", over(c.gamma_multiply(0.14), content)),
+                    ("card chip or tag", over(c.gamma_multiply(tint), content)),
+                    ("chosen tag filter", over(c.gamma_multiply(0.13), panel)),
+                    ("tag suggestion", content),
+                ] {
+                    cases.push((format!("{c:?} on {place}"), text, background));
+                }
+            }
+            for a in ACCENTS {
+                let mut v = base.clone();
+                accent_visuals(&mut v, a);
+                let changed = over(a.gamma_multiply(if dark { 0.14 } else { 0.07 }), content);
+                let banner = panel.lerp_to_gamma(a, if dark { 0.18 } else { 0.10 });
+                let text = text_shade(a, dark);
+                for (place, background) in [
+                    ("panel", panel),
+                    ("content", content),
+                    ("menu", v.window_fill),
+                    (
+                        "selected settings page",
+                        over(a.gamma_multiply(0.13), panel),
+                    ),
+                    ("chosen preset", over(a.gamma_multiply(0.13), content)),
+                    ("pinned chip", over(a.gamma_multiply(0.14), content)),
+                    ("changed setting", changed),
+                    ("chosen option", over(a.gamma_multiply(0.14), changed)),
+                    ("search mode button", over(a.gamma_multiply(0.12), panel)),
+                    (
+                        "chosen search mode",
+                        over(
+                            a.gamma_multiply(if dark { 0.16 } else { 0.10 }),
+                            v.window_fill,
+                        ),
+                    ),
+                    (
+                        "shortcut being recorded",
+                        over(a.gamma_multiply(0.10), changed),
+                    ),
+                    ("update banner", banner),
+                ] {
+                    cases.push((format!("{a:?} on {place}"), text, background));
+                }
+                for (place, background) in [("card", content), ("update banner", banner)] {
+                    cases.push((
+                        format!("{a:?} link on {place}"),
+                        v.hyperlink_color,
+                        background,
+                    ));
+                }
+                for s in [RED, AMBER, GREEN] {
+                    let text = text_shade(s, dark);
+                    for (place, background) in [
+                        ("status bar", panel),
+                        ("settings", content),
+                        ("chip", over(s.gamma_multiply(0.14), panel)),
+                        (
+                            "chip in a changed setting",
+                            over(s.gamma_multiply(0.14), changed),
+                        ),
+                        (
+                            "shortcut being recorded",
+                            over(a.gamma_multiply(0.10), changed),
+                        ),
+                        ("update banner", banner),
+                        ("button", v.widgets.inactive.weak_bg_fill),
+                    ] {
+                        cases.push((format!("{s:?} on {place}, accent {a:?}"), text, background));
+                    }
+                }
+                for (place, fill) in [
+                    ("main button", button_fill(a)),
+                    ("delete button", button_fill(RED)),
+                ] {
+                    cases.push((
+                        format!("white on {place}, accent {a:?}"),
+                        Color32::WHITE,
+                        fill,
+                    ));
+                }
+                // egui's selected text, selected menu entry and progress label.
+                let selected = v.selection.stroke.color;
+                for (place, under) in [
+                    ("field", v.text_edit_bg_color()),
+                    ("menu", v.window_fill),
+                    ("content", content),
+                ] {
+                    let background = over(v.selection.bg_fill, under);
+                    cases.push((format!("{a:?} selected in {place}"), selected, background));
+                }
+                cases.push((format!("{a:?} progress label"), selected, content));
+            }
+            for (case, text, background) in cases {
+                let ratio = contrast(text, background);
+                assert!(ratio >= 4.5, "{theme:?}: {case} is {ratio:.2} to 1");
+            }
         }
     }
 }

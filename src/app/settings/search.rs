@@ -70,7 +70,7 @@ impl App {
             let color = if dot == Color32::GRAY {
                 ui.visuals().weak_text_color()
             } else {
-                dot
+                text_shade(dot, ui.visuals().dark_mode)
             };
             icons::glyph(ui, Icon::Dot, 12.0, color);
             ui.label(txt(&text, 13.0, Some(color)));

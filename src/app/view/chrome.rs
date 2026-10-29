@@ -158,10 +158,11 @@ impl App {
                                 ));
                             }
                             UpdateState::Failed { error, .. } => {
-                                icons::glyph(ui, Icon::Warning, 14.0, RED);
+                                let red = text_shade(RED, ui.visuals().dark_mode);
+                                icons::glyph(ui, Icon::Warning, 14.0, red);
                                 let text = t!("update-failed", error = error.as_str());
                                 let width = ui.available_width();
-                                cut_line(ui, &text, width, 13.0, RED, Sense::hover());
+                                cut_line(ui, &text, width, 13.0, red, Sense::hover());
                             }
                             _ => {}
                         });
@@ -260,7 +261,11 @@ impl App {
                         egui::FontSelection::Default,
                     );
                     let (dot, text) = self.model_status();
-                    let color = if dot == Color32::GRAY { weak } else { dot };
+                    let color = if dot == Color32::GRAY {
+                        weak
+                    } else {
+                        text_shade(dot, ui.visuals().dark_mode)
+                    };
                     let job = pill_job(&text, 12.0, color, None);
                     let r = tip(
                         icons::pill(ui, Icon::Dot, job, color, false),
@@ -301,21 +306,23 @@ impl App {
                     // A global shortcut that doesn't work must be visible here
                     // too, not only in Settings.
                     if let Some(keys) = self.hotkey_conflicts.first().cloned() {
-                        icons::glyph(ui, Icon::Warning, 13.0, AMBER);
+                        let amber = text_shade(AMBER, ui.visuals().dark_mode);
+                        icons::glyph(ui, Icon::Warning, 13.0, amber);
                         let text = t!("status-shortcut-taken", keys = keys);
                         let r = ui.add(
-                            egui::Label::new(txt(&text, 12.0, Some(AMBER))).sense(Sense::click()),
+                            egui::Label::new(txt(&text, 12.0, Some(amber))).sense(Sense::click()),
                         );
                         if tip(r, &t!("status-open-shortcut-settings")).clicked() {
                             self.open_settings(SettingsPage::Shortcuts);
                         }
                     }
                     if let Some((e, _)) = &self.error {
-                        icons::glyph(ui, Icon::Warning, 13.0, RED);
+                        let red = text_shade(RED, ui.visuals().dark_mode);
+                        icons::glyph(ui, Icon::Warning, 13.0, red);
                         let room = ui.available_width()
                             - count.size().x
                             - 2.0 * ui.spacing().item_spacing.x;
-                        let r = cut_line(ui, e, room.max(0.0), 12.0, RED, Sense::click());
+                        let r = cut_line(ui, e, room.max(0.0), 12.0, red, Sense::click());
                         if tip(r, &t!("status-dismiss-error")).clicked() {
                             self.error = None;
                         }

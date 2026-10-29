@@ -219,7 +219,8 @@ impl App {
                     continue;
                 }
                 let (fg, weak) = if selected {
-                    (accent(), accent().gamma_multiply(0.75))
+                    let shade = text_shade(accent(), ui.visuals().dark_mode);
+                    (shade, shade)
                 } else {
                     (ui.visuals().text_color(), ui.visuals().weak_text_color())
                 };
@@ -295,14 +296,19 @@ impl App {
         for (t, n) in &shown {
             let sel = is_active(t);
             let c = tag_color(t);
+            let shade = text_shade(c, ui.visuals().dark_mode);
             let job = pill_job(
                 t,
                 13.0,
-                if sel { c } else { ui.visuals().text_color() },
+                if sel {
+                    shade
+                } else {
+                    ui.visuals().text_color()
+                },
                 Some((
                     n.to_string(),
                     if sel {
-                        c.gamma_multiply(0.75)
+                        shade
                     } else {
                         ui.visuals().weak_text_color()
                     },

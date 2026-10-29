@@ -37,6 +37,7 @@ impl App {
             ui.spacing_mut().item_spacing = Vec2::new(6.0, 6.0);
             for t in &it.tags {
                 let c = tag_color(t);
+                let shade = text_shade(c, ui.visuals().dark_mode);
                 Frame::new()
                     .fill(c.gamma_multiply(if ui.visuals().dark_mode { 0.25 } else { 0.13 }))
                     .corner_radius(CornerRadius::same(12))
@@ -50,7 +51,7 @@ impl App {
                         ui.spacing_mut().item_spacing.x = 2.0;
                         if tip(
                             ui.add(
-                                egui::Label::new(txt(&format!("# {t}"), 12.5, Some(c)))
+                                egui::Label::new(txt(&format!("# {t}"), 12.5, Some(shade)))
                                     .sense(Sense::click()),
                             ),
                             &t!("details-only-this-tag"),
@@ -66,7 +67,7 @@ impl App {
                             Vec2::splat(18.0),
                             8.0,
                             None,
-                            Some(c),
+                            Some(shade),
                         )
                         .clicked()
                         {
@@ -115,8 +116,12 @@ impl App {
                     for (k, _) in suggestions {
                         if ui
                             .add(
-                                egui::Button::new(txt(&format!("+ {k}"), 12.0, Some(tag_color(k))))
-                                    .frame_when_inactive(false),
+                                egui::Button::new(txt(
+                                    &format!("+ {k}"),
+                                    12.0,
+                                    Some(text_shade(tag_color(k), ui.visuals().dark_mode)),
+                                ))
+                                .frame_when_inactive(false),
                             )
                             .clicked()
                         {
@@ -259,7 +264,7 @@ impl App {
                     &copy_tip,
                     Vec2::new(44.0, 34.0),
                     16.0,
-                    Some(accent()),
+                    Some(button_fill(accent())),
                     Some(Color32::WHITE),
                 )
                 .clicked()
