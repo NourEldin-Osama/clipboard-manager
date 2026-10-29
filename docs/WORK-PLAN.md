@@ -36,6 +36,7 @@ Status: `[ ]` to do, `[~]` in progress, `[x]` done, `[!]` waiting for a decision
 | D25 | The quick popup is its own small window with no taskbar button; the full window never moves or changes size. One click selects; double-click or Enter pastes | You | Decided |
 | D26 | The popup has a bar at its top: Settings, the full window, a handle to move it, Close. A moved popup still opens at the mouse pointer the next time | You | Decided |
 | D27 | Gray text meets the 4.5 to 1 contrast minimum everywhere, in both themes; indexing shows a spinner that moves five times a second, and a progress bar | You | Decided |
+| D28 | Colored text (accent, status, kind and tag colors, links, selected text) meets the 4.5 to 1 minimum in both themes; buttons with white text get a deeper fill | You | Decided |
 
 ## Order of work, and why
 
@@ -127,6 +128,7 @@ Status: `[ ]` to do, `[~]` in progress, `[x]` done, `[!]` waiting for a decision
 ### Phase 7. Speed and accessibility
 - [x] 7.1 No repaint loop while indexing, cached file checks, thumbnail cache that keeps visible images
 - [x] 7.2 Screen reader labels, focus rings, readable contrast
+- [x] 7.3 Readable colored text (D28); gray text on a selected row in the dark theme and on search hits, which the first test did not measure
 
 ### Phase 8. Build, CI and tests
 - [ ] 8.1 One `tokenizers` version (no second copy, no C library build) if candle allows it

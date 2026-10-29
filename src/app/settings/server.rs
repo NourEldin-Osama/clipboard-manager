@@ -35,7 +35,7 @@ pub(super) fn server_settings(
         ] {
             let current = s.base_url.trim_end_matches('/') == url;
             let b = egui::Button::new(RichText::new(name).size(12.5).color(if current {
-                accent()
+                text_shade(accent(), ui.visuals().dark_mode)
             } else {
                 ui.visuals().text_color()
             }))

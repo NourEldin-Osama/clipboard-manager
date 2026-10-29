@@ -22,6 +22,11 @@ the notes here before a push that makes a release.
 - Gray text (help texts, times, hints) is easier to read: it now meets the
   usual minimum contrast in both themes, and normal text is a little
   brighter in the dark theme.
+- Colored text meets the same minimum: links, the selected page and
+  options, status texts, kinds and tags are a deeper shade in the light
+  theme and a lighter one in the dark theme, and buttons with white text
+  have a deeper fill. Words found by a search show in the strong text
+  color on their highlight.
 - An installer: clipboard-manager-windows-x64-setup.exe installs the app
   for your Windows account, without administrator rights, with Start menu
   and desktop shortcuts and an entry in Installed apps. Uninstalling asks

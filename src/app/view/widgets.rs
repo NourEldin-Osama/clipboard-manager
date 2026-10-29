@@ -307,7 +307,7 @@ pub(super) fn hint(what: &str, keys: &str) -> String {
 pub(super) fn mode_button(ui: &mut Ui, label: &str, emphasised: bool) -> egui::Response {
     let v = ui.visuals();
     let color = if emphasised {
-        accent()
+        text_shade(accent(), v.dark_mode)
     } else {
         v.weak_text_color()
     };
@@ -353,14 +353,16 @@ pub(super) fn mode_button(ui: &mut Ui, label: &str, emphasised: bool) -> egui::R
     resp
 }
 
-/// Rounded tinted label: kind, state or status.
+/// Rounded tinted label: kind, state or status. The tint is `color`; the
+/// text takes its text shade.
 pub(crate) fn chip(ui: &mut Ui, text: impl Into<String>, color: Color32) -> egui::Response {
     let text = text.into();
+    let shade = text_shade(color, ui.visuals().dark_mode);
     Frame::new()
         .fill(color.gamma_multiply(0.14))
         .corner_radius(CornerRadius::same(10))
         .inner_margin(Margin::symmetric(8, 3))
-        .show(ui, |ui| ui.label(txt(&text, 12.0, Some(color))))
+        .show(ui, |ui| ui.label(txt(&text, 12.0, Some(shade))))
         .response
 }
 
@@ -375,7 +377,7 @@ pub(super) fn check_row(ui: &mut Ui, text: &str, checked: bool) -> egui::Respons
             .rect_filled(rect, CornerRadius::same(6), v.widgets.hovered.weak_bg_fill);
     }
     let color = if checked {
-        accent()
+        text_shade(accent(), v.dark_mode)
     } else if resp.hovered() {
         v.strong_text_color()
     } else {
@@ -403,7 +405,7 @@ pub(super) fn check_row(ui: &mut Ui, text: &str, checked: bool) -> egui::Respons
                 Vec2::splat(14.0),
             ),
         );
-        icons::paint(ui.painter(), mark, Icon::Check, accent());
+        icons::paint(ui.painter(), mark, Icon::Check, color);
     }
     resp
 }
@@ -430,7 +432,7 @@ pub(super) fn mode_option(ui: &mut Ui, m: SearchMode, active: bool) -> egui::Res
         p.rect_filled(
             rect,
             r,
-            a.gamma_multiply(if v.dark_mode { 0.22 } else { 0.10 }),
+            a.gamma_multiply(if v.dark_mode { 0.16 } else { 0.10 }),
         );
         p.rect_filled(
             flip(
@@ -455,7 +457,11 @@ pub(super) fn mode_option(ui: &mut Ui, m: SearchMode, active: bool) -> egui::Res
             },
         );
     }
-    let title = if active { a } else { v.strong_text_color() };
+    let title = if active {
+        text_shade(a, v.dark_mode)
+    } else {
+        v.strong_text_color()
+    };
     let at = |y: f32| {
         flip(
             rect,
@@ -493,7 +499,7 @@ pub(super) fn mode_option(ui: &mut Ui, m: SearchMode, active: bool) -> egui::Res
                 ),
             ),
             Icon::Check,
-            a,
+            title,
         );
     }
     resp
@@ -504,7 +510,7 @@ pub(crate) fn primary_button(ui: &mut Ui, text: &str) -> egui::Response {
         ui.spacing_mut().button_padding.x = 16.0;
         ui.add(
             egui::Button::new(txt(text, 14.0, Some(Color32::WHITE)))
-                .fill(accent())
+                .fill(button_fill(accent()))
                 .min_size(Vec2::new(0.0, 32.0)),
         )
     })

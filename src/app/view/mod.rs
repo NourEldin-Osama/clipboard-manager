@@ -39,7 +39,8 @@ use widgets::*;
 pub(crate) use details::reveal;
 pub(crate) use items::looks_like_code;
 pub(crate) use theme::{
-    accent, accent_name, add_fonts, apply_theme, set_accent, style, ACCENTS, AMBER, GREEN, RED,
+    accent, accent_name, add_fonts, apply_theme, button_fill, set_accent, style, text_shade,
+    ACCENTS, AMBER, GREEN, RED,
 };
 pub(crate) use widgets::{
     chip, cut_line, far, flip, lbl, paint_text, primary_button, row, row_layout, row_wrapped,

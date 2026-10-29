@@ -72,7 +72,7 @@ impl App {
                                 14.0,
                                 Some(Color32::WHITE),
                             ))
-                            .fill(RED),
+                            .fill(button_fill(RED)),
                         )
                         .clicked()
                     {
@@ -84,7 +84,11 @@ impl App {
                 } else if ui
                     .add_enabled(
                         clip > 0,
-                        egui::Button::new(txt(&t!("settings-clear"), 14.0, Some(RED))),
+                        egui::Button::new(txt(
+                            &t!("settings-clear"),
+                            14.0,
+                            Some(text_shade(RED, ui.visuals().dark_mode)),
+                        )),
                     )
                     .clicked()
                 {
@@ -111,7 +115,7 @@ impl App {
                                 14.0,
                                 Some(Color32::WHITE),
                             ))
-                            .fill(RED),
+                            .fill(button_fill(RED)),
                         )
                         .clicked()
                     {

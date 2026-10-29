@@ -264,7 +264,10 @@ pub(super) fn recorder(
         inner.label(view::txt(
             &text,
             12.5,
-            Some(if problem.is_some() { view::RED } else { a }),
+            Some(view::text_shade(
+                if problem.is_some() { view::RED } else { a },
+                v.dark_mode,
+            )),
         ));
         ui.ctx().request_repaint();
     } else if value.trim().is_empty() {

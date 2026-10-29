@@ -218,8 +218,11 @@ pub(super) fn lines(
         color,
         ..Default::default()
     };
+    // Hits are drawn in the strong text colour, which reads on the tint even
+    // where the rest of the line is gray.
     let hl = TextFormat {
         background: highlight,
+        color: ui.visuals().strong_text_color(),
         ..plain.clone()
     };
     let mut out: Vec<(String, bool)> = Vec::new();

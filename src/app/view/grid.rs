@@ -41,8 +41,14 @@ pub(super) fn paint_card(
     // Header: kind chip at the reading start, pin and age at the far end.
     let pad = 16.0;
     let c = kind_color(it.kind);
-    let cg =
-        ui.fonts_mut(|f| f.layout_job(bidi::job(&it.kind.label(), FontId::proportional(12.5), c)));
+    let shade = text_shade(c, v.dark_mode);
+    let cg = ui.fonts_mut(|f| {
+        f.layout_job(bidi::job(
+            &it.kind.label(),
+            FontId::proportional(12.5),
+            shade,
+        ))
+    });
     let chip_rect = m(Rect::from_min_size(
         Pos2::new(rect.left() + pad, rect.top() + 14.0),
         Vec2::new(cg.size().x + 12.0 + 6.0 + 16.0, cg.size().y + 6.0),
@@ -58,7 +64,7 @@ pub(super) fn paint_card(
         icons::kind(it.kind),
         12.0,
         cg,
-        c,
+        shade,
     );
     let weak = v.weak_text_color();
     let age_at = m(Rect::from_min_size(
@@ -114,7 +120,10 @@ pub(super) fn paint_card(
         let galleys: Vec<_> = it
             .tags
             .iter()
-            .map(|t| (pill(&format!("# {t}"), tag_color(t)), tag_color(t)))
+            .map(|t| {
+                let c = tag_color(t);
+                (pill(&format!("# {t}"), text_shade(c, v.dark_mode)), c)
+            })
             .collect();
         // As many tags as fit on the row; the rest become "+N tags".
         let gap = 6.0;
@@ -260,6 +269,7 @@ pub(super) fn paint_card(
                         terms,
                         font,
                         color,
+                        v.strong_text_color(),
                         body.width(),
                         rows,
                     ))

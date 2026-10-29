@@ -343,15 +343,17 @@ pub(super) fn paint_icon_text(
     p.galley(Pos2::new(x, rect.center().y - g.size().y / 2.0), g, color);
 }
 
-/// A rounded tinted label with an icon: kind, state or status.
+/// A rounded tinted label with an icon: kind, state or status. The tint is
+/// `color`; the icon and text take its text shade.
 pub(super) fn chip(ui: &mut Ui, icon: Icon, text: &str, color: Color32) -> egui::Response {
-    let (g, size) = icon_text_size(ui, &view::txt(text, 12.0, Some(color)), 12.0, 12.0);
+    let shade = view::text_shade(color, ui.visuals().dark_mode);
+    let (g, size) = icon_text_size(ui, &view::txt(text, 12.0, Some(shade)), 12.0, 12.0);
     let pad = Vec2::new(8.0, 3.0);
     let (rect, resp) =
         ui.allocate_exact_size(size + pad * 2.0 + Vec2::new(0.0, 2.0), Sense::hover());
     ui.painter()
         .rect_filled(rect, CornerRadius::same(10), color.gamma_multiply(0.14));
-    paint_icon_text(ui.painter(), rect.shrink2(pad), icon, 12.0, g, color);
+    paint_icon_text(ui.painter(), rect.shrink2(pad), icon, 12.0, g, shade);
     resp
 }
 
@@ -375,7 +377,11 @@ pub(super) fn pill(
         ui.painter()
             .rect_filled(rect, CornerRadius::same(14), v.widgets.hovered.weak_bg_fill);
     }
-    let icon_color = if selected { color } else { v.text_color() };
+    let icon_color = if selected {
+        view::text_shade(color, v.dark_mode)
+    } else {
+        v.text_color()
+    };
     paint_icon_text(ui.painter(), rect.shrink2(pad), icon, 14.0, g, icon_color);
     resp
 }

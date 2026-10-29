@@ -62,7 +62,7 @@ pub(super) fn segmented<T: PartialEq + Copy, L: AsRef<str>>(
             label.as_ref(),
             13.0,
             Some(if sel {
-                accent()
+                text_shade(accent(), ui.visuals().dark_mode)
             } else {
                 ui.visuals().text_color()
             }),
@@ -167,7 +167,7 @@ pub(super) fn setting_row(
             row(ui, |ui| {
                 ui.set_min_height(30.0);
                 let color = if changed {
-                    accent()
+                    text_shade(accent(), ui.visuals().dark_mode)
                 } else {
                     ui.visuals().strong_text_color()
                 };
