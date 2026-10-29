@@ -430,7 +430,7 @@ pub(super) fn mode_option(ui: &mut Ui, m: SearchMode, active: bool) -> egui::Res
         p.rect_filled(
             rect,
             r,
-            a.gamma_multiply(if v.dark_mode { 0.22 } else { 0.10 }),
+            a.gamma_multiply(if v.dark_mode { 0.16 } else { 0.10 }),
         );
         p.rect_filled(
             flip(

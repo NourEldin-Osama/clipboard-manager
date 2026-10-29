@@ -260,6 +260,7 @@ pub(super) fn paint_card(
                         terms,
                         font,
                         color,
+                        v.strong_text_color(),
                         body.width(),
                         rows,
                     ))

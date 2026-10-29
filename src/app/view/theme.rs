@@ -190,42 +190,67 @@ mod tests {
         )
     }
 
+    /// Every place gray text sits on, per accent: the plain backgrounds, the
+    /// tints of a selected row (`list`), a chosen search mode (`mode_option`)
+    /// and a changed setting (`setting_row`), a gray chip, and search hits.
     #[test]
     fn gray_text_is_readable_on_every_background() {
         let ctx = egui::Context::default();
         style(&ctx);
         for theme in [egui::Theme::Light, egui::Theme::Dark] {
             let v = ctx.style_of(theme).visuals.clone();
-            let mut backgrounds = vec![
-                ("panel", v.panel_fill),
-                ("content", v.extreme_bg_color),
-                ("field", v.text_edit_bg_color()),
-            ];
-            // Tints under text: a selected row and a changed setting, per accent.
+            let dark = v.dark_mode;
+            let (panel, content, weak) = (v.panel_fill, v.extreme_bg_color, v.weak_text_color());
             for a in ACCENTS {
-                backgrounds.push(("selected row", over(a.gamma_multiply(0.13), v.panel_fill)));
-                let changed = if v.dark_mode { 0.14 } else { 0.07 };
-                backgrounds.push((
-                    "changed setting",
-                    over(a.gamma_multiply(changed), v.panel_fill),
-                ));
-            }
-            let weak = v.weak_text_color();
-            backgrounds.push((
-                "gray chip",
-                over(weak.gamma_multiply(0.14), v.extreme_bg_color),
-            ));
-            for (text, color) in [("normal", v.text_color()), ("weak", weak)] {
-                for (place, background) in &backgrounds {
-                    let ratio = contrast(over(color, *background), *background);
+                let selected_row = over(a.gamma_multiply(if dark { 0.16 } else { 0.12 }), panel);
+                let backgrounds = [
+                    ("panel", panel),
+                    ("content", content),
+                    ("menu", v.window_fill),
+                    ("field", v.text_edit_bg_color()),
+                    ("selected row", selected_row),
+                    (
+                        "selected settings page",
+                        over(a.gamma_multiply(0.13), panel),
+                    ),
+                    (
+                        "changed setting",
+                        over(a.gamma_multiply(if dark { 0.14 } else { 0.07 }), content),
+                    ),
+                    (
+                        "chosen search mode",
+                        over(
+                            a.gamma_multiply(if dark { 0.16 } else { 0.10 }),
+                            v.window_fill,
+                        ),
+                    ),
+                    ("gray chip", over(weak.gamma_multiply(0.14), content)),
+                ];
+                for (text, color) in [("normal", v.text_color()), ("weak", weak)] {
+                    for (place, background) in backgrounds {
+                        let ratio = contrast(color, background);
+                        assert!(
+                            ratio >= 4.5,
+                            "{theme:?}, {a:?}: {text} text on {place} is {ratio:.2} to 1"
+                        );
+                    }
+                }
+                // A search hit: the strong text colour on the accent tint.
+                for (place, under) in [
+                    ("list", panel),
+                    ("card", content),
+                    ("selected row", selected_row),
+                ] {
+                    let ratio =
+                        contrast(v.strong_text_color(), over(a.gamma_multiply(0.28), under));
                     assert!(
                         ratio >= 4.5,
-                        "{theme:?}: {text} text on {place} is {ratio:.2} to 1"
+                        "{theme:?}, {a:?}: a search hit in a {place} is {ratio:.2} to 1"
                     );
                 }
             }
             assert!(
-                contrast(weak, v.panel_fill) < contrast(v.text_color(), v.panel_fill),
+                contrast(weak, panel) < contrast(v.text_color(), panel),
                 "{theme:?}: weak text stays weaker than normal text"
             );
         }

@@ -90,7 +90,7 @@ pub(super) fn paint_row(
         p.rect_filled(
             rect,
             CornerRadius::same(8),
-            a.gamma_multiply(if v.dark_mode { 0.22 } else { 0.12 }),
+            a.gamma_multiply(if v.dark_mode { 0.16 } else { 0.12 }),
         );
         p.rect_filled(
             m(Rect::from_min_size(
@@ -315,7 +315,8 @@ pub(super) fn one_line(
             ui.fonts_mut(|f| f.layout_no_wrap(String::new(), FontId::proportional(12.0), color))
         })
     } else {
-        ui.fonts_mut(|f| f.layout_job(highlighted(text, terms, font, color, width, 1)))
+        let hit = ui.visuals().strong_text_color();
+        ui.fonts_mut(|f| f.layout_job(highlighted(text, terms, font, color, hit, width, 1)))
     }
 }
 

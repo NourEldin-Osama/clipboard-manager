@@ -15,12 +15,15 @@ pub(crate) fn looks_like_code(s: &str) -> bool {
 
 // Stored times are UTC seconds; `i18n::local` shows each in the user's zone.
 
-/// `text` with every occurrence of the query terms highlighted, cut to `max_rows`.
+/// `text` with every occurrence of the query terms highlighted, cut to
+/// `max_rows`. Hits are drawn in `hit`, the strong text colour, which reads on
+/// the accent tint even where the rest of the line is gray.
 pub(super) fn highlighted(
     text: &str,
     terms: &[String],
     font: FontId,
     color: Color32,
+    hit: Color32,
     max_width: f32,
     max_rows: usize,
 ) -> LayoutJob {
@@ -32,7 +35,7 @@ pub(super) fn highlighted(
     };
     let hl = TextFormat {
         font_id: font,
-        color,
+        color: hit,
         background: accent().gamma_multiply(0.28),
         ..Default::default()
     };
