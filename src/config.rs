@@ -74,11 +74,6 @@ impl TextReader {
             Self::BuiltIn
         }
     }
-
-    /// Settings from before the choice used the built-in reader, and keep it.
-    fn for_older_settings() -> Self {
-        Self::BuiltIn
-    }
 }
 
 /// A server that reads text in images: any OpenAI-style chat server with a
@@ -294,9 +289,7 @@ pub enum TimeFormat {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Keys {
-    /// Pastes into the program the window opened over. Settings from before
-    /// pasting called it `copy`.
-    #[serde(alias = "copy")]
+    /// Pastes into the program the window opened over.
     pub paste: String,
     /// Pastes the text without its formatting.
     pub paste_plain: String,
@@ -398,13 +391,10 @@ pub struct Config {
     pub dedupe: bool,
     pub ocr_images: bool,
     /// What reads the text in images.
-    #[serde(default = "TextReader::for_older_settings")]
     pub text_reader: TextReader,
     pub search_mode: SearchMode,
     pub theme: Theme,
-    /// Opens the quick popup. Settings from before the popup called it
-    /// `show_hotkey`, the key that opened the window.
-    #[serde(alias = "show_hotkey")]
+    /// Opens the quick popup.
     pub popup_hotkey: String,
     /// Opens the full window.
     pub window_hotkey: String,
@@ -679,23 +669,21 @@ mod tests {
     }
 
     #[test]
-    fn profiles_survive_a_save_and_old_files_still_load() {
+    fn profiles_survive_a_save_and_a_file_without_them_loads() {
         let mut cfg = Config::default();
         cfg.server_profiles.remember(&unsloth());
         let json = serde_json::to_string(&cfg).unwrap();
         let back: Config = serde_json::from_str(&json).unwrap();
         assert_eq!(back.server_profiles.get(UNSLOTH), Some(&unsloth()));
 
-        let old = r#"{"max_items":100,"backend":"None"}"#;
-        let cfg: Config = serde_json::from_str(old).unwrap();
+        let without = r#"{"max_items":100,"backend":"None"}"#;
+        let cfg: Config = serde_json::from_str(without).unwrap();
         assert_eq!(cfg.max_items, 100);
         assert!(cfg.server_profiles.latest().is_none());
     }
 
     #[test]
-    fn older_settings_keep_the_built_in_reader() {
-        let old: Config = serde_json::from_str(r#"{"ocr_images":true}"#).unwrap();
-        assert_eq!(old.text_reader, TextReader::BuiltIn);
+    fn the_text_reader_survives_a_save() {
         assert_eq!(
             Config::default().text_reader,
             TextReader::for_new_settings()
@@ -713,24 +701,6 @@ mod tests {
         if cfg!(windows) {
             assert!(!json.contains("reader-key"), "the key is encrypted");
         }
-    }
-
-    #[test]
-    fn the_old_window_shortcut_opens_the_popup() {
-        let old = r#"{"show_hotkey":"Ctrl+Shift+Space"}"#;
-        let cfg: Config = serde_json::from_str(old).unwrap();
-        assert_eq!(cfg.popup_hotkey, "Ctrl+Shift+Space");
-        assert_eq!(cfg.window_hotkey, Config::default().window_hotkey);
-    }
-
-    #[test]
-    fn the_old_copy_key_becomes_the_paste_key() {
-        let old = r#"{"keys":{"copy":"Ctrl+Space","pin":"Ctrl+P"}}"#;
-        let cfg: Config = serde_json::from_str(old).unwrap();
-        assert_eq!(cfg.keys.paste, "Ctrl+Space");
-        assert_eq!(cfg.keys.copy_only, Keys::default().copy_only);
-        let back: Config = serde_json::from_str(&serde_json::to_string(&cfg).unwrap()).unwrap();
-        assert_eq!(back.keys, cfg.keys);
     }
 
     #[cfg(windows)]
@@ -756,13 +726,6 @@ mod tests {
             ("http://x/v1", "m")
         );
         assert_eq!(s.launch, None);
-    }
-
-    #[test]
-    fn a_plain_key_from_an_older_version_still_loads() {
-        let json = r#"{"base_url":"http://x/v1","api_key":"old-key","model":"","query_prefix":"","document_prefix":"","images":false,"truncate_dims":0,"launch":null}"#;
-        let s: ServerConfig = serde_json::from_str(json).unwrap();
-        assert_eq!(s.api_key, "old-key");
     }
 
     #[test]
@@ -803,132 +766,5 @@ mod tests {
         assert!(!cfg.is_server_allowed("https://other.example.com/v1"));
         cfg.allow_server("https://api.example.com/v1");
         assert_eq!(cfg.allowed_servers.len(), 1);
-    }
-
-    /// A settings file as version 0.2.1, the last release before the
-    /// settings changed, wrote it, with every value away from its default.
-    const SETTINGS_0_2_1: &str = r#"{
-  "monitor_clipboard": false,
-  "max_items": 2000,
-  "dedupe": false,
-  "ocr_images": false,
-  "search_mode": "Semantic",
-  "theme": "Dark",
-  "show_hotkey": "Ctrl+Shift+V",
-  "ignore_next_hotkey": "Ctrl+Shift+X",
-  "minimize_after_copy": false,
-  "skip_secrets": false,
-  "backend": {
-    "Server": {
-      "base_url": "http://127.0.0.1:8080/v1",
-      "api_key": "sk-test-0.2.1",
-      "model": "embeddinggemma",
-      "query_prefix": "task: search result | query: ",
-      "document_prefix": "title: none | text: ",
-      "images": false,
-      "truncate_dims": 256,
-      "launch": {
-        "llama_server": "C:\\llama\\llama-server.exe",
-        "gguf": "C:\\models\\embeddinggemma.gguf",
-        "mmproj": null,
-        "port": 8080,
-        "extra_args": "--pooling mean"
-      }
-    }
-  },
-  "min_similarity": 0.35,
-  "density": "Compact",
-  "group_by_date": false,
-  "accent": 3,
-  "view": "Detail",
-  "tray": true,
-  "start_at_login": false,
-  "keys": {
-    "copy": "Ctrl+Shift+C",
-    "pin": "Ctrl+Shift+P",
-    "delete": "Ctrl+Shift+D",
-    "tag": "Ctrl+Shift+T",
-    "view": "Ctrl+Shift+W"
-  },
-  "language": "Arabic",
-  "time_format": "H24",
-  "sort": "Oldest",
-  "search_sort": "Recent",
-  "pinned_first": false,
-  "update_check": false,
-  "update_download": false,
-  "skipped_update": "0.3.0+20"
-}"#;
-
-    #[test]
-    fn a_settings_file_from_0_2_1_keeps_every_value() {
-        let dir = std::env::temp_dir().join(format!("cbm-config-0-2-1-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
-        let path = dir.join("config.json");
-        std::fs::write(&path, SETTINGS_0_2_1).unwrap();
-        let (cfg, problem) = Config::load(&path);
-        assert!(problem.is_none());
-        let server = ServerConfig {
-            base_url: "http://127.0.0.1:8080/v1".into(),
-            api_key: "sk-test-0.2.1".into(),
-            model: "embeddinggemma".into(),
-            query_prefix: "task: search result | query: ".into(),
-            document_prefix: "title: none | text: ".into(),
-            images: false,
-            truncate_dims: 256,
-            launch: Some(LaunchConfig {
-                llama_server: r"C:\llama\llama-server.exe".into(),
-                gguf: r"C:\models\embeddinggemma.gguf".into(),
-                mmproj: None,
-                port: 8080,
-                extra_args: "--pooling mean".into(),
-            }),
-        };
-        let expected = Config {
-            monitor_clipboard: false,
-            max_items: 2000,
-            dedupe: false,
-            ocr_images: false,
-            // Older settings keep the reader they had.
-            text_reader: TextReader::for_older_settings(),
-            search_mode: SearchMode::Semantic,
-            theme: Theme::Dark,
-            // The key that opened the window now opens the popup.
-            popup_hotkey: "Ctrl+Shift+V".into(),
-            ignore_next_hotkey: "Ctrl+Shift+X".into(),
-            minimize_after_copy: false,
-            skip_secrets: false,
-            backend: EmbedBackend::Server(Box::new(server)),
-            min_similarity: 0.35,
-            density: Density::Compact,
-            group_by_date: false,
-            accent: 3,
-            view: ViewMode::Detail,
-            tray: true,
-            start_at_login: false,
-            keys: Keys {
-                // The copy key became the paste key.
-                paste: "Ctrl+Shift+C".into(),
-                pin: "Ctrl+Shift+P".into(),
-                delete: "Ctrl+Shift+D".into(),
-                tag: "Ctrl+Shift+T".into(),
-                view: "Ctrl+Shift+W".into(),
-                ..Keys::default()
-            },
-            language: Language::Arabic,
-            time_format: TimeFormat::H24,
-            sort: SortOrder::Oldest,
-            search_sort: SortOrder::Recent,
-            pinned_first: false,
-            update_check: false,
-            update_download: false,
-            skipped_update: "0.3.0+20".into(),
-            ..Config::default()
-        };
-        assert_eq!(cfg, expected);
-        // Saved in today's form, it reads back the same.
-        cfg.save(&path).unwrap();
-        assert_eq!(Config::load(&path), (expected, None));
-        std::fs::remove_dir_all(dir).ok();
     }
 }
