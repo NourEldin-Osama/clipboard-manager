@@ -6,9 +6,7 @@
 //! the Ed25519 signature of that line, made with a key that only the release
 //! workflow has. The app reads the values only from the signed line, so a
 //! changed file can't offer an older exe as a new one, and it installs a
-//! download only if its size and SHA-256 match. Older app versions read the
-//! file's other fields and check a signature of the exe itself; the workflow
-//! still writes those for them.
+//! download only if its size and SHA-256 match.
 //!
 //! Installing: Windows won't overwrite a running exe but will rename it, so the
 //! running exe becomes `clipboard-manager.old`, the new one takes its name, and
