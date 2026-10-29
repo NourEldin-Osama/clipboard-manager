@@ -136,7 +136,7 @@ Status: `[ ]` to do, `[~]` in progress, `[x]` done, `[!]` waiting for a decision
 - [x] 8.2 GitHub Actions pinned to commit hashes; the push hook reads the release from the comment and reports a candle release newer than the git commit
 - [x] 8.3 The release job checks the update signature before publishing (moved into 5.2, D20)
 - [ ] 8.4 `cargo deny` for licenses and security advisories
-- [ ] 8.5 Clippy fails on warnings in CI
+- [x] 8.5 Clippy fails on warnings in CI
 - [ ] 8.6 More tests: worker, update install and rollback, settings migration, app logic
 - [!] 8.7 Code signing with SignPath, after your application is approved (D7: later)
 

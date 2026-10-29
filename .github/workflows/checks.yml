@@ -75,6 +75,8 @@ jobs:
       - name: Test
         if: steps.changes.outputs.code == 'true'
         run: cargo test --locked --config ci/fast-build.toml
+      # Warnings fail the check, as in the local hook. A new Rust release can
+      # bring new warnings: fix them, then the check passes again.
       - name: Lint
         if: steps.changes.outputs.code == 'true'
-        run: cargo clippy --locked --all-targets --config ci/fast-build.toml
+        run: cargo clippy --locked --all-targets --config ci/fast-build.toml -- -D warnings
