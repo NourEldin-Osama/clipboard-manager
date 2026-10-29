@@ -804,4 +804,131 @@ mod tests {
         cfg.allow_server("https://api.example.com/v1");
         assert_eq!(cfg.allowed_servers.len(), 1);
     }
+
+    /// A settings file as version 0.2.1, the last release before the
+    /// settings changed, wrote it, with every value away from its default.
+    const SETTINGS_0_2_1: &str = r#"{
+  "monitor_clipboard": false,
+  "max_items": 2000,
+  "dedupe": false,
+  "ocr_images": false,
+  "search_mode": "Semantic",
+  "theme": "Dark",
+  "show_hotkey": "Ctrl+Shift+V",
+  "ignore_next_hotkey": "Ctrl+Shift+X",
+  "minimize_after_copy": false,
+  "skip_secrets": false,
+  "backend": {
+    "Server": {
+      "base_url": "http://127.0.0.1:8080/v1",
+      "api_key": "sk-test-0.2.1",
+      "model": "embeddinggemma",
+      "query_prefix": "task: search result | query: ",
+      "document_prefix": "title: none | text: ",
+      "images": false,
+      "truncate_dims": 256,
+      "launch": {
+        "llama_server": "C:\\llama\\llama-server.exe",
+        "gguf": "C:\\models\\embeddinggemma.gguf",
+        "mmproj": null,
+        "port": 8080,
+        "extra_args": "--pooling mean"
+      }
+    }
+  },
+  "min_similarity": 0.35,
+  "density": "Compact",
+  "group_by_date": false,
+  "accent": 3,
+  "view": "Detail",
+  "tray": true,
+  "start_at_login": false,
+  "keys": {
+    "copy": "Ctrl+Shift+C",
+    "pin": "Ctrl+Shift+P",
+    "delete": "Ctrl+Shift+D",
+    "tag": "Ctrl+Shift+T",
+    "view": "Ctrl+Shift+W"
+  },
+  "language": "Arabic",
+  "time_format": "H24",
+  "sort": "Oldest",
+  "search_sort": "Recent",
+  "pinned_first": false,
+  "update_check": false,
+  "update_download": false,
+  "skipped_update": "0.3.0+20"
+}"#;
+
+    #[test]
+    fn a_settings_file_from_0_2_1_keeps_every_value() {
+        let dir = std::env::temp_dir().join(format!("cbm-config-0-2-1-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("config.json");
+        std::fs::write(&path, SETTINGS_0_2_1).unwrap();
+        let (cfg, problem) = Config::load(&path);
+        assert!(problem.is_none());
+        let server = ServerConfig {
+            base_url: "http://127.0.0.1:8080/v1".into(),
+            api_key: "sk-test-0.2.1".into(),
+            model: "embeddinggemma".into(),
+            query_prefix: "task: search result | query: ".into(),
+            document_prefix: "title: none | text: ".into(),
+            images: false,
+            truncate_dims: 256,
+            launch: Some(LaunchConfig {
+                llama_server: r"C:\llama\llama-server.exe".into(),
+                gguf: r"C:\models\embeddinggemma.gguf".into(),
+                mmproj: None,
+                port: 8080,
+                extra_args: "--pooling mean".into(),
+            }),
+        };
+        let expected = Config {
+            monitor_clipboard: false,
+            max_items: 2000,
+            dedupe: false,
+            ocr_images: false,
+            // Older settings keep the reader they had.
+            text_reader: TextReader::for_older_settings(),
+            search_mode: SearchMode::Semantic,
+            theme: Theme::Dark,
+            // The key that opened the window now opens the popup.
+            popup_hotkey: "Ctrl+Shift+V".into(),
+            ignore_next_hotkey: "Ctrl+Shift+X".into(),
+            minimize_after_copy: false,
+            skip_secrets: false,
+            backend: EmbedBackend::Server(Box::new(server)),
+            min_similarity: 0.35,
+            density: Density::Compact,
+            group_by_date: false,
+            accent: 3,
+            view: ViewMode::Detail,
+            tray: true,
+            start_at_login: false,
+            keys: Keys {
+                // The copy key became the paste key.
+                paste: "Ctrl+Shift+C".into(),
+                pin: "Ctrl+Shift+P".into(),
+                delete: "Ctrl+Shift+D".into(),
+                tag: "Ctrl+Shift+T".into(),
+                view: "Ctrl+Shift+W".into(),
+                ..Keys::default()
+            },
+            language: Language::Arabic,
+            time_format: TimeFormat::H24,
+            sort: SortOrder::Oldest,
+            search_sort: SortOrder::Recent,
+            pinned_first: false,
+            update_check: false,
+            update_download: false,
+            skipped_update: "0.3.0+20".into(),
+            ..Config::default()
+        };
+        assert_eq!(cfg, expected);
+        // Saved in today's form, it reads back the same.
+        cfg.save(&path).unwrap();
+        assert_eq!(Config::load(&path), (expected, None));
+        std::fs::remove_dir_all(dir).ok();
+    }
 }
