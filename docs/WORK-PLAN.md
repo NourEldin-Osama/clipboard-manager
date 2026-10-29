@@ -19,11 +19,11 @@ Status: `[ ]` to do, `[~]` in progress, `[x]` done, `[!]` waiting for a decision
 | D8 | Sync between devices is out of scope | You | Decided |
 | D9 | Git: one branch per phase, one commit per task, merged into local `main` with `--no-ff`; you push | You | Decided |
 | D10 | A per-user installer (Inno Setup) built with each release: no admin rights, Start menu and desktop shortcuts, an Installed apps entry with Uninstall; the portable exe stays | You | Decided |
-| D11 | First encryption of an existing history: encrypt, check it reads back, then delete the unencrypted files | You | Decided |
+| D11 | First encryption of an existing history: encrypt, check it reads back, then delete the unencrypted files | You | Replaced by D32 |
 | D12 | The full window uses the popup's keys: Enter pastes, Shift+Enter pastes plain text, Ctrl+Enter only copies; Alt+Shift+V opens it | You | Decided |
 | D13 | Delete by age is off by default; pinned and tagged items are never deleted by it | You | Decided |
 | D14 | Rules per app: ignore an app, and ignore text that matches a pattern (for one app or all); a copy a rule skipped can be kept with "Save anyway" | You | Decided |
-| D15 | Image paths become relative to the data folder in the same one-time step as the encryption (5.1), so the history is migrated once | Claude | Decided |
+| D15 | Image paths become relative to the data folder in the same one-time step as the encryption (5.1), so the history is migrated once | Claude | Replaced by D32 |
 | D16 | Encryption covers items and images; search vectors stay unencrypted | You | Decided |
 | D17 | If the history key can't be opened (another PC or account), the old history is set aside and the app starts empty, with a message | You | Decided |
 | D18 | Portable copies are encrypted too; a portable history opens only on the PC and account that made it | You | Decided |
@@ -40,6 +40,7 @@ Status: `[ ]` to do, `[~]` in progress, `[x]` done, `[!]` waiting for a decision
 | D29 | candle comes from its code on GitHub at a fixed commit until a release after 0.11.0: one `tokenizers` and no C library build. Back to crates.io when that release is out | You | Decided |
 | D30 | The dependency check (cargo-deny) is its own job, also run weekly: advisories, licenses and crate sources fail it; unmaintained crates and duplicate versions only warn | You | Decided |
 | D31 | No tests through the screen for now (they would need egui_kittest): the new tests cover the update steps, old settings and the worker | You | Decided |
+| D32 | Only you use the app: no migrations or code for older versions. A history an older version wrote is moved aside for a new one, old setting names are not read, and releases write only the signed update line | You | Decided |
 
 ## Order of work, and why
 
@@ -141,6 +142,7 @@ Status: `[ ]` to do, `[~]` in progress, `[x]` done, `[!]` waiting for a decision
 - [x] 8.5 Clippy fails on warnings in CI
 - [x] 8.6 More tests: installing, rolling back and cleaning up an update, a staged update, a 0.2.1 settings file, a search server the worker can't reach (D31)
 - [!] 8.7 Code signing with SignPath, after your application is approved (D7: later)
+- [x] 8.8 Remove the code for older versions: old setting names, the one-time history encryption, the update fields for 0.2.x copies (D32)
 
 ## Change log
 
