@@ -41,6 +41,7 @@ Status: `[ ]` to do, `[~]` in progress, `[x]` done, `[!]` waiting for a decision
 | D30 | The dependency check (cargo-deny) is its own job, also run weekly: advisories, licenses and crate sources fail it; unmaintained crates and duplicate versions only warn | You | Decided |
 | D31 | No tests through the screen for now (they would need egui_kittest): the new tests cover the update steps, old settings and the worker | You | Decided |
 | D32 | Only you use the app: no migrations or code for older versions. A history an older version wrote is moved aside for a new one, old setting names are not read, and releases write only the signed update line | You | Decided |
+| D33 | From the push on 2026-10-29 the app is stable and has users: a breaking change to settings or stored data ships with a migration in the next version, and the migration is removed in the version after that | You | Decided |
 
 ## Order of work, and why
 

@@ -92,6 +92,8 @@ server client with optional `llama-server` launcher), `import.rs` (files/folders
   icon sets and let the maintainer pick. The app icon (`assets/app-icon/app.ico`, embedded by `build.rs`) is not chosen yet.
 - Panel frames must use opaque fills (nothing is painted beneath a panel; translucent fills show black).
 - Commit messages: no `Co-Authored-By` trailers (the prek `commit-msg` hook rejects them).
+- A breaking change to settings or stored data ships with a migration in the next version; remove the migration in
+  the version after that (D33 in `docs/WORK-PLAN.md`).
 
 ## Releases and CI
 
