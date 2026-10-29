@@ -197,20 +197,22 @@ pub fn check() -> Result<Release> {
     manifest.verify(&public_key()?)
 }
 
-/// Where the next exe is put before it's swapped in: next to the running one.
-fn staged_path() -> Result<PathBuf> {
-    Ok(std::env::current_exe()?.with_extension("new"))
+/// Where the next exe is put before it's swapped in: next to `exe`, the
+/// running one.
+fn staged_path(exe: &Path) -> PathBuf {
+    exe.with_extension("new")
 }
 
 /// The manifest of the staged exe, so it can be checked again before a
 /// later start installs it.
-fn staged_manifest_path() -> Result<PathBuf> {
-    Ok(std::env::current_exe()?.with_extension("new.json"))
+fn staged_manifest_path(exe: &Path) -> PathBuf {
+    exe.with_extension("new.json")
 }
 
 /// Downloads and verifies the release. Returns the verified exe, ready to install.
 pub fn download(r: &Release, p: &Arc<Progress>) -> Result<PathBuf> {
-    let staged = staged_path()?;
+    let exe = std::env::current_exe()?;
+    let staged = staged_path(&exe);
     let part = staged.with_extension("part");
     // A folder the app can't write to (Program Files, say) fails here, before
     // the download, instead of after it, again every day.
@@ -250,7 +252,7 @@ pub fn download(r: &Release, p: &Arc<Progress>) -> Result<PathBuf> {
     out.sync_all()?;
     drop(out);
     std::fs::rename(&part, &staged)?;
-    std::fs::write(staged_manifest_path()?, serde_json::to_vec(&r.manifest)?)?;
+    std::fs::write(staged_manifest_path(&exe), serde_json::to_vec(&r.manifest)?)?;
     Ok(staged)
 }
 
@@ -259,19 +261,32 @@ pub fn download(r: &Release, p: &Arc<Progress>) -> Result<PathBuf> {
 /// manifest, then put in place. Returns the exe to start, or `None` when
 /// there is nothing newer to install.
 pub fn install_staged() -> Result<Option<PathBuf>> {
-    let staged = staged_path()?;
+    let exe = std::env::current_exe()?;
+    let installed = install_staged_at(&exe, &public_key()?, Release::is_newer)?;
+    Ok(installed.then_some(exe))
+}
+
+/// `install_staged` for the exe at `exe`: the update must be signed by `key`,
+/// and goes in only when `is_newer` says so. Returns whether it went in.
+fn install_staged_at(
+    exe: &Path,
+    key: &[u8; 32],
+    is_newer: impl Fn(&Release) -> bool,
+) -> Result<bool> {
+    let staged = staged_path(exe);
     if !staged.is_file() {
-        return Ok(None);
+        return Ok(false);
     }
     let manifest =
-        std::fs::read(staged_manifest_path()?).context("reading the staged update's manifest")?;
+        std::fs::read(staged_manifest_path(exe)).context("reading the staged update's manifest")?;
     let manifest: Manifest = serde_json::from_slice(&manifest)?;
-    let release = manifest.verify(&public_key()?)?;
-    if !release.is_newer() {
-        return Ok(None);
+    let release = manifest.verify(key)?;
+    if !is_newer(&release) {
+        return Ok(false);
     }
     verify(&std::fs::read(&staged)?, &release)?;
-    install(&staged).map(Some)
+    install_at(exe, &staged)?;
+    Ok(true)
 }
 
 /// The download is the exe the release workflow signed: its size and SHA-256
@@ -298,14 +313,20 @@ fn verify(bytes: &[u8], r: &Release) -> Result<()> {
 /// Puts the verified exe in place of the running one. Returns the exe path.
 pub fn install(staged: &Path) -> Result<PathBuf> {
     let exe = std::env::current_exe()?;
+    install_at(&exe, staged)?;
+    Ok(exe)
+}
+
+/// Puts `staged` in place of `exe`, which is kept as `.old`.
+fn install_at(exe: &Path, staged: &Path) -> Result<()> {
     let old = exe.with_extension("old");
     // Same permissions as the running exe (on Linux and macOS: executable).
-    std::fs::set_permissions(staged, std::fs::metadata(&exe)?.permissions())?;
+    std::fs::set_permissions(staged, std::fs::metadata(exe)?.permissions())?;
     let _ = std::fs::remove_file(&old);
-    std::fs::rename(&exe, &old).with_context(|| format!("moving {} aside", exe.display()))?;
-    if let Err(e) = std::fs::rename(staged, &exe) {
+    std::fs::rename(exe, &old).with_context(|| format!("moving {} aside", exe.display()))?;
+    if let Err(e) = std::fs::rename(staged, exe) {
         // Put the running version back rather than leave no exe at all.
-        if let Err(back) = std::fs::rename(&old, &exe) {
+        if let Err(back) = std::fs::rename(&old, exe) {
             return Err(e).context(format!(
                 "putting the new version in place (putting {} back failed too: {back})",
                 exe.display()
@@ -313,13 +334,16 @@ pub fn install(staged: &Path) -> Result<PathBuf> {
         }
         return Err(e).context("putting the new version in place");
     }
-    Ok(exe)
+    Ok(())
 }
 
 /// Undoes `install`: the previous exe goes back in place.
 pub fn roll_back() -> Result<()> {
-    let exe = std::env::current_exe()?;
-    std::fs::rename(exe.with_extension("old"), &exe).context("restoring the previous version")?;
+    roll_back_at(&std::env::current_exe()?)
+}
+
+fn roll_back_at(exe: &Path) -> Result<()> {
+    std::fs::rename(exe.with_extension("old"), exe).context("restoring the previous version")?;
     Ok(())
 }
 
@@ -335,9 +359,13 @@ pub fn relaunch(exe: &Path) -> Result<()> {
 /// Removes what a finished or abandoned update leaves behind.
 pub fn clean_up() {
     if let Ok(exe) = std::env::current_exe() {
-        for ext in ["old", "new", "new.json", "part"] {
-            let _ = std::fs::remove_file(exe.with_extension(ext));
-        }
+        clean_up_at(&exe);
+    }
+}
+
+fn clean_up_at(exe: &Path) {
+    for ext in ["old", "new", "new.json", "part"] {
+        let _ = std::fs::remove_file(exe.with_extension(ext));
     }
 }
 
@@ -484,5 +512,120 @@ mod tests {
         assert!(numbers("0.10.0") > numbers("0.9.9"));
         assert!((numbers("0.1.0"), 13) > (numbers("0.1.0"), 12));
         assert!((numbers("0.2.0"), 1) > (numbers("0.1.0"), 99));
+    }
+
+    /// A running exe in a folder of its own; the test removes the folder.
+    fn running_exe(name: &str) -> PathBuf {
+        let dir =
+            std::env::temp_dir().join(format!("cbm-self-update-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let exe = dir.join("clipboard-manager.exe");
+        std::fs::write(&exe, "running version").unwrap();
+        exe
+    }
+
+    fn read(path: &Path) -> String {
+        std::fs::read_to_string(path).unwrap()
+    }
+
+    #[test]
+    fn installing_keeps_the_running_version_for_a_roll_back() {
+        let exe = running_exe("install");
+        let staged = staged_path(&exe);
+        std::fs::write(&staged, "new version").unwrap();
+        install_at(&exe, &staged).unwrap();
+        assert_eq!(read(&exe), "new version");
+        assert_eq!(read(&exe.with_extension("old")), "running version");
+        assert!(!staged.exists());
+        roll_back_at(&exe).unwrap();
+        assert_eq!(read(&exe), "running version");
+        assert!(!exe.with_extension("old").exists());
+        std::fs::remove_dir_all(exe.parent().unwrap()).unwrap();
+    }
+
+    /// Windows won't move a file another program holds open without sharing
+    /// it, so the new exe can't take the running one's place.
+    #[cfg(windows)]
+    #[test]
+    fn a_failed_install_puts_the_running_version_back() {
+        use std::os::windows::fs::OpenOptionsExt;
+        let exe = running_exe("failed");
+        let staged = staged_path(&exe);
+        std::fs::write(&staged, "new version").unwrap();
+        let held = std::fs::OpenOptions::new()
+            .read(true)
+            .share_mode(0)
+            .open(&staged)
+            .unwrap();
+        let error = install_at(&exe, &staged).unwrap_err();
+        drop(held);
+        assert!(
+            format!("{error:#}").contains("putting the new version in place"),
+            "{error:#}"
+        );
+        assert_eq!(read(&exe), "running version");
+        assert!(!exe.with_extension("old").exists());
+        std::fs::remove_dir_all(exe.parent().unwrap()).unwrap();
+    }
+
+    #[test]
+    fn cleaning_up_removes_only_what_an_update_leaves() {
+        let exe = running_exe("clean");
+        let left = ["old", "new", "new.json", "part"].map(|ext| exe.with_extension(ext));
+        for file in &left {
+            std::fs::write(file, "left over").unwrap();
+        }
+        let other = exe.with_file_name("notes.txt");
+        std::fs::write(&other, "kept").unwrap();
+        clean_up_at(&exe);
+        for file in &left {
+            assert!(!file.exists(), "{}", file.display());
+        }
+        assert!(exe.exists() && other.exists());
+        std::fs::remove_dir_all(exe.parent().unwrap()).unwrap();
+    }
+
+    /// Puts `bytes` next to `exe` with a manifest signed by the test key, as
+    /// `download` does.
+    fn stage(exe: &Path, bytes: &str) {
+        use sha2::{Digest, Sha256};
+        let sha: String = Sha256::digest(bytes)
+            .iter()
+            .map(|b| format!("{b:02x}"))
+            .collect();
+        let line = workflow_line("9.0.0", 42, bytes.len() as u64, &sha);
+        std::fs::write(staged_path(exe), bytes).unwrap();
+        let manifest = serde_json::to_vec(&signed(&line)).unwrap();
+        std::fs::write(staged_manifest_path(exe), manifest).unwrap();
+    }
+
+    #[test]
+    fn a_staged_update_goes_in_only_when_newer_and_unchanged() {
+        let exe = running_exe("staged");
+        let key = test_public_key();
+        assert!(
+            !install_staged_at(&exe, &key, |_| true).unwrap(),
+            "nothing staged"
+        );
+        stage(&exe, "new version");
+        assert!(
+            !install_staged_at(&exe, &key, |_| false).unwrap(),
+            "not newer"
+        );
+        let release_key = public_key().unwrap();
+        assert!(
+            install_staged_at(&exe, &release_key, |_| true).is_err(),
+            "another key"
+        );
+        // Changed on disk after the download: same size, other bytes.
+        std::fs::write(staged_path(&exe), "new versioN").unwrap();
+        assert!(install_staged_at(&exe, &key, |_| true).is_err(), "changed");
+        assert_eq!(read(&exe), "running version");
+        stage(&exe, "new version");
+        assert!(install_staged_at(&exe, &key, |_| true).unwrap());
+        assert_eq!(read(&exe), "new version");
+        assert_eq!(read(&exe.with_extension("old")), "running version");
+        std::fs::remove_dir_all(exe.parent().unwrap()).unwrap();
     }
 }
