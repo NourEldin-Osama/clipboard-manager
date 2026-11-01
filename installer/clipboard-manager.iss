@@ -37,6 +37,7 @@ ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 OutputDir=..
 OutputBaseFilename=clipboard-manager-windows-x64-setup
+SetupIconFile=..\assets\app-icon\app.ico
 UninstallDisplayIcon={app}\clipboard-manager.exe
 UninstallDisplayName=Clipboard Manager
 WizardStyle=modern
