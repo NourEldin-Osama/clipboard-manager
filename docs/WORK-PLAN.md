@@ -45,6 +45,7 @@ Status: `[ ]` to do, `[~]` in progress, `[x]` done, `[!]` waiting for a decision
 | D34 | The app icon: "copy stack + search" in Midnight + amber, on a transparent background with midnight edges, and a bolder drawing for 16 to 24 px | You | Decided |
 | D35 | Downloads continue where they stopped, checked by the server's tag for the file, and after a dropped connection try again after 10 s, 30 s, 1, 2 and 5 min; the text reader model, which the background worker downloads, continues at the next start instead | You | Decided |
 | D36 | The text reader's models download as ONNX files; `.rten` files that earlier versions downloaded still load | Claude | Decided |
+| D37 | The server text reader has a Model type menu: DeepSeek-OCR-2, Unlimited-OCR-2 and MiniCPM-OCR get the name, prompt and request settings from their guides, and their answers are saved as plain text (table cells with spaces, rows on lines, formulas kept); every answer stops at 4096 tokens, which fits DeepSeek-OCR-2's 8192 with the image; the models run on the user's server (llama.cpp, vLLM, SGLang), never inside the app | You | Decided |
 
 ## Order of work, and why
 
@@ -137,6 +138,7 @@ Status: `[ ]` to do, `[~]` in progress, `[x]` done, `[!]` waiting for a decision
 - [x] 6.8 Register the app on the PC: Start menu and desktop shortcuts, an entry in Installed apps (D10)
 - [x] 6.9 A bar at the top of the quick popup: Settings, the full window, a handle to move it, Close (D26)
 - [x] 6.10 Downloads continue after a dropped connection: the update and the models (D35)
+- [x] 6.11 The server text reader knows DeepSeek-OCR-2, Unlimited-OCR-2 and MiniCPM-OCR: a Model type menu with their prompts and settings, answers as plain text, and a README guide to start each one (D37)
 
 ### Phase 7. Speed and accessibility
 - [x] 7.1 No repaint loop while indexing, cached file checks, thumbnail cache that keeps visible images

@@ -4,6 +4,18 @@ What changed in each version, for the people who use the app. Each release
 starts its notes with the section of the version it was built from, so add
 the notes here before a push that makes a release.
 
+## 0.4.3
+
+- The text reader on a server has a **Model type** menu with DeepSeek-OCR-2,
+  Unlimited-OCR-2 and MiniCPM-OCR. Picking one fills in the model's name and
+  prompt from its guide and sends the settings the guide asks for. Its text
+  is saved as plain text: table cells separated by spaces, rows by lines,
+  formulas as written. The README tells how to start each model with
+  llama.cpp, vLLM or SGLang. A server set up before keeps working as
+  "Another model".
+- Each answer from a text reader server stops at 4096 tokens (about 3000
+  words), so a model that keeps repeating itself can't run for minutes.
+
 ## 0.4.2
 
 - Fix: updating the app failed at the end of the download, with "the
