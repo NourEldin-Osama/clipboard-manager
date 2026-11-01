@@ -178,3 +178,4 @@ Status: `[ ]` to do, `[~]` in progress, `[x]` done, `[!]` waiting for a decision
 | 2026-11-01 | `e570f50`, merge `6e6d19c` | candle 0.11.1 from crates.io instead of a GitHub commit (D29 done): one `tokenizers`, no C library, and zip 9, so deny.toml lists no advisories |
 | 2026-11-01 | `0a55ba6` to `93f9af2` (3 commits), merge `e10464c` | Version 0.4.2: update downloads no longer fail at their end (2.36); 0.4.0 and 0.4.1 copies need the installer once |
 | 2026-11-01 | `3288801`, `3e402ba`, merge `f7a6041` | Downloads continue after a dropped connection (6.10, D35), checked against GitHub and Hugging Face with 1 KB ranges; found that the text reader's model files are gone from their address (2.37, open) |
+| 2026-11-01 | `1fae543`, `6fc8a7e`, merge `3ad5229` | The text reader's models download as ONNX files (2.37, D36); checked by downloading them from the real address and reading a test image with both formats |
