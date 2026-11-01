@@ -4,7 +4,7 @@
 
 use std::path::Path;
 
-use anyhow::Result;
+use anyhow::{Context as _, Result};
 use ocrs::{ImageSource, OcrEngine, OcrEngineParams};
 use rten::Model;
 
@@ -41,10 +41,16 @@ pub struct Ocr {
 }
 
 impl Ocr {
+    /// Loads the two models in `dir`, as ONNX or `.rten` files.
     pub fn load(dir: &Path) -> Result<Self> {
+        let model = |name: &str| -> Result<Model> {
+            let file = crate::models::ocr_model_file(dir, name)
+                .with_context(|| format!("the text reader's {name} model is missing"))?;
+            Ok(Model::load_file(file)?)
+        };
         let engine = OcrEngine::new(OcrEngineParams {
-            detection_model: Some(Model::load_file(dir.join("text-detection.rten"))?),
-            recognition_model: Some(Model::load_file(dir.join("text-recognition.rten"))?),
+            detection_model: Some(model("text-detection")?),
+            recognition_model: Some(model("text-recognition")?),
             ..Default::default()
         })?;
         Ok(Self { engine })
@@ -115,7 +121,7 @@ mod tests {
         assert!(super::looks_like_words("Invoice total: 1,250 SAR"));
     }
 
-    /// OCR_DIR=<dir with the .rten models> OCR_IMAGE=<image with text> cargo test -- --ignored ocr
+    /// OCR_DIR=<dir with the models> OCR_IMAGE=<image with text> cargo test -- --ignored ocr
     #[test]
     #[ignore]
     fn ocr_reads_text() {

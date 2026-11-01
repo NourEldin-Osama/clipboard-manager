@@ -15,6 +15,9 @@ the notes here before a push that makes a release.
   models keep what arrived, and after a dropped connection they try again by
   themselves: after 10 seconds, then 30 seconds, 1, 2 and 5 minutes. The
   text reader model continues the next time the app starts.
+- Fix: the built-in text reader's model couldn't be downloaded any more,
+  because its old address stopped serving it. It now downloads in its newer
+  format (12 MB, one time); a model downloaded before keeps working.
 
 ## 0.4.1
 
