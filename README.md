@@ -36,7 +36,7 @@ public feature descriptions only, and it shares no code or assets with Planck an
 | **English and Arabic** | Switch the language in *Settings → General*. Arabic lays the whole window out right to left, and Arabic text, whether part of the interface or something you copied, is shaped, ordered and wrapped correctly, even when it mixes in numbers or English. To add a language, see [docs/TRANSLATING.md](docs/TRANSLATING.md). A bundled Arabic font ([Noto Sans Arabic](https://github.com/notofonts/arabic), SIL Open Font License) means it doesn't depend on the PC's fonts. |
 | **12- or 24-hour clock** | Times are stored in UTC and shown in your time zone, including daylight saving, with the clock you choose in *Settings → General*. |
 | **System tray and start at sign-in** | In *Settings → General*: keep the app running in the system tray (closing or minimising the window hides it there; click the icon to open it, right-click to pause recording or quit), and start it hidden when you sign in. |
-| **Text in images** | Text in images and screenshots becomes searchable. *Settings → Clipboard* chooses the reader: Windows' own (the default for new installs; it reads the languages installed in Windows), the built-in one ([ocrs](https://github.com/robertknight/ocrs), pure Rust, Latin letters), or a vision model on a server you choose (llama.cpp, vLLM with DeepSeek-OCR or PaddleOCR-VL, Ollama) with your own prompt. |
+| **Text in images** | Text in images and screenshots becomes searchable. *Settings → Clipboard* chooses the reader: Windows' own (the default for new installs; it reads the languages installed in Windows), the built-in one ([ocrs](https://github.com/robertknight/ocrs), pure Rust, Latin letters), or a vision model on a server you choose (llama.cpp, vLLM, SGLang, Ollama): DeepSeek-OCR-2, Unlimited-OCR-2 and MiniCPM-OCR come with their own settings, and any other model works with your own prompt ([how to set one up](#reading-text-in-images-with-a-model-server)). |
 | **Sort by** | The menu at the end of the filter row: *Best match* (while searching), *Recent*, *Oldest*, *A to Z* and *Most used* (items you copy back from the list most often). Searching and browsing each remember their own choice. *Settings → Appearance → Pinned on top* keeps pinned items first while browsing (not while searching). |
 | **Semantic search** | Smart mode ranks by meaning (similarity), with a boost for items that contain your words; results are ordered best first and the relevance bars match that order. You can also choose *Meaning* or *Keyword* only. |
 | **Built-in model (pure Rust)** | SigLIP (English or multilingual, Arabic included) runs inside the app on the CPU through [candle](https://github.com/huggingface/candle). It puts text and images in one shared space, so text can find images. |
@@ -180,6 +180,44 @@ with late-interaction MaxSim.
 
 Each model and prompt configuration keeps its own index, so you can switch between models without losing anything. Items that are missing from
 the active model's index are embedded in the background, and the status bar shows progress.
+
+## Reading text in images with a model server
+
+*Settings → Clipboard → Read text with → A server* sends each image you copy to a vision model on a server with an
+OpenAI-style `/chat/completions`, such as llama.cpp, vLLM, SGLang or Ollama. Pick the **Model type** there, then paste
+the server's address:
+
+- **DeepSeek-OCR-2**, **Unlimited-OCR-2** and **MiniCPM-OCR** fill in the model's name and prompt from its guide, and
+  each request carries the settings the guide asks for. Their answer is saved as plain text: layout tags and boxes are
+  removed, table cells are separated by spaces and rows by lines, and formulas stay as written.
+- **Another model** sends your prompt as written and keeps the answer as it comes.
+
+Each answer stops at 4096 tokens (about 3000 words), so a model that keeps repeating itself can't run for minutes.
+The commands below come from each model's guide; they were not tested with the app. vLLM and SGLang run on Linux or
+WSL2 with an NVIDIA GPU.
+
+**DeepSeek-OCR-2** with vLLM 0.16 or newer. `--logits_processors …` turns on vLLM's guard against repeated text:
+```bash
+vllm serve deepseek-ai/DeepSeek-OCR-2 --logits_processors vllm.model_executor.models.deepseek_ocr:NGramPerReqLogitsProcessor --no-enable-prefix-caching --mm-processor-cache-gb 0
+```
+The address is `http://127.0.0.1:8000/v1`. Recent llama.cpp builds run it too, from a GGUF file and its mmproj file
+(`llama-server -m <model>.gguf --mmproj <mmproj>.gguf`), but without that guard. DeepSeek publishes no GGUF files, so
+these come from other people.
+
+**Unlimited-OCR-2**: Baidu's guide on the [model page](https://huggingface.co/baidu/Unlimited-OCR-2) serves it with
+SGLang, using an SGLang build of its own, under the name `Unlimited-OCR-2` on port 10000. The address is then
+`http://127.0.0.1:10000/v1`. llama.cpp and vLLM don't document this version yet.
+
+**MiniCPM-OCR** with llama.cpp build b11901 or newer. Download `MiniCPM-OCR-1_0-Q8_0.gguf` and
+`mmproj-model-f16-4x.gguf` from [openbmb/MiniCPM-OCR-1.0-gguf](https://huggingface.co/openbmb/MiniCPM-OCR-1.0-gguf),
+then start it:
+```powershell
+.\llama-server.exe -m MiniCPM-OCR-1_0-Q8_0.gguf --mmproj mmproj-model-f16-4x.gguf --ctx-size 8192 --jinja --reasoning off --alias minicpm-ocr --port 8080
+```
+The address is `http://127.0.0.1:8080/v1`. With a vLLM version that supports it, the address is `http://127.0.0.1:8000/v1`:
+```bash
+vllm serve openbmb/MiniCPM-OCR-1.0 --served-model-name minicpm-ocr --max-model-len 40960 --mm-processor-kwargs '{"downsample_mode":"4x"}' --default-chat-template-kwargs '{"enable_thinking":false}'
+```
 
 ## Performance
 
