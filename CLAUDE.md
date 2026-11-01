@@ -17,8 +17,9 @@ prek run --all-files                        # every git hook: file checks, fmt, 
 cargo deny check -W unmaintained            # licenses, advisories, duplicates, crate sources (deny.toml)
 ```
 
-- Three tests are `#[ignore]` and need local assets: `OCR_DIR=… cargo test -- --ignored ocr_reads_text`,
-  `SIGLIP_DIR=…` (`text_finds_matching_image`), `EMBED_URL=…` (`server_lists_models_and_embeds`).
+- Some tests are `#[ignore]` and need local assets or the network: `OCR_DIR=… cargo test -- --ignored ocr_reads_text`,
+  `OCR_DOWNLOAD_DIR=…` (`the_text_reader_models_download`, 12 MB), `SIGLIP_DIR=…` (`text_finds_matching_image`),
+  `EMBED_URL=…` (`server_lists_models_and_embeds`).
 - When the repo lives on Google Drive (as in Colab), build with `CARGO_TARGET_DIR` pointing outside it.
 - `CLIPBOARD_MANAGER_HOME=<dir>` gives a throwaway data folder (config, history, models) for testing.
 - `--profile dist` (thin LTO) is the shipping build. Don't build the release `.exe` locally; CI publishes it.

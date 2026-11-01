@@ -44,6 +44,7 @@ Status: `[ ]` to do, `[~]` in progress, `[x]` done, `[!]` waiting for a decision
 | D33 | From the push on 2026-10-29 the app is stable and has users: a breaking change to settings or stored data ships with a migration in the next version, and the migration is removed in the version after that | You | Decided |
 | D34 | The app icon: "copy stack + search" in Midnight + amber, on a transparent background with midnight edges, and a bolder drawing for 16 to 24 px | You | Decided |
 | D35 | Downloads continue where they stopped, checked by the server's tag for the file, and after a dropped connection try again after 10 s, 30 s, 1, 2 and 5 min; the text reader model, which the background worker downloads, continues at the next start instead | You | Decided |
+| D36 | The text reader's models download as ONNX files; `.rten` files that earlier versions downloaded still load | Claude | Decided |
 
 ## Order of work, and why
 
@@ -100,7 +101,7 @@ Status: `[ ]` to do, `[~]` in progress, `[x]` done, `[!]` waiting for a decision
 - [x] 2.34 The pause button overlapped the end of the search field: the field left 160 px for buttons that take 171 (found after 0.4.0)
 - [x] 2.35 The taskbar showed Windows' generic icon, because the exe had none; fixed with the app icon (D34, found after 0.4.0)
 - [x] 2.36 Every update download failed at its end: its limit was the signed size, and ureq refuses even the last read once the limit is used up (found when 0.4.0 tried to update to 0.4.1; 0.4.0 and 0.4.1 copies need the installer once)
-- [ ] 2.37 The built-in text reader's model files are gone from their address: Amazon answers Access Denied for text-detection.rten and text-recognition.rten; the ocrs project now serves only ONNX versions there (found while testing resume)
+- [x] 2.37 The built-in text reader's model files are gone from their address: Amazon answers Access Denied for text-detection.rten and text-recognition.rten; the ocrs project now serves only ONNX versions there (found while testing resume); fixed: the app downloads the ONNX files (D36)
 
 ### Phase 3. Structure (no behavior change)
 - [x] 3.1 Split `view.rs` (theme, widgets, time format, top bar, list, grid, details, status bar, keyboard)
