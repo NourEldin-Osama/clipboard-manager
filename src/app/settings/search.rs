@@ -206,19 +206,23 @@ impl App {
                             p.done.load(Ordering::Relaxed),
                             p.total.load(Ordering::Relaxed).max(1),
                         );
-                        ui.add(
-                            egui::ProgressBar::new(done as f32 / total as f32)
-                                .desired_width(150.0)
-                                .text(txt(
-                                    &t!(
-                                        "settings-model-progress",
-                                        done = done >> 20,
-                                        total = total >> 20
-                                    ),
-                                    13.0,
-                                    None,
-                                )),
-                        );
+                        if let Some(seconds) = p.retry_in() {
+                            ui.label(txt(&t!("download-retrying", seconds = seconds), 13.0, None));
+                        } else {
+                            ui.add(
+                                egui::ProgressBar::new(done as f32 / total as f32)
+                                    .desired_width(150.0)
+                                    .text(txt(
+                                        &t!(
+                                            "settings-model-progress",
+                                            done = done >> 20,
+                                            total = total >> 20
+                                        ),
+                                        13.0,
+                                        None,
+                                    )),
+                            );
+                        }
                         ui.ctx().request_repaint_after(Duration::from_millis(250));
                     } else if self.download.is_none()
                         && ui

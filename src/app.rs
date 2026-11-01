@@ -18,11 +18,12 @@ use crate::clipboard::{self, Capture, Captured, Flags, SkipReason};
 use crate::config::{
     Config, EmbedBackend, LaunchConfig, Paths, SearchMode, ServerConfig, SortOrder, Theme, ViewMode,
 };
+use crate::download::Progress;
 use crate::embed::Embedding;
 use crate::i18n::{self, log_error, t};
 use crate::images::ImageLoader;
 use crate::library::{Library, Removed};
-use crate::models::{self, Progress, SIGLIP_MODELS};
+use crate::models::{self, SIGLIP_MODELS};
 use crate::paste;
 use crate::search::{self, Filter, Hit, Searcher};
 use crate::store::{looks_like_link, Item, Kind, Origin, Store};

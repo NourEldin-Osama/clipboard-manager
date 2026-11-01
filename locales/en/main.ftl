@@ -145,6 +145,11 @@ update-downloading = Downloading version { $version }…
 update-ready-restart = Version { $version } is ready. Restart to update, or it installs when you quit.
 update-failed = Update failed: { $error }
 update-progress = { $done } / { $total } MB
+download-retrying =
+    { $seconds ->
+        [one] Connection lost. Trying again in 1 second…
+       *[other] Connection lost. Trying again in { $seconds } seconds…
+    }
 update-later = Later
 update-skip = Skip this version
 update-download = Download
