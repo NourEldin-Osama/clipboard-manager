@@ -76,6 +76,18 @@ impl TextReader {
     }
 }
 
+/// A vision model the app knows, for a text reader server: each gets the
+/// prompt and request settings that suit it (see `ocr::server`).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ReaderModel {
+    DeepSeekOcr2,
+    UnlimitedOcr2,
+    MiniCpmOcr,
+    /// Any other vision model, asked with the prompt as written.
+    #[default]
+    Other,
+}
+
 /// A server that reads text in images: any OpenAI-style chat server with a
 /// vision model.
 #[derive(Clone, PartialEq, Serialize, Deserialize)]
@@ -88,6 +100,8 @@ pub struct ReaderServer {
     pub api_key: String,
     /// Empty for the server's default model.
     pub model: String,
+    /// Which known model the server runs, if any.
+    pub kind: ReaderModel,
     /// What the model is asked, with the image.
     pub prompt: String,
 }
@@ -103,6 +117,7 @@ impl Default for ReaderServer {
             base_url: "http://127.0.0.1:8080/v1".into(),
             api_key: String::new(),
             model: String::new(),
+            kind: ReaderModel::Other,
             prompt: Self::PROMPT.into(),
         }
     }
@@ -120,6 +135,7 @@ impl std::fmt::Debug for ReaderServer {
             .field("base_url", &self.base_url)
             .field("api_key", &key)
             .field("model", &self.model)
+            .field("kind", &self.kind)
             .field("prompt", &self.prompt)
             .finish()
     }
@@ -691,6 +707,7 @@ mod tests {
         let cfg = Config {
             text_reader: TextReader::Server(ReaderServer {
                 api_key: "reader-key".into(),
+                kind: ReaderModel::MiniCpmOcr,
                 ..Default::default()
             }),
             ..Default::default()
@@ -726,6 +743,16 @@ mod tests {
             ("http://x/v1", "m")
         );
         assert_eq!(s.launch, None);
+    }
+
+    #[test]
+    fn a_text_reader_server_from_before_the_model_type_is_another_model() {
+        let json = r#"{"base_url":"http://x/v1","model":"m","prompt":"Free OCR."}"#;
+        let s: ReaderServer = serde_json::from_str(json).unwrap();
+        assert_eq!(
+            (s.kind, s.model.as_str(), s.prompt.as_str()),
+            (ReaderModel::Other, "m", "Free OCR.")
+        );
     }
 
     #[test]
