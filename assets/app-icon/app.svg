@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="94 94 336 336">
+  <!-- Clipboard Manager: a copy stack with a magnifier, on a transparent
+       background. The gaps between the shapes are midnight blue, so the
+       white sheet keeps an edge on light taskbars. For 32 px and up;
+       app-small.svg is the bolder drawing for 16 to 24 px. After a change,
+       run the app_icon example (examples/app_icon.rs). Coordinates are on
+       the 512 grid of the first drafts; the view box crops to the drawing. -->
+  <!-- The back sheet, in the app's accent colour. -->
+  <rect x="118" y="110" width="180" height="210" rx="32" fill="#5865F2"/>
+  <!-- The front sheet, with a 14 unit midnight edge. -->
+  <rect x="170" y="162" width="180" height="210" rx="32" fill="#FFFFFF"
+        stroke="#151A3D" stroke-width="28" paint-order="stroke"/>
+  <!-- The magnifier: a midnight edge, then glass, ring and handle. -->
+  <circle cx="312" cy="320" r="84" fill="#151A3D"/>
+  <path d="M362 370L392 400" stroke="#151A3D" stroke-width="56" stroke-linecap="round"/>
+  <circle cx="312" cy="320" r="44" fill="#FFFFFF"/>
+  <circle cx="312" cy="320" r="56" fill="none" stroke="#F5A524" stroke-width="28"/>
+  <path d="M362 370L392 400" stroke="#F5A524" stroke-width="28" stroke-linecap="round"/>
+</svg>

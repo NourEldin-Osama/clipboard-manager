@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="99 99 336 336">
+  <!-- The app icon for 16 to 24 px: the drawing of app.svg, bolder, with a
+       bigger lens and wider edges, so nothing thinner than a pixel is left. -->
+  <rect x="118" y="110" width="180" height="210" rx="32" fill="#5865F2"/>
+  <rect x="170" y="162" width="180" height="210" rx="32" fill="#FFFFFF"
+        stroke="#151A3D" stroke-width="44" paint-order="stroke"/>
+  <circle cx="318" cy="326" r="108" fill="#151A3D"/>
+  <path d="M379 387L398 406" stroke="#151A3D" stroke-width="80" stroke-linecap="round"/>
+  <circle cx="318" cy="326" r="54" fill="#FFFFFF"/>
+  <circle cx="318" cy="326" r="68" fill="none" stroke="#F5A524" stroke-width="36"/>
+  <path d="M379 387L398 406" stroke="#F5A524" stroke-width="36" stroke-linecap="round"/>
+</svg>

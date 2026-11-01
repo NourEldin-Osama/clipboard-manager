@@ -42,6 +42,7 @@ Status: `[ ]` to do, `[~]` in progress, `[x]` done, `[!]` waiting for a decision
 | D31 | No tests through the screen for now (they would need egui_kittest): the new tests cover the update steps, old settings and the worker | You | Decided |
 | D32 | Only you use the app: no migrations or code for older versions. A history an older version wrote is moved aside for a new one, old setting names are not read, and releases write only the signed update line | You | Decided |
 | D33 | From the push on 2026-10-29 the app is stable and has users: a breaking change to settings or stored data ships with a migration in the next version, and the migration is removed in the version after that | You | Decided |
+| D34 | The app icon: "copy stack + search" in Midnight + amber, on a transparent background with midnight edges, and a bolder drawing for 16 to 24 px | You | Decided |
 
 ## Order of work, and why
 
@@ -95,6 +96,8 @@ Status: `[ ]` to do, `[~]` in progress, `[x]` done, `[!]` waiting for a decision
 - [x] 2.31 The quick popup closed the app when the full window was minimized: eframe 0.37 can't make a new window during such a frame (found in the Phase 6 check)
 - [x] 2.32 With the full window open, the popup's search field didn't get the keyboard (found in the Phase 6 check)
 - [x] 2.33 A few Arabic texts went to egui without the reading-order handling: the "none" hint, the vector sizes and two download progress texts showed their words in the wrong order (found in Phase 7)
+- [x] 2.34 The pause button overlapped the end of the search field: the field left 160 px for buttons that take 171 (found after 0.4.0)
+- [x] 2.35 The taskbar showed Windows' generic icon, because the exe had none; fixed with the app icon (D34, found after 0.4.0)
 
 ### Phase 3. Structure (no behavior change)
 - [x] 3.1 Split `view.rs` (theme, widgets, time format, top bar, list, grid, details, status bar, keyboard)

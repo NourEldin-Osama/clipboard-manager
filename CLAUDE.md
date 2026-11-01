@@ -89,7 +89,9 @@ server client with optional `llama-server` launcher), `import.rs` (files/folders
   `start_anchor` — instead of `ui.label`/`ui.horizontal`/`painter.text`, and mirror hand-placed rects with `flip`.
 - **Icons** are SVGs in `assets/icons` (Fluent UI System Icons and Material Symbols, chosen by the maintainer), white,
   tinted at runtime via `icons::paint`. Never hand-draw an icon or use emoji/font glyphs; show options from popular
-  icon sets and let the maintainer pick. The app icon (`assets/app-icon/app.ico`, embedded by `build.rs`) is not chosen yet.
+  icon sets and let the maintainer pick. The app icon, chosen by the maintainer, is drawn in `assets/app-icon/app.svg`
+  (`app-small.svg` for 16 to 24 px). `cargo run --example app_icon` makes `app.ico` from them, which `build.rs` puts in
+  the exe and the installer shows; the window and the tray draw `app-small.svg`.
 - Panel frames must use opaque fills (nothing is painted beneath a panel; translucent fills show black).
 - Commit messages: no `Co-Authored-By` trailers (the prek `commit-msg` hook rejects them).
 - A breaking change to settings or stored data ships with a migration in the next version; remove the migration in

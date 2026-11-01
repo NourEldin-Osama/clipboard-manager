@@ -4,6 +4,12 @@ What changed in each version, for the people who use the app. Each release
 starts its notes with the section of the version it was built from, so add
 the notes here before a push that makes a release.
 
+## 0.4.1
+
+- The app has its own icon: a copy stack with a magnifier. It shows in the
+  taskbar, the Start menu, the desktop shortcut, the tray and the installer.
+- Fix: the pause button overlapped the end of the search field.
+
 ## 0.4.0
 
 - Fix: a global shortcut changed in Settings worked only after a restart.

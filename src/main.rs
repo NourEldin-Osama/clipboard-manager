@@ -131,38 +131,38 @@ fn icon() -> egui::IconData {
     }
 }
 
-/// A simple generated icon: a rounded clipboard in the accent colour. Also
-/// used for the tray.
+/// The app icon as 64 by 64 RGBA pixels, for the window and the tray: the
+/// drawing for small sizes (assets/app-icon/app-small.svg), since both show
+/// it at 16 to 24 px. The exe has every size in app.ico.
 pub fn icon_rgba() -> (Vec<u8>, u32) {
-    let n = 64u32;
-    let mut rgba = vec![0u8; (n * n * 4) as usize];
-    for y in 0..n {
-        for x in 0..n {
-            let (fx, fy) = (x as f32, y as f32);
-            let board = rounded(fx, fy, 10.0, 8.0, 54.0, 60.0, 8.0);
-            let clip = rounded(fx, fy, 22.0, 3.0, 42.0, 14.0, 4.0);
-            let line = (18.0..46.0).contains(&fx)
-                && [26.0, 36.0, 46.0].iter().any(|l| (fy - l).abs() < 2.5);
-            let px = &mut rgba[((y * n + x) * 4) as usize..][..4];
-            if clip {
-                px.copy_from_slice(&[230, 232, 255, 255]);
-            } else if board {
-                if line {
-                    px.copy_from_slice(&[255, 255, 255, 255]);
-                } else {
-                    px.copy_from_slice(&[88, 101, 242, 255]);
-                }
-            }
-        }
-    }
-    (rgba, n)
+    const SIZE: u32 = 64;
+    let size = egui::SizeHint::Size {
+        width: SIZE,
+        height: SIZE,
+        maintain_aspect_ratio: true,
+    };
+    let image = egui_extras::image::load_svg_bytes_with_size(
+        include_bytes!("../assets/app-icon/app-small.svg"),
+        size,
+        &Default::default(),
+    )
+    .expect("the app icon is a valid drawing");
+    let rgba = image
+        .pixels
+        .iter()
+        .flat_map(|c| c.to_srgba_unmultiplied())
+        .collect();
+    (rgba, SIZE)
 }
 
-fn rounded(x: f32, y: f32, x0: f32, y0: f32, x1: f32, y1: f32, r: f32) -> bool {
-    if x < x0 || x > x1 || y < y0 || y > y1 {
-        return false;
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn the_app_icon_draws_on_a_transparent_background() {
+        let (rgba, size) = super::icon_rgba();
+        assert_eq!(rgba.len(), (size * size * 4) as usize);
+        let alpha = |x: u32, y: u32| rgba[((y * size + x) * 4 + 3) as usize];
+        assert_eq!(alpha(0, 0), 0, "a corner shows what is behind the icon");
+        assert_eq!(alpha(size / 2, size / 2), 255, "the middle is drawn");
     }
-    let cx = x.clamp(x0 + r, x1 - r);
-    let cy = y.clamp(y0 + r, y1 - r);
-    (x - cx).powi(2) + (y - cy).powi(2) <= r * r
 }
