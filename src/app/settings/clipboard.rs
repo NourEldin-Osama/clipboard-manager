@@ -244,6 +244,28 @@ impl App {
 fn reader_server_settings(ui: &mut Ui, s: &mut ReaderServer, show_key: &mut bool) {
     plain_setting(
         ui,
+        &t!("settings-reader-kind"),
+        &t!("settings-reader-kind-help"),
+        |ui| {
+            let menu = egui::ComboBox::from_id_salt("reader-kind")
+                .selected_text(txt(&kind_label(s.kind), 14.0, None))
+                .width(160.0)
+                .show_ui(ui, |ui| {
+                    for kind in ReaderModel::ALL {
+                        let label = txt(&kind_label(kind), 14.0, None);
+                        if ui.selectable_label(s.kind == kind, label).clicked() && s.kind != kind {
+                            // Its usual name and prompt; both stay editable.
+                            s.kind = kind;
+                            s.model = kind.served_name().to_string();
+                            s.prompt = kind.prompt().to_string();
+                        }
+                    }
+                });
+            set_choice_name(&menu.response, &row_title(ui), &kind_label(s.kind));
+        },
+    );
+    plain_setting(
+        ui,
         &t!("settings-server-address"),
         &t!("settings-reader-address-help"),
         |ui| {
@@ -318,6 +340,13 @@ fn reader_server_settings(ui: &mut Ui, s: &mut ReaderServer, show_key: &mut bool
             set_name(&field, &row_title(ui));
         },
     );
+}
+
+fn kind_label(kind: ReaderModel) -> String {
+    match kind {
+        ReaderModel::Other => t!("reader-kind-other"),
+        known => known.name().to_string(),
+    }
 }
 
 /// The rules for copies that aren't recorded: one row each, then "Add a rule".

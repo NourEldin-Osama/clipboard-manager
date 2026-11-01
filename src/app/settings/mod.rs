@@ -13,7 +13,8 @@ use super::view::{
 };
 use super::*;
 use crate::config::{
-    BackendKind, Density, Language, ReaderServer, ServerProfiles, TextReader, TimeFormat,
+    BackendKind, Density, Language, ReaderModel, ReaderServer, ServerProfiles, TextReader,
+    TimeFormat,
 };
 
 mod appearance;
