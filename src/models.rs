@@ -29,16 +29,12 @@ pub const SIGLIP_MODELS: [SigLipModel; 2] = [
     },
 ];
 
-pub const OCR_FILES: [(&str, &str); 2] = [
-    (
-        "text-detection.rten",
-        "https://ocrs-models.s3-accelerate.amazonaws.com/text-detection.rten",
-    ),
-    (
-        "text-recognition.rten",
-        "https://ocrs-models.s3-accelerate.amazonaws.com/text-recognition.rten",
-    ),
-];
+/// The text reader's two models. They download as ONNX files; versions
+/// before 0.4.2 downloaded `.rten` files, which still load, but their
+/// address no longer serves them.
+const OCR_MODELS: [&str; 2] = ["text-detection", "text-recognition"];
+
+const OCR_MODELS_URL: &str = "https://ocrs-models.s3-accelerate.amazonaws.com";
 
 pub fn siglip_dir(models: &Path, repo: &str) -> PathBuf {
     models.join(repo.replace('/', "--"))
@@ -56,8 +52,19 @@ pub fn siglip_ready(models: &Path, repo: &str) -> bool {
 }
 
 pub fn ocr_ready(models: &Path) -> bool {
-    let d = ocr_dir(models);
-    OCR_FILES.iter().all(|(f, _)| d.join(f).is_file())
+    let dir = ocr_dir(models);
+    OCR_MODELS
+        .iter()
+        .all(|name| ocr_model_file(&dir, name).is_some())
+}
+
+/// The file of the text reader's model `name` in `dir`: the ONNX download,
+/// or the `.rten` file a version before 0.4.2 downloaded.
+pub fn ocr_model_file(dir: &Path, name: &str) -> Option<PathBuf> {
+    ["onnx", "rten"]
+        .into_iter()
+        .map(|ext| dir.join(format!("{name}.{ext}")))
+        .find(|file| file.is_file())
 }
 
 pub fn download_siglip(models: &Path, repo: &str, p: &Arc<Progress>) -> Result<()> {
@@ -71,10 +78,14 @@ pub fn download_siglip(models: &Path, repo: &str, p: &Arc<Progress>) -> Result<(
 
 pub fn download_ocr(models: &Path, p: &Arc<Progress>) -> Result<()> {
     let dir = ocr_dir(models);
-    for (f, url) in OCR_FILES {
+    for name in OCR_MODELS {
+        if ocr_model_file(&dir, name).is_some() {
+            continue;
+        }
+        let url = format!("{OCR_MODELS_URL}/{name}.onnx");
         // The background worker downloads these, and searches wait behind it:
         // no waiting to try again, the next start continues the download.
-        download(url, &dir.join(f), p, false)?;
+        download(&url, &dir.join(format!("{name}.onnx")), p, false)?;
     }
     Ok(())
 }
@@ -98,5 +109,42 @@ fn download(url: &str, dest: &Path, p: &Progress, wait: bool) -> Result<()> {
         download.run(p)
     } else {
         download.run_once(p)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_text_reader_takes_its_onnx_model_or_an_older_rten_one() {
+        let dir = std::env::temp_dir().join(format!("cbm-ocr-models-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let ocr = ocr_dir(&dir);
+        std::fs::create_dir_all(&ocr).unwrap();
+        assert!(!ocr_ready(&dir));
+        std::fs::write(ocr.join("text-detection.rten"), "older").unwrap();
+        std::fs::write(ocr.join("text-recognition.onnx"), "newer").unwrap();
+        assert!(ocr_ready(&dir));
+        assert_eq!(
+            ocr_model_file(&ocr, "text-detection"),
+            Some(ocr.join("text-detection.rten"))
+        );
+        std::fs::write(ocr.join("text-detection.onnx"), "newer").unwrap();
+        assert_eq!(
+            ocr_model_file(&ocr, "text-detection"),
+            Some(ocr.join("text-detection.onnx"))
+        );
+        std::fs::remove_dir_all(dir).ok();
+    }
+
+    /// Downloads the text reader's models from their real address (12 MB):
+    /// OCR_DOWNLOAD_DIR=<empty folder> cargo test -- --ignored text_reader_models
+    #[test]
+    #[ignore]
+    fn the_text_reader_models_download() {
+        let models = PathBuf::from(std::env::var("OCR_DOWNLOAD_DIR").unwrap());
+        download_ocr(&models, &Arc::default()).unwrap();
+        assert!(ocr_ready(&models));
     }
 }
