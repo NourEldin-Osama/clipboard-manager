@@ -98,6 +98,7 @@ Status: `[ ]` to do, `[~]` in progress, `[x]` done, `[!]` waiting for a decision
 - [x] 2.33 A few Arabic texts went to egui without the reading-order handling: the "none" hint, the vector sizes and two download progress texts showed their words in the wrong order (found in Phase 7)
 - [x] 2.34 The pause button overlapped the end of the search field: the field left 160 px for buttons that take 171 (found after 0.4.0)
 - [x] 2.35 The taskbar showed Windows' generic icon, because the exe had none; fixed with the app icon (D34, found after 0.4.0)
+- [x] 2.36 Every update download failed at its end: its limit was the signed size, and ureq refuses even the last read once the limit is used up (found when 0.4.0 tried to update to 0.4.1; 0.4.0 and 0.4.1 copies need the installer once)
 
 ### Phase 3. Structure (no behavior change)
 - [x] 3.1 Split `view.rs` (theme, widgets, time format, top bar, list, grid, details, status bar, keyboard)
