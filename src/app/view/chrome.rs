@@ -130,11 +130,11 @@ impl App {
                                     ));
                                     slow_spinner(ui, 14.0, None);
                                 } else {
-                                    ui.label(txt(
-                                        &t!("update-downloading", version = r.label()),
-                                        13.5,
-                                        Some(text_color),
-                                    ));
+                                    let line = match p.retry_in() {
+                                        Some(seconds) => t!("download-retrying", seconds = seconds),
+                                        None => t!("update-downloading", version = r.label()),
+                                    };
+                                    ui.label(txt(&line, 13.5, Some(text_color)));
                                     ui.add(
                                         egui::ProgressBar::new(done as f32 / total as f32)
                                             .desired_width(160.0)

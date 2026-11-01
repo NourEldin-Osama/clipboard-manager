@@ -12,9 +12,7 @@
 //! running exe becomes `clipboard-manager.old`, the new one takes its name, and
 //! the app restarts. The `.old` file is removed on the next start.
 
-use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -22,7 +20,7 @@ use anyhow::{anyhow, bail, Context, Result};
 use base64::Engine as _;
 use serde::{Deserialize, Serialize};
 
-use crate::models::Progress;
+use crate::download::Progress;
 
 /// Verifies release signatures. Its private half is the `UPDATE_SIGNING_KEY` repo secret.
 const PUBLIC_KEY: &str = "87vyKkh1uUjEosXCDL+KH0+9XjQ6xu+MrlCB9ETs9TM=";
@@ -207,59 +205,40 @@ fn staged_manifest_path(exe: &Path) -> PathBuf {
     exe.with_extension("new.json")
 }
 
-/// Downloads and verifies the release. Returns the verified exe, ready to install.
+/// Downloads and verifies the release. Returns the verified exe, ready to
+/// install. A download that stops is continued by the next one.
 pub fn download(r: &Release, p: &Arc<Progress>) -> Result<PathBuf> {
     let exe = std::env::current_exe()?;
     let staged = staged_path(&exe);
-    let part = staged.with_extension("part");
     // A folder the app can't write to (Program Files, say) fails here, before
     // the download, instead of after it, again every day.
-    let mut out = std::fs::File::create(&part).with_context(|| {
-        format!(
-            "the app's folder can't be written ({}); download the new version by hand",
-            part.display()
-        )
-    })?;
-    // The exe is about 30 MB: half an hour covers a very slow line.
-    let mut resp = crate::net::download(Duration::from_secs(30 * 60))
-        .get(&r.url)
-        .config()
-        .https_only(true)
-        .build()
-        .call()
-        .with_context(|| format!("downloading {}", r.url))?;
-    p.total.store(r.size, Ordering::Relaxed);
-    let bytes = read_body(resp.body_mut(), r.size, p)?;
-    verify(&bytes, r)?;
-    out.write_all(&bytes)
-        .with_context(|| format!("writing {}", part.display()))?;
-    out.sync_all()?;
-    drop(out);
-    std::fs::rename(&part, &staged)?;
+    let part = staged.with_extension("part");
+    std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&part)
+        .with_context(|| {
+            format!(
+                "the app's folder can't be written ({}); download the new version by hand",
+                part.display()
+            )
+        })?;
+    crate::download::Download {
+        url: &r.url,
+        dest: &staged,
+        size: Some(r.size),
+        https_only: true,
+        // The exe is about 30 MB: half an hour a try covers a very slow line.
+        max_body: Duration::from_secs(30 * 60),
+    }
+    .run(p)?;
+    if let Err(e) = verify(&std::fs::read(&staged)?, r) {
+        // Not the signed file: no use, also not to continue.
+        let _ = std::fs::remove_file(&staged);
+        return Err(e);
+    }
     std::fs::write(staged_manifest_path(&exe), serde_json::to_vec(&r.manifest)?)?;
     Ok(staged)
-}
-
-/// Reads a download that should be `size` bytes. A longer one ends with an
-/// error before it can fill the memory.
-fn read_body(body: &mut ureq::Body, size: u64, p: &Progress) -> Result<Vec<u8>> {
-    // ureq refuses every read once the limit is used up, also the last one,
-    // which only finds the end, so the limit is one byte past the size.
-    let mut reader = body.with_config().limit(size + 1).reader();
-    let mut bytes = Vec::with_capacity(size as usize);
-    let mut buf = vec![0u8; 1 << 16];
-    loop {
-        if p.cancel.load(Ordering::Relaxed) {
-            bail!("cancelled");
-        }
-        let n = reader.read(&mut buf)?;
-        if n == 0 {
-            break;
-        }
-        bytes.extend_from_slice(&buf[..n]);
-        p.done.store(bytes.len() as u64, Ordering::Relaxed);
-    }
-    Ok(bytes)
 }
 
 /// An update downloaded earlier but never installed (a Windows shutdown ends
@@ -362,7 +341,8 @@ pub fn relaunch(exe: &Path) -> Result<()> {
     Ok(())
 }
 
-/// Removes what a finished or abandoned update leaves behind.
+/// Removes what a finished or abandoned update leaves behind. A partial
+/// download stays, for the next download to continue.
 pub fn clean_up() {
     if let Ok(exe) = std::env::current_exe() {
         clean_up_at(&exe);
@@ -370,7 +350,7 @@ pub fn clean_up() {
 }
 
 fn clean_up_at(exe: &Path) {
-    for ext in ["old", "new", "new.json", "part"] {
+    for ext in ["old", "new", "new.json"] {
         let _ = std::fs::remove_file(exe.with_extension(ext));
     }
 }
@@ -576,10 +556,11 @@ mod tests {
     }
 
     #[test]
-    fn cleaning_up_removes_only_what_an_update_leaves() {
+    fn cleaning_up_removes_what_an_update_leaves_but_a_partial_download() {
         let exe = running_exe("clean");
-        let left = ["old", "new", "new.json", "part"].map(|ext| exe.with_extension(ext));
-        for file in &left {
+        let left = ["old", "new", "new.json"].map(|ext| exe.with_extension(ext));
+        let partial = ["part", "part-tag"].map(|ext| exe.with_extension(ext));
+        for file in left.iter().chain(&partial) {
             std::fs::write(file, "left over").unwrap();
         }
         let other = exe.with_file_name("notes.txt");
@@ -587,6 +568,13 @@ mod tests {
         clean_up_at(&exe);
         for file in &left {
             assert!(!file.exists(), "{}", file.display());
+        }
+        for file in &partial {
+            assert!(
+                file.exists(),
+                "kept for the next download: {}",
+                file.display()
+            );
         }
         assert!(exe.exists() && other.exists());
         std::fs::remove_dir_all(exe.parent().unwrap()).unwrap();
@@ -633,20 +621,5 @@ mod tests {
         assert_eq!(read(&exe), "new version");
         assert_eq!(read(&exe.with_extension("old")), "running version");
         std::fs::remove_dir_all(exe.parent().unwrap()).unwrap();
-    }
-
-    /// 0.4.0 and 0.4.1 set the limit to the signed size, so every update
-    /// download failed at its end: "the response body is larger than request
-    /// limit".
-    #[test]
-    fn a_download_of_the_signed_size_is_read_whole_and_a_longer_one_refused() {
-        let size = 100_000;
-        let p = Progress::default();
-        let mut body = ureq::Body::builder().data(vec![7u8; size]);
-        let bytes = read_body(&mut body, size as u64, &p).unwrap();
-        assert_eq!(bytes.len(), size);
-        assert_eq!(p.done.load(Ordering::Relaxed), size as u64);
-        let mut longer = ureq::Body::builder().data(vec![7u8; size + 1]);
-        assert!(read_body(&mut longer, size as u64, &p).is_err());
     }
 }

@@ -8,6 +8,7 @@ mod app;
 mod autostart;
 mod clipboard;
 mod config;
+mod download;
 mod embed;
 mod i18n;
 mod images;
