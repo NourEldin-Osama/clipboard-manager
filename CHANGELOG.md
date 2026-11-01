@@ -4,6 +4,14 @@ What changed in each version, for the people who use the app. Each release
 starts its notes with the section of the version it was built from, so add
 the notes here before a push that makes a release.
 
+## 0.4.2
+
+- Fix: updating the app failed at the end of the download, with "the
+  response body is larger than request limit". Copies of 0.4.0 and 0.4.1
+  still have this fault, so they can't update themselves to this version:
+  download the installer below and run it once. Your history and settings
+  stay.
+
 ## 0.4.1
 
 - The app has its own icon: a copy stack with a magnifier. It shows in the
