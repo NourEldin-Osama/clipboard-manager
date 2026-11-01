@@ -229,9 +229,24 @@ pub fn download(r: &Release, p: &Arc<Progress>) -> Result<PathBuf> {
         .call()
         .with_context(|| format!("downloading {}", r.url))?;
     p.total.store(r.size, Ordering::Relaxed);
-    // More bytes than the signed size end the download with an error.
-    let mut reader = resp.body_mut().with_config().limit(r.size).reader();
-    let mut bytes = Vec::with_capacity(r.size as usize);
+    let bytes = read_body(resp.body_mut(), r.size, p)?;
+    verify(&bytes, r)?;
+    out.write_all(&bytes)
+        .with_context(|| format!("writing {}", part.display()))?;
+    out.sync_all()?;
+    drop(out);
+    std::fs::rename(&part, &staged)?;
+    std::fs::write(staged_manifest_path(&exe), serde_json::to_vec(&r.manifest)?)?;
+    Ok(staged)
+}
+
+/// Reads a download that should be `size` bytes. A longer one ends with an
+/// error before it can fill the memory.
+fn read_body(body: &mut ureq::Body, size: u64, p: &Progress) -> Result<Vec<u8>> {
+    // ureq refuses every read once the limit is used up, also the last one,
+    // which only finds the end, so the limit is one byte past the size.
+    let mut reader = body.with_config().limit(size + 1).reader();
+    let mut bytes = Vec::with_capacity(size as usize);
     let mut buf = vec![0u8; 1 << 16];
     loop {
         if p.cancel.load(Ordering::Relaxed) {
@@ -244,14 +259,7 @@ pub fn download(r: &Release, p: &Arc<Progress>) -> Result<PathBuf> {
         bytes.extend_from_slice(&buf[..n]);
         p.done.store(bytes.len() as u64, Ordering::Relaxed);
     }
-    verify(&bytes, r)?;
-    out.write_all(&bytes)
-        .with_context(|| format!("writing {}", part.display()))?;
-    out.sync_all()?;
-    drop(out);
-    std::fs::rename(&part, &staged)?;
-    std::fs::write(staged_manifest_path(&exe), serde_json::to_vec(&r.manifest)?)?;
-    Ok(staged)
+    Ok(bytes)
 }
 
 /// An update downloaded earlier but never installed (a Windows shutdown ends
@@ -625,5 +633,20 @@ mod tests {
         assert_eq!(read(&exe), "new version");
         assert_eq!(read(&exe.with_extension("old")), "running version");
         std::fs::remove_dir_all(exe.parent().unwrap()).unwrap();
+    }
+
+    /// 0.4.0 and 0.4.1 set the limit to the signed size, so every update
+    /// download failed at its end: "the response body is larger than request
+    /// limit".
+    #[test]
+    fn a_download_of_the_signed_size_is_read_whole_and_a_longer_one_refused() {
+        let size = 100_000;
+        let p = Progress::default();
+        let mut body = ureq::Body::builder().data(vec![7u8; size]);
+        let bytes = read_body(&mut body, size as u64, &p).unwrap();
+        assert_eq!(bytes.len(), size);
+        assert_eq!(p.done.load(Ordering::Relaxed), size as u64);
+        let mut longer = ureq::Body::builder().data(vec![7u8; size + 1]);
+        assert!(read_body(&mut longer, size as u64, &p).is_err());
     }
 }
