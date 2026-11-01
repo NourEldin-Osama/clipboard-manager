@@ -37,7 +37,7 @@ Status: `[ ]` to do, `[~]` in progress, `[x]` done, `[!]` waiting for a decision
 | D26 | The popup has a bar at its top: Settings, the full window, a handle to move it, Close. A moved popup still opens at the mouse pointer the next time | You | Decided |
 | D27 | Gray text meets the 4.5 to 1 contrast minimum everywhere, in both themes; indexing shows a spinner that moves five times a second, and a progress bar | You | Decided |
 | D28 | Colored text (accent, status, kind and tag colors, links, selected text) meets the 4.5 to 1 minimum in both themes; buttons with white text get a deeper fill | You | Decided |
-| D29 | candle comes from its code on GitHub at a fixed commit until a release after 0.11.0: one `tokenizers` and no C library build. Back to crates.io when that release is out | You | Decided |
+| D29 | candle comes from its code on GitHub at a fixed commit until a release after 0.11.0: one `tokenizers` and no C library build. Back to crates.io when that release is out | You | Done: candle 0.11.1 from crates.io (2026-11-01) |
 | D30 | The dependency check (cargo-deny) is its own job, also run weekly: advisories, licenses and crate sources fail it; unmaintained crates and duplicate versions only warn | You | Decided |
 | D31 | No tests through the screen for now (they would need egui_kittest): the new tests cover the update steps, old settings and the worker | You | Decided |
 | D32 | Only you use the app: no migrations or code for older versions. A history an older version wrote is moved aside for a new one, old setting names are not read, and releases write only the signed update line | You | Decided |
@@ -139,7 +139,7 @@ Status: `[ ]` to do, `[~]` in progress, `[x]` done, `[!]` waiting for a decision
 - [x] 7.3 Readable colored text (D28); gray text on a selected row in the dark theme and on search hits, which the first test did not measure
 
 ### Phase 8. Build, CI and tests
-- [x] 8.1 One `tokenizers` version (no second copy, no C library build): candle from GitHub at a fixed commit (D29)
+- [x] 8.1 One `tokenizers` version (no second copy, no C library build): candle from GitHub at a fixed commit (D29), then candle 0.11.1 from crates.io, which also brings zip 9 and ends the three zip advisories
 - [x] 8.2 GitHub Actions pinned to commit hashes; the push hook reads the release from the comment and reports a candle release newer than the git commit
 - [x] 8.3 The release job checks the update signature before publishing (moved into 5.2, D20)
 - [x] 8.4 `cargo deny` for licenses and security advisories (D30)

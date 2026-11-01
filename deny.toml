@@ -15,14 +15,6 @@ targets = ["x86_64-pc-windows-msvc"]
 # warnings, which never fail the check.
 unsound = "all"
 unmaintained = "all"
-ignore = [
-  # zip 8 comes with candle, which only reads archive entries and never calls
-  # extract(), the function these three are about; the app loads only
-  # safetensors files. Remove them once candle moves to zip 9.
-  { id = "RUSTSEC-2026-0367", reason = "extract() is never called" },
-  { id = "RUSTSEC-2026-0368", reason = "extract() is never called" },
-  { id = "RUSTSEC-2026-0369", reason = "extract() is never called" },
-]
 
 [licenses]
 # Permissive licenses, and MPL-2.0 (copyleft for its own files only) for
@@ -51,6 +43,4 @@ multiple-versions = "warn"
 [sources]
 unknown-registry = "deny"
 unknown-git = "deny"
-# candle's code at a fixed commit, until its next release (see Cargo.toml).
-allow-git = ["https://github.com/huggingface/candle"]
 required-git-spec = "rev"

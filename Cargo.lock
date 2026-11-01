@@ -678,8 +678,9 @@ dependencies = [
 
 [[package]]
 name = "candle-core"
-version = "0.11.0"
-source = "git+https://github.com/huggingface/candle?rev=12bb5d1f6350f4ea9827d9086f213feec1f0af6a#12bb5d1f6350f4ea9827d9086f213feec1f0af6a"
+version = "0.11.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d11c8be87cfbaef9ebb62fb3f850d1fc8e00cc1d11d393fdbe55a4d5c2cdb325"
 dependencies = [
  "byteorder",
  "float8",
@@ -704,8 +705,9 @@ dependencies = [
 
 [[package]]
 name = "candle-nn"
-version = "0.11.0"
-source = "git+https://github.com/huggingface/candle?rev=12bb5d1f6350f4ea9827d9086f213feec1f0af6a#12bb5d1f6350f4ea9827d9086f213feec1f0af6a"
+version = "0.11.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "437fabe77547c2447c7bdf3cc946e19db29a2832440176b419f77c80b0a9a05e"
 dependencies = [
  "candle-core",
  "half",
@@ -2132,8 +2134,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "300e883d756b2e4ec94e02791f39b04b522276138852cfc41d9fb7e904106099"
 dependencies = [
  "cfg-if",
+ "js-sys",
  "libc",
  "r-efi 6.0.0",
+ "wasm-bindgen",
 ]
 
 [[package]]
@@ -5160,9 +5164,9 @@ dependencies = [
 
 [[package]]
 name = "typed-path"
-version = "0.12.4"
+version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "54ec2755506471f54baf5e4bb5499d8e510cc1caf271270e778a736bd2d7336c"
+checksum = "9ce898823d8cd0f028662d2f349694b1af0a5cc9be83f1d213a00d3147445e1e"
 
 [[package]]
 name = "typeid"
@@ -6396,14 +6400,17 @@ dependencies = [
 
 [[package]]
 name = "zip"
-version = "8.6.0"
+version = "9.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2d04a6b5381502aa6087c94c669499eb1602eb9c5e8198e534de571f7154809b"
+checksum = "848dad21639597378c3be94c59fd4de683f0f6d8a5387575896e1245737d4f37"
 dependencies = [
  "crc32fast",
+ "getrandom 0.4.3",
  "indexmap",
  "memchr",
+ "nix",
  "typed-path",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
