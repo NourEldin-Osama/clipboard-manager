@@ -11,6 +11,10 @@ the notes here before a push that makes a release.
   still have this fault, so they can't update themselves to this version:
   download the installer below and run it once. Your history and settings
   stay.
+- Downloads continue where they stopped. The update and the built-in search
+  models keep what arrived, and after a dropped connection they try again by
+  themselves: after 10 seconds, then 30 seconds, 1, 2 and 5 minutes. The
+  text reader model continues the next time the app starts.
 
 ## 0.4.1
 
