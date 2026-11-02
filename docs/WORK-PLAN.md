@@ -46,6 +46,11 @@ Status: `[ ]` to do, `[~]` in progress, `[x]` done, `[!]` waiting for a decision
 | D35 | Downloads continue where they stopped, checked by the server's tag for the file, and after a dropped connection try again after 10 s, 30 s, 1, 2 and 5 min; the text reader model, which the background worker downloads, continues at the next start instead | You | Decided |
 | D36 | The text reader's models download as ONNX files; `.rten` files that earlier versions downloaded still load | Claude | Decided |
 | D37 | The server text reader has a Model type menu: DeepSeek-OCR-2, Unlimited-OCR-2 and MiniCPM-OCR get the name, prompt and request settings from their guides, and their answers are saved as plain text (table cells with spaces, rows on lines, formulas kept); every answer stops at 4096 tokens, which fits DeepSeek-OCR-2's 8192 with the image; the models run on the user's server (llama.cpp, vLLM, SGLang), never inside the app | You | Decided |
+| D38 | The built-in search model (SigLIP) and text reader (ocrs) are gone: meaning search uses your own server or is off, and text in images is read by Windows (the default), a server, or not at all. Settings that named them turn search off and let Windows read, with a one-time note, and the files and vectors they left are deleted at the first start | You | Decided |
+| D39 | Servers are saved with a type (llama.cpp, Ollama, LM Studio, vLLM, Unsloth, OpenRouter or another one), a name, an address on any port and an API key, and keep several models, each for searching or reading, with its own name and settings. Picking a model applies at once, each keeps its own index, and a server's settings wait for Save in its editor. Settings from 0.4 become saved servers as they were, so the model in use keeps its vectors | You | Decided |
+| D40 | Server types show their brands' logos: llama.cpp, vLLM and Unsloth in their colours, the others white and tinted like the icons (Simple Icons, Lobe Icons and llama.cpp's own logo) | You | Decided |
+| D41 | The server editor tests the connection and each model, takes model names the server doesn't list, and Fill in details looks a model up on models.dev (downloaded only when clicked; nothing from the history is sent) and fills in the prompts well-known embedding models are trained with. The vector size is shortened on this PC, which works with every server, as `dimensions` would fail on most models | You (Claude for the vector size) | Decided |
+| D42 | GLM-OCR joins the reading model types, asked with "Text Recognition:" from its model card; llama.cpp serves it from ggml-org's GGUF | Claude | Decided |
 
 ## Order of work, and why
 
@@ -139,6 +144,8 @@ Status: `[ ]` to do, `[~]` in progress, `[x]` done, `[!]` waiting for a decision
 - [x] 6.9 A bar at the top of the quick popup: Settings, the full window, a handle to move it, Close (D26)
 - [x] 6.10 Downloads continue after a dropped connection: the update and the models (D35)
 - [x] 6.11 The server text reader knows DeepSeek-OCR-2, Unlimited-OCR-2 and MiniCPM-OCR: a Model type menu with their prompts and settings, answers as plain text, and a README guide to start each one (D37)
+- [x] 6.12 Your own servers only: the built-in engines are gone (D38); saved servers with several models each, any port, a logo for each type, Test and Fill in details (D39 to D41)
+- [x] 6.13 GLM-OCR as a reading model type (D42)
 
 ### Phase 7. Speed and accessibility
 - [x] 7.1 No repaint loop while indexing, cached file checks, thumbnail cache that keeps visible images
