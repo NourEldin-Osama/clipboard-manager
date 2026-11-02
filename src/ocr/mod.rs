@@ -7,7 +7,7 @@ mod server;
 #[cfg(windows)]
 mod windows_reader;
 
-pub use server::ServerReader;
+pub use server::{test_read, ServerReader};
 #[cfg(windows)]
 pub use windows_reader::WindowsReader;
 

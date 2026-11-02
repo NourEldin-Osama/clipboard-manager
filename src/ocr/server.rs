@@ -93,6 +93,19 @@ impl ReaderModel {
     }
 }
 
+/// The image the reading test sends: "Clipboard Manager" and a line with a
+/// number, in black on white.
+const TEST_IMAGE: &[u8] = include_bytes!("../../assets/read-test.png");
+
+/// Reads the test image, to check that the model answers and to show how
+/// well it reads: what it read, and how long that took.
+pub fn test_read(cfg: ReaderServer) -> Result<(String, Duration)> {
+    let img = image::load_from_memory(TEST_IMAGE)?;
+    let start = std::time::Instant::now();
+    let text = ServerReader::new(cfg).recognize(&img)?;
+    Ok((text, start.elapsed()))
+}
+
 pub struct ServerReader {
     cfg: ReaderServer,
     agent: ureq::Agent,
@@ -367,6 +380,22 @@ mod tests {
                 _ => assert_eq!(body["chat_template_kwargs"]["enable_thinking"], false),
             }
         }
+    }
+
+    #[test]
+    fn the_reading_test_sends_its_image_and_returns_the_answer() {
+        let (url, request) = serve_once("Clipboard Manager\nReading test: invoice 4821");
+        let (text, _) = test_read(ReaderServer {
+            base_url: url,
+            ..Default::default()
+        })
+        .unwrap();
+        assert!(text.starts_with("Clipboard Manager"));
+        let body = request.recv().unwrap();
+        let image = body["messages"][0]["content"][0]["image_url"]["url"]
+            .as_str()
+            .unwrap();
+        assert!(image.starts_with("data:image/png;base64,"));
     }
 
     #[test]

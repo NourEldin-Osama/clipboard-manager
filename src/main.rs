@@ -6,6 +6,7 @@
 
 mod app;
 mod autostart;
+mod catalog;
 mod clipboard;
 mod config;
 mod download;

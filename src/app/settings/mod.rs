@@ -1,6 +1,6 @@
-//! Settings as a full page with sections. Changes apply as you make them; only
-//! the search model waits for "Apply", because a half-typed address would
-//! otherwise reconnect on every keystroke.
+//! Settings as a full page with sections. Changes apply as you make them,
+//! except a server's settings, which wait for Save in its editor, and the
+//! global shortcuts.
 
 use eframe::egui::{Frame, Margin, Pos2, Rect, Ui};
 
@@ -12,24 +12,23 @@ use super::view::{
     GREEN, RED,
 };
 use super::*;
-use crate::config::{
-    BackendKind, Density, Language, ReaderModel, ReaderServer, ServerProfiles, TextReader,
-    TimeFormat,
-};
+use crate::config::{Density, Language, ReaderModel, TextReader, TimeFormat};
 
 mod appearance;
 mod clipboard;
 mod data;
 mod general;
 mod search;
-mod server;
+mod servers;
 mod shortcuts;
 mod widgets;
 
 // The helpers of every page, for this file and the pages.
 use appearance::*;
-use server::*;
+use servers::*;
 use widgets::*;
+
+pub(super) use servers::{model_label, PendingSend, ServerEditor};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(super) enum SettingsPage {
@@ -69,30 +68,16 @@ impl App {
         self.settings_page = page;
         self.recording = None;
         self.confirm = None;
+        self.server_editor = None;
+        self.pending_send = None;
     }
 
-    /// Leaving settings applies everything, including model changes. A
-    /// server outside this PC is asked about first: Settings then stays open
-    /// on the Search page, with the question.
+    /// Leaving settings applies everything. A server being edited and not
+    /// saved stays as it was, and a server outside this PC that the user
+    /// hasn't agreed to gets nothing.
     pub(super) fn close_settings(&mut self, ctx: &egui::Context) {
-        if self
-            .draft
-            .as_ref()
-            .is_some_and(|d| self.unconfirmed_server(d).is_some())
-        {
-            self.settings_page = SettingsPage::Search;
-            self.confirm = Some(Confirm::SendToServer);
-            return;
-        }
-        if self
-            .draft
-            .as_ref()
-            .is_some_and(|d| self.unconfirmed_reader(d).is_some())
-        {
-            self.settings_page = SettingsPage::Clipboard;
-            self.confirm = Some(Confirm::SendImagesToServer);
-            return;
-        }
+        self.server_editor = None;
+        self.pending_send = None;
         if let Some(d) = self.draft.take() {
             self.apply_settings(d, ctx, true);
         }
@@ -103,44 +88,23 @@ impl App {
         self.confirm = None;
     }
 
-    /// The server outside this PC that applying `d` would start sending the
-    /// history to, as long as the user hasn't agreed to it yet.
-    fn unconfirmed_server(&self, d: &Config) -> Option<String> {
-        let EmbedBackend::Server(s) = &d.backend else {
-            return None;
-        };
-        let unconfirmed = d.backend != self.cfg.backend
-            && !crate::net::is_on_this_pc(&s.base_url)
-            && !d.is_server_allowed(&s.base_url);
-        unconfirmed.then(|| crate::net::host(&s.base_url).to_string())
-    }
-
-    /// The text reader outside this PC that applying `d` would start sending
-    /// copied images to, as long as the user hasn't agreed to it yet.
-    fn unconfirmed_reader(&self, d: &Config) -> Option<String> {
-        let TextReader::Server(s) = &d.text_reader else {
-            return None;
-        };
-        let unconfirmed = d.text_reader != self.cfg.text_reader
-            && !crate::net::is_on_this_pc(&s.base_url)
-            && !d.is_server_allowed(&s.base_url);
-        unconfirmed.then(|| crate::net::host(&s.base_url).to_string())
-    }
-
     pub(super) fn apply_settings(&mut self, d: Config, ctx: &egui::Context, prune: bool) {
         if d == self.cfg && !prune {
             return;
         }
-        let backend_changed = d.backend != self.cfg.backend;
+        let backend_changed = d.search_backend() != self.cfg.search_backend();
         let keys_changed = d.popup_hotkey != self.cfg.popup_hotkey
             || d.window_hotkey != self.cfg.window_hotkey
             || d.ignore_next_hotkey != self.cfg.ignore_next_hotkey;
-        if d.text_reader != self.cfg.text_reader {
-            self.worker.send(Job::SetTextReader(d.text_reader.clone()));
-        }
-        if d.ocr_images && !self.cfg.ocr_images {
-            for id in self.library.images_without_ocr() {
-                self.worker.send_backfill(Job::Ocr(id));
+        let reader = d.text_reader();
+        if reader != self.cfg.text_reader() {
+            self.worker.send(Job::SetTextReader(reader.clone()));
+            // Images not read yet get read now; images already read keep
+            // their text.
+            if reader != TextReader::Off {
+                for id in self.library.images_without_ocr() {
+                    self.worker.send_backfill(Job::Ocr(id));
+                }
             }
         }
         let tray_changed = d.tray != self.cfg.tray;
@@ -167,7 +131,7 @@ impl App {
         }
         self.save_config();
         if backend_changed {
-            self.set_backend(self.cfg.backend.clone());
+            self.set_backend(self.cfg.search_backend());
         }
         if keys_changed {
             self.register_hotkeys(ctx);
@@ -203,12 +167,9 @@ impl App {
         let Some(mut d) = self.draft.take() else {
             return;
         };
+        let before = d.clone();
         let mut close = false;
-        let mut apply_model = false;
-        let mut apply_reader = false;
-        let mut discard_model = false;
         let mut apply_keys = false;
-        let model_pending = d.backend != self.cfg.backend;
 
         let panel = ui.visuals().panel_fill;
         egui::Panel::top("settings_top")
@@ -241,24 +202,14 @@ impl App {
                     ui.add_space(8.0);
                     let strong = ui.visuals().strong_text_color();
                     lbl(ui, &t!("settings-title"), 20.0, strong);
-                    far(ui, |ui| {
-                        if model_pending {
-                            if primary_button(ui, &t!("settings-apply-model")).clicked() {
-                                apply_model = true;
-                            }
-                            if ui
-                                .button(txt(&t!("settings-discard-changes"), 13.0, None))
-                                .clicked()
-                            {
-                                discard_model = true;
-                            }
-                            chip(ui, t!("settings-model-not-applied"), AMBER);
-                        } else {
+                    // A server's settings wait for its Save.
+                    if self.server_editor.is_none() {
+                        far(ui, |ui| {
                             let weak = ui.visuals().weak_text_color();
                             lbl(ui, &t!("settings-saved-automatically"), 12.5, weak);
                             icons::glyph(ui, Icon::Check, 13.0, weak);
-                        }
-                    });
+                        });
+                    }
                 });
             });
 
@@ -333,6 +284,7 @@ impl App {
                         self.settings_page = page;
                         self.confirm = None;
                         self.recording = None;
+                        self.server_editor = None;
                     }
                 }
             });
@@ -369,10 +321,8 @@ impl App {
                             .settings_page
                         {
                             SettingsPage::General => self.general_page(ui, &mut d),
-                            SettingsPage::Search => self.search_page(ui, &mut d, &mut apply_model),
-                            SettingsPage::Clipboard => {
-                                self.clipboard_page(ui, &mut d, &mut apply_reader)
-                            }
+                            SettingsPage::Search => self.search_page(ui, &mut d),
+                            SettingsPage::Clipboard => self.clipboard_page(ui, &mut d),
                             SettingsPage::Shortcuts => {
                                 self.shortcuts_page(ui, &mut d, &mut apply_keys)
                             }
@@ -383,16 +333,18 @@ impl App {
                     });
             });
 
+        // A server outside this PC gets nothing before the user agrees.
+        self.hold_unagreed(&mut d, before);
         if close {
-            self.draft = Some(d);
-            self.close_settings(&ctx);
-            return;
+            // Back from a server's editor goes to the page, not out of Settings.
+            if self.server_editor.take().is_none() {
+                self.draft = Some(d);
+                self.close_settings(&ctx);
+                return;
+            }
         }
-        // Everything except the model, the text reader and the hotkeys
-        // applies immediately.
+        // Everything except the global shortcuts applies immediately.
         let mut live = d.clone();
-        live.backend = self.cfg.backend.clone();
-        live.text_reader = self.cfg.text_reader.clone();
         live.popup_hotkey = self.cfg.popup_hotkey.clone();
         live.window_hotkey = self.cfg.window_hotkey.clone();
         live.ignore_next_hotkey = self.cfg.ignore_next_hotkey.clone();
@@ -407,29 +359,6 @@ impl App {
             c.window_hotkey = d.window_hotkey.clone();
             c.ignore_next_hotkey = d.ignore_next_hotkey.clone();
             self.apply_settings(c, &ctx, false);
-        }
-        if apply_model {
-            if self.unconfirmed_server(&d).is_some() {
-                self.settings_page = SettingsPage::Search;
-                self.confirm = Some(Confirm::SendToServer);
-            } else {
-                let mut c = self.cfg.clone();
-                c.backend = d.backend.clone();
-                self.apply_settings(c, &ctx, false);
-            }
-        }
-        if discard_model {
-            d.backend = self.cfg.backend.clone();
-        }
-        if apply_reader {
-            if self.unconfirmed_reader(&d).is_some() {
-                self.settings_page = SettingsPage::Clipboard;
-                self.confirm = Some(Confirm::SendImagesToServer);
-            } else {
-                let mut c = self.cfg.clone();
-                c.text_reader = d.text_reader.clone();
-                self.apply_settings(c, &ctx, false);
-            }
         }
         // App::logic turns the global shortcuts back on in the next frame.
         if self.hotkeys_paused && self.recording.is_none() {

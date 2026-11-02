@@ -142,12 +142,16 @@ impl App {
         // "Nothing you copy is sent anywhere" stops being true while the
         // search model or the text reader runs on a server outside this PC.
         let outside = |url: &str| !crate::net::is_on_this_pc(url);
-        let search = match &self.cfg.backend {
-            EmbedBackend::Server(s) if outside(&s.base_url) => Some(crate::net::host(&s.base_url)),
+        let search = match self.cfg.search_backend() {
+            EmbedBackend::Server(s) if outside(&s.base_url) => {
+                Some(crate::net::host(&s.base_url).to_string())
+            }
             _ => None,
         };
-        let reader = match &self.cfg.text_reader {
-            TextReader::Server(s) if outside(&s.base_url) => Some(crate::net::host(&s.base_url)),
+        let reader = match self.cfg.text_reader() {
+            TextReader::Server(s) if outside(&s.base_url) => {
+                Some(crate::net::host(&s.base_url).to_string())
+            }
             _ => None,
         };
         let text = match (search, reader) {

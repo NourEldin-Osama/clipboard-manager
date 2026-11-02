@@ -398,17 +398,14 @@ impl State {
 
     fn ensure_ocr(&mut self) -> Option<&Reader> {
         if self.ocr.is_none() && !self.ocr_failed {
-            let r = (|| -> Result<Reader> {
-                match self.text_reader.clone() {
-                    #[cfg(windows)]
-                    TextReader::Windows => Ok(Reader::Windows(crate::ocr::WindowsReader::new()?)),
-                    #[cfg(not(windows))]
-                    TextReader::Windows => anyhow::bail!("Windows' reader works only on Windows"),
-                    TextReader::Server(cfg) => {
-                        Ok(Reader::Server(crate::ocr::ServerReader::new(cfg)))
-                    }
-                }
-            })();
+            let r = match self.text_reader.clone() {
+                TextReader::Off => return None,
+                #[cfg(windows)]
+                TextReader::Windows => crate::ocr::WindowsReader::new().map(Reader::Windows),
+                #[cfg(not(windows))]
+                TextReader::Windows => Err(anyhow!("Windows' reader works only on Windows")),
+                TextReader::Server(cfg) => Ok(Reader::Server(crate::ocr::ServerReader::new(cfg))),
+            };
             match r {
                 Ok(o) => self.ocr = Some(o),
                 Err(e) => {
