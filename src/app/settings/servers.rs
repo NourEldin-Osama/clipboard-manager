@@ -886,19 +886,13 @@ impl App {
                     chip(ui, job, accent());
                 });
                 if open {
-                    let listed = if is_search(model) {
-                        found.for_search()
+                    // The server's default model is the one it embeds with.
+                    let (listed, default) = if is_search(model) {
+                        (found.for_search(), default_name.as_deref())
                     } else {
-                        &found.listed
+                        (found.listed.as_slice(), None)
                     };
-                    model_settings(
-                        ui,
-                        model,
-                        listed,
-                        default_name.as_deref(),
-                        editor.fills.get(&id),
-                        &mut fill,
-                    );
+                    model_settings(ui, model, listed, default, editor.fills.get(&id), &mut fill);
                 }
                 if let Some(t) = editor.tests.get(&id) {
                     test_line(ui, t);
@@ -945,7 +939,8 @@ impl App {
             let kind = editor.server.kind;
             if let Some(model) = editor.server.models.iter_mut().find(|m| m.id == id) {
                 let name = match model.model.trim() {
-                    "" => default_name.clone().unwrap_or_default(),
+                    "" if is_search(model) => default_name.clone().unwrap_or_default(),
+                    "" => String::new(),
                     name => name.to_string(),
                 };
                 let started = if name.is_empty() {
