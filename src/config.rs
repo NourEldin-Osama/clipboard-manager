@@ -3,6 +3,7 @@
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
+use serde_json::{json, Value};
 
 use crate::i18n::t;
 
@@ -26,8 +27,6 @@ pub enum Theme {
 pub enum EmbedBackend {
     /// No semantic search: keyword + OCR only.
     None,
-    /// Built-in pure-Rust SigLIP (text <-> image), run in-process with candle.
-    SigLip { repo: String },
     /// Any OpenAI-compatible `/v1/embeddings` server on this machine
     /// (llama.cpp `llama-server --embeddings`, Ollama, LM Studio, vLLM, ...).
     Server(Box<ServerConfig>),
@@ -59,21 +58,8 @@ pub struct ServerConfig {
 pub enum TextReader {
     /// Windows' own reader, in the languages installed in Windows.
     Windows,
-    /// The reader built into the app: Latin letters, after a download.
-    BuiltIn,
     /// A vision model on a server, asked with a prompt.
     Server(ReaderServer),
-}
-
-impl TextReader {
-    /// New settings use Windows' reader where there is one.
-    fn for_new_settings() -> Self {
-        if cfg!(windows) {
-            Self::Windows
-        } else {
-            Self::BuiltIn
-        }
-    }
 }
 
 /// A vision model the app knows, for a text reader server: each gets the
@@ -211,11 +197,10 @@ impl ServerConfig {
     }
 }
 
-/// The three choices for meaning search in Settings.
+/// The two choices for meaning search in Settings.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum BackendKind {
     Off,
-    BuiltIn,
     Server,
 }
 
@@ -223,7 +208,6 @@ impl EmbedBackend {
     pub fn kind(&self) -> BackendKind {
         match self {
             Self::None => BackendKind::Off,
-            Self::SigLip { .. } => BackendKind::BuiltIn,
             Self::Server(_) => BackendKind::Server,
         }
     }
@@ -448,8 +432,6 @@ pub struct Config {
     /// Each embedding server's last settings, so leaving a server and coming
     /// back keeps its key, model and prompts.
     pub server_profiles: ServerProfiles,
-    /// The built-in model last used, picked again when "Built-in" is chosen.
-    pub builtin_repo: Option<String>,
     /// Servers outside this PC that the user agreed to send the history to,
     /// so applying one of them asks only once.
     pub allowed_servers: Vec<String>,
@@ -464,8 +446,9 @@ impl Default for Config {
             max_items: 5000,
             delete_after_days: 0,
             dedupe: true,
-            ocr_images: true,
-            text_reader: TextReader::for_new_settings(),
+            // Only Windows has a reader of its own.
+            ocr_images: cfg!(windows),
+            text_reader: TextReader::Windows,
             search_mode: SearchMode::Hybrid,
             theme: Theme::System,
             popup_hotkey: "Alt+V".into(),
@@ -491,7 +474,6 @@ impl Default for Config {
             update_download: true,
             skipped_update: String::new(),
             server_profiles: ServerProfiles::default(),
-            builtin_repo: None,
             allowed_servers: Vec::new(),
             rules: Vec::new(),
         }
@@ -517,19 +499,11 @@ impl Config {
         if self.backend.kind() == kind {
             return;
         }
-        match &self.backend {
-            EmbedBackend::Server(s) => self.server_profiles.remember(s),
-            EmbedBackend::SigLip { repo } => self.builtin_repo = Some(repo.clone()),
-            EmbedBackend::None => {}
+        if let EmbedBackend::Server(s) = &self.backend {
+            self.server_profiles.remember(s);
         }
         self.backend = match kind {
             BackendKind::Off => EmbedBackend::None,
-            BackendKind::BuiltIn => EmbedBackend::SigLip {
-                repo: self
-                    .builtin_repo
-                    .clone()
-                    .unwrap_or_else(|| crate::models::SIGLIP_MODELS[0].repo.into()),
-            },
             BackendKind::Server => EmbedBackend::Server(Box::new(
                 self.server_profiles
                     .latest()
@@ -542,15 +516,18 @@ impl Config {
     /// Reads the settings; a missing file means defaults. A file that can't be
     /// read is copied to `config.json.bad` before the defaults are used, so
     /// the next save doesn't silently destroy it, and the problem is returned
-    /// for the app to show.
-    pub fn load(path: &Path) -> (Self, Option<LoadProblem>) {
+    /// for the app to show. Settings of an earlier version are updated, with
+    /// what the user should hear about.
+    pub fn load(path: &Path) -> (Self, Option<LoadProblem>, Vec<UpdateNote>) {
         let parsed = match std::fs::read_to_string(path) {
-            Ok(text) => serde_json::from_str(&text).map_err(anyhow::Error::from),
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return (Self::default(), None),
+            Ok(text) => Self::parse(&text),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                return (Self::default(), None, Vec::new())
+            }
             Err(e) => Err(e.into()),
         };
         match parsed {
-            Ok(cfg) => (cfg, None),
+            Ok((cfg, notes)) => (cfg, None, notes),
             Err(e) => {
                 let bad = path.with_extension("json.bad");
                 let copy = std::fs::copy(path, &bad)
@@ -560,9 +537,16 @@ impl Config {
                     error: e.to_string(),
                     copy,
                 };
-                (Self::default(), Some(problem))
+                (Self::default(), Some(problem), Vec::new())
             }
         }
+    }
+
+    /// Settings as saved by this version or an earlier one.
+    fn parse(text: &str) -> anyhow::Result<(Self, Vec<UpdateNote>)> {
+        let mut value: Value = serde_json::from_str(text)?;
+        let notes = update_from_0_4(&mut value);
+        Ok((serde_json::from_value(value)?, notes))
     }
 
     pub fn save(&self, path: &Path) -> anyhow::Result<()> {
@@ -571,6 +555,54 @@ impl Config {
         std::fs::rename(tmp, path)?;
         Ok(())
     }
+}
+
+/// What the update of earlier settings changed that the user should know.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum UpdateNote {
+    /// Meaning search used the built-in model, which is gone: it is off.
+    BuiltInSearchRemoved,
+    /// The built-in text reader is gone: Windows reads the text in images,
+    /// or reading is off where there is no Windows.
+    BuiltInReaderRemoved,
+}
+
+/// Settings from 0.4 and earlier can name the built-in search model and
+/// text reader, which are gone: meaning search turns off, and Windows reads
+/// the text in images (elsewhere reading turns off). This update ships in
+/// 0.5 and goes in the version after it (migration rule D33).
+fn update_from_0_4(value: &mut Value) -> Vec<UpdateNote> {
+    let mut notes = Vec::new();
+    let Some(settings) = value.as_object_mut() else {
+        return notes;
+    };
+    if settings
+        .get("backend")
+        .is_some_and(|backend| backend.get("SigLip").is_some())
+    {
+        settings.insert("backend".into(), json!("None"));
+        notes.push(UpdateNote::BuiltInSearchRemoved);
+    }
+    // Settings without a reader read with the built-in one where Windows'
+    // reader isn't there.
+    let built_in = match settings.get("text_reader") {
+        Some(reader) => reader == "BuiltIn",
+        None => !cfg!(windows),
+    };
+    if built_in {
+        settings.insert("text_reader".into(), json!("Windows"));
+        let reading = settings
+            .get("ocr_images")
+            .and_then(Value::as_bool)
+            .unwrap_or(true);
+        if !cfg!(windows) {
+            settings.insert("ocr_images".into(), json!(false));
+        }
+        if reading {
+            notes.push(UpdateNote::BuiltInReaderRemoved);
+        }
+    }
+    notes
 }
 
 /// Why the settings file could not be read. The app words it, because the
@@ -589,7 +621,6 @@ pub struct Paths {
     pub config: PathBuf,
     pub db: PathBuf,
     pub images: PathBuf,
-    pub models: PathBuf,
 }
 
 impl Paths {
@@ -606,12 +637,30 @@ impl Paths {
             config: root.join("config.json"),
             db: root.join("history.redb"),
             images: root.join("images"),
-            models: root.join("models"),
             root,
         };
         std::fs::create_dir_all(&p.images)?;
-        std::fs::create_dir_all(&p.models)?;
         Ok(p)
+    }
+
+    /// Deletes what the built-in search model and text reader downloaded in
+    /// versions before 0.5: their folders in `models`, and `models` itself
+    /// once it is empty. Anything else in it stays.
+    pub fn remove_built_in_models(&self) {
+        let models = self.root.join("models");
+        let Ok(entries) = std::fs::read_dir(&models) else {
+            return;
+        };
+        for entry in entries.flatten() {
+            let name = entry.file_name().to_string_lossy().into_owned();
+            if name == "ocrs" || name.starts_with("google--siglip") {
+                if let Err(e) = std::fs::remove_dir_all(entry.path()) {
+                    log::warn!("removing the old model folder {name}: {e}");
+                }
+            }
+        }
+        // Fails while something else is in the folder, which is meant.
+        let _ = std::fs::remove_dir(&models);
     }
 }
 
@@ -663,25 +712,37 @@ mod tests {
             backend: EmbedBackend::Server(Box::new(unsloth())),
             ..Config::default()
         };
-        cfg.choose_backend(BackendKind::BuiltIn);
         cfg.choose_backend(BackendKind::Off);
         cfg.choose_backend(BackendKind::Server);
         assert_eq!(cfg.backend, EmbedBackend::Server(Box::new(unsloth())));
     }
 
     #[test]
-    fn the_built_in_model_choice_is_restored_too() {
-        let mut cfg = Config {
-            backend: EmbedBackend::SigLip {
-                repo: "some/other-model".into(),
-            },
-            ..Config::default()
-        };
-        cfg.choose_backend(BackendKind::Off);
-        cfg.choose_backend(BackendKind::BuiltIn);
-        assert!(
-            matches!(&cfg.backend, EmbedBackend::SigLip { repo } if repo == "some/other-model")
+    fn settings_naming_the_built_in_engines_are_updated() {
+        let old = r#"{"backend":{"SigLip":{"repo":"google/siglip-base-patch16-224"}},
+            "builtin_repo":"google/siglip-base-patch16-224","text_reader":"BuiltIn",
+            "ocr_images":true,"max_items":100}"#;
+        let (cfg, notes) = Config::parse(old).unwrap();
+        assert_eq!(cfg.backend, EmbedBackend::None);
+        assert_eq!(cfg.text_reader, TextReader::Windows);
+        assert_eq!(cfg.ocr_images, cfg!(windows));
+        assert_eq!(cfg.max_items, 100, "the other settings stay");
+        assert_eq!(
+            notes,
+            [
+                UpdateNote::BuiltInSearchRemoved,
+                UpdateNote::BuiltInReaderRemoved
+            ]
         );
+
+        // Reading was off: nothing to say about the reader.
+        let (_, notes) = Config::parse(r#"{"text_reader":"BuiltIn","ocr_images":false}"#).unwrap();
+        assert!(notes.is_empty());
+
+        // Settings this version saved are left as they are.
+        let saved = serde_json::to_string(&Config::default()).unwrap();
+        let (cfg, notes) = Config::parse(&saved).unwrap();
+        assert_eq!((cfg, notes), (Config::default(), Vec::new()));
     }
 
     #[test]
@@ -700,10 +761,7 @@ mod tests {
 
     #[test]
     fn the_text_reader_survives_a_save() {
-        assert_eq!(
-            Config::default().text_reader,
-            TextReader::for_new_settings()
-        );
+        assert_eq!(Config::default().text_reader, TextReader::Windows);
         let cfg = Config {
             text_reader: TextReader::Server(ReaderServer {
                 api_key: "reader-key".into(),
@@ -761,12 +819,12 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         let path = dir.join("config.json");
 
-        let (cfg, problem) = Config::load(&path);
+        let (cfg, problem, _) = Config::load(&path);
         assert_eq!(cfg, Config::default());
         assert!(problem.is_none(), "a missing file is not a problem");
 
         std::fs::write(&path, r#"{"max_items": "not a number"}"#).unwrap();
-        let (cfg, problem) = Config::load(&path);
+        let (cfg, problem, _) = Config::load(&path);
         assert_eq!(cfg, Config::default());
         let problem = problem.expect("a damaged file is a problem");
         assert_eq!(problem.copy, Ok(dir.join("config.json.bad")));
@@ -774,7 +832,7 @@ mod tests {
         assert_eq!(kept, r#"{"max_items": "not a number"}"#);
 
         std::fs::write(&path, r#"{"max_items": 7}"#).unwrap();
-        let (cfg, problem) = Config::load(&path);
+        let (cfg, problem, _) = Config::load(&path);
         assert_eq!((cfg.max_items, problem), (7, None));
         std::fs::remove_dir_all(dir).ok();
     }

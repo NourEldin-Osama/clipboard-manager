@@ -1,8 +1,6 @@
 //! Embedding backends and vector scoring.
 
 pub mod server;
-pub mod siglip;
-mod siglip_model;
 
 use anyhow::Result;
 use image::DynamicImage;

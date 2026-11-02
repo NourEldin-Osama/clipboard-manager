@@ -25,7 +25,6 @@ fn reader_choices() -> Vec<TextReader> {
     if cfg!(windows) {
         choices.push(TextReader::Windows);
     }
-    choices.push(TextReader::BuiltIn);
     choices.push(TextReader::Server(ReaderServer::default()));
     choices
 }
@@ -33,7 +32,6 @@ fn reader_choices() -> Vec<TextReader> {
 fn reader_label(reader: &TextReader) -> String {
     match reader {
         TextReader::Windows => t!("settings-reader-windows"),
-        TextReader::BuiltIn => t!("settings-reader-built-in"),
         TextReader::Server(_) => t!("settings-reader-server"),
     }
 }

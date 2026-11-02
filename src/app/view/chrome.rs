@@ -203,13 +203,6 @@ impl App {
     pub(crate) fn model_status(&self) -> (Color32, String) {
         match (&self.backend, &self.cfg.backend) {
             (BackendState::Loading, _) => (AMBER, t!("status-model-loading")),
-            (BackendState::Ready { .. }, EmbedBackend::SigLip { repo }) => (
-                GREEN,
-                t!(
-                    "status-model-builtin",
-                    model = repo.rsplit('/').next().unwrap_or(repo)
-                ),
-            ),
             (BackendState::Ready { .. }, EmbedBackend::Server(s)) => {
                 let name = if !s.model.trim().is_empty() {
                     s.model.trim().to_string()

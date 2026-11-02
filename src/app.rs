@@ -16,14 +16,14 @@ use global_hotkey::{GlobalHotKeyEvent, GlobalHotKeyManager, HotKeyState};
 
 use crate::clipboard::{self, Capture, Captured, Flags, SkipReason};
 use crate::config::{
-    Config, EmbedBackend, LaunchConfig, Paths, SearchMode, ServerConfig, SortOrder, Theme, ViewMode,
+    Config, EmbedBackend, LaunchConfig, Paths, SearchMode, ServerConfig, SortOrder, Theme,
+    UpdateNote, ViewMode,
 };
 use crate::download::Progress;
 use crate::embed::Embedding;
 use crate::i18n::{self, log_error, t};
 use crate::images::ImageLoader;
 use crate::library::{Library, Removed};
-use crate::models::{self, SIGLIP_MODELS};
 use crate::paste;
 use crate::search::{self, Filter, Hit, Searcher};
 use crate::store::{looks_like_link, Item, Kind, Origin, Store};
@@ -59,12 +59,6 @@ enum BackendState {
     Off,
     Loading,
     Ready { key: String, images: bool },
-}
-
-struct Download {
-    repo: String,
-    progress: Arc<Progress>,
-    handle: std::thread::JoinHandle<anyhow::Result<()>>,
 }
 
 /// Models offered by the configured server, fetched in the background.
@@ -402,8 +396,6 @@ pub struct App {
     thumbs: HashMap<u64, Option<TextureHandle>>,
     /// The frame each image item was last drawn in, for dropping thumbnails.
     thumb_seen: HashMap<u64, u64>,
-    /// Which built-in models are on disk, and when that was checked.
-    models_on_disk: Option<(Instant, [bool; SIGLIP_MODELS.len()])>,
     /// Which paths of the item in the details pane are folders, by item.
     folders_of: Option<(u64, Vec<bool>)>,
     /// Tab moved the focus last, so the focused control is outlined; a
@@ -414,7 +406,6 @@ pub struct App {
     detail: Option<DetailText>,
     research_pending: bool,
     last_search: Instant,
-    download: Option<Download>,
     hotkeys: Option<Hotkeys>,
     hotkey_ids: Arc<HotkeyIds>,
     /// Global shortcuts are off while one is being recorded in Settings.
@@ -479,7 +470,7 @@ impl App {
         instance: crate::single_instance::Guard,
     ) -> anyhow::Result<Self> {
         let ctx = cc.egui_ctx.clone();
-        let (cfg, settings_problem) = Config::load(&paths.config);
+        let (cfg, settings_problem, update_notes) = Config::load(&paths.config);
         i18n::set(cfg.language, cfg.time_format);
         add_fonts(&ctx);
         icons::register(&ctx);
@@ -487,14 +478,20 @@ impl App {
         style(&ctx);
         apply_theme(&ctx, cfg.theme);
 
-        let library = Library::open(Arc::new(Store::open(&paths.db, &paths.images)?))?;
+        let store = Arc::new(Store::open(&paths.db, &paths.images)?);
+        // The built-in search model of versions before 0.5 is gone: so are its
+        // vectors and the files it and the built-in text reader downloaded.
+        if let Err(e) = store.delete_vectors_of_models("siglip:") {
+            log::warn!("deleting the built-in search model's vectors: {e:#}");
+        }
+        paths.remove_built_in_models();
+        let library = Library::open(store)?;
         let image_files = library.store().images.clone();
 
         let (ev_tx, events) = channel();
         let c = ctx.clone();
         let worker = Worker::spawn(
             library.store().clone(),
-            paths.models.clone(),
             cfg.text_reader.clone(),
             ev_tx,
             move || c.request_repaint(),
@@ -568,7 +565,6 @@ impl App {
             focused: Arc::new(AtomicBool::new(true)),
             thumbs: HashMap::new(),
             thumb_seen: HashMap::new(),
-            models_on_disk: None,
             folders_of: None,
             keyboard_focus: false,
             preview: None,
@@ -579,7 +575,6 @@ impl App {
             detail: None,
             research_pending: false,
             last_search: Instant::now(),
-            download: None,
             hotkeys: None,
             hotkey_ids: Arc::default(),
             hotkeys_paused: false,
@@ -644,6 +639,21 @@ impl App {
                 ),
             };
             app.set_error(message);
+        }
+        if !update_notes.is_empty() {
+            let notes: Vec<String> = update_notes
+                .iter()
+                .map(|note| match note {
+                    UpdateNote::BuiltInSearchRemoved => t!("toast-built-in-search-removed"),
+                    UpdateNote::BuiltInReaderRemoved if cfg!(windows) => {
+                        t!("toast-built-in-reader-removed")
+                    }
+                    UpdateNote::BuiltInReaderRemoved => t!("toast-built-in-reader-removed-off"),
+                })
+                .collect();
+            app.toast_for(notes.join("\n"), Duration::from_secs(15));
+            // Saved in the new form now, so the next start has nothing to update.
+            app.save_config();
         }
         if let Some(aside) = app.library.store().moved_aside.clone() {
             let message = log_error!(
@@ -1456,25 +1466,6 @@ impl App {
                 self.loader.forget(l.id, true);
             } else {
                 self.thumbs.insert(l.id, tex);
-            }
-        }
-        if let Some(d) = &self.download {
-            if d.handle.is_finished() {
-                let d = self.download.take().unwrap();
-                match d.handle.join() {
-                    Ok(Ok(())) => {
-                        self.toast(t!("toast-downloaded", model = d.repo.as_str()));
-                        if matches!(&self.cfg.backend, EmbedBackend::SigLip { repo } if *repo == d.repo)
-                        {
-                            self.set_backend(self.cfg.backend.clone());
-                        }
-                    }
-                    Ok(Err(e)) => self.set_error(log_error!(
-                        "error-download-failed",
-                        error = format!("{e:#}")
-                    )),
-                    Err(_) => self.set_error(log_error!("error-download-crashed")),
-                }
             }
         }
     }

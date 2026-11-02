@@ -74,12 +74,6 @@ impl Download<'_> {
         self.run_with_waits(p, &WAITS)
     }
 
-    /// One try, without waiting to try again; it still continues what an
-    /// earlier try left.
-    pub fn run_once(&self, p: &Progress) -> anyhow::Result<()> {
-        self.run_with_waits(p, &[])
-    }
-
     fn run_with_waits(&self, p: &Progress, waits: &[Duration]) -> anyhow::Result<()> {
         let mut counted = Counted::default();
         let mut waits = waits.iter();

@@ -132,18 +132,6 @@ pub(super) fn plain_setting(ui: &mut Ui, label: &str, help: &str, control: impl 
     setting_row(ui, label, help, false, false, control);
 }
 
-/// A row that marks the current choice in a list (a built-in model): tinted,
-/// but with no reset, since there's no default to go back to.
-pub(super) fn choice_setting(
-    ui: &mut Ui,
-    label: &str,
-    help: &str,
-    chosen: bool,
-    control: impl FnOnce(&mut Ui),
-) {
-    setting_row(ui, label, help, chosen, false, control);
-}
-
 pub(super) fn setting_row(
     ui: &mut Ui,
     label: &str,
