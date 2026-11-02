@@ -26,10 +26,11 @@ const MAX_TOKENS: u32 = 4096;
 
 impl ReaderModel {
     /// In the order Settings offers them.
-    pub const ALL: [ReaderModel; 4] = [
+    pub const ALL: [ReaderModel; 5] = [
         ReaderModel::DeepSeekOcr2,
         ReaderModel::UnlimitedOcr2,
         ReaderModel::MiniCpmOcr,
+        ReaderModel::GlmOcr,
         ReaderModel::Other,
     ];
 
@@ -39,6 +40,7 @@ impl ReaderModel {
             ReaderModel::DeepSeekOcr2 => "DeepSeek-OCR-2",
             ReaderModel::UnlimitedOcr2 => "Unlimited-OCR-2",
             ReaderModel::MiniCpmOcr => "MiniCPM-OCR",
+            ReaderModel::GlmOcr => "GLM-OCR",
             ReaderModel::Other => "",
         }
     }
@@ -50,6 +52,8 @@ impl ReaderModel {
             ReaderModel::DeepSeekOcr2 => "deepseek-ai/DeepSeek-OCR-2",
             ReaderModel::UnlimitedOcr2 => "Unlimited-OCR-2",
             ReaderModel::MiniCpmOcr => "minicpm-ocr",
+            // llama.cpp serves it as `llama-server -hf ggml-org/GLM-OCR-GGUF`.
+            ReaderModel::GlmOcr => "zai-org/GLM-OCR",
             ReaderModel::Other => "",
         }
     }
@@ -60,7 +64,7 @@ impl ReaderModel {
         match self {
             ReaderModel::DeepSeekOcr2 => "Free OCR.",
             ReaderModel::UnlimitedOcr2 => "Multi page parsing.",
-            ReaderModel::MiniCpmOcr => "Text Recognition:",
+            ReaderModel::MiniCpmOcr | ReaderModel::GlmOcr => "Text Recognition:",
             ReaderModel::Other => ReaderServer::PROMPT,
         }
     }
@@ -88,7 +92,7 @@ impl ReaderModel {
             ReaderModel::MiniCpmOcr => json!({
                 "chat_template_kwargs": { "enable_thinking": false }
             }),
-            ReaderModel::Other => json!({}),
+            ReaderModel::GlmOcr | ReaderModel::Other => json!({}),
         }
     }
 }
@@ -352,6 +356,7 @@ mod tests {
             ReaderModel::DeepSeekOcr2,
             ReaderModel::UnlimitedOcr2,
             ReaderModel::MiniCpmOcr,
+            ReaderModel::GlmOcr,
         ];
         for kind in known {
             let (url, request) =
@@ -376,6 +381,10 @@ mod tests {
                 ReaderModel::UnlimitedOcr2 => {
                     assert_eq!(body["skip_special_tokens"], false);
                     assert_eq!(body["vllm_xargs"]["ngram_size"], 35);
+                }
+                ReaderModel::GlmOcr => {
+                    assert!(body.get("vllm_xargs").is_none());
+                    assert!(body.get("chat_template_kwargs").is_none());
                 }
                 _ => assert_eq!(body["chat_template_kwargs"]["enable_thinking"], false),
             }

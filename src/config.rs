@@ -68,6 +68,7 @@ pub enum ReaderModel {
     DeepSeekOcr2,
     UnlimitedOcr2,
     MiniCpmOcr,
+    GlmOcr,
     /// Any other vision model, asked with the prompt as written.
     #[default]
     Other,

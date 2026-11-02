@@ -280,6 +280,10 @@ mod tests {
             reader_kind("MiniCPM-OCR-1_0-Q8_0.gguf"),
             Some(ReaderModel::MiniCpmOcr)
         );
+        assert_eq!(
+            reader_kind("ggml-org/GLM-OCR-GGUF:Q8_0"),
+            Some(ReaderModel::GlmOcr)
+        );
         assert_eq!(reader_kind("qwen2.5-vl-7b-instruct"), None);
     }
 
