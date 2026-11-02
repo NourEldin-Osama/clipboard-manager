@@ -163,9 +163,10 @@ fn kind_tiles(ui: &mut Ui, server: &mut Server) {
     });
 }
 
+/// A type's logo above its name.
 fn kind_tile(ui: &mut Ui, kind: ServerKind, selected: bool) -> egui::Response {
     let name = kind_name(kind);
-    let (rect, resp) = ui.allocate_exact_size(Vec2::new(96.0, 40.0), Sense::click());
+    let (rect, resp) = ui.allocate_exact_size(Vec2::new(96.0, 62.0), Sense::click());
     resp.widget_info(|| egui::WidgetInfo::selected(egui::Role::RadioButton, true, selected, &name));
     let v = ui.visuals();
     let (fill, stroke, color) = if selected {
@@ -196,13 +197,18 @@ fn kind_tile(ui: &mut Ui, kind: ServerKind, selected: bool) -> egui::Response {
         stroke,
         egui::StrokeKind::Inside,
     );
+    let logo = Rect::from_center_size(
+        Pos2::new(rect.center().x, rect.top() + 21.0),
+        Vec2::splat(24.0),
+    );
+    icons::paint_logo(p, logo, kind, color);
     paint_text(
         ui,
         p,
-        rect.center(),
+        Pos2::new(rect.center().x, rect.bottom() - 14.0),
         egui::Align2::CENTER_CENTER,
         &name,
-        FontId::proportional(13.0),
+        FontId::proportional(12.5),
         color,
     );
     resp
@@ -439,23 +445,36 @@ impl App {
         }
         let mut edit = None;
         let weak = ui.visuals().weak_text_color();
+        let strong = ui.visuals().strong_text_color();
         for server in &d.servers {
             ui.push_id(server.id, |ui| {
-                plain_setting(ui, server.label(), "", |ui| {
-                    if ui
-                        .button(txt(&t!("settings-server-edit"), 13.0, None))
-                        .clicked()
-                    {
-                        edit = Some(server.clone());
-                    }
-                    lbl(
-                        ui,
-                        &t!("settings-server-models-count", count = server.models.len()),
-                        12.5,
-                        weak,
-                    );
-                    lbl(ui, crate::net::host(&server.base_url), 12.5, weak);
-                });
+                Frame::new()
+                    .inner_margin(Margin::symmetric(10, 6))
+                    .show(ui, |ui| {
+                        ui.set_width(ui.available_width());
+                        row(ui, |ui| {
+                            ui.set_min_height(30.0);
+                            icons::logo(ui, server.kind, 20.0, strong);
+                            ui.add_space(4.0);
+                            lbl(ui, server.label(), 14.0, strong);
+                            far(ui, |ui| {
+                                if ui
+                                    .button(txt(&t!("settings-server-edit"), 13.0, None))
+                                    .clicked()
+                                {
+                                    edit = Some(server.clone());
+                                }
+                                let count = server.models.len();
+                                lbl(
+                                    ui,
+                                    &t!("settings-server-models-count", count = count),
+                                    12.5,
+                                    weak,
+                                );
+                                lbl(ui, crate::net::host(&server.base_url), 12.5, weak);
+                            });
+                        });
+                    });
             });
         }
         row(ui, |ui| {
@@ -502,8 +521,12 @@ impl App {
         } else {
             t!("settings-read-model-help")
         };
+        let in_use = chosen
+            .and_then(|at| d.server(at.server))
+            .map(|server| server.kind);
         plain_setting(ui, &t!("settings-model"), &help, |ui| {
             let weak = ui.visuals().weak_text_color();
+            let strong = ui.visuals().strong_text_color();
             let menu =
                 egui::ComboBox::from_id_salt(if search { "search-model" } else { "read-model" })
                     .selected_text(txt(&current, 14.0, None))
@@ -518,7 +541,10 @@ impl App {
                             if models.is_empty() {
                                 continue;
                             }
-                            lbl(ui, &server.label().to_uppercase(), 11.0, weak);
+                            row(ui, |ui| {
+                                icons::logo(ui, server.kind, 14.0, weak);
+                                lbl(ui, &server.label().to_uppercase(), 11.0, weak);
+                            });
                             for m in models {
                                 let at = ModelRef {
                                     server: server.id,
@@ -542,6 +568,10 @@ impl App {
                         }
                     });
             set_choice_name(&menu.response, &row_title(ui), &current);
+            // The control area fills from its far end: this goes before the menu.
+            if let Some(kind) = in_use {
+                icons::logo(ui, kind, 18.0, strong);
+            }
         });
         match picked {
             Some(at) if search => d.search_model = Some(at),

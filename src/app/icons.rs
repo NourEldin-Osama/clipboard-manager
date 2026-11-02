@@ -1,12 +1,14 @@
 //! Icons: SVGs from Fluent UI System Icons and Material Symbols (chosen per
 //! icon, see assets/icons/LICENSES.md), rasterised at the exact pixel size they
 //! are drawn at and tinted. They are drawn into a rect, so they sit exactly on
-//! its centre in a row of buttons, unlike font glyphs.
+//! its centre in a row of buttons, unlike font glyphs. The logos of server
+//! types (assets/logos) are drawn the same way; those in colour keep it.
 
 use eframe::egui::load::{SizeHint, TexturePoll};
 use eframe::egui::{Painter, Pos2, Rect, TextureOptions, Ui};
 
 use super::view;
+use crate::config::ServerKind;
 use crate::store::Kind;
 
 use super::*;
@@ -81,6 +83,30 @@ macro_rules! svg {
             include_bytes!(concat!("../../assets/icons/", $name, ".svg")) as &[u8],
         )
     };
+}
+
+macro_rules! logo {
+    ($name:literal) => {
+        (
+            concat!("bytes://logos/", $name, ".svg"),
+            include_bytes!(concat!("../../assets/logos/", $name, ".svg")) as &[u8],
+        )
+    };
+}
+
+/// The logo of a server type: its loader URI and bytes, and whether it is in
+/// colour. The others are white, tinted like the icons; another server gets
+/// Fluent's server icon.
+fn logo_source(kind: ServerKind) -> ((&'static str, &'static [u8]), bool) {
+    match kind {
+        ServerKind::LlamaCpp => (logo!("llamacpp"), true),
+        ServerKind::Ollama => (logo!("ollama"), false),
+        ServerKind::LmStudio => (logo!("lmstudio"), false),
+        ServerKind::Vllm => (logo!("vllm"), true),
+        ServerKind::Unsloth => (logo!("unsloth"), true),
+        ServerKind::OpenRouter => (logo!("openrouter"), false),
+        ServerKind::Other => (svg!("server"), false),
+    }
 }
 
 /// The SVG behind an icon: its loader URI and bytes.
@@ -180,6 +206,10 @@ pub(super) fn register(ctx: &egui::Context) {
             ctx.include_bytes(uri, bytes);
         }
     }
+    for kind in ServerKind::ALL {
+        let ((uri, bytes), _) = logo_source(kind);
+        ctx.include_bytes(uri, bytes);
+    }
 }
 
 /// Icons that point somewhere, turned around for right-to-left.
@@ -194,9 +224,30 @@ pub(super) fn paint(p: &Painter, rect: Rect, icon: Icon, color: Color32) {
     let Some((uri, _)) = source(icon) else {
         return paint_shape(p, square, icon, color);
     };
+    paint_svg(p, square, uri, color, mirrored(icon) && i18n::rtl());
+}
+
+/// Paints the logo of a server type filling the square at the centre of
+/// `rect`: tinted `color`, unless it is in colour.
+pub(super) fn paint_logo(p: &Painter, rect: Rect, kind: ServerKind, color: Color32) {
+    let side = rect.width().min(rect.height());
+    let square = Rect::from_center_size(rect.center(), Vec2::splat(side));
+    let ((uri, _), coloured) = logo_source(kind);
+    let tint = if coloured { Color32::WHITE } else { color };
+    paint_svg(p, square, uri, tint, false);
+}
+
+/// The logo of a server type as an inline widget.
+pub(super) fn logo(ui: &mut Ui, kind: ServerKind, size: f32, color: Color32) -> egui::Response {
+    let (rect, resp) = ui.allocate_exact_size(Vec2::splat(size), Sense::hover());
+    paint_logo(ui.painter(), rect, kind, color);
+    resp
+}
+
+fn paint_svg(p: &Painter, square: Rect, uri: &str, tint: Color32, mirror: bool) {
     let ctx = p.ctx();
     // Rasterised at the pixel size it's shown at, so edges stay sharp.
-    let px = (side * ctx.pixels_per_point()).round().max(1.0) as u32;
+    let px = (square.width() * ctx.pixels_per_point()).round().max(1.0) as u32;
     let hint = SizeHint::Size {
         width: px,
         height: px,
@@ -204,12 +255,12 @@ pub(super) fn paint(p: &Painter, rect: Rect, icon: Icon, color: Color32) {
     };
     match ctx.try_load_texture(uri, TextureOptions::LINEAR, hint) {
         Ok(TexturePoll::Ready { texture }) => {
-            let uv = if mirrored(icon) && i18n::rtl() {
+            let uv = if mirror {
                 Rect::from_min_max(Pos2::new(1.0, 0.0), Pos2::new(0.0, 1.0))
             } else {
                 Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0))
             };
-            p.image(texture.id, square, uv, color);
+            p.image(texture.id, square, uv, tint);
         }
         Ok(TexturePoll::Pending { .. }) => ctx.request_repaint(),
         Err(e) => log::warn!("icon {uri}: {e}"),
@@ -434,4 +485,22 @@ pub(super) fn menu_item(ui: &mut Ui, icon: Icon, text: &str) -> egui::Response {
         color,
     );
     resp
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn every_logo_draws_and_only_those_in_colour_keep_colours() {
+        for kind in ServerKind::ALL {
+            let ((uri, bytes), coloured) = logo_source(kind);
+            let image = egui_extras::image::load_svg_bytes(bytes, &Default::default())
+                .unwrap_or_else(|e| panic!("{uri}: {e}"));
+            let drawn: Vec<&Color32> = image.pixels.iter().filter(|p| p.a() > 0).collect();
+            assert!(!drawn.is_empty(), "{uri} draws nothing");
+            // White shapes keep red, green and blue equal at every edge.
+            let white = drawn.iter().all(|p| p.r() == p.g() && p.g() == p.b());
+            assert_eq!(!white, coloured, "{uri}");
+        }
+    }
 }
