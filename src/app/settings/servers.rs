@@ -166,7 +166,8 @@ fn kind_tiles(ui: &mut Ui, server: &mut Server) {
 /// A type's logo above its name.
 fn kind_tile(ui: &mut Ui, kind: ServerKind, selected: bool) -> egui::Response {
     let name = kind_name(kind);
-    let (rect, resp) = ui.allocate_exact_size(Vec2::new(96.0, 62.0), Sense::click());
+    // Seven fit in one row of the settings column.
+    let (rect, resp) = ui.allocate_exact_size(Vec2::new(86.0, 62.0), Sense::click());
     resp.widget_info(|| egui::WidgetInfo::selected(egui::Role::RadioButton, true, selected, &name));
     let v = ui.visuals();
     let (fill, stroke, color) = if selected {
@@ -179,13 +180,13 @@ fn kind_tile(ui: &mut Ui, kind: ServerKind, selected: bool) -> egui::Response {
     } else if resp.hovered() {
         (
             v.widgets.hovered.weak_bg_fill,
-            Stroke::new(1.0, v.widgets.noninteractive.bg_stroke.color),
+            Stroke::NONE,
             v.strong_text_color(),
         )
     } else {
         (
-            Color32::TRANSPARENT,
-            Stroke::new(1.0, v.widgets.noninteractive.bg_stroke.color),
+            v.widgets.inactive.weak_bg_fill,
+            Stroke::NONE,
             v.text_color(),
         )
     };
