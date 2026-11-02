@@ -1103,6 +1103,25 @@ impl App {
                 candidate.read_engine = ReadEngine::Off;
                 candidate.read_model = None;
             }
+            // With no model chosen yet, the server's first one for the job
+            // is: turning its engine on then uses it.
+            let first = |search: bool| {
+                editor
+                    .server
+                    .models
+                    .iter()
+                    .find(|m| is_search(m) == search)
+                    .map(|m| ModelRef {
+                        server: editor.server.id,
+                        model: m.id,
+                    })
+            };
+            if !is_model_for(&candidate, candidate.search_model, true) {
+                candidate.search_model = first(true);
+            }
+            if !is_model_for(&candidate, candidate.read_model, false) {
+                candidate.read_model = first(false);
+            }
             let (search, reader) = self.unagreed(&candidate);
             if agreed {
                 for url in search.iter().chain(&reader) {
