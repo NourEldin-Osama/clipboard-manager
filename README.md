@@ -8,9 +8,10 @@
 **English** · [العربية](README_AR.md)
 
 An open-source, offline clipboard manager for Windows (also builds on Linux and macOS), written entirely in Rust.
-It keeps your clipboard history, reads the text inside screenshots and images on your own machine, and lets you
-search everything **by meaning** with local embedding models. For example, type *"receipt from the hardware store"* and
-it finds the photo you copied last week.
+It keeps your clipboard history, reads the text inside screenshots and images with Windows' own reader or a vision model
+on your server, and lets you search everything **by meaning** with an embedding model on your own server (llama.cpp,
+Ollama, LM Studio, vLLM, Unsloth or OpenRouter). For example, type *"receipt from the hardware store"* and it finds the
+photo you copied last week.
 
 [![Download for Windows](https://img.shields.io/badge/Download%20for%20Windows-clipboard--manager--windows--x64.exe-5865f2?style=for-the-badge&logo=windows)](https://github.com/NourEldin-Osama/clipboard-manager/releases/latest/download/clipboard-manager-windows-x64.exe)
 
@@ -36,21 +37,19 @@ public feature descriptions only, and it shares no code or assets with Planck an
 | **English and Arabic** | Switch the language in *Settings → General*. Arabic lays the whole window out right to left, and Arabic text, whether part of the interface or something you copied, is shaped, ordered and wrapped correctly, even when it mixes in numbers or English. To add a language, see [docs/TRANSLATING.md](docs/TRANSLATING.md). A bundled Arabic font ([Noto Sans Arabic](https://github.com/notofonts/arabic), SIL Open Font License) means it doesn't depend on the PC's fonts. |
 | **12- or 24-hour clock** | Times are stored in UTC and shown in your time zone, including daylight saving, with the clock you choose in *Settings → General*. |
 | **System tray and start at sign-in** | In *Settings → General*: keep the app running in the system tray (closing or minimising the window hides it there; click the icon to open it, right-click to pause recording or quit), and start it hidden when you sign in. |
-| **Text in images** | Text in images and screenshots becomes searchable. *Settings → Clipboard* chooses the reader: Windows' own (the default for new installs; it reads the languages installed in Windows), the built-in one ([ocrs](https://github.com/robertknight/ocrs), pure Rust, Latin letters), or a vision model on a server you choose (llama.cpp, vLLM, SGLang, Ollama): DeepSeek-OCR-2, Unlimited-OCR-2 and MiniCPM-OCR come with their own settings, and any other model works with your own prompt ([how to set one up](#reading-text-in-images-with-a-model-server)). |
+| **Text in images** | Text in images and screenshots becomes searchable. *Settings → Search & AI → Read text in images* chooses the engine: Windows' own (the default; it reads the languages installed in Windows), or a vision model on one of your servers (llama.cpp, vLLM, SGLang, Ollama…): DeepSeek-OCR-2, Unlimited-OCR-2, MiniCPM-OCR and GLM-OCR come with their own settings, and any other model works with your own prompt ([how to set one up](#reading-text-in-images-with-a-model-server)). |
 | **Sort by** | The menu at the end of the filter row: *Best match* (while searching), *Recent*, *Oldest*, *A to Z* and *Most used* (items you copy back from the list most often). Searching and browsing each remember their own choice. *Settings → Appearance → Pinned on top* keeps pinned items first while browsing (not while searching). |
 | **Semantic search** | Smart mode ranks by meaning (similarity), with a boost for items that contain your words; results are ordered best first and the relevance bars match that order. You can also choose *Meaning* or *Keyword* only. |
-| **Built-in model (pure Rust)** | SigLIP (English or multilingual, Arabic included) runs inside the app on the CPU through [candle](https://github.com/huggingface/candle). It puts text and images in one shared space, so text can find images. |
-| **Your own model server** | Paste the URL of any local embedding server (llama.cpp `llama-server`, the bundled Sentence Transformers server, Ollama, LM Studio, vLLM) and pick the model from a dropdown filled by the server's model list. The app can also launch `llama-server` for you. Presets are included for **EmbeddingGemma**, **BiUltraVBERT** and **ColUltraVBERT**. Multi-vector (ColBERT-style) output is detected and scored with MaxSim, and Matryoshka truncation is supported. |
+| **Your own model servers** | Save the servers your models run on, each with its type (llama.cpp, Ollama, LM Studio, vLLM, Unsloth, OpenRouter or another one, with its logo), address on any port and API key, and the models you use on it, each with its own name and settings. Pick the model in use from one menu: each model keeps its own index, so switching back needs no new indexing. **Test** checks a model, and **Fill in details** looks it up on [models.dev](https://models.dev) and fills in the prompts well-known models need. The app can also launch `llama-server` for you. Multi-vector (ColBERT-style) output is detected and scored with MaxSim, and Matryoshka vectors can be shortened. |
 | **Library import** | Drag files or folders onto the window, or use `＋ → Import folder…`. Images and text and code files are indexed alongside your clipboard. |
 | **Privacy** | Nothing leaves your machine, and on Windows your history is encrypted on disk with a key tied to your Windows account. Clipboard content that password managers mark as sensitive (`ExcludeClipboardContentFromMonitorProcessing`) is never recorded. Neither is anything that looks like an API key, token, private key or random password (on by default; you can turn it off in Settings, or click **Save anyway** on the message when it guessed wrong). You can pause recording at any time. |
 | **Smart ranking** | Image and text similarities are each scaled by their best match before being merged, because text-to-image similarity scores are naturally much lower than text-to-text ones. Without this, photos would be buried under text. |
 | **Look and feel** | A list grouped by Pinned / Today / Yesterday / This week, with kind icons, thumbnails, matched words highlighted and relevance bars while searching. Three layouts, switched with the view button beside the search box: **Grid** (cards), **List** (full-width rows) and **Detail** (list plus a details pane with a large preview). Hovering an item shows delete, pin, copy and open-details buttons (the card's content stays put). Light and dark themes, five accent colours, comfortable or compact density. |
-| **Settings that explain themselves** | Sections down the side (General, Search & AI model, Clipboard, Shortcuts, Appearance, Data & privacy). Every option has an ℹ explanation and plain-language choices. Settings you've changed are highlighted, each with a one-click reset. Changes apply instantly. |
+| **Settings that explain themselves** | Sections down the side (General, Search & AI, Clipboard, Shortcuts, Appearance, Data & privacy). Every option has an ℹ explanation and plain-language choices. Settings you've changed are highlighted, each with a one-click reset. Changes apply instantly; a server's settings wait for **Save**. |
 
-The only network access is the one-time model downloads you start yourself in Settings, a 12 MB download the first
-time the built-in text reader reads an image, and the update check described below (it can be turned off). Nothing you
-copy is sent, unless you choose a search or text reader server outside this PC: the app warns about that and asks
-first. Everything else works without a network connection.
+The only network access is the servers you add, models.dev when you click **Fill in details**, and the update check
+described below (it can be turned off). Nothing you copy is sent, unless you choose a search or text reader server
+outside this PC: the app warns about that and asks first. Everything else works without a network connection.
 
 ## Install on Windows
 
@@ -99,42 +98,39 @@ cargo build --profile dist --target x86_64-pc-windows-gnu
 ```
 
 **Build profiles.** `cargo build --release` is tuned for quick rebuilds while you develop (no LTO, 16 codegen units).
-`--profile dist` adds thin LTO for the shipped binary. Debug builds fully optimise only the number-crunching crates
-(candle, gemm, rten, image decoding) and lightly optimise the rest. The first build compiles every dependency and takes a while;
+`--profile dist` adds thin LTO for the shipped binary. Debug builds fully optimise only image decoding and lightly
+optimise the rest. The first build compiles every dependency and takes a while;
 after that, only this crate is rebuilt. The build is much faster on a machine with more cores than a 2-core cloud VM.
 If the repo lives on a synced or network drive (Google Drive, OneDrive), keep the build cache elsewhere so builds stay fast:
 `CARGO_TARGET_DIR=/some/local/dir cargo build …`
 
 ## Choosing a search model
 
-Open **⚙ Settings → Embedding model**.
+Searching by meaning uses an embedding model on a server: one on this PC (llama.cpp, Ollama, LM Studio, vLLM, Unsloth or
+the bundled Sentence Transformers server) or elsewhere (OpenRouter, or a server on your network).
 
-### Built-in (pure Rust, no extra software)
-Pick a SigLIP model and click **Download**:
+### Add a server and its models
+1. **⚙ Settings → Search & AI → Servers → Add server**.
+2. Pick its type. The usual address fills in: llama.cpp `:8080`, Ollama `:11434`, LM Studio `:1234`, vLLM `:8000`,
+   Unsloth `:8888`, OpenRouter `https://openrouter.ai/api/v1`. Change the port if your server uses another one.
+3. If the server needs a key (for example `llama-server --api-key …`, Unsloth, OpenRouter, or LM Studio with auth
+   enabled), paste it into **API key**. It is sent as `Authorization: Bearer <key>` and stored in `config.json` in your
+   app-data folder, encrypted for your Windows account (DPAPI).
+4. The app asks the server for its models (`GET /v1/models`; OpenRouter lists its embedding models at
+   `/embeddings/models`) and shows *Connected · N models found*. **Test connection** asks again.
+5. **Add a search model**: pick it from the list, or type a name the server doesn't list. Leave it empty for the
+   server's default model. A short **Name in menus** shows in the menus and the status bar.
+   - **Fill in details** looks the model up on [models.dev](https://models.dev) and fills in its name, and fills in
+     the prompts well-known models are trained with (EmbeddingGemma, nomic-embed, multilingual-e5, BGE, mxbai). Nothing
+     from your history is sent.
+   - **Test** sends one short text and shows the vector size (how many numbers each vector has) and how long it took.
+   - **Vector size** keeps fewer numbers of each vector, for Matryoshka models only. Vectors are normalised again after
+     they are shortened.
+6. **Save**, then pick the model under **Search by meaning → Model**. Your history is indexed in the background.
 
-| Model | Size | Notes |
-|---|---|---|
-| `google/siglip-base-patch16-256-multilingual` | 1.5 GB | Default. Many languages, including Arabic. |
-| `google/siglip-base-patch16-224` | 0.8 GB | English only, smaller and slightly faster. |
-
-SigLIP works best for finding **images from a description** and for short text. Long documents are truncated to 64 tokens,
-so for text-heavy history a text embedding model such as EmbeddingGemma is the better choice.
-
-### Use your own model server (llama.cpp or Sentence Transformers)
-Run any embedding server on your PC, paste its link into the app and pick a model:
-
-1. **⚙ Settings → Embedding model → Local server / GGUF**
-2. Paste the **Server URL** (or click a preset). The app calls `GET /v1/models` and also sends one test embedding to find
-   the server's **default embedding model**. This matters for servers whose model list shows only chat models.
-   A green *connected · embeddings will use …* line confirms it works. Leave **Model** empty to use that default, or pick or type another.
-3. If the server needs a key (for example `llama-server --api-key …`, Unsloth, or LM Studio with auth enabled), paste it into **API key**.
-   It is sent as `Authorization: Bearer <key>`. It is stored in `config.json` in your app-data folder, encrypted for
-   your Windows account (DPAPI), and each server keeps its own key, model and prompts when you switch between them.
-4. Choose a model and click **Save**. Your existing history is embedded in the background.
-   For EmbeddingGemma models a **Use EmbeddingGemma's search prompts** button appears. Click it for better retrieval.
-
-Example: an Unsloth / llama.cpp server on port 8888 with a key: URL `http://127.0.0.1:8888/v1`, API key `sk-…`,
-model `…embeddinggemma-2…` (pick it from the dropdown), then *Use EmbeddingGemma's search prompts*.
+A server keeps as many models as you like, for searching and for reading text, and each model keeps its own index: going
+back to a model needs no new indexing. Items missing from the model's index are embedded in the background, and the
+status bar shows progress.
 
 #### llama.cpp (`llama-server`): GGUF models such as [EmbeddingGemma 2](https://huggingface.co/unsloth/embeddinggemma-2-GGUF)
 1. Download a Windows build (`llama-…-bin-win-cpu-x64.zip`, or the CUDA/Vulkan build if you have a GPU) from
@@ -145,12 +141,12 @@ model `…embeddinggemma-2…` (pick it from the dropdown), then *Use EmbeddingG
    ```powershell
    .\llama-server.exe -m embeddinggemma-2-Q8_0.gguf --embeddings --pooling mean --port 8080
    ```
-4. In the app click the **EmbeddingGemma** preset. It sets `http://127.0.0.1:8080/v1` plus the model's retrieval prompts
-   (`task: search result | query: …` / `title: none | text: …`). Then pick the model from the dropdown.
+4. In the app add a **llama.cpp** server, add a search model, and click **Fill in details**: it fills in the model's
+   retrieval prompts (`task: search result | query: …` / `title: none | text: …`).
 
-If you'd rather not keep a console open, tick **Start llama-server for me** and browse to `llama-server.exe` and the `.gguf` file.
-The app then starts the server without opening a window and stops it when the app exits.
-Set *Truncate to dims* to 256 or 128 for a smaller index (Matryoshka). Vectors are re-normalised after truncation.
+If you'd rather not keep a console open, turn on **Start llama-server for me** in the llama.cpp server's settings and
+browse to `llama-server.exe` and the `.gguf` file. The app then starts the server without opening a window when one of
+its models is in use, and stops it when the app exits.
 
 #### Sentence Transformers: any model on the Hugging Face Hub
 Sentence Transformers has no HTTP server of its own, so one is included: [`tools/st_server.py`](tools/st_server.py)
@@ -159,37 +155,41 @@ Sentence Transformers has no HTTP server of its own, so one is included: [`tools
 pip install -U sentence-transformers pillow
 python tools\st_server.py --model google/embeddinggemma-300m --model sentence-transformers/clip-ViT-B-32
 ```
-Click the **Sentence Transformers** preset (`http://127.0.0.1:8001/v1`). Every `--model` you passed appears in the dropdown.
-- It applies the model's own query/document prompts automatically (the app sends an `X-Embedding-Role` header), so leave the prefix fields empty.
-- Image models (CLIP, SigLIP, BiUltraVBERT …) also embed your images: tick **Embed images too**.
+Add a server of type **Other** at `http://127.0.0.1:8001/v1`. Every `--model` you passed appears in its model list.
+- It applies the model's own query/document prompts automatically (the app sends an `X-Embedding-Role` header), so leave the prompt fields empty.
+- Image models (CLIP, SigLIP, BiUltraVBERT …) also embed your images: turn on **Send images**.
 - Models that need custom code take `--trust-remote-code`, for example
   `python tools\st_server.py --model <BiUltraVBERT repo> --trust-remote-code`.
 - `--device cuda` uses an NVIDIA GPU, and `--preload` loads the models at start-up instead of on first use.
 - `--api-key <key>` makes the server require that key.
 
-Ollama (`http://127.0.0.1:11434/v1`), LM Studio and vLLM work the same way.
+Ollama, LM Studio, vLLM and Unsloth have types of their own and work the same way.
+
+#### OpenRouter
+Add an **OpenRouter** server, paste your OpenRouter API key, and pick one of its embedding models, for example
+`openai/text-embedding-3-small`. OpenRouter is not on this PC, so the app asks before it sends your history there.
+Free models may keep what you send them.
 
 ### BiUltraVBERT / ColUltraVBERT via vLLM (text ↔ document-image retrieval)
 These MIT-licensed models are served by vLLM (Linux or WSL2 with a GPU recommended):
 ```bash
 vllm serve <hf-repo-of-BiUltraVBERT> --task embed --trust-remote-code --served-model-name BiUltraVBERT
 ```
-Choose the **BiUltraVBERT** or **ColUltraVBERT 128-d** preset and set the base URL to where vLLM listens.
-ColUltraVBERT returns one vector per token. The app stores them truncated to 128 dimensions (as the authors recommend) and ranks
-with late-interaction MaxSim.
-
-Each model and prompt configuration keeps its own index, so you can switch between models without losing anything. Items that are missing from
-the active model's index are embedded in the background, and the status bar shows progress.
+Add a **vLLM** server where vLLM listens, add the model under its served name, and turn on **Send images**.
+ColUltraVBERT returns one vector per token: set **Vector size** to 128, as the authors recommend. The app ranks its
+vectors with late-interaction MaxSim.
 
 ## Reading text in images with a model server
 
-*Settings → Clipboard → Read text with → A server* sends each image you copy to a vision model on a server with an
-OpenAI-style `/chat/completions`, such as llama.cpp, vLLM, SGLang or Ollama. Pick the **Model type** there, then paste
-the server's address:
+*Settings → Search & AI → Read text in images → Your own server* sends each image you copy to a reading model on one of
+your servers with an OpenAI-style `/chat/completions`, such as llama.cpp, vLLM, SGLang or Ollama. Add the model to its
+server with **Add a reading model**, pick its **Model type**, and choose it under **Read text in images → Model**.
+**Test** sends a small test image and shows what the model read.
 
-- **DeepSeek-OCR-2**, **Unlimited-OCR-2** and **MiniCPM-OCR** fill in the model's name and prompt from its guide, and
-  each request carries the settings the guide asks for. Their answer is saved as plain text: layout tags and boxes are
-  removed, table cells are separated by spaces and rows by lines, and formulas stay as written.
+- **DeepSeek-OCR-2**, **Unlimited-OCR-2**, **MiniCPM-OCR** and **GLM-OCR** fill in the prompt from the model's guide,
+  and each request carries the settings the guide asks for. **Fill in details** picks the type from the model's name.
+  Their answer is saved as plain text: layout tags and boxes are removed, table cells are separated by spaces and rows
+  by lines, and formulas stay as written.
 - **Another model** sends your prompt as written and keeps the answer as it comes.
 
 Each answer stops at 4096 tokens (about 3000 words), so a model that keeps repeating itself can't run for minutes.
@@ -219,6 +219,14 @@ The address is `http://127.0.0.1:8080/v1`. With a vLLM version that supports it,
 vllm serve openbmb/MiniCPM-OCR-1.0 --served-model-name minicpm-ocr --max-model-len 40960 --mm-processor-kwargs '{"downsample_mode":"4x"}' --default-chat-template-kwargs '{"enable_thinking":false}'
 ```
 
+**GLM-OCR** with llama.cpp, from ggml-org's own GGUF; it is small enough for a 4 GB graphics card
+([llama.cpp's guide to OCR models](https://huggingface.co/blog/ggml-org/using-ocr-models-with-llama-cpp)):
+```powershell
+.\llama-server.exe -hf ggml-org/GLM-OCR-GGUF --port 8080
+```
+The address is `http://127.0.0.1:8080/v1`. Other OCR models that llama.cpp runs the same way (LightOnOCR, PaddleOCR-VL,
+Dots.OCR, HunyuanOCR…) work as **Another model**, with the prompt their model card gives, often `OCR`.
+
 ## Performance
 
 - **The UI never waits on heavy work.** OCR, embedding, thumbnail and preview decoding each run on background threads. Search
@@ -237,8 +245,7 @@ vllm serve openbmb/MiniCPM-OCR-1.0 --served-model-name minicpm-ocr --max-model-l
 
 - `history.redb` stores items, OCR text and embeddings ([redb](https://github.com/cberner/redb), a pure-Rust embedded database)
 - `images\` holds copied images as PNG files (`.png.enc` when encrypted)
-- `models\` holds downloaded models
-- `config.json` holds settings, and `app.ron` the window's size and place
+- `config.json` holds settings, with your servers and their models, and `app.ron` the window's size and place
 - `clipboard-manager.log` is a log of the current run (the previous run's is kept as `clipboard-manager.old.log`). Open it from Settings → Data → *Show log* and attach it to bug reports.
 
 On Windows the items and copied images are encrypted (AES-256-GCM) with a key that Windows itself protects for your account (DPAPI): only your account, on this PC, can open the history. The search vectors are not encrypted. A history that can't be opened, for example one from an older version or one copied from another PC or account, is moved aside as `history-unreadable-<date>.redb` and an empty one starts; one from another account still opens on the account that made it.
@@ -257,10 +264,9 @@ src/
   worker.rs      background indexer thread; owns the OCR engine + embedder; queries pre-empt indexing
   embed/
     mod.rs       Embedding (dense / multi-vector), cosine & MaxSim, Embedder trait
-    siglip.rs    in-process SigLIP via candle
     server.rs    OpenAI-compatible client + optional llama-server launcher
   ocr/
-    mod.rs       the chosen text reader; the built-in one (ocrs)
+    mod.rs       the chosen text reader
     windows_reader.rs  Windows' own text reader (Windows.Media.Ocr)
     server.rs    a vision model on a server, through /chat/completions
   search.rs      keyword scoring, similarity ranking with a word-match boost
@@ -268,7 +274,7 @@ src/
   vault.rs       the history's key (sealed with DPAPI) and its AES-256-GCM encryption
   library.rs     the history in memory and every change to it, kept in step with the store
   import.rs      files/folders -> items
-  models.rs      model catalogue + atomic (temp-file then rename) downloads
+  catalog.rs     model details from models.dev, and the prompts well-known models need
   tray.rs        system-tray icon and menu (tray-icon)
   i18n.rs        interface texts from locales/*/main.ftl (Project Fluent), local date/time display
   update.rs      self-update: release manifest, signed download, exe swap
@@ -276,12 +282,10 @@ src/
   installed.rs   keeps the version shown in Installed apps current as the installed app updates itself
 ```
 
-The GUI, database, clipboard handling, OCR and built-in model inference are all Rust. External model servers are optional and
-are only needed for models that the app can't yet run in-process (EmbeddingGemma 2's new `gemma-embedding2` architecture and
-the UltraVBERT family).
+The GUI, database and clipboard handling are all Rust. Searching by meaning, and reading text with a vision model, run
+on the model servers you choose; Windows reads text on its own.
 
 ## Roadmap
-- Native in-process GGUF inference for EmbeddingGemma (candle quantized backend)
 - Optional AES-GCM encryption at rest
 - System tray icon and close-to-tray
 - PDF text extraction for imported folders
