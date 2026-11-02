@@ -3,7 +3,6 @@
 //! new copies, then indexing of the existing history.
 
 use std::collections::{HashSet, VecDeque};
-use std::path::PathBuf;
 use std::sync::mpsc::{channel, Receiver, Sender};
 use std::sync::Arc;
 
@@ -11,10 +10,9 @@ use anyhow::{anyhow, Result};
 
 use crate::config::EmbedBackend;
 use crate::config::TextReader;
-use crate::embed::{server::ServerEmbedder, siglip::SigLip, Embedder, Embedding, TextRole};
+use crate::embed::{server::ServerEmbedder, Embedder, Embedding, TextRole};
 use crate::i18n::{log_error, t};
-use crate::models;
-use crate::ocr::{Ocr, Reader};
+use crate::ocr::Reader;
 use crate::store::{Kind, Store};
 
 /// Items embedded per model call while indexing.
@@ -78,7 +76,6 @@ enum Priority {
 impl Worker {
     pub fn spawn(
         store: Arc<Store>,
-        models_dir: PathBuf,
         text_reader: TextReader,
         events: Sender<Event>,
         wake: impl Fn() + Send + 'static,
@@ -91,7 +88,6 @@ impl Worker {
             .spawn(move || {
                 let mut st = State {
                     store,
-                    models_dir,
                     events,
                     wake: Box::new(wake),
                     text_reader,
@@ -225,7 +221,6 @@ impl Next {
 
 struct State {
     store: Arc<Store>,
-    models_dir: PathBuf,
     events: Sender<Event>,
     wake: Box<dyn Fn() + Send>,
     /// The reader chosen in Settings; `ocr` is that reader once made.
@@ -364,23 +359,6 @@ impl State {
         self.backend = Some(b.clone());
         let loaded: Result<Option<Box<dyn Embedder>>> = match &b {
             EmbedBackend::None => Ok(None),
-            EmbedBackend::SigLip { repo } => {
-                if !models::siglip_ready(&self.models_dir, repo) {
-                    let message = log_error!("error-model-not-downloaded", model = repo.as_str());
-                    self.emit(Event::Error(message));
-                    self.emit(Event::BackendOff);
-                    return;
-                }
-                self.emit(Event::Status(t!(
-                    "status-loading-model",
-                    model = repo.as_str()
-                )));
-                SigLip::load(
-                    &models::siglip_dir(&self.models_dir, repo),
-                    &format!("siglip:{repo}"),
-                )
-                .map(|m| Some(Box::new(m) as Box<dyn Embedder>))
-            }
             EmbedBackend::Server(cfg) => {
                 self.emit(Event::Status(if cfg.launch.is_some() {
                     t!("status-starting-llama")
@@ -420,26 +398,14 @@ impl State {
 
     fn ensure_ocr(&mut self) -> Option<&Reader> {
         if self.ocr.is_none() && !self.ocr_failed {
-            let r = (|| -> Result<Reader> {
-                match self.text_reader.clone() {
-                    TextReader::BuiltIn => {
-                        if !models::ocr_ready(&self.models_dir) {
-                            self.emit(Event::Status(t!("status-downloading-ocr")));
-                            models::download_ocr(&self.models_dir, &Arc::default())?;
-                        }
-                        Ok(Reader::BuiltIn(Ocr::load(&models::ocr_dir(
-                            &self.models_dir,
-                        ))?))
-                    }
-                    #[cfg(windows)]
-                    TextReader::Windows => Ok(Reader::Windows(crate::ocr::WindowsReader::new()?)),
-                    #[cfg(not(windows))]
-                    TextReader::Windows => anyhow::bail!("Windows' reader works only on Windows"),
-                    TextReader::Server(cfg) => {
-                        Ok(Reader::Server(crate::ocr::ServerReader::new(cfg)))
-                    }
-                }
-            })();
+            let r = match self.text_reader.clone() {
+                TextReader::Off => return None,
+                #[cfg(windows)]
+                TextReader::Windows => crate::ocr::WindowsReader::new().map(Reader::Windows),
+                #[cfg(not(windows))]
+                TextReader::Windows => Err(anyhow!("Windows' reader works only on Windows")),
+                TextReader::Server(cfg) => Ok(Reader::Server(crate::ocr::ServerReader::new(cfg))),
+            };
             match r {
                 Ok(o) => self.ocr = Some(o),
                 Err(e) => {
@@ -628,7 +594,7 @@ mod tests {
             Priority::Fresh,
         ));
         queues.push(job(
-            Job::SetTextReader(TextReader::BuiltIn),
+            Job::SetTextReader(TextReader::Server(Default::default())),
             Priority::Fresh,
         ));
         assert_eq!(order(&mut queues), ["reader", "ocr 1"]);
@@ -674,13 +640,12 @@ mod tests {
     }
 
     /// The worker's state as `spawn` makes it, without the thread.
-    fn state(store: Arc<Store>, dir: &std::path::Path, events: Sender<Event>) -> State {
+    fn state(store: Arc<Store>, events: Sender<Event>) -> State {
         State {
             store,
-            models_dir: dir.to_path_buf(),
             events,
             wake: Box::new(|| {}),
-            text_reader: TextReader::BuiltIn,
+            text_reader: TextReader::Windows,
             ocr: None,
             ocr_failed: false,
             ocr_error_shown: false,
@@ -698,7 +663,7 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         let store = Arc::new(Store::open(&dir.join("t.redb"), &dir).unwrap());
         let (events, rx) = channel();
-        let mut st = state(store.clone(), &dir, events);
+        let mut st = state(store.clone(), events);
         st.embedder = Some(Box::new(Fragile));
         // A port on this PC that nothing listens on: the connection is refused.
         let port = std::net::TcpListener::bind("127.0.0.1:0")
@@ -742,7 +707,7 @@ mod tests {
             store.put(&it).unwrap();
         }
         let (events, _rx) = channel();
-        let mut st = state(store.clone(), &dir, events);
+        let mut st = state(store.clone(), events);
         st.embedder = Some(Box::new(Fragile));
         // What `run` does for each step, without the thread.
         for next in [Next::Embed(vec![1, 2]), Next::Embed(vec![3])] {

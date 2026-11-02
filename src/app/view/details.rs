@@ -406,7 +406,7 @@ impl App {
                 match it.ocr.as_deref() {
                     Some(o) if !o.trim().is_empty() => parts.push(t!("details-has-text")),
                     Some(_) => parts.push(t!("details-no-text")),
-                    None if self.cfg.ocr_images => parts.push(t!("details-reading-text")),
+                    None if self.cfg.reads_images() => parts.push(t!("details-reading-text")),
                     None => {}
                 }
             }

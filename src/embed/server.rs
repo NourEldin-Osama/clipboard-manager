@@ -142,12 +142,28 @@ pub struct ServerModels {
     /// Transformers server) or Ollama's `/api/tags`. Some servers list only
     /// chat models here.
     pub listed: Vec<String>,
+    /// The embedding models of a server that lists them apart, as OpenRouter
+    /// does at `/embeddings/models`.
+    pub embedding: Vec<String>,
     /// The model the server embeds with when no model is named, found by a
     /// small test request. `Some("")` means it works but didn't say its name.
     pub default: Option<String>,
 }
 
-pub fn list_models(base_url: &str, api_key: &str) -> Result<ServerModels> {
+impl ServerModels {
+    /// The models to offer for searching.
+    pub fn for_search(&self) -> &[String] {
+        if self.embedding.is_empty() {
+            &self.listed
+        } else {
+            &self.embedding
+        }
+    }
+}
+
+/// What a server offers. With `embedding_list`, the embedding models are
+/// also asked for apart (OpenRouter).
+pub fn list_models(base_url: &str, api_key: &str, embedding_list: bool) -> Result<ServerModels> {
     let agent: ureq::Agent = ureq::Agent::config_builder()
         .timeout_global(Some(Duration::from_secs(4)))
         .http_status_as_error(false)
@@ -208,6 +224,20 @@ pub fn list_models(base_url: &str, api_key: &str) -> Result<ServerModels> {
         Err(e) => return Err(anyhow::Error::new(e).context(format!("cannot reach {url}"))),
     }
     listed.dedup();
+    let mut embedding: Vec<String> = Vec::new();
+    if embedding_list {
+        if let Ok(mut r) = get(&format!("{base}/embeddings/models")) {
+            if r.status().is_success() {
+                let v: Value =
+                    serde_json::from_str(&r.body_mut().read_to_string()?).unwrap_or_default();
+                for m in v["data"].as_array().into_iter().flatten() {
+                    if let Some(id) = m["id"].as_str() {
+                        embedding.push(id.to_string());
+                    }
+                }
+            }
+        }
+    }
 
     // Ask for one embedding without naming a model, to find the server's default.
     let probe: ureq::Agent = ureq::Agent::config_builder()
@@ -231,10 +261,47 @@ pub fn list_models(base_url: &str, api_key: &str) -> Result<ServerModels> {
         }
         _ => None,
     };
-    if listed.is_empty() && default.is_none() {
+    if listed.is_empty() && embedding.is_empty() && default.is_none() {
         return Err(list_error.unwrap_or_else(|| anyhow!("the server offered no embedding models")));
     }
-    Ok(ServerModels { listed, default })
+    Ok(ServerModels {
+        listed,
+        embedding,
+        default,
+    })
+}
+
+/// What a test request to a search model found.
+#[derive(Clone, Debug)]
+pub struct SearchTest {
+    /// Numbers in each vector the model gives, before any shortening.
+    pub size: usize,
+    /// Vectors for each text: 1, or more for a multi-vector model.
+    pub vectors: usize,
+    pub took: Duration,
+}
+
+/// Embeds one short text, to check that the model answers and to see how
+/// big its vectors are. It never starts or stops llama-server: one the app
+/// started is asked as it runs.
+pub fn test_search(mut cfg: ServerConfig) -> Result<SearchTest> {
+    if let Some(launch) = cfg.launch.take() {
+        cfg.base_url = format!("http://127.0.0.1:{}/v1", launch.port);
+    }
+    cfg.truncate_dims = 0;
+    let mut embedder = ServerEmbedder::new(cfg)?;
+    let start = Instant::now();
+    let mut out = embedder.embed_texts(&["Clipboard Manager test".into()], TextRole::Query)?;
+    let took = start.elapsed();
+    let (size, vectors) = match out.pop().ok_or_else(|| anyhow!("no embedding returned"))? {
+        Embedding::Dense(v) => (v.len(), 1),
+        Embedding::Multi(vs) => (vs.first().map_or(0, Vec::len), vs.len()),
+    };
+    Ok(SearchTest {
+        size,
+        vectors,
+        took,
+    })
 }
 
 fn to_f32s(v: &Value) -> Result<Vec<f32>> {
@@ -381,7 +448,7 @@ mod tests {
     fn server_lists_models_and_embeds() {
         let url = std::env::var("EMBED_URL").expect("EMBED_URL");
         let key = std::env::var("EMBED_KEY").unwrap_or_default();
-        let found = list_models(&url, &key).unwrap();
+        let found = list_models(&url, &key, false).unwrap();
         println!("models: {found:?}");
         let clip = found
             .listed

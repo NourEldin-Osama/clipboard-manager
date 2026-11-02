@@ -16,14 +16,14 @@ use global_hotkey::{GlobalHotKeyEvent, GlobalHotKeyManager, HotKeyState};
 
 use crate::clipboard::{self, Capture, Captured, Flags, SkipReason};
 use crate::config::{
-    Config, EmbedBackend, LaunchConfig, Paths, SearchMode, ServerConfig, SortOrder, Theme, ViewMode,
+    Config, EmbedBackend, LaunchConfig, Paths, SearchEngine, SearchMode, SortOrder, Theme,
+    UpdateNote, ViewMode,
 };
 use crate::download::Progress;
 use crate::embed::Embedding;
 use crate::i18n::{self, log_error, t};
 use crate::images::ImageLoader;
 use crate::library::{Library, Removed};
-use crate::models::{self, SIGLIP_MODELS};
 use crate::paste;
 use crate::search::{self, Filter, Hit, Searcher};
 use crate::store::{looks_like_link, Item, Kind, Origin, Store};
@@ -61,20 +61,14 @@ enum BackendState {
     Ready { key: String, images: bool },
 }
 
-struct Download {
-    repo: String,
-    progress: Arc<Progress>,
-    handle: std::thread::JoinHandle<anyhow::Result<()>>,
-}
-
-/// Models offered by the configured server, fetched in the background.
+/// Models offered by a server, fetched in the background.
 #[derive(Default)]
 struct ModelList {
+    /// The address and key last asked (see `key`); empty before any check.
     url: String,
     found: crate::embed::server::ServerModels,
     error: Option<String>,
     pending: Option<Receiver<Result<crate::embed::server::ServerModels, String>>>,
-    show_key: bool,
     /// The address and key as typed, and when they last changed.
     typed: Option<(String, Instant)>,
 }
@@ -98,34 +92,42 @@ impl ModelList {
         }
     }
 
-    fn key(s: &ServerConfig) -> String {
-        format!("{}|{}", s.base_url, s.api_key)
+    fn key(url: &str, api_key: &str) -> String {
+        format!("{url}|{api_key}")
     }
 
-    fn fetch(&mut self, s: &ServerConfig, ctx: &egui::Context) {
+    /// Asks the server at `url` what it offers. With `embedding_list`, its
+    /// embedding models are asked for apart (OpenRouter).
+    fn fetch(&mut self, url: &str, api_key: &str, embedding_list: bool, ctx: &egui::Context) {
         let (tx, rx) = channel();
-        let (u, k, c) = (s.base_url.clone(), s.api_key.clone(), ctx.clone());
+        let (u, k, c) = (url.to_string(), api_key.to_string(), ctx.clone());
         std::thread::spawn(move || {
-            let _ =
-                tx.send(crate::embed::server::list_models(&u, &k).map_err(|e| format!("{e:#}")));
+            let found = crate::embed::server::list_models(&u, &k, embedding_list);
+            let _ = tx.send(found.map_err(|e| format!("{e:#}")));
             c.request_repaint();
         });
-        self.url = Self::key(s);
+        self.url = Self::key(url, api_key);
         self.pending = Some(rx);
     }
 
     /// Checks the server once its address and key have stayed the same for a
     /// moment, so a half-typed address or key is never sent. The first check
-    /// after opening Settings runs at once.
-    fn fetch_when_settled(&mut self, s: &ServerConfig, ctx: &egui::Context) {
+    /// after opening the server runs at once.
+    fn fetch_when_settled(
+        &mut self,
+        url: &str,
+        api_key: &str,
+        embedding_list: bool,
+        ctx: &egui::Context,
+    ) {
         const SETTLE: Duration = Duration::from_millis(700);
-        let key = Self::key(s);
-        if self.url == key || s.base_url.trim().is_empty() {
+        let key = Self::key(url, api_key);
+        if self.url == key || url.trim().is_empty() {
             self.typed = None;
             return;
         }
         if self.url.is_empty() && self.pending.is_none() {
-            self.fetch(s, ctx);
+            self.fetch(url, api_key, embedding_list, ctx);
             return;
         }
         let since = match &self.typed {
@@ -141,7 +143,7 @@ impl ModelList {
             ctx.request_repaint_after(SETTLE - waited);
         } else if self.pending.is_none() {
             self.typed = None;
-            self.fetch(s, ctx);
+            self.fetch(url, api_key, embedding_list, ctx);
         }
     }
 }
@@ -303,15 +305,11 @@ pub(super) enum Paste {
     Plain,
 }
 
-/// An action in Settings waiting for its second click: a destructive one,
-/// or sending the history to a server outside this PC.
+/// A destructive action in Settings waiting for its second click.
 #[derive(Clone, Copy, PartialEq)]
 enum Confirm {
     ClearHistory,
     ResetSettings,
-    SendToServer,
-    /// Sending copied images to a text reader outside this PC.
-    SendImagesToServer,
 }
 
 /// The shortcuts that can be changed in Settings.
@@ -402,8 +400,6 @@ pub struct App {
     thumbs: HashMap<u64, Option<TextureHandle>>,
     /// The frame each image item was last drawn in, for dropping thumbnails.
     thumb_seen: HashMap<u64, u64>,
-    /// Which built-in models are on disk, and when that was checked.
-    models_on_disk: Option<(Instant, [bool; SIGLIP_MODELS.len()])>,
     /// Which paths of the item in the details pane are folders, by item.
     folders_of: Option<(u64, Vec<bool>)>,
     /// Tab moved the focus last, so the focused control is outlined; a
@@ -414,7 +410,6 @@ pub struct App {
     detail: Option<DetailText>,
     research_pending: bool,
     last_search: Instant,
-    download: Option<Download>,
     hotkeys: Option<Hotkeys>,
     hotkey_ids: Arc<HotkeyIds>,
     /// Global shortcuts are off while one is being recorded in Settings.
@@ -423,9 +418,15 @@ pub struct App {
     /// Global shortcuts Windows refused because another app, or Windows
     /// itself, already uses them.
     hotkey_conflicts: Vec<String>,
+    /// What the search model's server offers, for the default model's name.
     model_list: ModelList,
     settings_page: SettingsPage,
     confirm: Option<Confirm>,
+    /// The server being added or edited in Settings.
+    server_editor: Option<ServerEditor>,
+    /// A choice that would send to a server outside this PC, waiting for
+    /// the user's yes.
+    pending_send: Option<PendingSend>,
     /// Scroll offset and visible height of the list, from the last frame.
     list_view: (f32, f32),
     /// The same for the list in the popup.
@@ -479,7 +480,7 @@ impl App {
         instance: crate::single_instance::Guard,
     ) -> anyhow::Result<Self> {
         let ctx = cc.egui_ctx.clone();
-        let (cfg, settings_problem) = Config::load(&paths.config);
+        let (cfg, settings_problem, updated) = Config::load(&paths.config);
         i18n::set(cfg.language, cfg.time_format);
         add_fonts(&ctx);
         icons::register(&ctx);
@@ -487,15 +488,21 @@ impl App {
         style(&ctx);
         apply_theme(&ctx, cfg.theme);
 
-        let library = Library::open(Arc::new(Store::open(&paths.db, &paths.images)?))?;
+        let store = Arc::new(Store::open(&paths.db, &paths.images)?);
+        // The built-in search model of versions before 0.5 is gone: so are its
+        // vectors and the files it and the built-in text reader downloaded.
+        if let Err(e) = store.delete_vectors_of_models("siglip:") {
+            log::warn!("deleting the built-in search model's vectors: {e:#}");
+        }
+        paths.remove_built_in_models();
+        let library = Library::open(store)?;
         let image_files = library.store().images.clone();
 
         let (ev_tx, events) = channel();
         let c = ctx.clone();
         let worker = Worker::spawn(
             library.store().clone(),
-            paths.models.clone(),
-            cfg.text_reader.clone(),
+            cfg.text_reader(),
             ev_tx,
             move || c.request_repaint(),
         );
@@ -568,7 +575,6 @@ impl App {
             focused: Arc::new(AtomicBool::new(true)),
             thumbs: HashMap::new(),
             thumb_seen: HashMap::new(),
-            models_on_disk: None,
             folders_of: None,
             keyboard_focus: false,
             preview: None,
@@ -579,7 +585,6 @@ impl App {
             detail: None,
             research_pending: false,
             last_search: Instant::now(),
-            download: None,
             hotkeys: None,
             hotkey_ids: Arc::default(),
             hotkeys_paused: false,
@@ -588,6 +593,8 @@ impl App {
             model_list: ModelList::default(),
             settings_page: SettingsPage::Search,
             confirm: None,
+            server_editor: None,
+            pending_send: None,
             list_view: (0.0, 0.0),
             popup_list_view: (0.0, 0.0),
             popup_at: None,
@@ -610,8 +617,8 @@ impl App {
             record_problem: None,
             cfg,
         };
-        app.set_backend(app.cfg.backend.clone());
-        if app.cfg.ocr_images {
+        app.set_backend(app.cfg.search_backend());
+        if app.cfg.reads_images() {
             for id in app.library.images_without_ocr() {
                 app.worker.send_backfill(Job::Ocr(id));
             }
@@ -644,6 +651,23 @@ impl App {
                 ),
             };
             app.set_error(message);
+        }
+        if let Some(notes) = updated {
+            let notes: Vec<String> = notes
+                .iter()
+                .map(|note| match note {
+                    UpdateNote::BuiltInSearchRemoved => t!("toast-built-in-search-removed"),
+                    UpdateNote::BuiltInReaderRemoved if cfg!(windows) => {
+                        t!("toast-built-in-reader-removed")
+                    }
+                    UpdateNote::BuiltInReaderRemoved => t!("toast-built-in-reader-removed-off"),
+                })
+                .collect();
+            if !notes.is_empty() {
+                app.toast_for(notes.join("\n"), Duration::from_secs(15));
+            }
+            // Saved in the new form now, so the next start has nothing to update.
+            app.save_config();
         }
         if let Some(aside) = app.library.store().moved_aside.clone() {
             let message = log_error!(
@@ -1102,7 +1126,7 @@ impl App {
     /// make the item's vector.
     fn indexing_jobs(&self, id: u64, kind: Kind) -> Vec<Job> {
         let mut jobs = Vec::new();
-        if kind == Kind::Image && self.cfg.ocr_images {
+        if kind == Kind::Image && self.cfg.reads_images() {
             jobs.push(Job::Ocr(id));
         }
         if self.ready_key().is_some() {
@@ -1378,13 +1402,12 @@ impl App {
                     stored,
                 } => {
                     // Learn the server's default model name for the status bar.
-                    if let EmbedBackend::Server(sc) = &self.cfg.backend {
+                    if let EmbedBackend::Server(sc) = self.cfg.search_backend() {
                         if sc.model.trim().is_empty()
                             && self.model_list.pending.is_none()
-                            && self.model_list.url != ModelList::key(sc)
+                            && self.model_list.url != ModelList::key(&sc.base_url, &sc.api_key)
                         {
-                            let sc = sc.clone();
-                            self.model_list.fetch(&sc, ctx);
+                            self.model_list.fetch(&sc.base_url, &sc.api_key, false, ctx);
                         }
                     }
                     self.library.set_embeddings(stored);
@@ -1456,25 +1479,6 @@ impl App {
                 self.loader.forget(l.id, true);
             } else {
                 self.thumbs.insert(l.id, tex);
-            }
-        }
-        if let Some(d) = &self.download {
-            if d.handle.is_finished() {
-                let d = self.download.take().unwrap();
-                match d.handle.join() {
-                    Ok(Ok(())) => {
-                        self.toast(t!("toast-downloaded", model = d.repo.as_str()));
-                        if matches!(&self.cfg.backend, EmbedBackend::SigLip { repo } if *repo == d.repo)
-                        {
-                            self.set_backend(self.cfg.backend.clone());
-                        }
-                    }
-                    Ok(Err(e)) => self.set_error(log_error!(
-                        "error-download-failed",
-                        error = format!("{e:#}")
-                    )),
-                    Err(_) => self.set_error(log_error!("error-download-crashed")),
-                }
             }
         }
     }
@@ -1797,7 +1801,7 @@ mod shortcut;
 mod view;
 
 use background::{Background, Done};
-use settings::SettingsPage;
+use settings::{PendingSend, ServerEditor, SettingsPage};
 use view::{add_fonts, apply_theme, looks_like_code, set_accent, style};
 
 #[cfg(test)]

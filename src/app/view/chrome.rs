@@ -200,36 +200,50 @@ impl App {
         }
     }
 
+    /// The search model in use: its name and its server's, as menus show
+    /// them, and its name on the server, which may be long.
+    fn search_model_names(&self) -> Option<(String, String, String)> {
+        let at = self.cfg.search_model?;
+        let (server, model) = self.cfg.model(at)?;
+        let learned = self
+            .model_list
+            .found
+            .default
+            .clone()
+            .filter(|name| !name.is_empty());
+        let id = match model.model.trim() {
+            "" => learned
+                .clone()
+                .unwrap_or_else(|| t!("settings-server-default")),
+            id => id.to_string(),
+        };
+        let name = match (model.name.trim(), &learned) {
+            ("", Some(learned)) if model.model.trim().is_empty() => learned.clone(),
+            _ => super::settings::model_label(model),
+        };
+        Some((name, server.label().to_string(), id))
+    }
+
     pub(crate) fn model_status(&self) -> (Color32, String) {
-        match (&self.backend, &self.cfg.backend) {
+        let on = self.cfg.search_engine == SearchEngine::Server;
+        match (&self.backend, self.search_model_names()) {
             (BackendState::Loading, _) => (AMBER, t!("status-model-loading")),
-            (BackendState::Ready { .. }, EmbedBackend::SigLip { repo }) => (
-                GREEN,
-                t!(
-                    "status-model-builtin",
-                    model = repo.rsplit('/').next().unwrap_or(repo)
-                ),
-            ),
-            (BackendState::Ready { .. }, EmbedBackend::Server(s)) => {
-                let name = if !s.model.trim().is_empty() {
-                    s.model.trim().to_string()
-                } else {
-                    self.model_list
-                        .found
-                        .default
-                        .clone()
-                        .filter(|d| !d.is_empty())
-                        .unwrap_or_else(|| {
-                            t!("status-model-server-default", server = domain(&s.base_url))
-                        })
-                };
-                (GREEN, name)
+            (BackendState::Ready { .. }, Some((model, server, _))) if on => {
+                (GREEN, t!("status-model-on", model = model, server = server))
             }
-            (BackendState::Off, EmbedBackend::None) => (Color32::GRAY, t!("status-model-off")),
+            (BackendState::Off, _) if !on => (Color32::GRAY, t!("status-model-off")),
             (BackendState::Off, _) => (RED, t!("status-model-unavailable")),
-            (BackendState::Ready { .. }, EmbedBackend::None) => {
-                (Color32::GRAY, t!("status-model-words-only"))
+            (BackendState::Ready { .. }, _) => (Color32::GRAY, t!("status-model-words-only")),
+        }
+    }
+
+    /// The status bar's hint: the search model's full name, when there is one.
+    fn model_tip(&self) -> String {
+        match self.search_model_names() {
+            Some((_, server, id)) if matches!(self.backend, BackendState::Ready { .. }) => {
+                t!("status-model-tip-named", model = id, server = server)
             }
+            _ => t!("status-model-tip"),
         }
     }
 
@@ -269,7 +283,7 @@ impl App {
                     let job = pill_job(&text, 12.0, color, None);
                     let r = tip(
                         icons::pill(ui, Icon::Dot, job, color, false),
-                        &t!("status-model-tip"),
+                        &self.model_tip(),
                     );
                     if r.clicked() {
                         self.open_settings(SettingsPage::Search);

@@ -2,13 +2,14 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-Offline clipboard manager for Windows (also builds on Linux/macOS), pure Rust: egui/eframe UI, redb storage,
-on-device OCR (ocrs), and semantic search with a built-in SigLIP model (candle) or an OpenAI-compatible embedding server.
+Offline clipboard manager for Windows (also builds on Linux/macOS), pure Rust: egui/eframe UI, redb storage, text in
+images read by Windows or by a vision model on a server, and semantic search with an OpenAI-compatible embedding server.
+The user saves their servers in Settings, each with the models used on it.
 
 ## Commands
 
 ```bash
-cargo run                                   # debug build; model/image crates are still optimised (see Cargo.toml)
+cargo run                                   # debug build; image crates are still optimised (see Cargo.toml)
 cargo test --config ci/fast-build.toml      # what CI runs; much faster from a cold cache
 cargo test search::tests::hybrid_is_ordered_by_relevance   # one test
 cargo clippy --all-targets --config ci/fast-build.toml
@@ -17,11 +18,12 @@ prek run --all-files                        # every git hook: file checks, fmt, 
 cargo deny check -W unmaintained            # licenses, advisories, duplicates, crate sources (deny.toml)
 ```
 
-- Some tests are `#[ignore]` and need local assets or the network: `OCR_DIR=… cargo test -- --ignored ocr_reads_text`,
-  `OCR_DOWNLOAD_DIR=…` (`the_text_reader_models_download`, 12 MB), `SIGLIP_DIR=…` (`text_finds_matching_image`),
-  `EMBED_URL=…` (`server_lists_models_and_embeds`).
+- Some tests are `#[ignore]` and need a model server, an image or the network:
+  `EMBED_URL=… cargo test -- --ignored server_lists_models_and_embeds`, `READER_URL=… OCR_IMAGE=…`
+  (`server_reader_reads_text`), `OCR_IMAGE=…` (`windows_reader_reads_text`), and `models_dev_lists_models`
+  (downloads the models.dev list, about 6 MB).
 - When the repo lives on Google Drive (as in Colab), build with `CARGO_TARGET_DIR` pointing outside it.
-- `CLIPBOARD_MANAGER_HOME=<dir>` gives a throwaway data folder (config, history, models) for testing.
+- `CLIPBOARD_MANAGER_HOME=<dir>` gives a throwaway data folder (config, history) for testing.
 - `--profile dist` (thin LTO) is the shipping build. Don't build the release `.exe` locally; CI publishes it.
 - The UI can be checked under Xvfb (`xclip` to feed the clipboard, `xdotool` to drive it, `import` to screenshot);
   windows need `xdotool windowfocus` before key presses register.
@@ -31,7 +33,7 @@ cargo deny check -W unmaintained            # licenses, advisories, duplicates, 
 - Needs Rust 1.95 or newer (egui 0.37 requires it; CI uses the newest stable) on the MSVC toolchain, plus the Visual
   Studio C++ build tools for the linker.
 - The commands above work in PowerShell. Set variables first, for example
-  `$env:OCR_DIR = "..."; cargo test -- --ignored ocr_reads_text`.
+  `$env:OCR_IMAGE = "..."; cargo test -- --ignored windows_reader_reads_text`.
 - If the released app is installed on the same PC, a dev build can disturb it:
   - Without `CLIPBOARD_MANAGER_HOME`, it opens the installed app's data folder (`%APPDATA%\clipboard-manager\data`).
   - Start at sign-in is one per-user `Run` registry value named "Clipboard Manager". A release build corrects its
@@ -72,11 +74,15 @@ One egui `App` (`src/app.rs`) owns all state; background threads talk to it over
 
 `App::logic` runs every frame **even while the window is hidden** (tray mode), so channel draining, tray commands,
 hide/show and update checks live there (`window_logic`, `update_logic`, `handle_events`); `App::ui` only draws.
-`src/app/view/` is the main window (`mod.rs` wires `top_bar`, `list`, `grid`, `details`, `chrome`, `keyboard`), `src/app/settings/` the settings (one file per page, `mod.rs` the frame); settings apply live except the search model
-(Apply button) and global hotkeys. `Config` (`config.rs`) is JSON with `#[serde(default)]`, so new fields need defaults.
+`src/app/view/` is the main window (`mod.rs` wires `top_bar`, `list`, `grid`, `details`, `chrome`, `keyboard`), `src/app/settings/` the settings (one file per page, `mod.rs` the frame); settings apply live except a server's
+settings (Save in its editor, `settings/servers.rs`) and global hotkeys, and a change that would send to a server
+outside this PC waits for the user's yes (`PendingSend`). `Config` (`config.rs`) is JSON with `#[serde(default)]`, so
+new fields need defaults. It keeps the saved servers with their models; `Config::search_backend` and
+`Config::text_reader` put the models in use together with their servers for the worker.
 
-Other modules: `update.rs` (self-update), `tray.rs`, `autostart.rs`, `i18n.rs`, `embed/` (SigLIP via candle, HTTP
-server client with optional `llama-server` launcher), `import.rs` (files/folders as items), `models.rs` (downloads).
+Other modules: `update.rs` (self-update), `tray.rs`, `autostart.rs`, `i18n.rs`, `embed/` (HTTP server client with
+optional `llama-server` launcher), `ocr/` (Windows' reader and the server reader), `catalog.rs` (models.dev lookups
+and the prompts well-known models need, for Fill in details), `import.rs` (files/folders as items).
 
 ## Conventions that aren't obvious from one file
 
@@ -92,7 +98,9 @@ server client with optional `llama-server` launcher), `import.rs` (files/folders
   tinted at runtime via `icons::paint`. Never hand-draw an icon or use emoji/font glyphs; show options from popular
   icon sets and let the maintainer pick. The app icon, chosen by the maintainer, is drawn in `assets/app-icon/app.svg`
   (`app-small.svg` for 16 to 24 px). `cargo run --example app_icon` makes `app.ico` from them, which `build.rs` puts in
-  the exe and the installer shows; the window and the tray draw `app-small.svg`.
+  the exe and the installer shows; the window and the tray draw `app-small.svg`. Server types show their brands' own
+  logos from `assets/logos` (sources and licenses there), drawn by `icons::paint_logo`: llama.cpp, vLLM and Unsloth
+  keep their colours, chosen by the maintainer; the others are white and tinted.
 - Panel frames must use opaque fills (nothing is painted beneath a panel; translucent fills show black).
 - Commit messages: no `Co-Authored-By` trailers (the prek `commit-msg` hook rejects them).
 - A breaking change to settings or stored data ships with a migration in the next version; remove the migration in

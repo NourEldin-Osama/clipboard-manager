@@ -4,6 +4,29 @@ What changed in each version, for the people who use the app. Each release
 starts its notes with the section of the version it was built from, so add
 the notes here before a push that makes a release.
 
+## 0.5.0
+
+- Meaning search and reading text now run on your own servers. Save each
+  server once in **Settings, Search & AI**: its type (llama.cpp, Ollama,
+  LM Studio, vLLM, Unsloth, OpenRouter or another one, each with its logo),
+  a name, its address on any port and its API key, and the models you use
+  on it, each with its own name and settings. Picking another model applies
+  at once, and each model keeps its own index, so going back to one needs
+  no new indexing.
+- **Test** checks the connection and each model: a search model shows how
+  big its vectors are, a reading model what it read from a test image.
+  **Fill in details** looks the model up on models.dev and fills in its
+  name, and the prompts that well-known models need. You can also type a
+  model the server doesn't list.
+- The built-in search model and text reader are gone. If you used the
+  built-in search, it is off now: add your server to turn it on again. If
+  you used the built-in text reader, Windows reads the text in images now.
+  The files they downloaded (up to 1.5 GB) are deleted.
+- Reading text in images moved from the Clipboard page to Search & AI, and
+  GLM-OCR joins its model types.
+- Your servers and models come over by themselves, and your items are not
+  indexed again.
+
 ## 0.4.3
 
 - The text reader on a server has a **Model type** menu with DeepSeek-OCR-2,

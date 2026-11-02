@@ -26,10 +26,11 @@ const MAX_TOKENS: u32 = 4096;
 
 impl ReaderModel {
     /// In the order Settings offers them.
-    pub const ALL: [ReaderModel; 4] = [
+    pub const ALL: [ReaderModel; 5] = [
         ReaderModel::DeepSeekOcr2,
         ReaderModel::UnlimitedOcr2,
         ReaderModel::MiniCpmOcr,
+        ReaderModel::GlmOcr,
         ReaderModel::Other,
     ];
 
@@ -39,6 +40,7 @@ impl ReaderModel {
             ReaderModel::DeepSeekOcr2 => "DeepSeek-OCR-2",
             ReaderModel::UnlimitedOcr2 => "Unlimited-OCR-2",
             ReaderModel::MiniCpmOcr => "MiniCPM-OCR",
+            ReaderModel::GlmOcr => "GLM-OCR",
             ReaderModel::Other => "",
         }
     }
@@ -50,6 +52,8 @@ impl ReaderModel {
             ReaderModel::DeepSeekOcr2 => "deepseek-ai/DeepSeek-OCR-2",
             ReaderModel::UnlimitedOcr2 => "Unlimited-OCR-2",
             ReaderModel::MiniCpmOcr => "minicpm-ocr",
+            // llama.cpp serves it as `llama-server -hf ggml-org/GLM-OCR-GGUF`.
+            ReaderModel::GlmOcr => "zai-org/GLM-OCR",
             ReaderModel::Other => "",
         }
     }
@@ -60,7 +64,7 @@ impl ReaderModel {
         match self {
             ReaderModel::DeepSeekOcr2 => "Free OCR.",
             ReaderModel::UnlimitedOcr2 => "Multi page parsing.",
-            ReaderModel::MiniCpmOcr => "Text Recognition:",
+            ReaderModel::MiniCpmOcr | ReaderModel::GlmOcr => "Text Recognition:",
             ReaderModel::Other => ReaderServer::PROMPT,
         }
     }
@@ -88,9 +92,22 @@ impl ReaderModel {
             ReaderModel::MiniCpmOcr => json!({
                 "chat_template_kwargs": { "enable_thinking": false }
             }),
-            ReaderModel::Other => json!({}),
+            ReaderModel::GlmOcr | ReaderModel::Other => json!({}),
         }
     }
+}
+
+/// The image the reading test sends: "Clipboard Manager" and a line with a
+/// number, in black on white.
+const TEST_IMAGE: &[u8] = include_bytes!("../../assets/read-test.png");
+
+/// Reads the test image, to check that the model answers and to show how
+/// well it reads: what it read, and how long that took.
+pub fn test_read(cfg: ReaderServer) -> Result<(String, Duration)> {
+    let img = image::load_from_memory(TEST_IMAGE)?;
+    let start = std::time::Instant::now();
+    let text = ServerReader::new(cfg).recognize(&img)?;
+    Ok((text, start.elapsed()))
 }
 
 pub struct ServerReader {
@@ -339,6 +356,7 @@ mod tests {
             ReaderModel::DeepSeekOcr2,
             ReaderModel::UnlimitedOcr2,
             ReaderModel::MiniCpmOcr,
+            ReaderModel::GlmOcr,
         ];
         for kind in known {
             let (url, request) =
@@ -364,9 +382,29 @@ mod tests {
                     assert_eq!(body["skip_special_tokens"], false);
                     assert_eq!(body["vllm_xargs"]["ngram_size"], 35);
                 }
+                ReaderModel::GlmOcr => {
+                    assert!(body.get("vllm_xargs").is_none());
+                    assert!(body.get("chat_template_kwargs").is_none());
+                }
                 _ => assert_eq!(body["chat_template_kwargs"]["enable_thinking"], false),
             }
         }
+    }
+
+    #[test]
+    fn the_reading_test_sends_its_image_and_returns_the_answer() {
+        let (url, request) = serve_once("Clipboard Manager\nReading test: invoice 4821");
+        let (text, _) = test_read(ReaderServer {
+            base_url: url,
+            ..Default::default()
+        })
+        .unwrap();
+        assert!(text.starts_with("Clipboard Manager"));
+        let body = request.recv().unwrap();
+        let image = body["messages"][0]["content"][0]["image_url"]["url"]
+            .as_str()
+            .unwrap();
+        assert!(image.starts_with("data:image/png;base64,"));
     }
 
     #[test]
