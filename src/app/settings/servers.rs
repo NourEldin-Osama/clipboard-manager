@@ -253,7 +253,7 @@ fn model_field(ui: &mut Ui, model: &mut String, listed: &[String], default: Opti
     };
     let field = ui.add(
         egui::TextEdit::singleline(model)
-            .hint_text(hint)
+            .hint_text(txt(&hint, 14.0, None))
             .desired_width(280.0),
     );
     set_name(&field, &row_title(ui));
@@ -1166,7 +1166,7 @@ fn model_settings(
                     };
                     let field = ui.add(
                         egui::TextEdit::singleline(&mut model.name)
-                            .hint_text(hint)
+                            .hint_text(txt(&hint, 14.0, None))
                             .desired_width(280.0),
                     );
                     set_name(&field, &row_title(ui));
