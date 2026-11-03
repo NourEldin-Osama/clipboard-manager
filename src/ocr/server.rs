@@ -98,9 +98,9 @@ impl ReaderModel {
     }
 }
 
-/// The image the reading test sends: "Clipboard Manager" and a line with a
-/// number, in black on white.
-const TEST_IMAGE: &[u8] = include_bytes!("../../assets/read-test.png");
+/// The image the tests send to a model: "Clipboard Manager" and a line with
+/// a number, in black on white.
+pub const TEST_IMAGE: &[u8] = include_bytes!("../../assets/read-test.png");
 
 /// Reads the test image, to check that the model answers and to show how
 /// well it reads: what it read, and how long that took.

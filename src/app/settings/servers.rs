@@ -9,6 +9,7 @@ use crate::config::{
 };
 use crate::embed::server::SearchTest;
 use crate::i18n::log_server_error;
+use crate::net::ServerError;
 
 /// A server being added or edited: a copy, which Save puts in the settings.
 pub(in crate::app) struct ServerEditor {
@@ -391,27 +392,41 @@ fn test_line(ui: &mut Ui, test: &Test) {
     super::view::row_wrapped(ui, |ui| {
         ui.add_space(10.0);
         match result {
-            Ok(Tested::Search(t)) if t.vectors > 1 => icons::chip(
-                ui,
-                Icon::Check,
-                &t!(
-                    "settings-model-test-multi",
-                    vectors = t.vectors,
-                    size = t.size,
-                    seconds = seconds(&t.took)
-                ),
-                GREEN,
-            ),
-            Ok(Tested::Search(t)) => icons::chip(
-                ui,
-                Icon::Check,
-                &t!(
-                    "settings-model-test-search",
-                    size = t.size,
-                    seconds = seconds(&t.took)
-                ),
-                GREEN,
-            ),
+            Ok(Tested::Search(t)) => {
+                let works = if t.vectors > 1 {
+                    t!(
+                        "settings-model-test-multi",
+                        vectors = t.vectors,
+                        size = t.size,
+                        seconds = seconds(&t.took)
+                    )
+                } else {
+                    t!(
+                        "settings-model-test-search",
+                        size = t.size,
+                        seconds = seconds(&t.took)
+                    )
+                };
+                icons::chip(ui, Icon::Check, &works, GREEN);
+                match &t.images {
+                    Some(Ok(())) => {
+                        icons::chip(ui, Icon::Check, &t!("settings-model-test-images"), GREEN)
+                    }
+                    Some(Err(e)) => {
+                        let text = match e.downcast_ref::<ServerError>() {
+                            Some(ServerError::NoImages { said, .. }) => {
+                                t!("settings-model-test-no-images", said = said.as_str())
+                            }
+                            _ => t!(
+                                "settings-model-test-images-failed",
+                                error = crate::net::error_text(e)
+                            ),
+                        };
+                        icons::chip(ui, Icon::Warning, &text, AMBER)
+                    }
+                    None => return,
+                }
+            }
             Ok(Tested::Read { text, took }) => {
                 let shown: String = text
                     .split_whitespace()

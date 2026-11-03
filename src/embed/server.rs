@@ -275,18 +275,20 @@ pub fn list_models(base_url: &str, api_key: &str, embedding_list: bool) -> Resul
 }
 
 /// What a test request to a search model found.
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct SearchTest {
     /// Numbers in each vector the model gives, before any shortening.
     pub size: usize,
     /// Vectors for each text: 1, or more for a multi-vector model.
     pub vectors: usize,
     pub took: Duration,
+    /// With Send images on: whether the server took the test image.
+    pub images: Option<Result<()>>,
 }
 
 /// Embeds one short text, to check that the model answers and to see how
-/// big its vectors are. It never starts or stops llama-server: one the app
-/// started is asked as it runs.
+/// big its vectors are, and the test image with Send images on. It never
+/// starts or stops llama-server: one the app started is asked as it runs.
 pub fn test_search(mut cfg: ServerConfig) -> Result<SearchTest> {
     if let Some(launch) = cfg.launch.take() {
         cfg.base_url = format!("http://127.0.0.1:{}/v1", launch.port);
@@ -300,10 +302,17 @@ pub fn test_search(mut cfg: ServerConfig) -> Result<SearchTest> {
         Embedding::Dense(v) => (v.len(), 1),
         Embedding::Multi(vs) => (vs.first().map_or(0, Vec::len), vs.len()),
     };
+    let images = embedder.cfg.images.then(|| {
+        let image = image::load_from_memory(crate::ocr::TEST_IMAGE)?;
+        embedder.embed_image(&image).map(|_| ()).inspect_err(|e| {
+            log::warn!("testing images: {e:#}");
+        })
+    });
     Ok(SearchTest {
         size,
         vectors,
         took,
+        images,
     })
 }
 
@@ -453,9 +462,113 @@ fn spawn_llama_server(l: &LaunchConfig) -> Result<Child> {
         .with_context(|| format!("starting {}", l.llama_server.display()))
 }
 
+/// A stand-in embedding server for tests.
+#[cfg(test)]
+pub(crate) mod stand_in {
+    use std::io::{Read, Write};
+    use std::net::{TcpListener, TcpStream};
+
+    use serde_json::{json, Value};
+
+    /// Starts a server that answers each text with a small vector, and
+    /// refuses images as a server that takes only text does, unless
+    /// `takes_images`. Its address ends with `/v1`; it runs until the tests
+    /// end.
+    pub fn serve(takes_images: bool) -> String {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let url = format!("http://{}/v1", listener.local_addr().unwrap());
+        std::thread::spawn(move || {
+            for stream in listener.incoming().flatten() {
+                std::thread::spawn(move || answer(stream, takes_images));
+            }
+        });
+        url
+    }
+
+    fn answer(mut stream: TcpStream, takes_images: bool) {
+        let mut request = Vec::new();
+        let mut buf = [0u8; 4096];
+        let body_start = loop {
+            match stream.read(&mut buf) {
+                Ok(0) | Err(_) => return,
+                Ok(n) => request.extend_from_slice(&buf[..n]),
+            }
+            if let Some(at) = request.windows(4).position(|w| w == b"\r\n\r\n") {
+                break at + 4;
+            }
+        };
+        let head = String::from_utf8_lossy(&request[..body_start]).to_lowercase();
+        let length: usize = head
+            .lines()
+            .find_map(|line| line.strip_prefix("content-length:"))
+            .and_then(|n| n.trim().parse().ok())
+            .unwrap_or(0);
+        while request.len() < body_start + length {
+            match stream.read(&mut buf) {
+                Ok(0) | Err(_) => return,
+                Ok(n) => request.extend_from_slice(&buf[..n]),
+            }
+        }
+        let asked: Value = serde_json::from_slice(&request[body_start..]).unwrap_or_default();
+        let count = match asked["input"].as_array() {
+            Some(inputs) => inputs.len(),
+            None if takes_images && asked["messages"].is_array() => 1,
+            None => 0,
+        };
+        let (status, body) = if count == 0 {
+            (
+                "400 Bad Request",
+                json!({ "detail": "'input' is required for embeddings" }),
+            )
+        } else {
+            let data: Vec<Value> = (0..count)
+                .map(|i| json!({ "index": i, "embedding": [1.0, 0.5, i as f64] }))
+                .collect();
+            ("200 OK", json!({ "data": data, "model": "stand-in" }))
+        };
+        let body = body.to_string();
+        let _ = write!(
+            stream,
+            "HTTP/1.1 {status}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+            body.len()
+        );
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_test_says_whether_the_server_takes_images() {
+        let text_only = stand_in::serve(false);
+        let found = test_search(ServerConfig {
+            images: true,
+            ..ServerConfig::plain(&text_only)
+        })
+        .unwrap();
+        assert_eq!((found.size, found.vectors), (3, 1));
+        let refused = found.images.unwrap().unwrap_err();
+        assert!(
+            matches!(
+                refused.downcast_ref::<ServerError>(),
+                Some(ServerError::NoImages { said, .. }) if said == "'input' is required for embeddings"
+            ),
+            "{refused:#}"
+        );
+        // Without Send images, no image is sent.
+        assert!(test_search(ServerConfig::plain(&text_only))
+            .unwrap()
+            .images
+            .is_none());
+        let with_images = stand_in::serve(true);
+        let found = test_search(ServerConfig {
+            images: true,
+            ..ServerConfig::plain(&with_images)
+        })
+        .unwrap();
+        assert!(found.images.unwrap().is_ok());
+    }
 
     /// Needs a running server, e.g. `python tools/st_server.py --model sentence-transformers/clip-ViT-B-32`:
     /// EMBED_URL=http://127.0.0.1:8001/v1 SIGLIP_IMAGES=<dir> cargo test -- --ignored server
