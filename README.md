@@ -168,7 +168,8 @@ Ollama, LM Studio, vLLM and Unsloth have types of their own and work the same wa
 #### OpenRouter
 Add an **OpenRouter** server, paste your OpenRouter API key, and pick one of its embedding models, for example
 `openai/text-embedding-3-small`. OpenRouter is not on this PC, so the app asks before it sends your history there.
-Free models may keep what you send them.
+Every request asks OpenRouter for providers that don't collect user data, so a model offered only by providers that
+keep data refuses, and says so. Each embedding request also says whether it is a search or an item (`input_type`).
 
 ### BiUltraVBERT / ColUltraVBERT via vLLM (text ↔ document-image retrieval)
 These MIT-licensed models are served by vLLM (Linux or WSL2 with a GPU recommended):
