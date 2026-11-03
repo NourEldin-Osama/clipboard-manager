@@ -11,7 +11,7 @@ use anyhow::{anyhow, Result};
 use crate::config::EmbedBackend;
 use crate::config::TextReader;
 use crate::embed::{server::ServerEmbedder, Embedder, Embedding, TextRole};
-use crate::i18n::{log_error, t};
+use crate::i18n::{log_server_error, t};
 use crate::ocr::Reader;
 use crate::store::{Kind, Store};
 
@@ -299,10 +299,7 @@ impl State {
                         log::warn!("reading text in an image failed: {e:#}");
                     } else {
                         self.ocr_error_shown = true;
-                        self.emit(Event::Error(log_error!(
-                            "error-ocr-unavailable",
-                            error = format!("{e:#}")
-                        )));
+                        self.emit(Event::Error(log_server_error!("error-ocr-unavailable", &e)));
                     }
                 }
             }
@@ -346,10 +343,7 @@ impl State {
                 });
             }
             Ok(_) => {}
-            Err(e) => self.emit(Event::Error(log_error!(
-                "error-query-embedding",
-                error = format!("{e:#}")
-            ))),
+            Err(e) => self.emit(Event::Error(log_server_error!("error-query-embedding", &e))),
         }
     }
 
@@ -387,10 +381,7 @@ impl State {
             }
             Ok(None) => self.emit(Event::BackendOff),
             Err(e) => {
-                self.emit(Event::Error(log_error!(
-                    "error-model",
-                    error = format!("{e:#}")
-                )));
+                self.emit(Event::Error(log_server_error!("error-model", &e)));
                 self.emit(Event::BackendOff);
             }
         }
@@ -410,10 +401,7 @@ impl State {
                 Ok(o) => self.ocr = Some(o),
                 Err(e) => {
                     self.ocr_failed = true;
-                    self.emit(Event::Error(log_error!(
-                        "error-ocr-unavailable",
-                        error = format!("{e:#}")
-                    )));
+                    self.emit(Event::Error(log_server_error!("error-ocr-unavailable", &e)));
                 }
             }
         }

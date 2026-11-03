@@ -7,12 +7,13 @@ use std::io::Cursor;
 use std::sync::LazyLock;
 use std::time::Duration;
 
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::{anyhow, Result};
 use base64::Engine as _;
 use regex::Regex;
 use serde_json::{json, Value};
 
 use crate::config::{ReaderModel, ReaderServer};
+use crate::net::ServerError;
 
 /// Bigger images are scaled down first: vision models read at a few
 /// thousand pixels at most, and a smaller request goes faster.
@@ -168,19 +169,19 @@ impl ServerReader {
         }
         let mut response = request
             .send_json(&body)
-            .with_context(|| format!("cannot reach {url}"))?;
+            .map_err(|e| ServerError::unreachable(&url, &e))?;
         let status = response.status();
-        let text = response.body_mut().read_to_string()?;
-        if status.as_u16() == 401 || status.as_u16() == 403 {
-            bail!("{url} rejected the request ({status}): set the server's API key in Settings");
-        }
+        let text = response
+            .body_mut()
+            .read_to_string()
+            .map_err(|e| ServerError::unreachable(&url, &e))?;
         if !status.is_success() {
-            bail!(
-                "{url} returned {status}: {}",
-                text.chars().take(400).collect::<String>()
-            );
+            return Err(ServerError::from_answer(&url, status, &text).into());
         }
-        let answer = reply_text(&serde_json::from_str(&text)?)?;
+        let answer = serde_json::from_str(&text)
+            .map_err(anyhow::Error::from)
+            .and_then(|reply| reply_text(&reply))
+            .map_err(|e| ServerError::bad_answer(&url, e))?;
         Ok(match self.cfg.kind {
             ReaderModel::Other => answer,
             _ => plain_text(&answer),

@@ -103,7 +103,7 @@ impl ModelList {
         let (u, k, c) = (url.to_string(), api_key.to_string(), ctx.clone());
         std::thread::spawn(move || {
             let found = crate::embed::server::list_models(&u, &k, embedding_list);
-            let _ = tx.send(found.map_err(|e| format!("{e:#}")));
+            let _ = tx.send(found.map_err(|e| crate::net::error_text(&e)));
             c.request_repaint();
         });
         self.url = Self::key(url, api_key);

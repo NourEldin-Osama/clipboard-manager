@@ -8,6 +8,7 @@ use crate::config::{
     ServerKind,
 };
 use crate::embed::server::SearchTest;
+use crate::i18n::log_server_error;
 
 /// A server being added or edited: a copy, which Save puts in the settings.
 pub(in crate::app) struct ServerEditor {
@@ -262,7 +263,7 @@ fn model_field(ui: &mut Ui, model: &mut String, listed: &[String], default: Opti
 fn start_test(server: &Server, model: &Model, ctx: &egui::Context) -> Test {
     let (tx, rx) = channel();
     let c = ctx.clone();
-    let failed = |e: anyhow::Error| log_error!("error-model-test", error = format!("{e:#}"));
+    let failed = |e: anyhow::Error| log_server_error!("error-model-test", &e);
     if let Some(cfg) = server.search_config(model) {
         std::thread::spawn(move || {
             let r = crate::embed::server::test_search(cfg)

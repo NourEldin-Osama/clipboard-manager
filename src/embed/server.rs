@@ -17,6 +17,7 @@ use serde_json::{json, Value};
 
 use super::{Embedder, Embedding, TextRole};
 use crate::config::{LaunchConfig, ServerConfig};
+use crate::net::ServerError;
 
 /// The llama-server we started, kept globally so it can be stopped on exit
 /// even though the worker thread never unwinds.
@@ -72,8 +73,12 @@ impl ServerEmbedder {
         }
     }
 
-    fn post(&self, body: Value, role: &str) -> Result<Value> {
-        let url = format!("{}/embeddings", self.cfg.base_url.trim_end_matches('/'));
+    fn embeddings_url(&self) -> String {
+        format!("{}/embeddings", self.cfg.base_url.trim_end_matches('/'))
+    }
+
+    fn post(&self, body: Value, role: &str) -> Result<Value, ServerError> {
+        let url = self.embeddings_url();
         let mut req = self
             .agent
             .post(&url)
@@ -88,19 +93,16 @@ impl ServerEmbedder {
         }
         let mut resp = req
             .send_json(&body)
-            .with_context(|| format!("cannot reach {url}"))?;
+            .map_err(|e| ServerError::unreachable(&url, &e))?;
         let status = resp.status();
-        let text = resp.body_mut().read_to_string()?;
-        if status.as_u16() == 401 || status.as_u16() == 403 {
-            bail!("{url} rejected the request ({status}): set the server's API key in Settings");
-        }
+        let text = resp
+            .body_mut()
+            .read_to_string()
+            .map_err(|e| ServerError::unreachable(&url, &e))?;
         if !status.is_success() {
-            bail!(
-                "{url} returned {status}: {}",
-                text.chars().take(400).collect::<String>()
-            );
+            return Err(ServerError::from_answer(&url, status, &text));
         }
-        Ok(serde_json::from_str(&text)?)
+        serde_json::from_str(&text).map_err(|e| ServerError::bad_answer(&url, e))
     }
 
     /// An empty model name means "the server's default", so the field is left out.
@@ -180,13 +182,13 @@ pub fn list_models(base_url: &str, api_key: &str, embedding_list: bool) -> Resul
     };
     let url = format!("{base}/models");
     let mut listed: Vec<String> = Vec::new();
-    let mut list_error: Option<anyhow::Error> = None;
+    let mut list_error: Option<ServerError> = None;
     match get(&url) {
         Ok(mut resp) => {
             let status = resp.status();
             let text = resp.body_mut().read_to_string().unwrap_or_default();
             if status.as_u16() == 401 || status.as_u16() == 403 {
-                bail!("the server needs an API key (got {status}); check the API key field");
+                return Err(ServerError::from_answer(&url, status, &text).into());
             }
             if status.is_success() {
                 if let Ok(v) = serde_json::from_str::<Value>(&text) {
@@ -217,11 +219,11 @@ pub fn list_models(base_url: &str, api_key: &str, embedding_list: bool) -> Resul
                     }
                 }
                 if listed.is_empty() {
-                    list_error = Some(anyhow!("{url} returned {status}"));
+                    list_error = Some(ServerError::from_answer(&url, status, &text));
                 }
             }
         }
-        Err(e) => return Err(anyhow::Error::new(e).context(format!("cannot reach {url}"))),
+        Err(e) => return Err(ServerError::unreachable(&url, &e).into()),
     }
     listed.dedup();
     let mut embedding: Vec<String> = Vec::new();
@@ -262,7 +264,8 @@ pub fn list_models(base_url: &str, api_key: &str, embedding_list: bool) -> Resul
         _ => None,
     };
     if listed.is_empty() && embedding.is_empty() && default.is_none() {
-        return Err(list_error.unwrap_or_else(|| anyhow!("the server offered no embedding models")));
+        let url = base.to_string();
+        return Err(list_error.unwrap_or(ServerError::NoModels { url }).into());
     }
     Ok(ServerModels {
         listed,
@@ -362,13 +365,13 @@ impl Embedder for ServerEmbedder {
             self.with_model(json!({ "input": input, "encoding_format": "float" })),
             role,
         )?;
-        let out = self.parse(&v)?;
+        let url = self.embeddings_url();
+        let out = self
+            .parse(&v)
+            .map_err(|e| ServerError::bad_answer(&url, e))?;
         if out.len() != texts.len() {
-            bail!(
-                "server returned {} embeddings for {} inputs",
-                out.len(),
-                texts.len()
-            );
+            let count = format!("{} embeddings for {} inputs", out.len(), texts.len());
+            return Err(ServerError::bad_answer(&url, count).into());
         }
         Ok(out)
     }
@@ -386,20 +389,33 @@ impl Embedder for ServerEmbedder {
             "data:image/png;base64,{}",
             base64::engine::general_purpose::STANDARD.encode(&png)
         );
-        // vLLM's multimodal embeddings request shape.
-        let v = self.post(
-            self.with_model(json!({
-                "encoding_format": "float",
-                "messages": [{ "role": "user", "content": [
-                    { "type": "image_url", "image_url": { "url": url } }
-                ]}]
-            })),
-            "document",
-        )?;
-        self.parse(&v)?
+        // vLLM's multimodal embeddings request shape. A server that takes
+        // only text refuses it, unless it was too big or came too soon.
+        let v = self
+            .post(
+                self.with_model(json!({
+                    "encoding_format": "float",
+                    "messages": [{ "role": "user", "content": [
+                        { "type": "image_url", "image_url": { "url": url } }
+                    ]}]
+                })),
+                "document",
+            )
+            .map_err(|e| match e {
+                ServerError::Refused { url, status, said }
+                    if !matches!(status.as_u16(), 413 | 429) =>
+                {
+                    ServerError::NoImages { url, said }
+                }
+                other => other,
+            })?;
+        let url = self.embeddings_url();
+        let embedding = self
+            .parse(&v)
+            .map_err(|e| ServerError::bad_answer(&url, e))?
             .into_iter()
-            .next()
-            .ok_or_else(|| anyhow!("no embedding returned"))
+            .next();
+        embedding.ok_or_else(|| ServerError::bad_answer(&url, "no embedding").into())
     }
 }
 
