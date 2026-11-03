@@ -256,6 +256,9 @@ shortcut-recording-tip = Press the new keys · Backspace turns it off · Esc can
 shortcut-click-to-set = Click, then press the new keys
 toast-save-anyway = Save anyway
 toast-undo = Undo
+toast-images-refused = The search server doesn't take images, so they are found by their text.
+toast-images-off = Turn off Send images
+toast-images-turned-off = Send images is off for this model.
 
 ## Settings
 

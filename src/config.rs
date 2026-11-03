@@ -694,6 +694,17 @@ impl Config {
         self.servers.iter().map(|s| s.id).max().unwrap_or(0) + 1
     }
 
+    /// The settings of the search model chosen, to change them.
+    pub fn search_settings_mut(&mut self) -> Option<&mut SearchSettings> {
+        let at = self.search_model?;
+        let server = self.servers.iter_mut().find(|s| s.id == at.server)?;
+        let model = server.models.iter_mut().find(|m| m.id == at.model)?;
+        match &mut model.job {
+            ModelJob::Search(search) => Some(search),
+            ModelJob::Read(_) => None,
+        }
+    }
+
     /// The meaning-search model in use, put together for the worker: none
     /// while search is off or its model is gone.
     pub fn search_backend(&self) -> EmbedBackend {

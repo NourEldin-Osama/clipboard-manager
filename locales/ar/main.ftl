@@ -275,6 +275,9 @@ shortcut-recording-tip = اضغط المفاتيح الجديدة · Backspace �
 shortcut-click-to-set = انقر ثم اضغط المفاتيح الجديدة
 toast-save-anyway = احفظه على أي حال
 toast-undo = تراجع
+toast-images-refused = خادم البحث لا يقبل الصور، فيُبحث عنها بالنص الذي فيها.
+toast-images-off = أوقف إرسال الصور
+toast-images-turned-off = أُوقف إرسال الصور لهذا النموذج.
 
 ## Settings
 

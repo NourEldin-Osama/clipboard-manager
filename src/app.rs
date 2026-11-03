@@ -293,6 +293,9 @@ pub(super) enum Command {
     SaveSkipped(Capture),
     /// Copies text read from an image; it is not recorded as a new copy.
     CopyText(String),
+    /// Turns off Send images for the search model with this key, after its
+    /// server refused an image.
+    StopSendingImages(String),
 }
 
 /// Whether putting an item back on the clipboard also pastes it into the
@@ -329,6 +332,8 @@ enum ShortcutField {
 
 /// How long a deleted item can still be brought back.
 const UNDO_FOR: Duration = Duration::from_secs(8);
+/// How long the message about a server that refused an image stays.
+const IMAGES_REFUSED_FOR: Duration = Duration::from_secs(15);
 /// How often deleting by age runs while it is on.
 const AGE_PRUNE_EVERY: Duration = Duration::from_secs(60 * 60);
 
@@ -1069,6 +1074,25 @@ impl App {
         });
     }
 
+    /// Turns off Send images for the search model in use, unless another
+    /// model is in use by now.
+    fn stop_sending_images(&mut self, key: &str) {
+        if self.ready_key() != Some(key) {
+            return;
+        }
+        let mut d = self.cfg.clone();
+        if let Some(search) = d.search_settings_mut() {
+            search.images = false;
+        }
+        // Open Settings applies its draft every frame, which would undo this.
+        if let Some(search) = self.draft.as_mut().and_then(Config::search_settings_mut) {
+            search.images = false;
+        }
+        let ctx = self.win.ctx.clone();
+        self.apply_settings(d, &ctx, false);
+        self.toast(t!("toast-images-turned-off"));
+    }
+
     /// Carries out what the user asked for.
     fn run(&mut self, command: Command) {
         match command {
@@ -1093,6 +1117,7 @@ impl App {
                 self.record(capture);
                 self.toast(t!("toast-saved"));
             }
+            Command::StopSendingImages(key) => self.stop_sending_images(&key),
             Command::CopyText(text) => {
                 let flags = self.flags.clone();
                 self.background.run(move || {
@@ -1395,6 +1420,24 @@ impl App {
                 Event::BackendOff => {
                     self.backend = BackendState::Off;
                     self.status.clear();
+                }
+                Event::ImagesRefused { key } => {
+                    // Images get vectors of their text from now on, so text
+                    // read later is indexed too.
+                    let current = match &mut self.backend {
+                        BackendState::Ready { key: ready, images } if *ready == key => {
+                            *images = false;
+                            true
+                        }
+                        _ => false,
+                    };
+                    if current {
+                        self.toast_for(t!("toast-images-refused"), IMAGES_REFUSED_FOR);
+                        if let Some(toast) = &mut self.toast {
+                            toast.action =
+                                Some((t!("toast-images-off"), Command::StopSendingImages(key)));
+                        }
+                    }
                 }
                 Event::BackendReady {
                     key,
