@@ -410,6 +410,9 @@ pub struct App {
     /// Tab moved the focus last, so the focused control is outlined; a
     /// click hides the outline again.
     keyboard_focus: bool,
+    /// A text field in Settings had the keyboard when the keys were last
+    /// looked at (see `keyboard`).
+    settings_typing: bool,
     preview: Option<(u64, Option<TextureHandle>)>,
     loader: ImageLoader,
     detail: Option<DetailText>,
@@ -582,6 +585,7 @@ impl App {
             thumb_seen: HashMap::new(),
             folders_of: None,
             keyboard_focus: false,
+            settings_typing: false,
             preview: None,
             loader: {
                 let c = ctx.clone();

@@ -1,6 +1,7 @@
 //! Keyboard shortcuts and touchpad scrolling.
 
 use super::*;
+use egui::text_edit::TextEditState;
 
 /// Splits one fractional wheel-line scroll into point steps that egui applies
 /// at once: it eases every line step and point steps of 8 or more over
@@ -77,13 +78,19 @@ impl App {
             // Esc first closes what is open inside Settings: a shortcut field
             // listening (its "cancel"), a menu, or a text field being typed
             // in. Only an Esc with none of these leaves (and applies) Settings.
-            let busy = self.recording.is_some()
-                || egui::Popup::is_any_open(ctx)
-                || ctx.memory(|m| m.focused().is_some());
+            // egui lets go of the text field as soon as Esc arrives, before
+            // this runs, so the field typed in at the last frame counts.
+            let focused = ctx.memory(|m| m.focused());
+            let typing = focused.is_some_and(|id| TextEditState::load(ctx, id).is_some());
+            let was_typing = std::mem::replace(&mut self.settings_typing, typing);
+            let busy = self.recording.is_some() || egui::Popup::is_any_open(ctx) || was_typing;
             if !busy && ctx.input(|i| i.key_pressed(Key::Escape)) {
                 self.close_settings(ctx);
             }
             return;
+        }
+        if !in_popup {
+            self.settings_typing = false;
         }
         // The tag field belongs to the item in the details pane: selecting
         // another item or closing the pane closes it. Left open, it would
