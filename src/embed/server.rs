@@ -16,7 +16,7 @@ use image::DynamicImage;
 use serde_json::{json, Value};
 
 use super::{Embedder, Embedding, TextRole};
-use crate::config::{LaunchConfig, ServerConfig};
+use crate::config::{LaunchConfig, ServerConfig, ServerKind};
 use crate::net::ServerError;
 
 /// The llama-server we started, kept globally so it can be stopped on exit
@@ -105,10 +105,20 @@ impl ServerEmbedder {
         serde_json::from_str(&text).map_err(|e| ServerError::bad_answer(&url, e))
     }
 
-    /// An empty model name means "the server's default", so the field is left out.
-    fn with_model(&self, mut body: Value) -> Value {
+    /// What every request carries besides its input: the model's name (an
+    /// empty name means "the server's default", so it is left out), and for
+    /// OpenRouter, whether the text is a search or an item, and that only
+    /// providers that don't collect user data may answer.
+    fn request_body(&self, mut body: Value, role: TextRole) -> Value {
         if !self.cfg.model.trim().is_empty() {
             body["model"] = json!(self.cfg.model.trim());
+        }
+        if self.cfg.server_kind == ServerKind::OpenRouter {
+            body["input_type"] = json!(match role {
+                TextRole::Query => "search_query",
+                TextRole::Document => "search_document",
+            });
+            body["provider"] = json!({ "data_collection": "deny" });
         }
         body
     }
@@ -342,13 +352,16 @@ impl Embedder for ServerEmbedder {
             }
             None => self.cfg.model.trim().to_string(),
         };
-        let salt = crate::store::fnv1a(
-            format!(
-                "{}|{}|{}",
-                self.cfg.query_prefix, self.cfg.document_prefix, self.cfg.truncate_dims
-            )
-            .as_bytes(),
+        let mut settings = format!(
+            "{}|{}|{}",
+            self.cfg.query_prefix, self.cfg.document_prefix, self.cfg.truncate_dims
         );
+        // OpenRouter is told whether a text is a search or an item, which
+        // changes its vectors.
+        if self.cfg.server_kind == ServerKind::OpenRouter {
+            settings.push_str("|input_type");
+        }
+        let salt = crate::store::fnv1a(settings.as_bytes());
         format!("server:{model}:{salt:x}")
     }
 
@@ -365,15 +378,13 @@ impl Embedder for ServerEmbedder {
             TextRole::Document => &self.cfg.document_prefix,
         };
         let input: Vec<String> = texts.iter().map(|t| format!("{prefix}{t}")).collect();
+        let body = self.request_body(json!({ "input": input, "encoding_format": "float" }), role);
         let role = if role == TextRole::Query {
             "query"
         } else {
             "document"
         };
-        let v = self.post(
-            self.with_model(json!({ "input": input, "encoding_format": "float" })),
-            role,
-        )?;
+        let v = self.post(body, role)?;
         let url = self.embeddings_url();
         let out = self
             .parse(&v)
@@ -402,12 +413,15 @@ impl Embedder for ServerEmbedder {
         // only text refuses it, unless it was too big or came too soon.
         let v = self
             .post(
-                self.with_model(json!({
-                    "encoding_format": "float",
-                    "messages": [{ "role": "user", "content": [
-                        { "type": "image_url", "image_url": { "url": url } }
-                    ]}]
-                })),
+                self.request_body(
+                    json!({
+                        "encoding_format": "float",
+                        "messages": [{ "role": "user", "content": [
+                            { "type": "image_url", "image_url": { "url": url } }
+                        ]}]
+                    }),
+                    TextRole::Document,
+                ),
                 "document",
             )
             .map_err(|e| match e {
@@ -568,6 +582,32 @@ mod tests {
         })
         .unwrap();
         assert!(found.images.unwrap().is_ok());
+    }
+
+    #[test]
+    fn openrouter_hears_what_each_text_is_for_and_to_keep_no_data() {
+        let embedder = |server_kind| {
+            ServerEmbedder::new(ServerConfig {
+                server_kind,
+                model: "m".into(),
+                ..ServerConfig::plain("https://openrouter.ai/api/v1")
+            })
+            .unwrap()
+        };
+        let openrouter = embedder(ServerKind::OpenRouter);
+        let search = openrouter.request_body(json!({ "input": ["a"] }), TextRole::Query);
+        assert_eq!(search["input_type"], "search_query");
+        assert_eq!(search["provider"]["data_collection"], "deny");
+        let item = openrouter.request_body(json!({ "input": ["a"] }), TextRole::Document);
+        assert_eq!(item["input_type"], "search_document");
+        // Other servers get neither, and keep the index they have.
+        let other = embedder(ServerKind::Other);
+        let body = other.request_body(json!({ "input": ["a"] }), TextRole::Query);
+        assert!(body.get("input_type").is_none() && body.get("provider").is_none());
+        assert_eq!(body["model"], "m");
+        let before = format!("server:m:{:x}", crate::store::fnv1a(b"||0"));
+        assert_eq!(other.key(), before);
+        assert_ne!(openrouter.key(), before, "OpenRouter's index is made again");
     }
 
     /// Needs a running server, e.g. `python tools/st_server.py --model sentence-transformers/clip-ViT-B-32`:

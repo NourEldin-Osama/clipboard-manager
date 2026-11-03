@@ -12,7 +12,7 @@ use base64::Engine as _;
 use regex::Regex;
 use serde_json::{json, Value};
 
-use crate::config::{ReaderModel, ReaderServer};
+use crate::config::{ReaderModel, ReaderServer, ServerKind};
 use crate::net::ServerError;
 
 /// Bigger images are scaled down first: vision models read at a few
@@ -155,6 +155,10 @@ impl ServerReader {
         // An empty model name means "the server's default", so it is left out.
         if !self.cfg.model.trim().is_empty() {
             body["model"] = json!(self.cfg.model.trim());
+        }
+        // Only OpenRouter's providers that don't collect user data may answer.
+        if self.cfg.server_kind == ServerKind::OpenRouter {
+            body["provider"] = json!({ "data_collection": "deny" });
         }
         let url = format!(
             "{}/chat/completions",
@@ -406,6 +410,30 @@ mod tests {
             .as_str()
             .unwrap();
         assert!(image.starts_with("data:image/png;base64,"));
+    }
+
+    #[test]
+    fn openrouter_is_asked_to_keep_no_data() {
+        let (url, request) = serve_once("Clipboard Manager");
+        ServerReader::new(ReaderServer {
+            server_kind: ServerKind::OpenRouter,
+            base_url: url,
+            ..Default::default()
+        })
+        .recognize(&image::DynamicImage::new_rgb8(8, 8))
+        .unwrap();
+        assert_eq!(
+            request.recv().unwrap()["provider"]["data_collection"],
+            "deny"
+        );
+        // Other servers don't get it.
+        let (url, request) = serve_once("Clipboard Manager");
+        test_read(ReaderServer {
+            base_url: url,
+            ..Default::default()
+        })
+        .unwrap();
+        assert!(request.recv().unwrap().get("provider").is_none());
     }
 
     #[test]
