@@ -286,8 +286,6 @@ The GUI, database and clipboard handling are all Rust. Searching by meaning, and
 on the model servers you choose; Windows reads text on its own.
 
 ## Roadmap
-- Optional AES-GCM encryption at rest
-- System tray icon and close-to-tray
 - PDF text extraction for imported folders
 
 ## License
