@@ -57,14 +57,14 @@ pub(super) fn weaker_line(ui: &Ui, rect: Rect, count: usize) -> bool {
         .clicked()
 }
 
-/// How close a meaning match is to the best one, in three steps; `None`
-/// without a meaning score. `best` is the highest relevance in the list.
-pub(super) fn relevance_level(hit: &Hit, best: f32) -> Option<usize> {
-    let s = hit.relevance.filter(|_| hit.semantic.is_some())?;
-    let ratio = if best > 0.0 { s / best } else { 0.0 };
-    Some(if ratio > 0.93 {
+/// How close a match's meaning is to the best match's, in three steps: one
+/// bar below the strong matches, two from there, three near the best.
+/// `None` without a meaning score.
+pub(super) fn relevance_level(hit: &Hit) -> Option<usize> {
+    let closeness = hit.closeness?;
+    Some(if closeness >= 0.75 {
         3
-    } else if ratio > 0.8 {
+    } else if closeness >= crate::search::CLOSE_TO_BEST {
         2
     } else {
         1
@@ -222,7 +222,6 @@ pub(super) fn paint_row(
     selected: bool,
     compact: bool,
     terms: &[String],
-    max_sem: f32,
 ) {
     let v = ui.visuals();
     let p = ui.painter_at(rect);
@@ -434,7 +433,7 @@ pub(super) fn paint_row(
         );
         ix -= 18.0;
     }
-    if let Some(level) = relevance_level(hit, max_sem) {
+    if let Some(level) = relevance_level(hit) {
         paint_relevance(&p, rect, ix, iy + 6.0, level, a, weak);
     }
 }
@@ -553,11 +552,6 @@ impl App {
             }
         }
 
-        let max_sem = self
-            .results
-            .iter()
-            .filter_map(|h| h.relevance)
-            .fold(f32::MIN, f32::max);
         let terms: Vec<String> = if searching {
             self.query
                 .to_lowercase()
@@ -631,7 +625,6 @@ impl App {
                             Some(it.id) == selected,
                             compact,
                             &terms,
-                            max_sem,
                         );
                         if resp.clicked() {
                             actions.push(Command::Select(it.id));

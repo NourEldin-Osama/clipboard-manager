@@ -502,11 +502,6 @@ impl App {
         } else {
             vec![]
         };
-        let max_sem = self
-            .results
-            .iter()
-            .filter_map(|h| h.relevance)
-            .fold(f32::MIN, f32::max);
         let mut actions = Vec::new();
         let frame = ui.ctx().cumulative_pass_nr();
         let (library, results, thumbs, loader, selected, seen, programs) = (
@@ -551,7 +546,7 @@ impl App {
                 let hot = ui.rect_contains_pointer(rect);
                 let program = it.program.as_deref().and_then(|p| programs.get(p));
                 let chosen_card = Some(it.id) == selected;
-                let relevance = relevance_level(hit, max_sem);
+                let relevance = relevance_level(hit);
                 paint_card(
                     ui,
                     rect,
