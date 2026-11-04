@@ -280,9 +280,15 @@ impl App {
         if let Some(app) = &it.app {
             let ignored = self.cfg.rules.iter().any(|r| r.skips_app(app));
             let mut ignore = false;
+            // The program's own name once it is known, else its file name.
+            let name = it
+                .program
+                .as_deref()
+                .and_then(|p| self.programs.get(p))
+                .map_or_else(|| app.clone(), |p| p.name.clone());
             row(ui, |ui| {
                 ui.label(txt(
-                    &t!("details-copied-from", app = app.as_str()),
+                    &t!("details-copied-from", app = name.as_str()),
                     size::SMALL,
                     Some(weak),
                 ));

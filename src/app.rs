@@ -418,6 +418,8 @@ pub struct App {
     settings_typing: bool,
     preview: Option<(u64, Option<TextureHandle>)>,
     loader: ImageLoader,
+    /// The names and icons of the programs copies came from.
+    programs: programs::Programs,
     detail: Option<DetailText>,
     research_pending: bool,
     last_search: Instant,
@@ -595,6 +597,7 @@ impl App {
                 let c = ctx.clone();
                 ImageLoader::new(image_files, move || c.request_repaint())
             },
+            programs: programs::Programs::new(ctx.clone()),
             detail: None,
             research_pending: false,
             last_search: Instant::now(),
@@ -1174,6 +1177,7 @@ impl App {
         let Capture {
             content,
             app,
+            program,
             formats,
         } = capture;
         if let Captured::Skipped { reason, text } = content {
@@ -1184,6 +1188,7 @@ impl App {
             let kept = text.map(|t| Capture {
                 content: Captured::Text(t),
                 app,
+                program,
                 formats,
             });
             self.skipped(message, kept);
@@ -1198,6 +1203,7 @@ impl App {
             let kept = Capture {
                 content,
                 app,
+                program,
                 formats,
             };
             self.skipped(t!("toast-skipped-rule"), Some(kept));
@@ -1206,6 +1212,7 @@ impl App {
         self.record(Capture {
             content,
             app,
+            program,
             formats,
         });
     }
@@ -1246,6 +1253,7 @@ impl App {
         let Capture {
             content: c,
             app,
+            program,
             formats,
         } = capture;
         let hash = c.hash();
@@ -1268,6 +1276,7 @@ impl App {
         // The capture's own hash, which also covers image pixels and file lists.
         item.hash = hash;
         item.app = app;
+        item.program = program;
         match c {
             Captured::Text(t) => {
                 // Saved before the item, which then says it has them.
@@ -1298,7 +1307,10 @@ impl App {
                 let store = self.library.store().clone();
                 self.background.run(move || {
                     let saved = store.images.save(id, &img).map_err(|e| format!("{e:#}"));
-                    Done::ImageSaved { item, saved }
+                    Done::ImageSaved {
+                        item: Box::new(item),
+                        saved,
+                    }
                 });
                 return;
             }
@@ -1338,7 +1350,7 @@ impl App {
                 saved: Ok(path),
             } => {
                 item.image = Some(path);
-                self.add_item(item);
+                self.add_item(*item);
                 self.prune();
             }
             Done::ImageSaved { saved: Err(e), .. } => {
@@ -1847,6 +1859,7 @@ fn write_clipboard(
 mod background;
 mod bidi;
 mod icons;
+mod programs;
 mod settings;
 mod shortcut;
 mod view;

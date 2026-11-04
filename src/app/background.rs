@@ -16,7 +16,7 @@ use crate::store::Item;
 pub(super) enum Done {
     /// A copied image, with its PNG file written, or why it wasn't.
     ImageSaved {
-        item: Item,
+        item: Box<Item>,
         saved: Result<PathBuf, String>,
     },
     /// An item put back on the clipboard, or why it wasn't.

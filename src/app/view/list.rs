@@ -129,6 +129,7 @@ pub(super) fn paint_row(
     it: &Item,
     hit: &Hit,
     thumb: Option<TextureHandle>,
+    program_icon: Option<&TextureHandle>,
     selected: bool,
     compact: bool,
     terms: &[String],
@@ -182,6 +183,15 @@ pub(super) fn paint_row(
                 .uv(uv)
                 .corner_radius(6.0)
                 .paint_at(ui, av_rect);
+        }
+        // Text, links and files show the program they were copied from.
+        None if program_icon.is_some() => {
+            let icon = program_icon.expect("checked above");
+            let side = (av * 0.84).round();
+            egui::Image::new((icon.id(), Vec2::splat(side))).paint_at(
+                ui,
+                Rect::from_center_size(av_rect.center(), Vec2::splat(side)),
+            );
         }
         None => {
             let c = kind_color(it.kind);
@@ -471,13 +481,14 @@ impl App {
         };
         let mut actions = Vec::new();
         let frame = ui.ctx().cumulative_pass_nr();
-        let (library, results, thumbs, loader, selected, seen) = (
+        let (library, results, thumbs, loader, selected, seen, programs) = (
             &self.library,
             &self.results,
             &self.thumbs,
             &mut self.loader,
             self.selected,
             &mut self.thumb_seen,
+            &mut self.programs,
         );
         let out = sa.show_viewport(ui, |ui, viewport| {
             ui.set_height(total);
@@ -508,6 +519,7 @@ impl App {
                             continue;
                         };
                         let thumb = thumb_for(it, thumbs, loader, (&mut *seen, frame));
+                        let program = it.program.as_deref().and_then(|p| programs.get(p));
                         let resp =
                             ui.interact(rect, egui::Id::unique(("row", it.id)), Sense::CLICK);
                         let chosen = Some(it.id) == selected;
@@ -527,6 +539,7 @@ impl App {
                             it,
                             hit,
                             thumb,
+                            program.and_then(|p| p.icon.as_ref()),
                             Some(it.id) == selected,
                             compact,
                             &terms,

@@ -1,6 +1,6 @@
 //! Clipboard monitoring thread and helpers for writing back to the clipboard.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::Sender;
 use std::sync::{Arc, Mutex};
@@ -17,6 +17,8 @@ pub struct Capture {
     pub content: Captured,
     /// The program's file name, as in `chrome.exe`, when Windows says.
     pub app: Option<String>,
+    /// The program's whole path, for its own name and icon.
+    pub program: Option<PathBuf>,
     /// The HTML and RTF versions of a text copy, if it had any.
     pub formats: Option<Formats>,
 }
@@ -159,9 +161,15 @@ pub fn spawn_watcher(flags: Arc<Flags>, tx: Sender<Capture>, wake: impl Fn() + S
                     Captured::Text(_) => read_formats().filter(|_| sequence_number() == seq),
                     _ => None,
                 };
+                let program = source_program();
+                let app = program
+                    .as_deref()
+                    .and_then(Path::file_name)
+                    .map(|name| name.to_string_lossy().into_owned());
                 let capture = Capture {
                     content: c,
-                    app: source_app(),
+                    app,
+                    program,
                     formats,
                 };
                 if tx.send(capture).is_err() {
@@ -250,25 +258,41 @@ fn is_sensitive() -> bool {
     false
 }
 
-/// The file name of the program that put the content on the clipboard:
-/// the clipboard's owner, or the window in front when there is none.
+/// The program that put the content on the clipboard: the clipboard's
+/// owner, or the window in front when there is none. Apps such as Claude
+/// show their window through Edge's WebView2 helper, which then owns the
+/// clipboard, so for it the program in front is the one copied from.
 #[cfg(windows)]
-fn source_app() -> Option<String> {
-    use windows_sys::Win32::Foundation::CloseHandle;
+fn source_program() -> Option<PathBuf> {
     use windows_sys::Win32::System::DataExchange::GetClipboardOwner;
+    use windows_sys::Win32::UI::WindowsAndMessaging::GetForegroundWindow;
+    // SAFETY: plain Win32 calls that take no pointers.
+    let (owner, front) = unsafe { (GetClipboardOwner(), GetForegroundWindow()) };
+    let window = if owner.is_null() { front } else { owner };
+    let program = window_program(window)?;
+    let helper = program
+        .file_name()
+        .is_some_and(|name| name.eq_ignore_ascii_case("msedgewebview2.exe"));
+    if helper {
+        return window_program(front).or(Some(program));
+    }
+    Some(program)
+}
+
+/// The whole path of the program a window belongs to.
+#[cfg(windows)]
+fn window_program(window: windows_sys::Win32::Foundation::HWND) -> Option<PathBuf> {
+    use windows_sys::Win32::Foundation::CloseHandle;
     use windows_sys::Win32::System::Threading::{
         OpenProcess, QueryFullProcessImageNameW, PROCESS_QUERY_LIMITED_INFORMATION,
     };
-    use windows_sys::Win32::UI::WindowsAndMessaging::{
-        GetForegroundWindow, GetWindowThreadProcessId,
-    };
+    use windows_sys::Win32::UI::WindowsAndMessaging::GetWindowThreadProcessId;
+    if window.is_null() {
+        return None;
+    }
     // SAFETY: plain Win32 calls; the process handle is closed before returning,
     // and `name` holds `size` UTF-16 units, as QueryFullProcessImageNameW is told.
     unsafe {
-        let mut window = GetClipboardOwner();
-        if window.is_null() {
-            window = GetForegroundWindow();
-        }
         let mut process_id = 0;
         GetWindowThreadProcessId(window, &mut process_id);
         if process_id == 0 {
@@ -285,13 +309,14 @@ fn source_app() -> Option<String> {
         if found == 0 {
             return None;
         }
-        let path = PathBuf::from(String::from_utf16_lossy(&name[..size as usize]));
-        Some(path.file_name()?.to_string_lossy().into_owned())
+        Some(PathBuf::from(String::from_utf16_lossy(
+            &name[..size as usize],
+        )))
     }
 }
 
 #[cfg(not(windows))]
-fn source_app() -> Option<String> {
+fn source_program() -> Option<PathBuf> {
     None
 }
 

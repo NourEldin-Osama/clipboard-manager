@@ -99,6 +99,10 @@ pub struct Item {
     /// The program it was copied from, as in `chrome.exe`, when known.
     #[serde(default)]
     pub app: Option<String>,
+    /// That program's whole path, for its own name and icon. Copies made
+    /// before 0.6 don't have it.
+    #[serde(default)]
+    pub program: Option<PathBuf>,
     /// It has formatted versions in the store (`Store::formats`).
     #[serde(default)]
     pub formatted: bool,
@@ -123,6 +127,7 @@ impl Item {
             tags: Vec::new(),
             uses: 0,
             app: None,
+            program: None,
             formatted: false,
         }
     }
@@ -994,7 +999,7 @@ mod tests {
             (Kind::Link, "https://ar.wikipedia.org/wiki/%D8%A7%D9%84%D8%B1%D9%8A%D8%A7%D8%B6", "msedge.exe", day + 4 * hour),
             (Kind::Text, "C:\\Users\\Public\\Documents\\report-2026.pdf", "explorer.exe", day + 5 * hour),
             (Kind::Text, "The quick brown fox jumps over the lazy dog. Pack my box with five dozen liquor jugs. How vexingly quick daft zebras jump! Sphinx of black quartz, judge my vow. The five boxing wizards jump quickly, and a wizard's job is to vex chumps quickly in fog.", "WINWORD.EXE", day + 7 * hour),
-            (Kind::Text, "git commit -m \"Fix the release notes\"", "WindowsTerminal.exe", 2 * day),
+            (Kind::Text, "git commit -m \"Fix the release notes\"", "cmd.exe", 2 * day),
             (Kind::Text, "rgb(88, 101, 242)", "Code.exe", 3 * day),
             (Kind::Link, "https://github.com/NourEldin-Osama/clipboard-manager/releases", "chrome.exe", 4 * day),
             (Kind::Text, "Dear team, the new version is out. Please update and tell me what you think.", "OUTLOOK.EXE", 6 * day),
@@ -1002,12 +1007,28 @@ mod tests {
             (Kind::Text, "Grocery list: milk, eggs, bread, dates, olive oil", "Notepad.exe", 11 * day),
             (Kind::Text, "مرحبًا بالعالم", "Notepad.exe", 13 * day),
         ];
+        // Programs every Windows PC has, so their rows show real icons and
+        // names; the others look like copies made before 0.6.
+        let system = std::env::var_os("SystemRoot").map(PathBuf::from);
+        let edge = PathBuf::from(r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe");
+        let program_of = |app: &str| -> Option<PathBuf> {
+            let system = system.as_ref()?;
+            let path = match app {
+                "Notepad.exe" => system.join("System32").join("notepad.exe"),
+                "explorer.exe" => system.join("explorer.exe"),
+                "cmd.exe" => system.join("System32").join("cmd.exe"),
+                "msedge.exe" => edge.clone(),
+                _ => return None,
+            };
+            path.exists().then_some(path)
+        };
         let now = now();
         let mut id = store.next_id().unwrap();
         for (kind, text, app, age) in samples {
             let mut it = Item::new(id, kind, Origin::Clipboard, text.into());
             it.created = now - age;
             it.app = Some(app.into());
+            it.program = program_of(app);
             it.pinned = text.starts_with("Meeting") || text.starts_with("git");
             if text.starts_with("Invoice") {
                 it.tags = vec!["work".into()];
