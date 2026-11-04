@@ -268,7 +268,7 @@ impl App {
 /// that doesn't fit on a line starts the next one.
 fn paint_key_hints(ui: &mut Ui, hints: &[(String, String)]) {
     let (strong, weak) = (ui.visuals().text_color(), ui.visuals().weak_text_color());
-    let room = ui.available_width();
+    let room = ui.available_width().max(0.0);
     let font = FontId::proportional(size::SMALL);
     let pairs: Vec<_> = hints
         .iter()

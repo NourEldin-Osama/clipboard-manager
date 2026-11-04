@@ -71,9 +71,15 @@ impl App {
                     close = icon_button_ex(ui, Icon::Close, &tip, size, 13.0, None, None).clicked();
                 });
             });
+            // As tall as the window allows: the sheet first opens with its
+            // top at the middle of the window, where little room is left.
+            let tallest = (room.y - 120.0).max(120.0);
             egui::ScrollArea::vertical()
-                .max_height((room.y - 120.0).max(120.0))
+                .max_height(tallest)
+                .min_scrolled_height(tallest)
                 .show(ui, |ui| {
+                    // Room for the scroll bar, which floats over the content.
+                    ui.set_max_width(ui.available_width() - 12.0);
                     let weak = ui.visuals().weak_text_color();
                     for (title, rows) in groups.iter().filter(|(_, rows)| !rows.is_empty()) {
                         ui.add_space(10.0);
@@ -95,7 +101,7 @@ impl App {
 fn key_row(ui: &mut Ui, what: &str, keys: &str) {
     let width = ui.available_width();
     let keys_w = 170.0_f32.min(width * 0.45);
-    let text_w = width - keys_w - 8.0;
+    let text_w = (width - keys_w - 8.0).max(0.0);
     let color = ui.visuals().text_color();
     row(ui, |ui| {
         let start = if i18n::rtl() { Align::Max } else { Align::Min };
