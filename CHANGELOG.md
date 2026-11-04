@@ -12,6 +12,10 @@ the notes here before a push that makes a release.
   **Send images** for that model.
 - **Test** also sends a small test image when **Send images** is on, and
   says whether the server takes images.
+- **Send images** works with llama.cpp and OpenRouter: images now go to
+  them in their own request format, and a server that refuses one format
+  gets the other. For example, EmbeddingGemma 2 on llama.cpp with its
+  `mmproj` file finds images by what they show.
 - When the search server stops while the app runs, one message says that
   items can't be indexed. Before, nothing showed, and the log got a line
   for each item.

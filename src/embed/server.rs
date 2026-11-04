@@ -33,6 +33,41 @@ pub fn stop_launched_server() {
 pub struct ServerEmbedder {
     cfg: ServerConfig,
     agent: ureq::Agent,
+    /// How the server takes an image: as its type is known to, until it
+    /// refuses that and takes the other way.
+    image_request: ImageRequest,
+}
+
+/// How a server takes an image to embed.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum ImageRequest {
+    /// vLLM's way: a chat message with the image (`messages`).
+    Messages,
+    /// llama.cpp's and OpenRouter's way: an input with a content list.
+    Content,
+}
+
+impl ImageRequest {
+    fn body(self, image_url: &str) -> Value {
+        let image = json!([{ "type": "image_url", "image_url": { "url": image_url } }]);
+        match self {
+            Self::Messages => json!({
+                "encoding_format": "float",
+                "messages": [{ "role": "user", "content": image }]
+            }),
+            Self::Content => json!({
+                "encoding_format": "float",
+                "input": [{ "content": image }]
+            }),
+        }
+    }
+
+    fn other(self) -> Self {
+        match self {
+            Self::Messages => Self::Content,
+            Self::Content => Self::Messages,
+        }
+    }
 }
 
 impl ServerEmbedder {
@@ -42,7 +77,17 @@ impl ServerEmbedder {
             .http_status_as_error(false)
             .build()
             .into();
-        let mut s = Self { cfg, agent };
+        let image_request = match cfg.server_kind {
+            ServerKind::LlamaCpp | ServerKind::OpenRouter | ServerKind::Unsloth => {
+                ImageRequest::Content
+            }
+            _ => ImageRequest::Messages,
+        };
+        let mut s = Self {
+            cfg,
+            agent,
+            image_request,
+        };
         if let Some(launch) = s.cfg.launch.clone() {
             stop_launched_server();
             *CHILD.lock().unwrap() = Some(spawn_llama_server(&launch)?);
@@ -103,6 +148,22 @@ impl ServerEmbedder {
             return Err(ServerError::from_answer(&url, status, &text));
         }
         serde_json::from_str(&text).map_err(|e| ServerError::bad_answer(&url, e))
+    }
+
+    /// Sends an image the given way. A server that can't take it refuses
+    /// it, or fails as llama.cpp does without its image projector; an image
+    /// too big, too soon, or a server busy or restarting is another error.
+    fn post_image(&self, way: ImageRequest, image_url: &str) -> Result<Value, ServerError> {
+        let body = self.request_body(way.body(image_url), TextRole::Document);
+        self.post(body, "document").map_err(|e| match e {
+            ServerError::Refused { url, status, said }
+            | ServerError::Failed { url, status, said }
+                if !matches!(status.as_u16(), 413 | 429 | 502 | 503 | 504) =>
+            {
+                ServerError::NoImages { url, said }
+            }
+            other => other,
+        })
     }
 
     /// What every request carries besides its input: the model's name (an
@@ -409,29 +470,22 @@ impl Embedder for ServerEmbedder {
             "data:image/png;base64,{}",
             base64::engine::general_purpose::STANDARD.encode(&png)
         );
-        // vLLM's multimodal embeddings request shape. A server that takes
-        // only text refuses it, unless it was too big or came too soon.
-        let v = self
-            .post(
-                self.request_body(
-                    json!({
-                        "encoding_format": "float",
-                        "messages": [{ "role": "user", "content": [
-                            { "type": "image_url", "image_url": { "url": url } }
-                        ]}]
-                    }),
-                    TextRole::Document,
-                ),
-                "document",
-            )
-            .map_err(|e| match e {
-                ServerError::Refused { url, status, said }
-                    if !matches!(status.as_u16(), 413 | 429) =>
-                {
-                    ServerError::NoImages { url, said }
+        // A server that refuses one way may take the other; it then gets
+        // that way from now on. Refused both ways, the first answer says why.
+        let first = self.image_request;
+        let v = match self.post_image(first, &url) {
+            Err(refused @ ServerError::NoImages { .. }) => {
+                match self.post_image(first.other(), &url) {
+                    Ok(v) => {
+                        self.image_request = first.other();
+                        v
+                    }
+                    Err(ServerError::NoImages { .. }) => return Err(refused.into()),
+                    Err(other) => return Err(other.into()),
                 }
-                other => other,
-            })?;
+            }
+            answer => answer?,
+        };
         let url = self.embeddings_url();
         let embedding = self
             .parse(&v)
@@ -478,28 +532,30 @@ fn spawn_llama_server(l: &LaunchConfig) -> Result<Child> {
 
 /// A stand-in embedding server for tests.
 #[cfg(test)]
-pub(crate) mod stand_in {
+mod stand_in {
     use std::io::{Read, Write};
     use std::net::{TcpListener, TcpStream};
 
     use serde_json::{json, Value};
 
+    use super::ImageRequest;
+
     /// Starts a server that answers each text with a small vector, and
-    /// refuses images as a server that takes only text does, unless
-    /// `takes_images`. Its address ends with `/v1`; it runs until the tests
-    /// end.
-    pub fn serve(takes_images: bool) -> String {
+    /// refuses images as a server that takes only text does, unless they
+    /// come the way it `takes`. Its address ends with `/v1`; it runs until
+    /// the tests end.
+    pub fn serve(takes: Option<ImageRequest>) -> String {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let url = format!("http://{}/v1", listener.local_addr().unwrap());
         std::thread::spawn(move || {
             for stream in listener.incoming().flatten() {
-                std::thread::spawn(move || answer(stream, takes_images));
+                std::thread::spawn(move || answer(stream, takes));
             }
         });
         url
     }
 
-    fn answer(mut stream: TcpStream, takes_images: bool) {
+    fn answer(mut stream: TcpStream, takes: Option<ImageRequest>) {
         let mut request = Vec::new();
         let mut buf = [0u8; 4096];
         let body_start = loop {
@@ -524,10 +580,18 @@ pub(crate) mod stand_in {
             }
         }
         let asked: Value = serde_json::from_slice(&request[body_start..]).unwrap_or_default();
-        let count = match asked["input"].as_array() {
-            Some(inputs) => inputs.len(),
-            None if takes_images && asked["messages"].is_array() => 1,
-            None => 0,
+        let inputs = asked["input"].as_array().cloned().unwrap_or_default();
+        let image = if asked["messages"].is_array() {
+            Some(ImageRequest::Messages)
+        } else if inputs.iter().any(|input| input.get("content").is_some()) {
+            Some(ImageRequest::Content)
+        } else {
+            None
+        };
+        let count = match image {
+            None => inputs.len(),
+            Some(way) if takes == Some(way) => 1,
+            Some(_) => 0,
         };
         let (status, body) = if count == 0 {
             (
@@ -555,7 +619,7 @@ mod tests {
 
     #[test]
     fn the_test_says_whether_the_server_takes_images() {
-        let text_only = stand_in::serve(false);
+        let text_only = stand_in::serve(None);
         let found = test_search(ServerConfig {
             images: true,
             ..ServerConfig::plain(&text_only)
@@ -575,13 +639,42 @@ mod tests {
             .unwrap()
             .images
             .is_none());
-        let with_images = stand_in::serve(true);
+        let with_images = stand_in::serve(Some(ImageRequest::Messages));
         let found = test_search(ServerConfig {
             images: true,
             ..ServerConfig::plain(&with_images)
         })
         .unwrap();
         assert!(found.images.unwrap().is_ok());
+    }
+
+    #[test]
+    fn images_go_the_way_the_server_takes_them() {
+        let image = DynamicImage::new_rgb8(8, 8);
+        let embedder = |server_kind, url: &str| {
+            ServerEmbedder::new(ServerConfig {
+                server_kind,
+                images: true,
+                ..ServerConfig::plain(url)
+            })
+            .unwrap()
+        };
+        // llama.cpp takes them its own way at once.
+        let llama_cpp = stand_in::serve(Some(ImageRequest::Content));
+        let mut e = embedder(ServerKind::LlamaCpp, &llama_cpp);
+        assert!(e.embed_image(&image).is_ok());
+        assert_eq!(e.image_request, ImageRequest::Content);
+        // A server of another type that takes only that way gets it after
+        // one refusal, and from then on.
+        let mut e = embedder(ServerKind::Other, &llama_cpp);
+        assert_eq!(e.image_request, ImageRequest::Messages);
+        assert!(e.embed_image(&image).is_ok());
+        assert_eq!(e.image_request, ImageRequest::Content);
+        // vLLM's way works for a llama.cpp type that is vLLM after all.
+        let vllm = stand_in::serve(Some(ImageRequest::Messages));
+        let mut e = embedder(ServerKind::LlamaCpp, &vllm);
+        assert!(e.embed_image(&image).is_ok());
+        assert_eq!(e.image_request, ImageRequest::Messages);
     }
 
     #[test]
