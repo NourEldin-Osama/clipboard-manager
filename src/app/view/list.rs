@@ -11,6 +11,51 @@ const ROW_PADDING: f32 = 8.0;
 /// so the time and the pin stay near the text.
 const LIST_MAX_WIDTH: f32 = 900.0;
 
+/// The day header that stays at the top of the list while its rows scroll
+/// under it, and where it goes: at `top`, or above it while the next day's
+/// header pushes it out. None while the top shows a header in its place.
+fn pinned_header(lines: &[Line], ys: &[f32], top: f32, header_h: f32) -> Option<(usize, f32)> {
+    let is_header = |i: &usize| matches!(lines[*i], Line::Header(..));
+    let above = (0..lines.len()).filter(|&i| ys[i] < top).rfind(is_header)?;
+    let next = (above + 1..lines.len()).find(is_header);
+    Some((above, next.map_or(top, |i| top.min(ys[i] - header_h))))
+}
+
+/// A day's header: its name, as small section titles show them, on the side
+/// reading starts, and how many rows it has at the other end.
+fn paint_header(ui: &Ui, rect: Rect, label: Group, count: usize) {
+    let weak = ui.visuals().weak_text_color();
+    let (label_x, count_x, end) = if i18n::rtl() {
+        (
+            rect.right() - ROW_PADDING,
+            rect.left() + ROW_PADDING,
+            Align2::LEFT_BOTTOM,
+        )
+    } else {
+        (
+            rect.left() + ROW_PADDING,
+            rect.right() - ROW_PADDING,
+            Align2::RIGHT_BOTTOM,
+        )
+    };
+    let title = section_title(&label.text().to_uppercase(), weak).into_galley(
+        ui,
+        Some(egui::TextWrapMode::Extend),
+        f32::INFINITY,
+        FontId::proportional(size::SMALL),
+    );
+    let at = start_anchor(egui::Align::Max)
+        .anchor_size(Pos2::new(label_x, rect.bottom() - 7.0), title.size());
+    ui.painter().galley(at.min, title, weak);
+    ui.painter().text(
+        Pos2::new(count_x, rect.bottom() - 7.0),
+        end,
+        count.to_string(),
+        FontId::proportional(size::SMALL),
+        weak,
+    );
+}
+
 #[derive(Debug, PartialEq)]
 pub(super) enum Line {
     Header(Group, usize),
@@ -456,36 +501,7 @@ impl App {
                 let rect =
                     Rect::from_min_size(Pos2::new(left, origin.y + ys[i]), Vec2::new(width, h));
                 match l {
-                    Line::Header(label, n) => {
-                        let p = ui.painter();
-                        let weak = ui.visuals().weak_text_color();
-                        let (label_x, count_x) = if i18n::rtl() {
-                            (rect.right() - ROW_PADDING, rect.left() + ROW_PADDING)
-                        } else {
-                            (rect.left() + ROW_PADDING, rect.right() - ROW_PADDING)
-                        };
-                        paint_text(
-                            ui,
-                            p,
-                            Pos2::new(label_x, rect.bottom() - 7.0),
-                            start_anchor(egui::Align::Max),
-                            &label.text().to_uppercase(),
-                            FontId::proportional(size::SMALL),
-                            weak,
-                        );
-                        let end = if i18n::rtl() {
-                            Align2::LEFT_BOTTOM
-                        } else {
-                            Align2::RIGHT_BOTTOM
-                        };
-                        p.text(
-                            Pos2::new(count_x, rect.bottom() - 7.0),
-                            end,
-                            n.to_string(),
-                            FontId::proportional(size::SMALL),
-                            weak,
-                        );
-                    }
+                    Line::Header(label, n) => paint_header(ui, rect, *label, *n),
                     Line::Row(r) => {
                         let hit = &results[*r];
                         let Some(it) = library.get(hit.id) else {
@@ -568,6 +584,31 @@ impl App {
                         }
                     }
                 }
+            }
+            if let Some((Line::Header(label, n), y)) =
+                pinned_header(&lines, &ys, viewport.min.y, header_h).map(|(i, y)| (&lines[i], y))
+            {
+                let (label, n) = (*label, *n);
+                let rect =
+                    Rect::from_min_size(Pos2::new(left, origin.y + y), Vec2::new(width, header_h));
+                let below = Rect::from_min_max(
+                    rect.left_bottom(),
+                    rect.right_bottom() + Vec2::new(0.0, 10.0),
+                );
+                let shadow = egui::Shadow {
+                    offset: [0, 1],
+                    blur: 8,
+                    spread: 0,
+                    color: Color32::from_black_alpha(36),
+                };
+                ui.painter()
+                    .with_clip_rect(below)
+                    .add(shadow.as_shape(rect, CornerRadius::ZERO));
+                ui.painter()
+                    .rect_filled(rect, CornerRadius::ZERO, ui.visuals().panel_fill);
+                // Rows under it don't take its clicks.
+                let _ = ui.interact(rect, egui::Id::unique("day-header"), Sense::click());
+                paint_header(ui, rect, label, n);
             }
         });
         let view = (out.state.clamped_offset().y, out.inner_rect.height());
@@ -663,6 +704,27 @@ fn none_yet(filter: Filter) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_day_at_the_top_keeps_its_header_until_the_next_one_comes() {
+        // Today's header, two rows, yesterday's header, a row.
+        let lines = [
+            Line::Header(Group::Today, 2),
+            Line::Row(0),
+            Line::Row(1),
+            Line::Header(Group::Yesterday, 1),
+            Line::Row(2),
+        ];
+        let ys = [0.0, 30.0, 90.0, 150.0, 180.0];
+        // At the very top the header is in its own place.
+        assert_eq!(pinned_header(&lines, &ys, 0.0, 30.0), None);
+        // Scrolled into today's rows: today's header stays at the top.
+        assert_eq!(pinned_header(&lines, &ys, 50.0, 30.0), Some((0, 50.0)));
+        // Yesterday's header 20 points below the top pushes it 10 up.
+        assert_eq!(pinned_header(&lines, &ys, 130.0, 30.0), Some((0, 120.0)));
+        // Past yesterday's header, that one stays.
+        assert_eq!(pinned_header(&lines, &ys, 160.0, 30.0), Some((3, 160.0)));
+    }
 
     #[test]
     fn the_thumbnails_drawn_longest_ago_are_dropped_first() {

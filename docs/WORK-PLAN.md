@@ -195,7 +195,7 @@ screenshots of the finished screens.
 - [x] 10.1 Noto Sans and Noto Sans Arabic in Regular and SemiBold, five text sizes, more space between the lines of long text (D51)
 - [x] 10.2 One left and one right edge for every part of the window; List rows at most about 900 points wide (D46); the status bar names a model file by its file name
 - [x] 10.3 A view switch in three parts, and Pause with a word
-- [ ] 10.4 The day header stays at the top while scrolling
+- [x] 10.4 The day header stays at the top while scrolling, in the style of section titles
 
 ### Phase 11. Settings
 - [ ] 11.1 Seven pages grouped by topic, each keeping its own scroll position (D50)
