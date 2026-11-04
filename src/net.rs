@@ -159,8 +159,9 @@ impl fmt::Display for ServerError {
 impl std::error::Error for ServerError {}
 
 /// What a server wrote about a failure: the message in its JSON answer, or
-/// its answer as plain text, on one line. None for an empty answer or a web
-/// page.
+/// its answer as plain text, on one line and without a closing period, as
+/// the texts quote it in the middle of a sentence. None for an empty answer
+/// or a web page.
 fn server_words(body: &str) -> Option<String> {
     let body = body.trim();
     let said = match serde_json::from_str::<serde_json::Value>(body) {
@@ -181,10 +182,11 @@ fn server_words(body: &str) -> Option<String> {
         Err(_) if body.starts_with('<') => return None,
         Err(_) => body.to_string(),
     };
-    let said: String = said.split_whitespace().collect::<Vec<_>>().join(" ");
+    let said = said.split_whitespace().collect::<Vec<_>>().join(" ");
+    let said = said.trim_end_matches('.');
     let said = match said.char_indices().nth(300) {
         Some((end, _)) => format!("{}…", &said[..end]),
-        None => said,
+        None => said.to_string(),
     };
     (!said.is_empty()).then_some(said)
 }
@@ -241,6 +243,10 @@ mod tests {
             "Field required"
         );
         assert_eq!(said("plain\n  text"), "plain text");
+        assert_eq!(
+            said(r#"{"detail":"'input' is required for embeddings."}"#),
+            "'input' is required for embeddings"
+        );
         // Nothing useful: the status says it.
         assert_eq!(said(""), "400 Bad Request");
         assert_eq!(said("<html><body>Bad</body></html>"), "400 Bad Request");
