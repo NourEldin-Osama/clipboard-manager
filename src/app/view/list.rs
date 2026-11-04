@@ -528,16 +528,18 @@ impl App {
             // Its own scroll place, apart from the full window's list.
             sa = sa.id_salt("popup-list");
         }
-        if self.scroll_to_selected {
+        let (off, view_h) = if in_popup {
+            self.popup_list_view
+        } else {
+            self.list_view
+        };
+        // Until the list has been drawn once, its height is unknown and every
+        // row would seem to be below it: the scroll waits for that frame.
+        if self.scroll_to_selected && view_h > 0.0 {
             self.scroll_to_selected = false;
             if let Some(i) = lines.iter().position(
                 |l| matches!(l, Line::Row(r) if Some(self.results[*r].id) == self.selected),
             ) {
-                let (off, view_h) = if in_popup {
-                    self.popup_list_view
-                } else {
-                    self.list_view
-                };
                 let top = ys[i]
                     - if i > 0 && matches!(lines[i - 1], Line::Header(..)) {
                         header_h

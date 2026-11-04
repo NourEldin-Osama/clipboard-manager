@@ -476,13 +476,15 @@ impl App {
         let total = rows as f32 * pitch + fold_h;
 
         let mut sa = egui::ScrollArea::vertical().auto_shrink([false, false]);
-        if self.scroll_to_selected {
+        let (off, view_h) = self.list_view;
+        // Until the grid has been drawn once, its height is unknown: the
+        // scroll waits for that frame.
+        if self.scroll_to_selected && view_h > 0.0 {
             self.scroll_to_selected = false;
             if let Some(i) = self
                 .selected
                 .and_then(|id| self.results.iter().position(|h| h.id == id))
             {
-                let (off, view_h) = self.list_view;
                 let top = (i / cols) as f32 * pitch;
                 if top < off {
                     sa = sa.vertical_scroll_offset(top);
