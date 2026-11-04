@@ -160,5 +160,14 @@ impl App {
             });
         }
         note(ui, &t!("settings-shortcuts-note"));
+        section(ui, &t!("settings-pasting"));
+        setting_for(
+            ui,
+            &t!("settings-hide-window"),
+            &t!("settings-hide-window-help"),
+            &mut d.minimize_after_copy,
+            def.minimize_after_copy,
+            toggle,
+        );
     }
 }

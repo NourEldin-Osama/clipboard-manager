@@ -198,7 +198,7 @@ screenshots of the finished screens.
 - [x] 10.4 The day header stays at the top while scrolling, in the style of section titles
 
 ### Phase 11. Settings
-- [ ] 11.1 Seven pages grouped by topic, each keeping its own scroll position (D50)
+- [x] 11.1 Seven pages grouped by topic, each keeping its own scroll position (D50)
 - [ ] 11.2 A short gray line under each setting; the info button opens the long text on a click, Enter or Space
 - [ ] 11.3 Reset all settings keeps the saved servers and the rules per app, and says so
 
