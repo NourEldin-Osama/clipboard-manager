@@ -607,6 +607,7 @@ error-hotkeys-unavailable = الاختصارات التي تعمل في أي م�
 error-hotkey-taken = الاختصار { $keys } يستخدمه تطبيق آخر أو ويندوز. اختر مفاتيح أخرى في الإعدادات، الاختصارات.
 error-hotkey-invalid = لا يمكن استخدام الاختصار { $keys }: { $error }
 error-indexing-skipped = تعذّرت فهرسة عنصر، فتم تخطيه.
+error-indexing = تعذّرت فهرسة العناصر للبحث بالمعنى: { $error }
 error-query-embedding = تعذّر البحث بالمعنى: { $error }
 error-model = تعذّر تحميل نموذج البحث: { $error }
 error-model-test = فشل الاختبار: { $error }

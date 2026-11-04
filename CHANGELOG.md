@@ -12,6 +12,9 @@ the notes here before a push that makes a release.
   **Send images** for that model.
 - **Test** also sends a small test image when **Send images** is on, and
   says whether the server takes images.
+- When the search server stops while the app runs, one message says that
+  items can't be indexed. Before, nothing showed, and the log got a line
+  for each item.
 - Server errors are worded in your language: the server can't be reached,
   needs an API key, doesn't know the address or model, refused the request
   (with its own words), failed, or answered something unexpected.

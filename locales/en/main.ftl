@@ -576,6 +576,7 @@ error-hotkeys-unavailable = Shortcuts that work anywhere in Windows are not avai
 error-hotkey-taken = { $keys } is already used by another app or by Windows. Choose other keys in Settings, Shortcuts.
 error-hotkey-invalid = Cannot use the shortcut { $keys }: { $error }
 error-indexing-skipped = Indexing failed on an item; it was skipped.
+error-indexing = Could not index items for search by meaning: { $error }
 error-query-embedding = Could not search by meaning: { $error }
 error-model = Could not load the search model: { $error }
 error-model-test = The test failed: { $error }

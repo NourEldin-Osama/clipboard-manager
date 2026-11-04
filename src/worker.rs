@@ -106,6 +106,7 @@ impl Worker {
                     failed: HashSet::new(),
                     images_refused: false,
                     image_worked: false,
+                    index_error_shown: false,
                     pending: p,
                 };
                 st.run(rx);
@@ -250,6 +251,8 @@ struct State {
     images_refused: bool,
     /// The current model's server took an image.
     image_worked: bool,
+    /// A failure to index an item was shown since the model loaded.
+    index_error_shown: bool,
     pending: Arc<std::sync::atomic::AtomicUsize>,
 }
 
@@ -365,6 +368,7 @@ impl State {
         self.have.clear();
         self.images_refused = false;
         self.image_worked = false;
+        self.index_error_shown = false;
         self.backend = Some(b.clone());
         let loaded: Result<Option<Box<dyn Embedder>>> = match &b {
             EmbedBackend::None => Ok(None),
@@ -583,8 +587,15 @@ impl State {
                 self.have.insert(id);
                 Some(e)
             }
+            // A server that stopped fails every item: the first failure
+            // shows, the others go only to a debug log.
+            Err(e) if self.index_error_shown => {
+                log::debug!("embedding item {id} failed: {e:#}");
+                None
+            }
             Err(e) => {
-                log::warn!("embedding item {id} failed: {e:#}");
+                self.index_error_shown = true;
+                self.emit(Event::Error(log_server_error!("error-indexing", &e)));
                 None
             }
         };
@@ -686,8 +697,59 @@ mod tests {
             failed: HashSet::new(),
             images_refused: false,
             image_worked: false,
+            index_error_shown: false,
             pending: Arc::default(),
         }
+    }
+
+    /// A model whose server stopped.
+    struct Stopped;
+
+    impl Embedder for Stopped {
+        fn key(&self) -> String {
+            "stopped".into()
+        }
+        fn supports_images(&self) -> bool {
+            false
+        }
+        fn embed_texts(&mut self, _: &[String], _: TextRole) -> Result<Vec<Embedding>> {
+            Err(ServerError::Unreachable {
+                url: "http://127.0.0.1:8888/v1/embeddings".into(),
+                reason: "connection refused".into(),
+            }
+            .into())
+        }
+        fn embed_image(&mut self, _: &image::DynamicImage) -> Result<Embedding> {
+            unreachable!("text only")
+        }
+    }
+
+    #[test]
+    fn a_server_that_stopped_gets_one_message() {
+        let dir = std::env::temp_dir().join(format!("cbm-worker-stopped-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let store = Arc::new(Store::open(&dir.join("t.redb"), &dir).unwrap());
+        for id in 1..=3 {
+            let it = crate::store::Item::new(
+                id,
+                Kind::Text,
+                crate::store::Origin::Clipboard,
+                format!("text {id}").into(),
+            );
+            store.put(&it).unwrap();
+        }
+        let (events, rx) = channel();
+        let mut st = state(store.clone(), events);
+        st.embedder = Some(Box::new(Stopped));
+        st.run_one(Next::Embed(vec![1, 2]));
+        st.run_one(Next::Embed(vec![3]));
+        let errors = rx
+            .try_iter()
+            .filter(|event| matches!(event, Event::Error(_)))
+            .count();
+        assert_eq!(errors, 1);
+        drop((st, store));
+        std::fs::remove_dir_all(dir).ok();
     }
 
     /// A model on a server that takes only text, with Send images on.
