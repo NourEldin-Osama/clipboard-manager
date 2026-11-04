@@ -143,8 +143,9 @@ status bar shows progress.
    ```
 4. In the app add a **llama.cpp** server, add a search model, and click **Fill in details**: it fills in the model's
    retrieval prompts (`task: search result | query: …` / `title: none | text: …`).
-5. To find images by what they show, also download the model's `mmproj-F16.gguf`, add `--mmproj mmproj-F16.gguf` to
-   the command, and turn on **Send images** for the model. **Test** says whether images work.
+5. To find images by what they show, also download the model's `mmproj-F16.gguf`, add
+   `--mmproj mmproj-F16.gguf -ub 4096 -b 4096` to the command, and turn on **Send images** for the model. **Test** says
+   whether images work. With its default batch size, llama-server reads each image at a quarter of its detail.
 
 If you'd rather not keep a console open, turn on **Start llama-server for me** in the llama.cpp server's settings and
 browse to `llama-server.exe` and the `.gguf` file. The app then starts the server without opening a window when one of
