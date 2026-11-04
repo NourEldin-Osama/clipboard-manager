@@ -217,7 +217,7 @@ screenshots of the finished screens.
 - [x] 13.4 F1 opens a sheet of every key; a message after a mouse action names its key (D52)
 
 ### Phase 14. New features
-- [ ] 14.1 Select several items at once
+- [x] 14.1 Select several items at once
 - [x] 14.2 A getting-started checklist for new installs (D53)
 - [x] 14.3 What's new after an update (D47)
 - [ ] 14.4 Start llama-server for reading models, from a file or a Hugging Face name

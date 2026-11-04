@@ -27,6 +27,16 @@ pub(super) enum Done {
     },
     /// Text read from an image put on the clipboard, or why it wasn't.
     TextCopied(Result<(), String>),
+    /// The texts of several items put on the clipboard together, or why
+    /// they weren't.
+    CopiedTogether {
+        /// How many items' texts.
+        count: usize,
+        /// Pictures left out.
+        pictures: usize,
+        paste: Paste,
+        result: Result<(), String>,
+    },
     /// Files read by an import, not saved yet.
     Imported(Vec<Item>),
     /// An import has read all its files.

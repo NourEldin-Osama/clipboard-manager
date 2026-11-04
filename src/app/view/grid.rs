@@ -512,7 +512,7 @@ impl App {
         let mut open_menu = None;
         let menu_key = self.menu_by_key;
         let frame = ui.ctx().cumulative_pass_nr();
-        let (library, results, thumbs, loader, selected, seen, programs) = (
+        let (library, results, thumbs, loader, selected, seen, programs, marked) = (
             &self.library,
             &self.results,
             &self.thumbs,
@@ -520,6 +520,7 @@ impl App {
             self.selected,
             &mut self.thumb_seen,
             &mut self.programs,
+            &self.marked,
         );
         let out = sa.show_viewport(ui, |ui, viewport| {
             ui.set_height(total);
@@ -543,31 +544,23 @@ impl App {
                 let thumb = thumb_for(it, thumbs, loader, (&mut *seen, frame));
                 let resp = ui.interact(rect, egui::Id::unique(("card", it.id)), Sense::CLICK);
                 let chosen = Some(it.id) == selected;
+                // Selected alone or together with others.
+                let lit = chosen || marked.contains(&it.id);
                 resp.widget_info(|| {
-                    egui::WidgetInfo::selected(
-                        egui::Role::ListBoxOption,
-                        true,
-                        chosen,
-                        item_name(it),
-                    )
+                    egui::WidgetInfo::selected(egui::Role::ListBoxOption, true, lit, item_name(it))
                 });
                 let hot = ui.rect_contains_pointer(rect);
                 let program = it.program.as_deref().and_then(|p| programs.get(p));
-                let chosen_card = Some(it.id) == selected;
                 let relevance = relevance_level(hit);
-                paint_card(
-                    ui,
-                    rect,
-                    hot,
-                    it,
-                    thumb,
-                    program,
-                    relevance,
-                    chosen_card,
-                    &terms,
-                );
+                paint_card(ui, rect, hot, it, thumb, program, relevance, lit, &terms);
                 if resp.clicked() {
-                    actions.push(Command::Select(it.id));
+                    // Ctrl and Shift select several.
+                    let keys = ui.input(|i| i.modifiers);
+                    actions.push(match (keys.command, keys.shift) {
+                        (true, _) => Command::ToggleMark(it.id),
+                        (_, true) => Command::MarkRange(it.id),
+                        _ => Command::Select(it.id),
+                    });
                 }
                 if resp.double_clicked() {
                     actions.push(Command::Copy(it.id, Paste::Yes));
@@ -575,7 +568,7 @@ impl App {
                 if resp.secondary_clicked() {
                     let at = resp.interact_pointer_pos().unwrap_or(rect.center());
                     open_menu = Some((it.id, at, false));
-                } else if menu_key && chosen_card {
+                } else if menu_key && chosen {
                     let corner = Pos2::new(rect.left() + 16.0, rect.bottom() - 8.0);
                     let at = flip(rect, Rect::from_min_size(corner, Vec2::ZERO)).min;
                     open_menu = Some((it.id, at, true));

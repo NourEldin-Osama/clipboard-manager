@@ -597,4 +597,27 @@ mod tests {
         drop(lib);
         std::fs::remove_dir_all(dir).ok();
     }
+
+    /// How the window deletes several items with one Undo: taken from the
+    /// last in the list to the first, put back the other way round.
+    #[test]
+    fn several_items_taken_last_first_come_back_in_their_places() {
+        let (dir, mut lib) = open("group");
+        let ids: Vec<u64> = (0..6)
+            .map(|i| add(&mut lib, &format!("item {i}"), i))
+            .collect();
+        let before: Vec<u64> = lib.items().iter().map(|it| it.id).collect();
+        let place = |lib: &Library, id: u64| lib.items().iter().position(|it| it.id == id);
+        let mut group = [ids[1], ids[4], ids[2]];
+        group.sort_by_key(|&id| std::cmp::Reverse(place(&lib, id)));
+        let taken: Vec<Removed> = group.iter().filter_map(|&id| lib.take(id)).collect();
+        assert_eq!(lib.items().len(), 3);
+        for removed in taken.into_iter().rev() {
+            lib.put_back(removed);
+        }
+        let after: Vec<u64> = lib.items().iter().map(|it| it.id).collect();
+        assert_eq!(after, before);
+        drop(lib);
+        std::fs::remove_dir_all(dir).ok();
+    }
 }

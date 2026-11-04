@@ -214,6 +214,47 @@ item-copy-plain = Copy as plain text
 item-copy-image-text = Copy the text in the image
 item-ignore-app = Don't record copies from { $app }
 item-menu = Actions
+item-paste-group =
+    { $count ->
+        [one] Paste 1 item
+       *[other] Paste { $count } items together
+    }
+item-copy-group =
+    { $count ->
+        [one] Copy 1 item
+       *[other] Copy { $count } items together
+    }
+item-pin-group =
+    { $count ->
+        [one] Pin 1 item
+       *[other] Pin { $count } items
+    }
+item-unpin-group =
+    { $count ->
+        [one] Unpin 1 item
+       *[other] Unpin { $count } items
+    }
+item-tag-group =
+    { $count ->
+        [one] Add a tag to 1 item
+       *[other] Add a tag to { $count } items
+    }
+item-delete-group =
+    { $count ->
+        [one] Delete 1 item
+       *[other] Delete { $count } items
+    }
+group-selected =
+    { $count ->
+        [one] 1 selected
+       *[other] { $count } selected
+    }
+group-pin = Pin
+group-unpin = Unpin
+group-tag = Add a tag
+group-copy = Copy together
+group-delete = Delete
+group-clear = Clear the selection
 keys-sheet-title = Keys
 keys-sheet-close = Close
 checklist-title = Get started
@@ -685,6 +726,40 @@ toast-copied-text = Copied text
 toast-saved = Saved
 toast-deleted = Deleted
 toast-updated = Updated to { $version }
+toast-pinned-group =
+    { $count ->
+        [one] Pinned 1 item
+       *[other] Pinned { $count } items
+    }
+toast-unpinned-group =
+    { $count ->
+        [one] Unpinned 1 item
+       *[other] Unpinned { $count } items
+    }
+toast-deleted-group =
+    { $count ->
+        [one] Deleted 1 item
+       *[other] Deleted { $count } items
+    }
+toast-copied-group =
+    { $count ->
+        [one] Copied 1 item
+       *[other] Copied { $count } items together
+    }
+toast-copied-group-pictures =
+    { $count ->
+        [one] Copied 1 item
+       *[other] Copied { $count } items together
+    }, without { $pictures ->
+        [one] 1 picture
+       *[other] { $pictures } pictures
+    }
+toast-pictures-not-together = Pictures can't be copied together
+toast-tag-added-group =
+    { $count ->
+        [one] Added #{ $tag } to 1 item
+       *[other] Added #{ $tag } to { $count } items
+    }
 toast-deleted-key = Deleted. Next time: { $keys }
 toast-copied-key = Copied. Next time: { $keys }
 toast-pinned-key = Pinned. Next time: { $keys }

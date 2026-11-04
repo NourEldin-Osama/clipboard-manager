@@ -225,6 +225,61 @@ item-copy-plain = نسخ كنص عادي
 item-copy-image-text = نسخ النص الموجود في الصورة
 item-ignore-app = عدم تسجيل النسخ من { $app }
 item-menu = الإجراءات
+item-paste-group =
+    { $count ->
+        [one] لصق عنصر واحد
+        [two] لصق العنصرين معًا
+        [few] لصق { $count } عناصر معًا
+       *[other] لصق { $count } عنصر معًا
+    }
+item-copy-group =
+    { $count ->
+        [one] نسخ عنصر واحد
+        [two] نسخ العنصرين معًا
+        [few] نسخ { $count } عناصر معًا
+       *[other] نسخ { $count } عنصر معًا
+    }
+item-pin-group =
+    { $count ->
+        [one] تثبيت عنصر واحد
+        [two] تثبيت العنصرين
+        [few] تثبيت { $count } عناصر
+       *[other] تثبيت { $count } عنصر
+    }
+item-unpin-group =
+    { $count ->
+        [one] إلغاء تثبيت عنصر واحد
+        [two] إلغاء تثبيت العنصرين
+        [few] إلغاء تثبيت { $count } عناصر
+       *[other] إلغاء تثبيت { $count } عنصر
+    }
+item-tag-group =
+    { $count ->
+        [one] إضافة وسم إلى عنصر واحد
+        [two] إضافة وسم إلى العنصرين
+        [few] إضافة وسم إلى { $count } عناصر
+       *[other] إضافة وسم إلى { $count } عنصر
+    }
+item-delete-group =
+    { $count ->
+        [one] حذف عنصر واحد
+        [two] حذف العنصرين
+        [few] حذف { $count } عناصر
+       *[other] حذف { $count } عنصر
+    }
+group-selected =
+    { $count ->
+        [one] عنصر واحد محدد
+        [two] عنصران محددان
+        [few] { $count } عناصر محددة
+       *[other] { $count } عنصر محدد
+    }
+group-pin = تثبيت
+group-unpin = إلغاء التثبيت
+group-tag = إضافة وسم
+group-copy = نسخ معًا
+group-delete = حذف
+group-clear = إلغاء التحديد
 keys-sheet-title = المفاتيح
 keys-sheet-close = إغلاق
 checklist-title = ابدأ من هنا
@@ -718,6 +773,54 @@ toast-copied-text = تم نسخ النص
 toast-saved = تم الحفظ
 toast-deleted = تم الحذف
 toast-updated = تم التحديث إلى الإصدار { $version }
+toast-pinned-group =
+    { $count ->
+        [one] تم تثبيت عنصر واحد
+        [two] تم تثبيت عنصرين
+        [few] تم تثبيت { $count } عناصر
+       *[other] تم تثبيت { $count } عنصر
+    }
+toast-unpinned-group =
+    { $count ->
+        [one] تم إلغاء تثبيت عنصر واحد
+        [two] تم إلغاء تثبيت عنصرين
+        [few] تم إلغاء تثبيت { $count } عناصر
+       *[other] تم إلغاء تثبيت { $count } عنصر
+    }
+toast-deleted-group =
+    { $count ->
+        [one] تم حذف عنصر واحد
+        [two] تم حذف عنصرين
+        [few] تم حذف { $count } عناصر
+       *[other] تم حذف { $count } عنصر
+    }
+toast-copied-group =
+    { $count ->
+        [one] تم نسخ عنصر واحد
+        [two] تم نسخ عنصرين معًا
+        [few] تم نسخ { $count } عناصر معًا
+       *[other] تم نسخ { $count } عنصر معًا
+    }
+toast-copied-group-pictures =
+    { $count ->
+        [one] تم نسخ عنصر واحد
+        [two] تم نسخ عنصرين معًا
+        [few] تم نسخ { $count } عناصر معًا
+       *[other] تم نسخ { $count } عنصر معًا
+    }، دون { $pictures ->
+        [one] صورة واحدة
+        [two] صورتين
+        [few] { $pictures } صور
+       *[other] { $pictures } صورة
+    }
+toast-pictures-not-together = لا يمكن نسخ الصور معًا
+toast-tag-added-group =
+    { $count ->
+        [one] تمت إضافة #{ $tag } إلى عنصر واحد
+        [two] تمت إضافة #{ $tag } إلى عنصرين
+        [few] تمت إضافة #{ $tag } إلى { $count } عناصر
+       *[other] تمت إضافة #{ $tag } إلى { $count } عنصر
+    }
 toast-deleted-key = تم الحذف. في المرة القادمة: { $keys }
 toast-copied-key = تم النسخ. في المرة القادمة: { $keys }
 toast-pinned-key = تم التثبيت. في المرة القادمة: { $keys }

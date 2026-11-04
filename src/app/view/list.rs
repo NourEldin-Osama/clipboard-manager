@@ -615,7 +615,7 @@ impl App {
         let mut open_menu = None;
         let menu_key = self.menu_by_key;
         let frame = ui.ctx().cumulative_pass_nr();
-        let (library, results, thumbs, loader, selected, seen, programs) = (
+        let (library, results, thumbs, loader, selected, seen, programs, marked) = (
             &self.library,
             &self.results,
             &self.thumbs,
@@ -623,6 +623,7 @@ impl App {
             self.selected,
             &mut self.thumb_seen,
             &mut self.programs,
+            &self.marked,
         );
         let out = sa.show_viewport(ui, |ui, viewport| {
             ui.set_height(total + fold_h);
@@ -657,11 +658,13 @@ impl App {
                         let resp =
                             ui.interact(rect, egui::Id::unique(("row", it.id)), Sense::CLICK);
                         let chosen = Some(it.id) == selected;
+                        // Selected alone or together with others.
+                        let lit = chosen || (!in_popup && marked.contains(&it.id));
                         resp.widget_info(|| {
                             egui::WidgetInfo::selected(
                                 egui::Role::ListBoxOption,
                                 true,
-                                chosen,
+                                lit,
                                 item_name(it),
                             )
                         });
@@ -674,14 +677,20 @@ impl App {
                             hit,
                             thumb,
                             program.and_then(|p| p.icon.as_ref()),
-                            Some(it.id) == selected,
+                            lit,
                             compact,
                             &terms,
                             in_popup,
                             (in_popup && *r < 9).then_some(*r + 1),
                         );
                         if resp.clicked() {
-                            actions.push(Command::Select(it.id));
+                            // Ctrl and Shift select several, but not in the popup.
+                            let keys = ui.input(|i| i.modifiers);
+                            actions.push(match (in_popup, keys.command, keys.shift) {
+                                (false, true, _) => Command::ToggleMark(it.id),
+                                (false, _, true) => Command::MarkRange(it.id),
+                                _ => Command::Select(it.id),
+                            });
                         }
                         if resp.double_clicked() {
                             actions.push(Command::Copy(it.id, Paste::Yes));

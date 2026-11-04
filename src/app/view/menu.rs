@@ -17,6 +17,11 @@ enum Action {
     CopyImageText,
     IgnoreApp(String),
     Delete,
+    /// The same for every item selected together.
+    CopyGroup(Paste),
+    PinGroup,
+    TagGroup,
+    DeleteGroup,
 }
 
 /// One entry: its text, its keys and what it does.
@@ -29,6 +34,11 @@ struct Entry {
 impl App {
     /// The entries of an item's menu, in groups that lines set apart.
     fn menu_groups(&mut self, it: &Item, in_popup: bool) -> Vec<Vec<Entry>> {
+        // On one of several items selected together, the menu acts on them all.
+        let group = if in_popup { Vec::new() } else { self.group() };
+        if group.contains(&it.id) {
+            return self.group_menu(&group);
+        }
         let k = self.cfg.keys.clone();
         let entry = |text: String, keys: &str, action: Action| Entry {
             text,
@@ -87,9 +97,47 @@ impl App {
             .collect()
     }
 
+    /// The menu of several items selected together.
+    fn group_menu(&self, group: &[u64]) -> Vec<Vec<Entry>> {
+        let k = &self.cfg.keys;
+        let n = group.len();
+        let entry = |text: String, keys: &str, action: Action| Entry {
+            text,
+            keys: keys.to_string(),
+            action,
+        };
+        let mut main = Vec::new();
+        if paste::exists(self.win.previous.load(Ordering::SeqCst)) {
+            let text = t!("item-paste-group", count = n);
+            main.push(entry(text, &k.paste, Action::CopyGroup(Paste::Yes)));
+        }
+        let text = t!("item-copy-group", count = n);
+        main.push(entry(text, &k.copy_only, Action::CopyGroup(Paste::No)));
+        let all_pinned = group
+            .iter()
+            .all(|&id| self.library.get(id).is_some_and(|it| it.pinned));
+        let pin = if all_pinned {
+            t!("item-unpin-group", count = n)
+        } else {
+            t!("item-pin-group", count = n)
+        };
+        main.push(entry(pin, &k.pin, Action::PinGroup));
+        main.push(entry(
+            t!("item-tag-group", count = n),
+            &k.tag,
+            Action::TagGroup,
+        ));
+        let delete = t!("item-delete-group", count = n);
+        vec![main, vec![entry(delete, &k.delete, Action::DeleteGroup)]]
+    }
+
     /// Opens the menu of item `id` at `at`, in the popup's list or the full
-    /// window's.
+    /// window's. On an item outside the ones selected together, it selects
+    /// that one alone.
     fn open_item_menu(&mut self, id: u64, at: Pos2, in_popup: bool, by_key: bool) {
+        if !self.marked.contains(&id) {
+            self.clear_marks();
+        }
         self.selected = Some(id);
         self.item_menu = Some(ItemMenu {
             id,
@@ -157,7 +205,8 @@ impl App {
                     ui.separator();
                 }
                 for (i, e) in group.iter().enumerate() {
-                    let red = matches!(e.action, Action::Delete).then_some(RED);
+                    let red =
+                        matches!(e.action, Action::Delete | Action::DeleteGroup).then_some(RED);
                     let r = menu_entry(ui, &e.text, &e.keys, red);
                     // The first frame only measures the menu.
                     if focus_first && g == 0 && i == 0 && !ui.is_sizing_pass() {
@@ -202,6 +251,10 @@ impl App {
             }
             Action::IgnoreApp(app) => self.ignore_app(&app),
             Action::Delete => self.run(Command::Delete(it.id)),
+            Action::CopyGroup(paste) => self.run(Command::CopyTogether(self.group(), paste)),
+            Action::PinGroup => self.run(Command::PinGroup(self.group())),
+            Action::TagGroup => self.group_tag = Some(String::new()),
+            Action::DeleteGroup => self.run(Command::DeleteGroup(self.group())),
         }
     }
 }

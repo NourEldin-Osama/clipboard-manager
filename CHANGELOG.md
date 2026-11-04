@@ -95,6 +95,14 @@ the notes here before a push that makes a release.
   search by meaning. Each step ticks itself when you do it. The checklist
   shows in the empty list, then above the list, until every step is done
   or you close it.
+- Select several items at once: Ctrl+click adds or removes one, Shift+click
+  selects a range, Shift+Up and Shift+Down extend it, and Ctrl+A selects
+  everything shown. The status bar then shows "3 selected" with Pin, Add a
+  tag, Copy together and Delete, and the keys and the right-click menu act
+  on them all. One Undo brings back a whole deleted group. Copy together
+  puts texts, links and file paths one after another, in list order;
+  pictures are left out. Esc goes back to one item. The popup keeps one
+  item at a time.
 
 ## 0.5.1
 
