@@ -140,6 +140,7 @@ impl App {
             (k.paste_plain.clone(), t!("popup-key-plain")),
             (k.copy_only.clone(), t!("popup-key-copy")),
             (t!("quick-paste-keys"), t!("popup-key-quick")),
+            ("F1".to_string(), t!("popup-key-all")),
         ]
         .into_iter()
         .filter(|(keys, _)| !keys.trim().is_empty())
@@ -238,6 +239,7 @@ impl App {
             )
             .show(ui, |ui| self.list(ui, true));
         self.toasts(&ctx);
+        self.keys_sheet(&ctx, true);
         // Settings opened here, by a link in the empty list, need the full window.
         if !had_settings && self.draft.is_some() {
             self.win.show_full();

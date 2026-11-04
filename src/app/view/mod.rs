@@ -20,6 +20,7 @@ mod details;
 mod grid;
 mod items;
 mod keyboard;
+mod keys_sheet;
 mod list;
 mod menu;
 mod popup;
@@ -254,6 +255,7 @@ impl eframe::App for App {
             self.main_area(ui);
         }
         self.toasts(&ctx);
+        self.keys_sheet(&ctx, false);
         if ctx.input(|i| !i.raw.hovered_files.is_empty()) {
             let r = ctx.content_rect();
             let p = ctx.layer_painter(egui::LayerId::new(

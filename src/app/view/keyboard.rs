@@ -127,6 +127,19 @@ impl App {
         {
             return;
         }
+        // F1 opens the sheet of every key and closes it again; so does Esc.
+        let f1 = ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, Key::F1));
+        if self.keys_sheet == Some(in_popup) {
+            let esc = ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, Key::Escape));
+            if f1 || esc {
+                self.keys_sheet = None;
+            }
+            return;
+        }
+        if f1 {
+            self.keys_sheet = Some(in_popup);
+            return;
+        }
         // The tag field belongs to the item in the details pane: selecting
         // another item or closing the pane closes it. Left open, it would
         // keep every shortcut off below.
@@ -224,17 +237,17 @@ impl App {
             }
         }
         if let Some(id) = quick.and_then(|n| self.results.get(n)).map(|hit| hit.id) {
-            self.run(Command::Copy(id, Paste::Yes));
+            self.run_by_key(Command::Copy(id, Paste::Yes));
         }
         if let Some(id) = self.selected {
             if let Some(paste) = copy {
-                self.run(Command::Copy(id, paste));
+                self.run_by_key(Command::Copy(id, paste));
             }
             if del {
-                self.run(Command::Delete(id));
+                self.run_by_key(Command::Delete(id));
             }
             if pin {
-                self.run(Command::Pin(id));
+                self.run_by_key(Command::Pin(id));
             }
             if tag && !in_popup {
                 self.start_tagging(id);

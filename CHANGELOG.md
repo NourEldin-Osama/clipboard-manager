@@ -72,6 +72,11 @@ the notes here before a push that makes a release.
   for the selected item. "Don't record copies from" moved there from the
   details pane.
 - On a row, the Delete button keeps apart from Pin and Copy, as on cards.
+- F1 opens a sheet with every key, over the full window or the popup;
+  F1 or Esc closes it.
+- The first time in a run that you pin, copy or delete with the mouse,
+  the message names the key that does the same: "Pinned. Next time:
+  Ctrl+P".
 
 ## 0.5.1
 

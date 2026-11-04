@@ -667,6 +667,7 @@ impl App {
                 (k.copy_only.as_str(), t!("details-key-copy-only")),
                 (quick.as_str(), t!("details-key-quick")),
                 ("Shift+F10", t!("details-key-menu")),
+                ("F1", t!("details-key-all")),
                 (k.pin.as_str(), t!("details-key-pin")),
                 (k.tag.as_str(), t!("details-key-tag")),
                 (k.delete.as_str(), t!("details-key-delete")),

@@ -355,6 +355,8 @@ enum ShortcutField {
 
 /// How long a deleted item can still be brought back.
 const UNDO_FOR: Duration = Duration::from_secs(8);
+/// How long a message that names a key stays.
+const KEY_HINT_FOR: Duration = Duration::from_secs(4);
 /// How long the message about a server that refused an image stays.
 const IMAGES_REFUSED_FOR: Duration = Duration::from_secs(15);
 /// How often deleting by age runs while it is on.
@@ -512,6 +514,16 @@ pub struct App {
     /// Shift+F10 was pressed: the selected row or card opens its menu the
     /// next time it is drawn.
     menu_by_key: bool,
+    /// The sheet of every key is open, over the popup (`true`) or the full
+    /// window (`false`).
+    keys_sheet: Option<bool>,
+    /// The command being run came from a key, so its message doesn't name it.
+    by_key: bool,
+    /// Keys a message has named in this run: each is named once.
+    taught: HashSet<String>,
+    /// The key to name when the copy in progress, done with the mouse, says
+    /// "Copied".
+    copy_hint: Option<String>,
     /// Give the tag field focus on its next frame (it was just opened).
     tag_focus: bool,
     /// Image saving, copying back and imports, off the UI thread.
@@ -665,6 +677,10 @@ impl App {
             tag_input: None,
             item_menu: None,
             menu_by_key: false,
+            keys_sheet: None,
+            by_key: false,
+            taught: HashSet::new(),
+            copy_hint: None,
             tag_focus: false,
             background: Background::spawn(ctx.clone()),
             imports_running: 0,
@@ -900,6 +916,7 @@ impl App {
             self.dirty = true;
             self.item_menu = None;
             self.menu_by_key = false;
+            self.keys_sheet = None;
             // An error from while the window was hidden (such as after starting
             // at sign-in) gets its full time on screen.
             if let Some((_, at)) = &mut self.error {
@@ -1151,16 +1168,50 @@ impl App {
         self.toast(t!("toast-images-turned-off"));
     }
 
+    /// `run` for a key press: its message doesn't name the key.
+    fn run_by_key(&mut self, command: Command) {
+        self.by_key = true;
+        self.run(command);
+        self.by_key = false;
+    }
+
+    /// The key to name in the message after a mouse action, the first time
+    /// in this run; `None` after a key press, once it was named, or when
+    /// the action has no key.
+    fn key_to_teach(&mut self, keys: &str) -> Option<String> {
+        let first = !self.by_key && !keys.trim().is_empty() && self.taught.insert(keys.to_string());
+        first.then(|| keys.to_string())
+    }
+
     /// Carries out what the user asked for.
     fn run(&mut self, command: Command) {
         match command {
             Command::Select(id) => self.selected = Some(id),
             Command::Copy(id, paste) => {
                 self.selected = Some(id);
+                let k = &self.cfg.keys;
+                let keys = match paste {
+                    Paste::Yes => &k.paste,
+                    Paste::Plain => &k.paste_plain,
+                    Paste::No => &k.copy_only,
+                };
+                self.copy_hint = (!self.by_key).then(|| keys.clone());
                 self.copy(id, paste);
             }
             Command::Delete(id) => self.delete(id),
-            Command::Pin(id) => self.toggle_pin(id),
+            Command::Pin(id) => {
+                self.toggle_pin(id);
+                // Pinning has no message of its own; this one teaches the key.
+                let keys = self.cfg.keys.pin.clone();
+                if let Some(keys) = self.key_to_teach(&keys) {
+                    let text = if self.library.get(id).is_some_and(|it| it.pinned) {
+                        t!("toast-pinned-key", keys = keys)
+                    } else {
+                        t!("toast-unpinned-key", keys = keys)
+                    };
+                    self.toast_for(text, KEY_HINT_FOR);
+                }
+            }
             Command::Open(id) => {
                 self.selected = Some(id);
                 self.details_open = true;
@@ -1449,8 +1500,20 @@ impl App {
                 }
                 self.dirty = true;
                 let target = self.win.previous.load(Ordering::SeqCst);
+                let hint = self.copy_hint.take();
                 if how == Paste::No || !paste::exists(target) {
-                    self.toast(t!("toast-copied"));
+                    // Named only where the message can be seen.
+                    let hint = hint.filter(|keys| {
+                        !self.cfg.minimize_after_copy
+                            && !keys.trim().is_empty()
+                            && self.taught.insert(keys.clone())
+                    });
+                    match hint {
+                        Some(keys) => {
+                            self.toast_for(t!("toast-copied-key", keys = keys), KEY_HINT_FOR)
+                        }
+                        None => self.toast(t!("toast-copied")),
+                    }
                     if self.cfg.minimize_after_copy {
                         self.win.hide();
                     }
@@ -1844,7 +1907,12 @@ impl App {
             removed,
             since: Instant::now(),
         });
-        self.toast_for(t!("toast-deleted"), UNDO_FOR);
+        let keys = self.cfg.keys.delete.clone();
+        let text = match self.key_to_teach(&keys) {
+            Some(keys) => t!("toast-deleted-key", keys = keys),
+            None => t!("toast-deleted"),
+        };
+        self.toast_for(text, UNDO_FOR);
         if let Some(toast) = &mut self.toast {
             toast.action = Some((t!("toast-undo"), Command::UndoDelete));
         }
