@@ -65,6 +65,13 @@ the notes here before a push that makes a release.
   popup and in the full window. The popup numbers its first nine rows,
   shows the keys in a quiet line at the bottom (your own keys, if you
   changed them), and its search hint is short: "Search…".
+- A right-click on a row or a card, in the popup too, opens a menu with
+  every action and its key, what suits the item (Open in browser, Show
+  in folder, Save image as…, Copy the text in the image), "Don't record
+  copies from" its program, and Delete last, in red. Shift+F10 opens it
+  for the selected item. "Don't record copies from" moved there from the
+  details pane.
+- On a row, the Delete button keeps apart from Pin and Copy, as on cards.
 
 ## 0.5.1
 

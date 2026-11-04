@@ -21,6 +21,7 @@ mod grid;
 mod items;
 mod keyboard;
 mod list;
+mod menu;
 mod popup;
 mod theme;
 mod time_format;

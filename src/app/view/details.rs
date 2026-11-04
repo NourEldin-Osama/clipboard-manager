@@ -160,6 +160,37 @@ fn main_button(ui: &mut Ui, ways: &[CopyWay]) -> Option<Paste> {
 }
 
 impl App {
+    /// Opens the tag field of an item in the details pane.
+    pub(super) fn start_tagging(&mut self, id: u64) {
+        self.selected = Some(id);
+        self.tag_input = Some((id, String::new()));
+        self.tag_focus = true;
+        self.details_open = true;
+    }
+
+    /// Asks where to save an image item, and saves it there as PNG.
+    pub(super) fn save_image_as(&mut self, it: &Item) {
+        if let (Some(src), Some(dst)) = (
+            &it.image,
+            rfd::FileDialog::new()
+                .set_file_name(format!("clip-{}.png", it.id))
+                .save_file(),
+        ) {
+            let images = &self.library.store().images;
+            if let Err(e) = images.open(it.id, src).and_then(|i| Ok(i.save(&dst)?)) {
+                self.set_error(log_error!("error-saving-image", error = e.to_string()));
+            }
+        }
+        self.after_dialog();
+    }
+
+    /// Shows a file or folder in the system's file manager.
+    pub(super) fn show_in_folder(&mut self, place: &std::path::Path) {
+        if let Err(e) = reveal(place) {
+            self.set_error(log_error!("error-opening-folder", error = e.to_string()));
+        }
+    }
+
     /// Tag pills with remove buttons, then an input for adding more.
     pub(super) fn tag_editor(&mut self, ui: &mut Ui, it: &Item) {
         let mut remove: Option<String> = None;
@@ -360,33 +391,12 @@ impl App {
                 if it.kind == Kind::Image
                     && icons::icon_button(ui, Icon::Save, &t!("details-save-image")).clicked()
                 {
-                    if let (Some(src), Some(dst)) = (
-                        &it.image,
-                        rfd::FileDialog::new()
-                            .set_file_name(format!("clip-{}.png", it.id))
-                            .save_file(),
-                    ) {
-                        let images = &self.library.store().images;
-                        if let Err(e) = images.open(it.id, src).and_then(|i| Ok(i.save(&dst)?)) {
-                            self.set_error(log_error!("error-saving-image", error = e.to_string()));
-                        }
-                    }
-                    self.after_dialog();
+                    self.save_image_as(&it);
                 }
-                // A file it was added from, or the file or folder it names.
-                let place = it
-                    .source
-                    .as_deref()
-                    .or_else(|| (it.kind == Kind::Text).then(|| path_in(&it.text)).flatten());
-                if let Some(p) = place {
+                if let Some(p) = place_of(&it) {
                     if icons::icon_button(ui, Icon::Folder, &t!("details-show-in-folder")).clicked()
                     {
-                        if let Err(e) = reveal(p) {
-                            self.set_error(log_error!(
-                                "error-opening-folder",
-                                error = e.to_string()
-                            ));
-                        }
+                        self.show_in_folder(p);
                     }
                 }
                 if it.kind == Kind::Link
@@ -406,8 +416,6 @@ impl App {
         let weak = ui.visuals().weak_text_color();
         row(ui, |ui| ui.label(txt(&meta, size::SMALL, Some(weak))));
         if let Some(app) = &it.app {
-            let ignored = self.cfg.rules.iter().any(|r| r.skips_app(app));
-            let mut ignore = false;
             // The program's own name once it is known, else its file name.
             let name = it
                 .program
@@ -420,14 +428,7 @@ impl App {
                     size::SMALL,
                     Some(weak),
                 ));
-                if !ignored {
-                    let link = t!("details-ignore-app", app = app.as_str());
-                    ignore = ui.link(txt(&link, size::SMALL, None)).clicked();
-                }
             });
-            if ignore {
-                self.ignore_app(app);
-            }
         }
         ui.add_space(6.0);
         self.tag_editor(ui, &it);
@@ -665,6 +666,7 @@ impl App {
                 (k.paste_plain.as_str(), t!("details-key-paste-plain")),
                 (k.copy_only.as_str(), t!("details-key-copy-only")),
                 (quick.as_str(), t!("details-key-quick")),
+                ("Shift+F10", t!("details-key-menu")),
                 (k.pin.as_str(), t!("details-key-pin")),
                 (k.tag.as_str(), t!("details-key-tag")),
                 (k.delete.as_str(), t!("details-key-delete")),

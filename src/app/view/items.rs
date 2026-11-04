@@ -173,6 +173,13 @@ pub(super) fn color_other_way(text: &str, color: Color32) -> String {
 
 /// The path, when the whole text is one path to a file or folder: on
 /// Windows `C:\...` or `\\server\share\...`, elsewhere `/...` too.
+/// The file an item was added from, or the file or folder its text names.
+pub(super) fn place_of(it: &Item) -> Option<&std::path::Path> {
+    it.source
+        .as_deref()
+        .or_else(|| (it.kind == Kind::Text).then(|| path_in(&it.text)).flatten())
+}
+
 pub(super) fn path_in(text: &str) -> Option<&std::path::Path> {
     let text = text.trim().trim_matches('"');
     if text.len() < 3 || text.contains(['\n', '<', '>', '|', '*', '?']) {

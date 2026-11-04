@@ -212,7 +212,7 @@ screenshots of the finished screens.
 ### Phase 13. Pasting and keys
 - [x] 13.1 The details pane's main button names the action and the program it pastes into
 - [x] 13.2 Quick paste with Ctrl+1 to Ctrl+9, numbers in the popup, a line of key hints, a short search hint (D52)
-- [ ] 13.3 A right-click menu on items, also with Shift+F10; Delete away from Pin and Copy
+- [x] 13.3 A right-click menu on items, also with Shift+F10; Delete away from Pin and Copy
 - [ ] 13.4 F1 opens a sheet of every key; a message after a mouse action names its key (D52)
 
 ### Phase 14. New features

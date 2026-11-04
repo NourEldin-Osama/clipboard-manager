@@ -118,6 +118,15 @@ impl App {
         if !in_popup {
             self.settings_typing = false;
         }
+        // An open item menu takes the keys: the arrows move through it,
+        // Enter picks an entry and Esc closes it.
+        if self
+            .item_menu
+            .as_ref()
+            .is_some_and(|m| m.in_popup == in_popup)
+        {
+            return;
+        }
         // The tag field belongs to the item in the details pane: selecting
         // another item or closing the pane closes it. Left open, it would
         // keep every shortcut off below.
@@ -167,6 +176,12 @@ impl App {
         };
         // Ctrl+1 to Ctrl+9 paste one of the first nine items shown.
         let quick = if typing { None } else { quick_paste(ctx) };
+        // Shift+F10 opens the selected item's menu, as in other programs.
+        let menu = !typing && ctx.input_mut(|i| i.consume_key(egui::Modifiers::SHIFT, Key::F10));
+        if menu && self.selected.is_some() {
+            self.menu_by_key = true;
+            self.scroll_to_selected = true;
+        }
         let copy = if paste {
             Some(Paste::Yes)
         } else if paste_plain {
@@ -222,9 +237,7 @@ impl App {
                 self.run(Command::Pin(id));
             }
             if tag && !in_popup {
-                self.tag_input = Some((id, String::new()));
-                self.tag_focus = true;
-                self.details_open = true;
+                self.start_tagging(id);
             }
         }
         if esc {

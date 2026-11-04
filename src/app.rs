@@ -269,6 +269,20 @@ struct Toast {
     action: Option<(String, Command)>,
 }
 
+/// An item's menu, opened by a right-click or by Shift+F10.
+struct ItemMenu {
+    id: u64,
+    /// Where it opens: at the pointer, or at the selected row for Shift+F10.
+    at: egui::Pos2,
+    /// It belongs to the popup's list, not the full window's.
+    in_popup: bool,
+    /// Shift+F10 opened it: the search field gets the keyboard back when
+    /// it closes.
+    by_key: bool,
+    /// Its first entry is to take the keyboard.
+    focus_first: bool,
+}
+
 /// Everything the user can do to the history, from a row, a card, the
 /// details pane, a key, a menu or a toast. The views send these to `run`
 /// instead of changing the history themselves.
@@ -493,6 +507,11 @@ pub struct App {
     tag_filter: Option<String>,
     /// The tag being typed in the details pane, for that item.
     tag_input: Option<(u64, String)>,
+    /// The open menu of an item.
+    item_menu: Option<ItemMenu>,
+    /// Shift+F10 was pressed: the selected row or card opens its menu the
+    /// next time it is drawn.
+    menu_by_key: bool,
     /// Give the tag field focus on its next frame (it was just opened).
     tag_focus: bool,
     /// Image saving, copying back and imports, off the UI thread.
@@ -644,6 +663,8 @@ impl App {
             next_update_check: Instant::now() + Duration::from_secs(10),
             tag_filter: None,
             tag_input: None,
+            item_menu: None,
+            menu_by_key: false,
             tag_focus: false,
             background: Background::spawn(ctx.clone()),
             imports_running: 0,
@@ -877,6 +898,8 @@ impl App {
         if self.win.opened.swap(false, Ordering::SeqCst) {
             self.selected = None;
             self.dirty = true;
+            self.item_menu = None;
+            self.menu_by_key = false;
             // An error from while the window was hidden (such as after starting
             // at sign-in) gets its full time on screen.
             if let Some((_, at)) = &mut self.error {
