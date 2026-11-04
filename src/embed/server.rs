@@ -6,29 +6,17 @@
 //! multi-vector responses are detected and scored with MaxSim.
 
 use std::io::Cursor;
-use std::process::{Child, Command, Stdio};
-use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::{anyhow, bail, Result};
 use base64::Engine as _;
 use image::DynamicImage;
 use serde_json::{json, Value};
 
 use super::{Embedder, Embedding, TextRole};
-use crate::config::{LaunchConfig, ServerConfig, ServerKind};
+use crate::config::{ServerConfig, ServerKind};
+use crate::llama::{self, Role};
 use crate::net::ServerError;
-
-/// The llama-server we started, kept globally so it can be stopped on exit
-/// even though the worker thread never unwinds.
-static CHILD: Mutex<Option<Child>> = Mutex::new(None);
-
-pub fn stop_launched_server() {
-    if let Some(mut c) = CHILD.lock().unwrap_or_else(|e| e.into_inner()).take() {
-        let _ = c.kill();
-        let _ = c.wait();
-    }
-}
 
 pub struct ServerEmbedder {
     cfg: ServerConfig,
@@ -89,8 +77,7 @@ impl ServerEmbedder {
             image_request,
         };
         if let Some(launch) = s.cfg.launch.clone() {
-            stop_launched_server();
-            *CHILD.lock().unwrap() = Some(spawn_llama_server(&launch)?);
+            llama::start(Role::Search, &launch)?;
             s.cfg.base_url = format!("http://127.0.0.1:{}/v1", launch.port);
             s.wait_until_ready(Duration::from_secs(180))?;
         }
@@ -101,10 +88,8 @@ impl ServerEmbedder {
         let start = Instant::now();
         let health = self.cfg.base_url.trim_end_matches("/v1").to_string() + "/health";
         loop {
-            if let Some(child) = CHILD.lock().unwrap().as_mut() {
-                if let Some(status) = child.try_wait()? {
-                    bail!("llama-server exited during start-up ({status}); check the model paths");
-                }
+            if let Some(status) = llama::exited(Role::Search)? {
+                bail!("llama-server exited during start-up ({status}); check the model paths");
             }
             if let Ok(r) = self.agent.get(&health).call() {
                 if r.status().is_success() {
@@ -499,35 +484,9 @@ impl Embedder for ServerEmbedder {
 impl Drop for ServerEmbedder {
     fn drop(&mut self) {
         if self.cfg.launch.is_some() {
-            stop_launched_server();
+            llama::stop(Role::Search);
         }
     }
-}
-
-fn spawn_llama_server(l: &LaunchConfig) -> Result<Child> {
-    let mut cmd = Command::new(&l.llama_server);
-    cmd.arg("-m").arg(&l.gguf).args([
-        "--embeddings",
-        "--host",
-        "127.0.0.1",
-        "--port",
-        &l.port.to_string(),
-    ]);
-    if let Some(mm) = &l.mmproj {
-        cmd.arg("--mmproj").arg(mm);
-    }
-    cmd.args(l.extra_args.split_whitespace());
-    cmd.stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null());
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt;
-        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-        cmd.creation_flags(CREATE_NO_WINDOW);
-    }
-    cmd.spawn()
-        .with_context(|| format!("starting {}", l.llama_server.display()))
 }
 
 /// A stand-in embedding server for tests.

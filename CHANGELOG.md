@@ -103,6 +103,13 @@ the notes here before a push that makes a release.
   puts texts, links and file paths one after another, in list order;
   pictures are left out. Esc goes back to one item. The popup keeps one
   item at a time.
+- "Start llama-server for me" also starts reading models, such as
+  GLM-OCR: from a file on this PC, or by its Hugging Face name, such as
+  ggml-org/GLM-OCR-GGUF, which llama-server downloads the first time.
+  While it starts, images wait to be read, search keeps working, and the
+  status bar says what is happening. A search model and a reading model
+  each need a llama.cpp server of their own, with its own port; the
+  server's settings say so.
 
 ## 0.5.1
 

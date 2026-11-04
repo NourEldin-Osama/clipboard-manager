@@ -92,6 +92,8 @@ pub struct ReaderServer {
     pub kind: ReaderModel,
     /// What the model is asked, with the image.
     pub prompt: String,
+    /// How the app starts llama-server for it, when it does.
+    pub launch: Option<Box<LaunchConfig>>,
 }
 
 impl ReaderServer {
@@ -108,6 +110,7 @@ impl Default for ReaderServer {
             model: String::new(),
             kind: ReaderModel::Other,
             prompt: Self::PROMPT.into(),
+            launch: None,
         }
     }
 }
@@ -140,6 +143,9 @@ fn hidden(key: &str) -> &'static str {
 pub struct LaunchConfig {
     pub llama_server: PathBuf,
     pub gguf: PathBuf,
+    /// The model by its Hugging Face name, such as `ggml-org/GLM-OCR-GGUF`,
+    /// instead of `gguf`: llama-server downloads it the first time.
+    pub hf: String,
     /// Multimodal projector, needed for image embeddings with some GGUF models.
     pub mmproj: Option<PathBuf>,
     pub port: u16,
@@ -344,6 +350,7 @@ impl Server {
             model: model.model.clone(),
             kind: r.kind,
             prompt: r.prompt.clone(),
+            launch: self.launch.clone().map(Box::new),
         })
     }
 }
@@ -1177,6 +1184,7 @@ mod tests {
                 model: "vision".into(),
                 kind: ReaderModel::MiniCpmOcr,
                 prompt: "Text Recognition:".into(),
+                launch: None,
             })
         );
         assert!(cfg.reads_images());
@@ -1328,6 +1336,7 @@ mod tests {
                 model: "minicpm-ocr".into(),
                 kind: ReaderModel::MiniCpmOcr,
                 prompt: "Text Recognition:".into(),
+                launch: None,
             })
         );
         // Saved again, it is settings of this version.

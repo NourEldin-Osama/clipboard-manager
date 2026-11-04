@@ -183,7 +183,7 @@ impl eframe::App for App {
     fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
         self.finish_delete();
         self.install_on_exit();
-        crate::embed::server::stop_launched_server();
+        crate::llama::stop_all();
     }
 
     fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
