@@ -11,7 +11,7 @@ impl App {
                 Frame::new()
                     .inner_margin(Margin {
                         left: 16,
-                        right: 12,
+                        right: 16,
                         top: 12,
                         bottom: 6,
                     })

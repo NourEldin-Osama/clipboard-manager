@@ -2,6 +2,15 @@
 
 use super::*;
 
+/// Room between a row's edge and what it shows. With the list panel's
+/// margin, the content lines up 16 points from the window's edge, as the
+/// search field, the cards and the status bar do.
+const ROW_PADDING: f32 = 8.0;
+
+/// In a wide window, List view keeps its rows at most this wide, centred,
+/// so the time and the pin stay near the text.
+const LIST_MAX_WIDTH: f32 = 900.0;
+
 #[derive(Debug, PartialEq)]
 pub(super) enum Line {
     Header(Group, usize),
@@ -110,7 +119,7 @@ pub(super) fn paint_row(
 
     let av = if compact { 26.0 } else { 38.0 };
     let av_rect = m(Rect::from_min_size(
-        Pos2::new(rect.left() + 12.0, rect.center().y - av / 2.0),
+        Pos2::new(rect.left() + ROW_PADDING, rect.center().y - av / 2.0),
         Vec2::splat(av),
     ));
     match thumb {
@@ -157,7 +166,7 @@ pub(super) fn paint_row(
         }
     }
 
-    let x = rect.left() + 12.0 + av + 12.0;
+    let x = rect.left() + ROW_PADDING + av + 12.0;
     let right_w = if hot { 134.0 } else { 64.0 };
     let text_w = (rect.right() - x - right_w - 8.0).max(40.0);
     // The text column, mirrored with the rest; lines start at its reading edge.
@@ -220,7 +229,7 @@ pub(super) fn paint_row(
         rect.top() + 18.0
     };
     let time_at = m(Rect::from_min_size(
-        Pos2::new(rect.right() - 12.0, time_y),
+        Pos2::new(rect.right() - ROW_PADDING, time_y),
         Vec2::ZERO,
     ))
     .min;
@@ -238,7 +247,7 @@ pub(super) fn paint_row(
         FontId::proportional(size::SMALL),
         weak,
     );
-    let mut ix = rect.right() - 12.0;
+    let mut ix = rect.right() - ROW_PADDING;
     // On one line the badges sit before the time instead of under it.
     let iy = if one_line_row {
         rect.center().y
@@ -346,6 +355,7 @@ impl App {
         // The details pane is always beside the list in Detail view, so rows
         // there don't need an "open" button; the popup has no details pane.
         let can_open = self.cfg.view != ViewMode::Detail && !in_popup;
+        let centred = self.cfg.view == ViewMode::List && !in_popup;
 
         // Rows, with date/pinned headers when browsing.
         let mut lines: Vec<Line> = Vec::with_capacity(self.results.len() + 8);
@@ -427,7 +437,13 @@ impl App {
         let out = sa.show_viewport(ui, |ui, viewport| {
             ui.set_height(total);
             let origin = ui.max_rect().min;
-            let width = ui.available_width();
+            let full = ui.available_width();
+            let width = if centred {
+                full.min(LIST_MAX_WIDTH)
+            } else {
+                full
+            };
+            let left = origin.x + (full - width) / 2.0;
             for (i, l) in lines.iter().enumerate() {
                 let h = if matches!(l, Line::Header(..)) {
                     header_h
@@ -438,15 +454,15 @@ impl App {
                     continue;
                 }
                 let rect =
-                    Rect::from_min_size(Pos2::new(origin.x, origin.y + ys[i]), Vec2::new(width, h));
+                    Rect::from_min_size(Pos2::new(left, origin.y + ys[i]), Vec2::new(width, h));
                 match l {
                     Line::Header(label, n) => {
                         let p = ui.painter();
                         let weak = ui.visuals().weak_text_color();
                         let (label_x, count_x) = if i18n::rtl() {
-                            (rect.right() - 12.0, rect.left() + 12.0)
+                            (rect.right() - ROW_PADDING, rect.left() + ROW_PADDING)
                         } else {
-                            (rect.left() + 12.0, rect.right() - 12.0)
+                            (rect.left() + ROW_PADDING, rect.right() - ROW_PADDING)
                         };
                         paint_text(
                             ui,
@@ -526,7 +542,8 @@ impl App {
                                 ));
                             }
                             let size = 28.0;
-                            let mut x = rect.right() - 8.0 - buttons.len() as f32 * (size + 2.0);
+                            let mut x =
+                                rect.right() - ROW_PADDING - buttons.len() as f32 * (size + 2.0);
                             for (icon, tip, action) in buttons {
                                 let b = flip(
                                     rect,

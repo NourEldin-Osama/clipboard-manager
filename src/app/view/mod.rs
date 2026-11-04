@@ -107,10 +107,12 @@ impl App {
                 )
                 .show(ui, |ui| self.details(ui, true));
         }
+        // The cards end 16 points from the window's edge, after the 12 the
+        // grid keeps for its scroll bar; rows add their own 8 to the 8 here.
         let margin = if self.cfg.view == ViewMode::Grid {
             Margin {
                 left: 16,
-                right: 12,
+                right: 4,
                 top: 8,
                 bottom: 4,
             }

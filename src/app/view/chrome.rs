@@ -2,6 +2,18 @@
 
 use super::*;
 
+/// A model's name as a server reports it, short enough for the status bar:
+/// llama-server reports its model file's whole path, which shows as the
+/// file's name. Names such as `org/model` stay as they are.
+fn short_model_name(name: &str) -> &str {
+    let is_path = name.contains('\\') || name.starts_with('/') || name.ends_with(".gguf");
+    if is_path {
+        name.rsplit(['\\', '/']).next().unwrap_or(name)
+    } else {
+        name
+    }
+}
+
 /// A button on the update bar.
 enum UpdateAction {
     Later,
@@ -227,7 +239,9 @@ impl App {
             id => id.to_string(),
         };
         let name = match (model.name.trim(), &learned) {
-            ("", Some(learned)) if model.model.trim().is_empty() => learned.clone(),
+            ("", Some(learned)) if model.model.trim().is_empty() => {
+                short_model_name(learned).to_string()
+            }
             _ => super::settings::model_label(model),
         };
         Some((name, server.label().to_string(), id))
@@ -406,5 +420,24 @@ impl App {
                 self.error = None;
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_model_file_shows_by_its_name() {
+        assert_eq!(
+            short_model_name(r"C:\models\embeddinggemma-2-UD-Q4_K_XL.gguf"),
+            "embeddinggemma-2-UD-Q4_K_XL.gguf"
+        );
+        assert_eq!(short_model_name("/models/nomic.gguf"), "nomic.gguf");
+        assert_eq!(
+            short_model_name("openai/text-embedding-3-small"),
+            "openai/text-embedding-3-small"
+        );
+        assert_eq!(short_model_name("bge-small-en-v1.5"), "bge-small-en-v1.5");
     }
 }
