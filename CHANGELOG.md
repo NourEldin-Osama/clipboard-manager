@@ -34,6 +34,29 @@ the notes here before a push that makes a release.
 - Privacy shows where each kind of data goes: your history, search by
   meaning, text in images and the update check.
 - **Reset all settings** keeps your saved servers and your rules per app.
+- Each copy shows the program it came from, with that program's own icon
+  and name, such as "Microsoft Edge". A copy from a program built on
+  WebView2 names the program you saw, not the WebView2 helper.
+- Web addresses show their letters as you read them, such as
+  `ar.wikipedia.org/wiki/الرياض`, and search finds them by those letters.
+- A color such as `#5865F2` or `rgb(88, 101, 242)` shows a swatch of
+  itself and the other usual way to write it. A path to a file or folder
+  shows its name first, its folder under it, and Show in folder. Code
+  shows a code icon.
+- Grid cards are calmer: no kind badge, a quiet footer with the program
+  and the time, short text larger, and every picture centered in the
+  same frame. Hover the footer for the buttons.
+- Sorted by best match, matches that contain all your words, or whose
+  meaning is close to the best match's, come first; the rest fold into
+  one line, "Show 65 weaker matches". Down on the last result opens them
+  too.
+- The relevance bars measure the same way: from the typical match up to
+  the best one. Before, they showed each score as a share of the best,
+  so with models that give unrelated text nearly the best score, almost
+  every item had full bars. Grid cards show the bars too.
+- The list no longer opens scrolled down by one row, with the first item
+  hidden under its header, at start or the first time the window opens
+  after starting hidden.
 
 ## 0.5.1
 

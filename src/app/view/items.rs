@@ -11,6 +11,20 @@ pub(crate) fn looks_like_code(s: &str) -> bool {
     sample.lines().count() > 1 && symbols * 20 > sample.len().max(1)
 }
 
+/// A text item that looks like code.
+pub(super) fn is_code(it: &Item) -> bool {
+    it.kind == Kind::Text && looks_like_code(&it.text.chars().take(600).collect::<String>())
+}
+
+/// The icon for an item: code gets its own, other items their kind's.
+pub(super) fn item_icon(it: &Item) -> Icon {
+    if is_code(it) {
+        Icon::Code
+    } else {
+        icons::kind(it.kind)
+    }
+}
+
 // ----- time --------------------------------------------------------------------
 
 // Stored times are UTC seconds; `i18n::local` shows each in the user's zone.
@@ -80,6 +94,98 @@ pub(super) fn domain(url: &str) -> &str {
         .trim_start_matches("www.")
 }
 
+/// The colour a text is, when the whole text is one: `#rgb`, `#rrggbb`,
+/// `#rrggbbaa`, `rgb()`, `rgba()`, `hsl()` or `hsla()`.
+pub(super) fn color_in(text: &str) -> Option<Color32> {
+    let text = text.trim();
+    if text.len() > 40 || text.contains('\n') {
+        return None;
+    }
+    if let Some(hex) = text.strip_prefix('#') {
+        let digit = |i: usize| u8::from_str_radix(hex.get(i..i + 1)?, 16).ok();
+        let pair = |i: usize| u8::from_str_radix(hex.get(i..i + 2)?, 16).ok();
+        return match hex.len() {
+            3 => Some(Color32::from_rgb(
+                digit(0)? * 17,
+                digit(1)? * 17,
+                digit(2)? * 17,
+            )),
+            6 => Some(Color32::from_rgb(pair(0)?, pair(2)?, pair(4)?)),
+            8 => Some(Color32::from_rgba_unmultiplied(
+                pair(0)?,
+                pair(2)?,
+                pair(4)?,
+                pair(6)?,
+            )),
+            _ => None,
+        };
+    }
+    let lower = text.to_ascii_lowercase();
+    let (name, rest) = lower.split_once('(')?;
+    let inside = rest.strip_suffix(')')?;
+    let parts: Vec<&str> = inside
+        .split([',', ' ', '/'])
+        .filter(|part| !part.is_empty())
+        .collect();
+    if parts.len() < 3 {
+        return None;
+    }
+    let number = |part: &str| part.trim_end_matches('%').parse::<f32>().ok();
+    let (a, b, c) = (number(parts[0])?, number(parts[1])?, number(parts[2])?);
+    match name.trim() {
+        "rgb" | "rgba" if [a, b, c].iter().all(|v| (0.0..=255.0).contains(v)) => {
+            Some(Color32::from_rgb(a as u8, b as u8, c as u8))
+        }
+        "hsl" | "hsla" if (0.0..=100.0).contains(&b) && (0.0..=100.0).contains(&c) => {
+            let (r, g, bl) = hsl_to_rgb(a, b / 100.0, c / 100.0);
+            Some(Color32::from_rgb(r, g, bl))
+        }
+        _ => None,
+    }
+}
+
+fn hsl_to_rgb(hue: f32, saturation: f32, lightness: f32) -> (u8, u8, u8) {
+    let chroma = (1.0 - (2.0 * lightness - 1.0).abs()) * saturation;
+    let sector = hue.rem_euclid(360.0) / 60.0;
+    let x = chroma * (1.0 - (sector % 2.0 - 1.0).abs());
+    let (r, g, b) = match sector as u32 {
+        0 => (chroma, x, 0.0),
+        1 => (x, chroma, 0.0),
+        2 => (0.0, chroma, x),
+        3 => (0.0, x, chroma),
+        4 => (x, 0.0, chroma),
+        _ => (chroma, 0.0, x),
+    };
+    let m = lightness - chroma / 2.0;
+    let channel = |v: f32| ((v + m) * 255.0).round().clamp(0.0, 255.0) as u8;
+    (channel(r), channel(g), channel(b))
+}
+
+/// The colour written the other usual way: a hex colour as `rgb()`, any
+/// other as hex.
+pub(super) fn color_other_way(text: &str, color: Color32) -> String {
+    if text.trim().starts_with('#') {
+        format!("rgb({}, {}, {})", color.r(), color.g(), color.b())
+    } else {
+        format!("#{:02X}{:02X}{:02X}", color.r(), color.g(), color.b())
+    }
+}
+
+/// The path, when the whole text is one path to a file or folder: on
+/// Windows `C:\...` or `\\server\share\...`, elsewhere `/...` too.
+pub(super) fn path_in(text: &str) -> Option<&std::path::Path> {
+    let text = text.trim().trim_matches('"');
+    if text.len() < 3 || text.contains(['\n', '<', '>', '|', '*', '?']) {
+        return None;
+    }
+    let bytes = text.as_bytes();
+    let drive =
+        bytes[0].is_ascii_alphabetic() && bytes[1] == b':' && matches!(bytes[2], b'\\' | b'/');
+    let share = text.starts_with("\\\\") && text[2..].contains('\\');
+    let unix = !cfg!(windows) && text.starts_with('/') && text[1..].contains('/');
+    (drive || share || unix).then(|| std::path::Path::new(text))
+}
+
 /// Second line of an item row: the most useful detail for its kind.
 pub(super) fn subtitle(it: &Item) -> String {
     let detail = subtitle_detail(it);
@@ -122,6 +228,15 @@ pub(super) fn subtitle_detail(it: &Item) -> String {
             }
         }
         Kind::Text => {
+            if let Some(color) = color_in(&it.text) {
+                return t!("item-color", value = color_other_way(&it.text, color));
+            }
+            if let Some(path) = path_in(&it.text) {
+                return path
+                    .parent()
+                    .map(|p| p.display().to_string())
+                    .unwrap_or_default();
+            }
             if let Some(src) = &it.source {
                 return src
                     .file_name()
@@ -165,11 +280,8 @@ pub(super) fn row_title(it: &Item) -> String {
     match it.kind {
         Kind::Link => {
             let t = it.text.trim();
-            t.split("://")
-                .nth(1)
-                .unwrap_or(t)
-                .trim_start_matches("www.")
-                .to_string()
+            let shown = t.split("://").nth(1).unwrap_or(t);
+            crate::net::readable_url(shown.trim_start_matches("www.")).into_owned()
         }
         Kind::Files => {
             let first = it.text.lines().next().unwrap_or("");
@@ -178,7 +290,14 @@ pub(super) fn row_title(it: &Item) -> String {
                 .map(|f| f.to_string_lossy().into_owned())
                 .unwrap_or_else(|| first.to_string())
         }
-        _ => it.title(),
+        Kind::Text => match path_in(&it.text) {
+            Some(path) => path
+                .file_name()
+                .map(|f| f.to_string_lossy().into_owned())
+                .unwrap_or_else(|| path.display().to_string()),
+            None => it.title(),
+        },
+        Kind::Image => it.title(),
     }
 }
 
@@ -186,6 +305,33 @@ pub(super) fn row_title(it: &Item) -> String {
 mod tests {
     use super::*;
     use crate::store::Origin;
+
+    #[test]
+    fn colours_are_read_in_the_usual_ways() {
+        let blurple = Color32::from_rgb(88, 101, 242);
+        assert_eq!(color_in("#5865F2"), Some(blurple));
+        assert_eq!(color_in(" #fff "), Some(Color32::WHITE));
+        assert_eq!(color_in("rgb(88, 101, 242)"), Some(blurple));
+        assert_eq!(
+            color_in("hsl(0, 100%, 50%)"),
+            Some(Color32::from_rgb(255, 0, 0))
+        );
+        assert_eq!(color_in("#12345"), None);
+        assert_eq!(color_in("rgb(300, 0, 0)"), None);
+        assert_eq!(color_in("Meeting at #5"), None);
+        assert_eq!(color_other_way("#5865F2", blurple), "rgb(88, 101, 242)");
+        assert_eq!(color_other_way("rgb(88, 101, 242)", blurple), "#5865F2");
+    }
+
+    #[test]
+    fn a_path_counts_only_when_it_is_the_whole_text() {
+        assert!(path_in(r"C:\Users\Public\report.pdf").is_some());
+        assert!(path_in(r#""C:\Program Files\App""#).is_some());
+        assert!(path_in(r"\\server\share\notes.txt").is_some());
+        assert!(path_in(r"see C:\file.txt").is_none());
+        assert!(path_in("C:\\a\nC:\\b").is_none());
+        assert!(path_in("https://example.com/a/b").is_none());
+    }
 
     #[test]
     fn an_image_card_says_its_size_once() {

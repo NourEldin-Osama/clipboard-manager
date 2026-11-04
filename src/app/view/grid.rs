@@ -1,6 +1,7 @@
 //! The grid view and the cards it paints.
 
 use super::*;
+use crate::app::programs::Program;
 
 /// Height of the action strip a card shows while hovered.
 pub(super) const CARD_FOOTER: f32 = 42.0;
@@ -8,14 +9,18 @@ pub(super) const CARD_FOOTER: f32 = 42.0;
 /// Height of a card's tags row, above the action strip.
 pub(super) const TAG_ROW: f32 = 28.0;
 
-/// A grid card: kind and age on top, as much of the content as fits below,
-/// and delete / pin / copy / open buttons in a footer strip while hovered.
+/// One card: its content, the tags row when it has tags, and a quiet footer
+/// with the program it came from and when. While hovered, the footer holds
+/// the buttons instead, drawn by the grid.
+#[allow(clippy::too_many_arguments)]
 pub(super) fn paint_card(
     ui: &Ui,
     rect: Rect,
     hot: bool,
     it: &Item,
     thumb: Option<TextureHandle>,
+    program: Option<&Program>,
+    relevance: Option<usize>,
     selected: bool,
     terms: &[String],
 ) {
@@ -23,8 +28,6 @@ pub(super) fn paint_card(
     let a = accent();
     let radius = CornerRadius::same(10);
     let p = ui.painter();
-    let m = |r: Rect| flip(rect, r);
-    let rtl = i18n::rtl();
     let shadow = egui::epaint::Shadow {
         offset: [0, 2],
         blur: if hot { 14 } else { 8 },
@@ -37,152 +40,62 @@ pub(super) fn paint_card(
     };
     p.add(shadow.as_shape(rect, radius));
     p.rect_filled(rect, radius, v.extreme_bg_color);
-
-    // Header: kind chip at the reading start, pin and age at the far end.
     let pad = 16.0;
-    let c = kind_color(it.kind);
-    let shade = text_shade(c, v.dark_mode);
-    let cg = ui.fonts_mut(|f| {
-        f.layout_job(bidi::job(
-            &it.kind.label(),
-            FontId::proportional(size::SMALL),
-            shade,
-        ))
-    });
-    let chip_rect = m(Rect::from_min_size(
-        Pos2::new(rect.left() + pad, rect.top() + 14.0),
-        Vec2::new(cg.size().x + 12.0 + 6.0 + 16.0, cg.size().y + 6.0),
-    ));
-    p.rect_filled(
-        chip_rect,
-        CornerRadius::same(7),
-        c.gamma_multiply(if v.dark_mode { 0.25 } else { 0.13 }),
-    );
-    icons::paint_icon_text(
-        p,
-        chip_rect.shrink2(Vec2::new(8.0, 3.0)),
-        icons::kind(it.kind),
-        12.0,
-        cg,
-        shade,
-    );
     let weak = v.weak_text_color();
-    let age_at = m(Rect::from_min_size(
-        Pos2::new(rect.right() - pad, chip_rect.center().y),
-        Vec2::ZERO,
-    ))
-    .min;
-    let age = paint_text(
-        ui,
-        p,
-        age_at,
-        if rtl {
-            Align2::LEFT_CENTER
-        } else {
-            Align2::RIGHT_CENTER
-        },
-        &ago(it.created),
-        FontId::proportional(size::SMALL),
-        weak,
+
+    // Bottom up: the footer, the tags row above it when there are tags,
+    // then the content. Hovering only changes the footer, so nothing else
+    // moves.
+    let footer = Rect::from_min_max(
+        Pos2::new(rect.left(), rect.bottom() - CARD_FOOTER),
+        rect.max,
     );
-    if it.pinned {
-        let x = if rtl {
-            age.right() + 12.0
-        } else {
-            age.left() - 12.0
+    if hot {
+        let r = CornerRadius {
+            nw: 0,
+            ne: 0,
+            sw: 10,
+            se: 10,
         };
-        icons::paint(
-            p,
-            Rect::from_center_size(Pos2::new(x, chip_rect.center().y), Vec2::splat(12.0)),
-            Icon::PinFilled,
-            a,
+        let fill = if v.dark_mode {
+            Color32::from_gray(44)
+        } else {
+            Color32::from_gray(238)
+        };
+        p.rect_filled(footer, r, fill);
+    } else {
+        paint_footer(
+            ui,
+            footer.shrink2(Vec2::new(pad, 0.0)),
+            it,
+            program,
+            relevance,
         );
     }
-
-    // Bottom up: the button strip (empty until hovered), the tags row above it
-    // when there are tags, then the content. Hovering only fills the strip,
-    // so nothing else moves, shrinks or hides.
-    let strip_top = rect.bottom() - CARD_FOOTER;
+    let strip_top = footer.top();
     let tags_top = if it.tags.is_empty() {
         strip_top
     } else {
         strip_top - TAG_ROW
     };
     if !it.tags.is_empty() {
-        let row = Rect::from_min_max(
-            Pos2::new(rect.left() + pad, tags_top),
-            Pos2::new(rect.right() - pad, strip_top - 2.0),
-        );
-        let tp = ui.painter_at(row);
-        let pill = |text: &str, c: Color32| {
-            ui.fonts_mut(|f| f.layout_job(bidi::job(text, FontId::proportional(size::SMALL), c)))
-        };
-        let galleys: Vec<_> = it
-            .tags
-            .iter()
-            .map(|t| {
-                let c = tag_color(t);
-                (pill(&format!("# {t}"), text_shade(c, v.dark_mode)), c)
-            })
-            .collect();
-        // As many tags as fit on the row; the rest become "+N tags".
-        let gap = 6.0;
-        let widths: Vec<f32> = galleys.iter().map(|(g, _)| g.size().x + 14.0).collect();
-        let more_w = |n: usize| pill(&t!("tags-more", count = n), weak).size().x + 14.0;
-        let mut shown = galleys.len();
-        while shown > 0 {
-            let used: f32 =
-                widths[..shown].iter().sum::<f32>() + gap * shown.saturating_sub(1) as f32;
-            let extra = if shown < galleys.len() {
-                gap + more_w(galleys.len() - shown)
-            } else {
-                0.0
-            };
-            if used + extra <= row.width() {
-                break;
-            }
-            shown -= 1;
-        }
-        let mut x = row.left();
-        let mut place = |g: Arc<egui::Galley>, c: Color32, fill: Color32| {
-            let r = flip(
-                rect,
-                Rect::from_min_size(
-                    Pos2::new(x, row.center().y - (g.size().y + 6.0) / 2.0),
-                    g.size() + Vec2::new(14.0, 6.0),
-                ),
-            );
-            tp.rect_filled(r, CornerRadius::same(9), fill);
-            x += r.width() + gap;
-            tp.galley(r.min + Vec2::new(7.0, 3.0), g, c);
-        };
-        for (g, c) in galleys.iter().take(shown) {
-            place(
-                g.clone(),
-                *c,
-                c.gamma_multiply(if v.dark_mode { 0.25 } else { 0.13 }),
-            );
-        }
-        if shown < galleys.len() {
-            let rest = galleys.len() - shown;
-            place(
-                pill(&t!("tags-more", count = rest), weak),
-                weak,
-                weak.gamma_multiply(0.15),
-            );
-        }
+        paint_tags(ui, rect, it, pad, tags_top, strip_top);
     }
-    let bottom = tags_top - 4.0;
     let body = Rect::from_min_max(
-        Pos2::new(rect.left() + pad, chip_rect.bottom() + 12.0),
-        Pos2::new(rect.right() - pad, bottom),
+        Pos2::new(rect.left() + pad, rect.top() + pad),
+        Pos2::new(rect.right() - pad, tags_top - 4.0),
     );
     let bp = ui.painter_at(body);
+    let color = (it.kind == Kind::Text)
+        .then(|| color_in(&it.text))
+        .flatten();
+    let path = (it.kind == Kind::Text).then(|| path_in(&it.text)).flatten();
     match (it.kind, thumb) {
+        // Every picture in the same frame: as big as fits, in the middle.
         (Kind::Image, Some(t)) => {
             let s = t.size_vec2();
             let k = (body.width() / s.x).min(body.height() / s.y).min(2.0);
-            let img = flip(body, Rect::from_min_size(body.min, s * k));
+            let img = Rect::from_center_size(body.center(), s * k);
             egui::Image::new((t.id(), s * k))
                 .corner_radius(6.0)
                 .paint_at(ui, img);
@@ -194,32 +107,68 @@ pub(super) fn paint_card(
             );
         }
         (Kind::Image, None) => {
-            let at = flip(body, Rect::from_min_size(body.left_top(), Vec2::ZERO)).min;
             bp.text(
-                at,
-                if rtl {
-                    Align2::RIGHT_TOP
-                } else {
-                    Align2::LEFT_TOP
-                },
+                body.center(),
+                Align2::CENTER_CENTER,
                 format!("{} × {}", it.width, it.height),
                 FontId::proportional(size::CONTROL),
                 weak,
             );
         }
+        _ if color.is_some() => {
+            let color = color.expect("checked above");
+            let swatch = Rect::from_min_size(
+                body.min,
+                Vec2::new(body.width(), (body.height() - 46.0).max(24.0)),
+            );
+            bp.rect_filled(swatch, CornerRadius::same(8), color);
+            bp.rect_stroke(
+                swatch,
+                CornerRadius::same(8),
+                Stroke::new(1.0, weak.gamma_multiply(0.3)),
+                egui::StrokeKind::Inside,
+            );
+            let below = Pos2::new(body.left(), swatch.bottom() + 8.0);
+            let lines = [
+                (
+                    it.text.trim().to_string(),
+                    size::BODY,
+                    v.strong_text_color(),
+                ),
+                (
+                    t!("item-color", value = color_other_way(&it.text, color)),
+                    size::SMALL,
+                    weak,
+                ),
+            ];
+            paint_lines(ui, &bp, body, below, &lines);
+        }
+        _ if path.is_some() => {
+            let path = path.expect("checked above");
+            let c = kind_color(Kind::Files);
+            let icon = match path.extension() {
+                Some(_) => Icon::File,
+                None => Icon::Folder,
+            };
+            let at = flip(body, Rect::from_min_size(body.min, Vec2::splat(28.0)));
+            icons::paint(&bp, at, icon, text_shade(c, v.dark_mode));
+            let name = path
+                .file_name()
+                .map(|f| f.to_string_lossy().into_owned())
+                .unwrap_or_else(|| path.display().to_string());
+            let folder = path
+                .parent()
+                .map(|f| f.display().to_string())
+                .unwrap_or_default();
+            let below = Pos2::new(body.left(), at.bottom() + 10.0);
+            let lines = [
+                (name, size::LARGE, v.strong_text_color()),
+                (folder, size::SMALL, weak),
+            ];
+            paint_lines(ui, &bp, body, below, &lines);
+        }
         _ => {
-            let code = it.kind == Kind::Text
-                && looks_like_code(&it.text.chars().take(600).collect::<String>());
-            let (font, line_h) = if code {
-                (FontId::monospace(size::SMALL), 17.0)
-            } else {
-                (FontId::proportional(size::BODY), 20.0)
-            };
-            let color = if it.kind == Kind::Link {
-                v.hyperlink_color
-            } else {
-                v.strong_text_color()
-            };
+            let code = is_code(it);
             let text: String = match it.kind {
                 Kind::Files => it
                     .text
@@ -232,6 +181,8 @@ pub(super) fn paint_card(
                     })
                     .collect::<Vec<_>>()
                     .join("\n"),
+                // As rows show it: without https:// and www., letters decoded.
+                Kind::Link => row_title(it),
                 _ => it
                     .text
                     .lines()
@@ -246,6 +197,20 @@ pub(super) fn paint_card(
                 t!("item-empty")
             } else {
                 text
+            };
+            // Short text shows larger, so the card is used.
+            let short = !code && text.chars().count() <= 60 && text.lines().count() <= 2;
+            let (font, line_h) = if code {
+                (FontId::monospace(size::SMALL), 17.0)
+            } else if short {
+                (FontId::proportional(size::LARGE), 23.0)
+            } else {
+                (FontId::proportional(size::BODY), 20.0)
+            };
+            let color = if it.kind == Kind::Link {
+                v.hyperlink_color
+            } else {
+                v.strong_text_color()
             };
             let rows = ((body.height() / line_h).floor() as usize).max(1);
             if bidi::has_rtl(&text) {
@@ -278,28 +243,6 @@ pub(super) fn paint_card(
             }
         }
     }
-
-    if hot {
-        let footer = Rect::from_min_max(
-            Pos2::new(rect.left(), rect.bottom() - CARD_FOOTER),
-            rect.max,
-        );
-        let r = CornerRadius {
-            nw: 0,
-            ne: 0,
-            sw: 10,
-            se: 10,
-        };
-        p.rect_filled(
-            footer,
-            r,
-            if v.dark_mode {
-                Color32::from_gray(44)
-            } else {
-                Color32::from_gray(238)
-            },
-        );
-    }
     // Outline last, so the footer doesn't cover it.
     if selected {
         p.rect_stroke(rect, radius, Stroke::new(2.0, a), egui::StrokeKind::Inside);
@@ -309,6 +252,201 @@ pub(super) fn paint_card(
             radius,
             Stroke::new(1.0, weak.gamma_multiply(0.35)),
             egui::StrokeKind::Inside,
+        );
+    }
+}
+
+/// Lines of text from `at` down, each on the side reading starts.
+fn paint_lines(ui: &Ui, p: &egui::Painter, body: Rect, at: Pos2, lines: &[(String, f32, Color32)]) {
+    let mut y = at.y;
+    for (text, text_size, color) in lines {
+        let start = flip(
+            body,
+            Rect::from_min_size(Pos2::new(body.left(), y), Vec2::ZERO),
+        )
+        .min;
+        let painted = paint_text(
+            ui,
+            p,
+            start,
+            start_anchor(egui::Align::Min),
+            text,
+            FontId::proportional(*text_size),
+            *color,
+        );
+        y = painted.bottom() + 2.0;
+    }
+}
+
+/// The program a card came from, with its icon, and when, with the pin and
+/// how close a search match is to the best one.
+fn paint_footer(
+    ui: &Ui,
+    row: Rect,
+    it: &Item,
+    program: Option<&Program>,
+    relevance: Option<usize>,
+) {
+    let v = ui.visuals();
+    let weak = v.weak_text_color();
+    let p = ui.painter_at(row);
+    let y = row.center().y;
+    // The far end first: the time, and the pin before it.
+    let end = flip(
+        row,
+        Rect::from_min_size(Pos2::new(row.right(), y), Vec2::ZERO),
+    )
+    .min;
+    let end_anchor = if i18n::rtl() {
+        Align2::LEFT_CENTER
+    } else {
+        Align2::RIGHT_CENTER
+    };
+    let age = paint_text(
+        ui,
+        &p,
+        end,
+        end_anchor,
+        &ago(it.created),
+        FontId::proportional(size::SMALL),
+        weak,
+    );
+    let mut used = age.width() + 8.0;
+    if it.pinned {
+        let x = if i18n::rtl() {
+            age.right() + 12.0
+        } else {
+            age.left() - 12.0
+        };
+        icons::paint(
+            &p,
+            Rect::from_center_size(Pos2::new(x, y), Vec2::splat(12.0)),
+            Icon::PinFilled,
+            accent(),
+        );
+        used += 20.0;
+    }
+    if let Some(level) = relevance {
+        paint_relevance(&p, row, row.right() - used, y + 5.0, level, accent(), weak);
+        used += 26.0;
+    }
+    let room = row.width() - used;
+    // Then the program at the reading start: its icon and its own name, or
+    // for older copies the kind's icon and the program's file name.
+    let icon_rect = flip(
+        row,
+        Rect::from_center_size(Pos2::new(row.left() + 8.0, y), Vec2::splat(16.0)),
+    );
+    match program.and_then(|p| p.icon.as_ref()) {
+        Some(texture) => {
+            egui::Image::new((texture.id(), Vec2::splat(16.0))).paint_at(ui, icon_rect);
+        }
+        None => icons::paint(&p, icon_rect, item_icon(it), weak),
+    }
+    let name = match (program, &it.app) {
+        (Some(program), _) => program.name.clone(),
+        (None, Some(app)) => app.clone(),
+        (None, None) => it.kind.label(),
+    };
+    let start = flip(
+        row,
+        Rect::from_min_size(Pos2::new(row.left() + 22.0, y), Vec2::ZERO),
+    )
+    .min;
+    let font = FontId::proportional(size::SMALL);
+    let full = ui.fonts_mut(|f| f.layout_no_wrap(name.clone(), font.clone(), weak));
+    let shown = if full.size().x > room - 22.0 {
+        let mut cut = name.clone();
+        while !cut.is_empty() {
+            cut.pop();
+            let candidate = format!("{}…", cut.trim_end());
+            if ui
+                .fonts_mut(|f| f.layout_no_wrap(candidate.clone(), font.clone(), weak))
+                .size()
+                .x
+                <= room - 22.0
+            {
+                break;
+            }
+        }
+        format!("{}…", cut.trim_end())
+    } else {
+        name
+    };
+    paint_text(
+        ui,
+        &p,
+        start,
+        start_anchor(egui::Align::Center),
+        &shown,
+        font,
+        weak,
+    );
+}
+
+/// The tags row: as many tags as fit, then "+N tags".
+fn paint_tags(ui: &Ui, rect: Rect, it: &Item, pad: f32, tags_top: f32, strip_top: f32) {
+    let v = ui.visuals();
+    let weak = v.weak_text_color();
+    let row = Rect::from_min_max(
+        Pos2::new(rect.left() + pad, tags_top),
+        Pos2::new(rect.right() - pad, strip_top - 2.0),
+    );
+    let tp = ui.painter_at(row);
+    let pill = |text: &str, c: Color32| {
+        ui.fonts_mut(|f| f.layout_job(bidi::job(text, FontId::proportional(size::SMALL), c)))
+    };
+    let galleys: Vec<_> = it
+        .tags
+        .iter()
+        .map(|t| {
+            let c = tag_color(t);
+            (pill(&format!("# {t}"), text_shade(c, v.dark_mode)), c)
+        })
+        .collect();
+    // As many tags as fit on the row; the rest become "+N tags".
+    let gap = 6.0;
+    let widths: Vec<f32> = galleys.iter().map(|(g, _)| g.size().x + 14.0).collect();
+    let more_w = |n: usize| pill(&t!("tags-more", count = n), weak).size().x + 14.0;
+    let mut shown = galleys.len();
+    while shown > 0 {
+        let used: f32 = widths[..shown].iter().sum::<f32>() + gap * shown.saturating_sub(1) as f32;
+        let extra = if shown < galleys.len() {
+            gap + more_w(galleys.len() - shown)
+        } else {
+            0.0
+        };
+        if used + extra <= row.width() {
+            break;
+        }
+        shown -= 1;
+    }
+    let mut x = row.left();
+    let mut place = |g: Arc<egui::Galley>, c: Color32, fill: Color32| {
+        let r = flip(
+            rect,
+            Rect::from_min_size(
+                Pos2::new(x, row.center().y - (g.size().y + 6.0) / 2.0),
+                g.size() + Vec2::new(14.0, 6.0),
+            ),
+        );
+        tp.rect_filled(r, CornerRadius::same(9), fill);
+        x += r.width() + gap;
+        tp.galley(r.min + Vec2::new(7.0, 3.0), g, c);
+    };
+    for (g, c) in galleys.iter().take(shown) {
+        place(
+            g.clone(),
+            *c,
+            c.gamma_multiply(if v.dark_mode { 0.25 } else { 0.13 }),
+        );
+    }
+    if shown < galleys.len() {
+        let rest = galleys.len() - shown;
+        place(
+            pill(&t!("tags-more", count = rest), weak),
+            weak,
+            weak.gamma_multiply(0.15),
         );
     }
 }
@@ -333,16 +471,20 @@ impl App {
         self.grid_cols = cols;
         let rows = self.results.len().div_ceil(cols);
         let pitch = card_h + gap;
-        let total = rows as f32 * pitch;
+        let weaker = self.weaker.len();
+        let fold_h = if weaker > 0 { WEAKER_LINE } else { 0.0 };
+        let total = rows as f32 * pitch + fold_h;
 
         let mut sa = egui::ScrollArea::vertical().auto_shrink([false, false]);
-        if self.scroll_to_selected {
+        let (off, view_h) = self.list_view;
+        // Until the grid has been drawn once, its height is unknown: the
+        // scroll waits for that frame.
+        if self.scroll_to_selected && view_h > 0.0 {
             self.scroll_to_selected = false;
             if let Some(i) = self
                 .selected
                 .and_then(|id| self.results.iter().position(|h| h.id == id))
             {
-                let (off, view_h) = self.list_view;
                 let top = (i / cols) as f32 * pitch;
                 if top < off {
                     sa = sa.vertical_scroll_offset(top);
@@ -364,13 +506,14 @@ impl App {
         };
         let mut actions = Vec::new();
         let frame = ui.ctx().cumulative_pass_nr();
-        let (library, results, thumbs, loader, selected, seen) = (
+        let (library, results, thumbs, loader, selected, seen, programs) = (
             &self.library,
             &self.results,
             &self.thumbs,
             &mut self.loader,
             self.selected,
             &mut self.thumb_seen,
+            &mut self.programs,
         );
         let out = sa.show_viewport(ui, |ui, viewport| {
             ui.set_height(total);
@@ -403,7 +546,20 @@ impl App {
                     )
                 });
                 let hot = ui.rect_contains_pointer(rect);
-                paint_card(ui, rect, hot, it, thumb, Some(it.id) == selected, &terms);
+                let program = it.program.as_deref().and_then(|p| programs.get(p));
+                let chosen_card = Some(it.id) == selected;
+                let relevance = relevance_level(hit);
+                paint_card(
+                    ui,
+                    rect,
+                    hot,
+                    it,
+                    thumb,
+                    program,
+                    relevance,
+                    chosen_card,
+                    &terms,
+                );
                 if resp.clicked() {
                     actions.push(Command::Select(it.id));
                 }
@@ -462,6 +618,16 @@ impl App {
                             actions.push(action);
                         }
                     }
+                }
+            }
+            let line_top = rows as f32 * pitch;
+            if weaker > 0 && line_top <= viewport.max.y {
+                let rect = Rect::from_min_size(
+                    Pos2::new(origin.x, origin.y + line_top),
+                    Vec2::new(width, fold_h),
+                );
+                if weaker_line(ui, rect, weaker) {
+                    actions.push(Command::ShowWeaker);
                 }
             }
         });

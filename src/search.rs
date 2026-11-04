@@ -61,18 +61,23 @@ impl Filter {
 #[derive(Clone, Debug)]
 pub struct Hit {
     pub id: u64,
-    pub semantic: Option<f32>,
-    /// What the list is ordered by when meaning is used (higher first); the
-    /// relevance bars are drawn from it, so they always read top-down.
-    pub relevance: Option<f32>,
+    /// How close its meaning is to the best match's: 0 at the typical item's
+    /// score, 1 at the best. The relevance bars show it.
+    pub closeness: Option<f32>,
+    /// It doesn't contain all the words, and its meaning isn't close to the
+    /// best match's. Sorted by best match, weaker matches come last and the
+    /// list folds them into one line.
+    pub weak: bool,
 }
 
 /// A result while ranking: `idx` points into the items searched.
 struct Ranked {
     idx: usize,
     keyword: f32,
-    semantic: Option<f32>,
     relevance: Option<f32>,
+    closeness: Option<f32>,
+    /// Contains all the words, or its meaning is close to the best match's.
+    strong: bool,
 }
 
 /// What a search reads. Made by `Library::snapshot`; cloning it copies
@@ -124,16 +129,57 @@ pub fn keyword_score(haystack_lower: &str, query_lower: &str, terms: &[&str]) ->
 
 const SEMANTIC_DEPTH: usize = 200;
 
+/// How close to the best match a meaning match must be to count as strong:
+/// this part of the way from the typical item's score to the best one.
+/// Strong meaning matches get at least two relevance bars.
+pub(crate) const CLOSE_TO_BEST: f32 = 0.5;
+
+/// Where one search's meaning scores sit: the typical item's score and the
+/// best one, from every item's score (not only the ones kept). Measured so
+/// because each model scores on its own scale: one gives unrelated text
+/// 0.1, another 0.7.
+#[derive(Clone, Copy, Default)]
+struct Scale {
+    typical: f32,
+    best: f32,
+}
+
+impl Scale {
+    fn of(scores: &mut [f32]) -> Scale {
+        if scores.is_empty() {
+            return Scale::default();
+        }
+        let best = scores.iter().copied().fold(f32::MIN, f32::max);
+        let middle = (scores.len() - 1) / 2;
+        let typical = *scores.select_nth_unstable_by(middle, f32::total_cmp).1;
+        Scale { typical, best }
+    }
+
+    /// 0 at the typical score or below, 1 at the best.
+    fn closeness(self, score: f32) -> f32 {
+        let span = self.best - self.typical;
+        if span > f32::EPSILON {
+            ((score - self.typical) / span).clamp(0.0, 1.0)
+        } else if score >= self.best {
+            1.0
+        } else {
+            0.0
+        }
+    }
+}
+
 /// The items matching `q`, in the order to show them.
 pub fn search(s: &Snapshot, q: &Query) -> Vec<Hit> {
     let mut ranked = rank(s, q);
     order(&s.items, &mut ranked, q.sort, q.pinned_first);
+    // Only the best-match order folds, and only when something is strong.
+    let fold = q.sort == SortOrder::BestMatch && ranked.iter().any(|r| r.strong);
     ranked
         .into_iter()
         .map(|r| Hit {
             id: s.items[r.idx].id,
-            semantic: r.semantic,
-            relevance: r.relevance,
+            closeness: r.closeness,
+            weak: fold && !r.strong,
         })
         .collect()
 }
@@ -161,8 +207,9 @@ fn rank(s: &Snapshot, q: &Query) -> Vec<Ranked> {
             .map(|idx| Ranked {
                 idx,
                 keyword: 0.0,
-                semantic: None,
                 relevance: None,
+                closeness: None,
+                strong: true,
             })
             .collect();
     }
@@ -194,20 +241,25 @@ fn rank(s: &Snapshot, q: &Query) -> Vec<Ranked> {
     // its best match before they're merged.
     let mut sem_text: Vec<(usize, f32)> = Vec::new();
     let mut sem_image: Vec<(usize, f32)> = Vec::new();
+    let mut scales = [Scale::default(); 2];
     if q.mode != SearchMode::Keyword {
         if let Some(v) = &q.vector {
+            let (mut all_text, mut all_image) = (Vec::new(), Vec::new());
             for &i in &candidates {
                 if let Some(e) = embeddings.get(&items[i].id) {
                     let s = v.score(e);
+                    let (all, kept) = if q.image_vectors && items[i].kind == Kind::Image {
+                        (&mut all_image, &mut sem_image)
+                    } else {
+                        (&mut all_text, &mut sem_text)
+                    };
+                    all.push(s);
                     if s >= q.min_similarity {
-                        if q.image_vectors && items[i].kind == Kind::Image {
-                            sem_image.push((i, s));
-                        } else {
-                            sem_text.push((i, s));
-                        }
+                        kept.push((i, s));
                     }
                 }
             }
+            scales = [Scale::of(&mut all_text), Scale::of(&mut all_image)];
             for l in [&mut sem_text, &mut sem_image] {
                 l.sort_by(|a, b| b.1.total_cmp(&a.1));
                 l.truncate(SEMANTIC_DEPTH);
@@ -223,8 +275,10 @@ fn rank(s: &Snapshot, q: &Query) -> Vec<Ranked> {
             .map(|&(idx, s)| Ranked {
                 idx,
                 keyword: s,
-                semantic: None,
                 relevance: None,
+                closeness: None,
+                // A score of 1 or more means every word is in it.
+                strong: s >= 1.0,
             })
             .collect();
     }
@@ -232,16 +286,18 @@ fn rank(s: &Snapshot, q: &Query) -> Vec<Ranked> {
     // Ordered by similarity. Each modality is scaled by its own best match, so
     // a photo that is the best image match isn't buried under text matches.
     let mut by_idx: HashMap<usize, Ranked> = HashMap::new();
-    for list in [&sem_text, &sem_image] {
+    for (list, scale) in [(&sem_text, scales[0]), (&sem_image, scales[1])] {
         let best = list.first().map(|&(_, s)| s).unwrap_or(1.0).max(1e-6);
         for &(idx, s) in list {
+            let closeness = scale.closeness(s);
             by_idx.insert(
                 idx,
                 Ranked {
                     idx,
                     keyword: 0.0,
-                    semantic: Some(s),
                     relevance: Some(s / best),
+                    closeness: Some(closeness),
+                    strong: closeness >= CLOSE_TO_BEST,
                 },
             );
         }
@@ -253,10 +309,12 @@ fn rank(s: &Snapshot, q: &Query) -> Vec<Ranked> {
             let h = by_idx.entry(idx).or_insert(Ranked {
                 idx,
                 keyword: 0.0,
-                semantic: None,
                 relevance: Some(0.0),
+                closeness: None,
+                strong: false,
             });
             h.keyword = s;
+            h.strong |= s >= 1.0;
             h.relevance = Some(h.relevance.unwrap_or(0.0) + KEYWORD_WEIGHT * s / best_kw);
         }
     }
@@ -274,13 +332,14 @@ fn rank(s: &Snapshot, q: &Query) -> Vec<Ranked> {
 const KEYWORD_WEIGHT: f32 = 0.25;
 
 /// Puts `hits` in the chosen order. `BestMatch` keeps the ranking from
-/// `rank`; pinned items move to the top (keeping their order) when asked.
+/// `rank`, strong matches before weaker ones; pinned items move to the top
+/// (keeping their order) when asked.
 fn order(items: &[Arc<Item>], hits: &mut [Ranked], sort: SortOrder, pinned_first: bool) {
     let newest = |a: &Ranked, b: &Ranked| {
         (items[b.idx].created, items[b.idx].id).cmp(&(items[a.idx].created, items[a.idx].id))
     };
     match sort {
-        SortOrder::BestMatch => {}
+        SortOrder::BestMatch => hits.sort_by_key(|h| !h.strong),
         SortOrder::Recent => hits.sort_by(newest),
         SortOrder::Oldest => hits.sort_by(|a, b| newest(b, a)),
         SortOrder::AToZ => hits.sort_by_cached_key(|h| {
@@ -389,6 +448,7 @@ mod tests {
             tags: Vec::new(),
             uses: 0,
             app: None,
+            program: None,
             formatted: false,
         }
     }
@@ -482,7 +542,8 @@ mod tests {
         assert!(found[..2].contains(&3), "{found:?}");
     }
 
-    /// Smart results come back best first, so the relevance bars read top-down.
+    /// Smart results come back best first, among the strong matches and again
+    /// among the weaker ones.
     #[test]
     fn hybrid_is_ordered_by_relevance() {
         let s = snapshot(
@@ -505,11 +566,109 @@ mod tests {
             SearchMode::Hybrid,
         );
         let hits = search(&s, &q);
-        let rel: Vec<f32> = hits.iter().map(|h| h.relevance.unwrap()).collect();
-        assert!(rel.windows(2).all(|w| w[0] >= w[1]), "{rel:?}");
-        // A close meaning match outranks a weak one that merely contains the word.
+        // A close meaning match outranks one that merely contains the word;
+        // "hello" neither contains it nor means it, so it comes last.
         let found = ids(&hits);
-        assert_eq!(&found[..2], &[1, 3], "{found:?}");
+        assert_eq!(found, [1, 3, 2, 4], "{found:?}");
+        assert!(hits[3].weak && !hits[2].weak);
+    }
+
+    /// An item whose meaning scores `s` against the query vector `[1, 0]`.
+    fn scoring(s: f32) -> Embedding {
+        Embedding::dense(vec![s, (1.0 - s * s).sqrt()], 0)
+    }
+
+    #[test]
+    fn weaker_matches_come_last_and_fold() {
+        let texts = [
+            "youtube video of the talk",
+            "conference recording",
+            "video call at three",
+            "grocery list",
+            "invoice 4821",
+            "wifi password",
+            "dentist on monday",
+        ];
+        let items: Vec<Item> = (1..=7)
+            .map(|id| item(id, texts[id as usize - 1], 1))
+            .collect();
+        // Each model scores on its own scale: the same split on a low one and
+        // on one where even unrelated text scores 0.7.
+        for scores in [
+            [0.3, 0.9, 0.35, 0.2, 0.15, 0.2, 0.25],
+            [0.76, 0.95, 0.77, 0.73, 0.72, 0.73, 0.74],
+        ] {
+            let embeddings = (1..=7).map(|id| (id, scoring(scores[id as usize - 1])));
+            let s = snapshot(items.clone(), embeddings.collect());
+            let q = query(
+                "youtube video",
+                Some(Embedding::dense(vec![1.0, 0.0], 0)),
+                SearchMode::Hybrid,
+            );
+            let hits = search(&s, &q);
+            let weak: Vec<bool> = hits.iter().map(|h| h.weak).collect();
+            assert_eq!(
+                weak,
+                [false, false, true, true, true, true, true],
+                "{scores:?}"
+            );
+            let mut strong = ids(&hits)[..2].to_vec();
+            strong.sort();
+            // Close in meaning, or containing both words; one word isn't enough.
+            assert_eq!(strong, [1, 2], "{scores:?}");
+        }
+    }
+
+    #[test]
+    fn closeness_reads_the_same_on_any_scale() {
+        let items: Vec<Item> = (1..=5).map(|id| item(id, "note", 1)).collect();
+        let closeness = |scores: [f32; 5]| {
+            let embeddings = (1..=5).map(|id| (id, scoring(scores[id as usize - 1])));
+            let s = snapshot(items.clone(), embeddings.collect());
+            let q = query(
+                "anything",
+                Some(Embedding::dense(vec![1.0, 0.0], 0)),
+                SearchMode::Semantic,
+            );
+            let mut found: Vec<(u64, f32)> = search(&s, &q)
+                .iter()
+                .map(|h| (h.id, h.closeness.unwrap()))
+                .collect();
+            found.sort_by_key(|&(id, _)| id);
+            found
+        };
+        // The same scores squeezed into a band near the top, as some models give.
+        let low = closeness([0.9, 0.6, 0.3, 0.3, 0.3]);
+        let high = closeness([0.95, 0.8, 0.65, 0.65, 0.65]);
+        for ((id, a), (_, b)) in low.iter().zip(&high) {
+            assert!((a - b).abs() < 1e-3, "item {id}: {a} and {b}");
+        }
+        assert_eq!(low[0].1, 1.0);
+        assert!((low[1].1 - CLOSE_TO_BEST).abs() < 1e-3, "{low:?}");
+    }
+
+    #[test]
+    fn nothing_folds_outside_best_match_or_without_a_strong_match() {
+        let s = snapshot(
+            vec![item(1, "video call", 1), item(2, "youtube link", 2)],
+            vec![],
+        );
+        let q = |sort| Query {
+            sort,
+            ..query("youtube video", None, SearchMode::Keyword)
+        };
+        // Neither contains both words, so neither is weaker than the other.
+        assert!(search(&s, &q(SortOrder::BestMatch)).iter().all(|h| !h.weak));
+        let s = snapshot(
+            vec![item(1, "youtube video", 1), item(2, "youtube link", 2)],
+            vec![],
+        );
+        let hits = search(&s, &q(SortOrder::BestMatch));
+        assert_eq!(
+            hits.iter().map(|h| h.weak).collect::<Vec<_>>(),
+            [false, true]
+        );
+        assert!(search(&s, &q(SortOrder::Recent)).iter().all(|h| !h.weak));
     }
 
     #[test]

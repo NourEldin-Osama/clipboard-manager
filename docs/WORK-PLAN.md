@@ -64,6 +64,7 @@ Status: `[ ]` to do, `[~]` in progress, `[x]` done, `[!]` waiting for a decision
 | D51 | One font family: Noto Sans with Noto Sans Arabic, each in Regular and SemiBold, in five text sizes (12, 13, 14, 16, 20) | Claude | Decided |
 | D52 | Ctrl+1 to Ctrl+9 paste the first nine items in both windows; only the popup shows the numbers. A message after a mouse action names its key once per action in each run | Claude | Decided |
 | D53 | The getting-started checklist is for new installs only, and once closed it stays closed | Claude | Decided |
+| D54 | Search measures meaning from the typical item's score up to the best one, so it works the same with every model: a match is strong when it contains all the words or is at least half way to the best, and the relevance bars show the same measure (one bar below strong, two from there, three near the best) | You | Decided |
 
 ## Order of work, and why
 
@@ -203,10 +204,10 @@ screenshots of the finished screens.
 - [x] 11.3 Reset all settings keeps the saved servers and the rules per app, and says so
 
 ### Phase 12. Content
-- [ ] 12.1 The program a copy came from: its icon and its own name, and the program in front for a WebView2 helper
-- [ ] 12.2 Content in its best form: decoded web addresses, a code icon, color swatches, file paths
-- [ ] 12.3 Calmer grid cards
-- [ ] 12.4 Weak search matches fold into one line; relevance bars on grid cards
+- [x] 12.1 The program a copy came from: its icon and its own name, and the program in front for a WebView2 helper
+- [x] 12.2 Content in its best form: decoded web addresses, a code icon (Fluent Code, your choice), color swatches, file paths
+- [x] 12.3 Calmer grid cards: no kind badge, a footer with the program and the time, short text larger, pictures centered
+- [x] 12.4 Weak search matches fold into one line; relevance bars on grid cards. Strong: contains all the words, or its meaning score is at least halfway from the typical score to the best
 
 ### Phase 13. Pasting and keys
 - [ ] 13.1 The details pane's main button names the action and the program it pastes into

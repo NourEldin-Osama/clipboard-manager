@@ -296,6 +296,8 @@ pub(super) enum Command {
     /// Turns off Send images for the search model with this key, after its
     /// server refused an image.
     StopSendingImages(String),
+    /// Shows the weaker matches folded below the results.
+    ShowWeaker,
 }
 
 /// Whether putting an item back on the clipboard also pastes it into the
@@ -391,6 +393,11 @@ pub struct App {
     query_vec: Option<(String, Arc<Embedding>)>,
     filter: Filter,
     results: Vec<Hit>,
+    /// Weaker matches, folded under one line below the results.
+    weaker: Vec<Hit>,
+    /// The search the weaker matches were shown for; another search folds
+    /// them again.
+    weaker_shown_for: Option<String>,
     /// The history or the query changed: search again.
     dirty: bool,
     searcher: Searcher,
@@ -418,6 +425,8 @@ pub struct App {
     settings_typing: bool,
     preview: Option<(u64, Option<TextureHandle>)>,
     loader: ImageLoader,
+    /// The names and icons of the programs copies came from.
+    programs: programs::Programs,
     detail: Option<DetailText>,
     research_pending: bool,
     last_search: Instant,
@@ -573,6 +582,8 @@ impl App {
             query_vec: None,
             filter: Filter::All,
             results: Vec::new(),
+            weaker: Vec::new(),
+            weaker_shown_for: None,
             dirty: true,
             searcher: {
                 let c = ctx.clone();
@@ -595,6 +606,7 @@ impl App {
                 let c = ctx.clone();
                 ImageLoader::new(image_files, move || c.request_repaint())
             },
+            programs: programs::Programs::new(ctx.clone()),
             detail: None,
             research_pending: false,
             last_search: Instant::now(),
@@ -1126,6 +1138,7 @@ impl App {
                 self.toast(t!("toast-saved"));
             }
             Command::StopSendingImages(key) => self.stop_sending_images(&key),
+            Command::ShowWeaker => self.show_weaker(),
             Command::CopyText(text) => {
                 let flags = self.flags.clone();
                 self.background.run(move || {
@@ -1174,6 +1187,7 @@ impl App {
         let Capture {
             content,
             app,
+            program,
             formats,
         } = capture;
         if let Captured::Skipped { reason, text } = content {
@@ -1184,6 +1198,7 @@ impl App {
             let kept = text.map(|t| Capture {
                 content: Captured::Text(t),
                 app,
+                program,
                 formats,
             });
             self.skipped(message, kept);
@@ -1198,6 +1213,7 @@ impl App {
             let kept = Capture {
                 content,
                 app,
+                program,
                 formats,
             };
             self.skipped(t!("toast-skipped-rule"), Some(kept));
@@ -1206,6 +1222,7 @@ impl App {
         self.record(Capture {
             content,
             app,
+            program,
             formats,
         });
     }
@@ -1246,6 +1263,7 @@ impl App {
         let Capture {
             content: c,
             app,
+            program,
             formats,
         } = capture;
         let hash = c.hash();
@@ -1268,6 +1286,7 @@ impl App {
         // The capture's own hash, which also covers image pixels and file lists.
         item.hash = hash;
         item.app = app;
+        item.program = program;
         match c {
             Captured::Text(t) => {
                 // Saved before the item, which then says it has them.
@@ -1298,7 +1317,10 @@ impl App {
                 let store = self.library.store().clone();
                 self.background.run(move || {
                     let saved = store.images.save(id, &img).map_err(|e| format!("{e:#}"));
-                    Done::ImageSaved { item, saved }
+                    Done::ImageSaved {
+                        item: Box::new(item),
+                        saved,
+                    }
                 });
                 return;
             }
@@ -1338,7 +1360,7 @@ impl App {
                 saved: Ok(path),
             } => {
                 item.image = Some(path);
-                self.add_item(item);
+                self.add_item(*item);
                 self.prune();
             }
             Done::ImageSaved { saved: Err(e), .. } => {
@@ -1604,7 +1626,12 @@ impl App {
 
     fn show_results(&mut self, hits: Vec<Hit>) {
         self.searching = false;
-        self.results = hits;
+        // Weaker matches wait under one line, unless shown for this search.
+        if self.weaker_shown_for.as_deref() == Some(self.query.trim()) {
+            (self.results, self.weaker) = (hits, Vec::new());
+        } else {
+            (self.results, self.weaker) = hits.into_iter().partition(|h| !h.weak);
+        }
         let still_there = self
             .selected
             .is_some_and(|id| self.results.iter().any(|h| h.id == id));
@@ -1622,6 +1649,11 @@ impl App {
         }
         let gone: HashSet<u64> = ids.iter().copied().collect();
         self.results.retain(|h| !gone.contains(&h.id));
+        self.weaker.retain(|h| !gone.contains(&h.id));
+        // With every strong match gone, the weaker ones are all there is.
+        if self.results.is_empty() {
+            self.results.append(&mut self.weaker);
+        }
         for id in ids {
             self.thumbs.remove(id);
             self.thumb_seen.remove(id);
@@ -1763,6 +1795,13 @@ impl App {
         self.dirty = true;
     }
 
+    /// Shows the weaker matches folded below the results, until the search
+    /// changes.
+    fn show_weaker(&mut self) {
+        self.weaker_shown_for = Some(self.query.trim().to_string());
+        self.results.append(&mut self.weaker);
+    }
+
     fn move_selection(&mut self, delta: i32) {
         if self.results.is_empty() {
             return;
@@ -1770,6 +1809,10 @@ impl App {
         let cur = self
             .selected
             .and_then(|id| self.results.iter().position(|h| h.id == id));
+        // Going on from the last result shows the weaker matches below it.
+        if delta > 0 && cur == Some(self.results.len() - 1) && !self.weaker.is_empty() {
+            self.show_weaker();
+        }
         let next = match cur {
             Some(c) => (c as i32 + delta).clamp(0, self.results.len() as i32 - 1) as usize,
             None => 0,
@@ -1847,6 +1890,7 @@ fn write_clipboard(
 mod background;
 mod bidi;
 mod icons;
+mod programs;
 mod settings;
 mod shortcut;
 mod view;

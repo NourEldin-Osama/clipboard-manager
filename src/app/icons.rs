@@ -42,6 +42,7 @@ pub(super) enum Icon {
     Close,
     Dropdown,
     Text,
+    Code,
     Link,
     Image,
     Folder,
@@ -139,6 +140,7 @@ fn source(icon: Icon) -> Option<(&'static str, &'static [u8])> {
         Icon::Close => svg!("close"),
         Icon::Dropdown => svg!("dropdown"),
         Icon::Text => svg!("text"),
+        Icon::Code => svg!("code"),
         Icon::Link => svg!("link"),
         Icon::Image => svg!("image"),
         Icon::Folder => svg!("folder"),
@@ -155,7 +157,7 @@ fn source(icon: Icon) -> Option<(&'static str, &'static [u8])> {
     })
 }
 
-const ALL: [Icon; 40] = [
+const ALL: [Icon; 41] = [
     Icon::Refresh,
     Icon::Eye,
     Icon::EyeOff,
@@ -183,6 +185,7 @@ const ALL: [Icon; 40] = [
     Icon::Close,
     Icon::Dropdown,
     Icon::Text,
+    Icon::Code,
     Icon::Link,
     Icon::Image,
     Icon::Folder,

@@ -11,6 +11,95 @@ const ROW_PADDING: f32 = 8.0;
 /// so the time and the pin stay near the text.
 const LIST_MAX_WIDTH: f32 = 900.0;
 
+/// Height of the line under the results that shows the weaker matches.
+pub(super) const WEAKER_LINE: f32 = 48.0;
+
+/// The line under the results that shows the weaker matches folded there,
+/// in the middle of `rect`. Returns whether it was clicked.
+pub(super) fn weaker_line(ui: &Ui, rect: Rect, count: usize) -> bool {
+    let text = t!("list-show-weaker", count = count);
+    let resp = ui.interact(rect, egui::Id::unique("show-weaker"), Sense::click());
+    resp.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, &text));
+    let color = ui.visuals().hyperlink_color;
+    let font = FontId::proportional(size::BODY);
+    let text_w = ui
+        .fonts_mut(|f| f.layout_no_wrap(text.clone(), font.clone(), color))
+        .size()
+        .x;
+    let (icon, gap) = (16.0, 6.0);
+    let content = Rect::from_center_size(rect.center(), Vec2::new(icon + gap + text_w, 24.0));
+    let p = ui.painter();
+    if resp.hovered() {
+        let fill = ui.visuals().widgets.hovered.weak_bg_fill;
+        p.rect_filled(
+            content.expand2(Vec2::new(12.0, 6.0)),
+            CornerRadius::same(8),
+            fill,
+        );
+    }
+    let icon_rect = Rect::from_min_size(
+        Pos2::new(content.left(), content.center().y - icon / 2.0),
+        Vec2::splat(icon),
+    );
+    icons::paint(p, flip(content, icon_rect), Icon::Dropdown, color);
+    let start = Pos2::new(content.left() + icon + gap, content.center().y);
+    let start = flip(content, Rect::from_min_size(start, Vec2::ZERO)).min;
+    paint_text(
+        ui,
+        p,
+        start,
+        start_anchor(egui::Align::Center),
+        &text,
+        font,
+        color,
+    );
+    resp.on_hover_cursor(egui::CursorIcon::PointingHand)
+        .clicked()
+}
+
+/// How close a match's meaning is to the best match's, in three steps: one
+/// bar below the strong matches, two from there, three near the best.
+/// `None` without a meaning score.
+pub(super) fn relevance_level(hit: &Hit) -> Option<usize> {
+    let closeness = hit.closeness?;
+    Some(if closeness >= 0.75 {
+        3
+    } else if closeness >= crate::search::CLOSE_TO_BEST {
+        2
+    } else {
+        1
+    })
+}
+
+/// Three bars ending at `end_x` and standing on `bottom_y`, the first
+/// `level` of them lit. Placed left to right, then mirrored in `within`.
+pub(super) fn paint_relevance(
+    p: &egui::Painter,
+    within: Rect,
+    end_x: f32,
+    bottom_y: f32,
+    level: usize,
+    lit: Color32,
+    unlit: Color32,
+) {
+    for b in 0..3 {
+        let h = 4.0 + b as f32 * 3.0;
+        let r = flip(
+            within,
+            Rect::from_min_size(
+                Pos2::new(end_x - 18.0 + b as f32 * 6.0, bottom_y - h),
+                Vec2::new(4.0, h),
+            ),
+        );
+        let color = if b < level {
+            lit
+        } else {
+            unlit.gamma_multiply(0.35)
+        };
+        p.rect_filled(r, CornerRadius::same(1), color);
+    }
+}
+
 /// The day header that stays at the top of the list while its rows scroll
 /// under it, and where it goes: at `top`, or above it while the next day's
 /// header pushes it out. None while the top shows a header in its place.
@@ -129,10 +218,10 @@ pub(super) fn paint_row(
     it: &Item,
     hit: &Hit,
     thumb: Option<TextureHandle>,
+    program_icon: Option<&TextureHandle>,
     selected: bool,
     compact: bool,
     terms: &[String],
-    max_sem: f32,
 ) {
     let v = ui.visuals();
     let p = ui.painter_at(rect);
@@ -167,6 +256,11 @@ pub(super) fn paint_row(
         Pos2::new(rect.left() + ROW_PADDING, rect.center().y - av / 2.0),
         Vec2::splat(av),
     ));
+    // A text that is a colour or a path shows that before its program.
+    let color = (it.kind == Kind::Text)
+        .then(|| color_in(&it.text))
+        .flatten();
+    let path = (it.kind == Kind::Text).then(|| path_in(&it.text)).flatten();
     match thumb {
         Some(t) => {
             let s = t.size_vec2();
@@ -183,6 +277,43 @@ pub(super) fn paint_row(
                 .corner_radius(6.0)
                 .paint_at(ui, av_rect);
         }
+        None if color.is_some() => {
+            let swatch = av_rect.shrink(3.0);
+            p.rect_filled(swatch, CornerRadius::same(8), color.expect("checked above"));
+            p.rect_stroke(
+                swatch,
+                CornerRadius::same(8),
+                Stroke::new(1.0, v.weak_text_color().gamma_multiply(0.3)),
+                egui::StrokeKind::Inside,
+            );
+        }
+        None if path.is_some() => {
+            let c = kind_color(Kind::Files);
+            p.rect_filled(
+                av_rect,
+                CornerRadius::same(8),
+                c.gamma_multiply(if v.dark_mode { 0.25 } else { 0.13 }),
+            );
+            let icon = match path.and_then(|p| p.extension()) {
+                Some(_) => Icon::File,
+                None => Icon::Folder,
+            };
+            icons::paint(
+                &p,
+                Rect::from_center_size(av_rect.center(), Vec2::splat(av * 0.46)),
+                icon,
+                c,
+            );
+        }
+        // Text, links and files show the program they were copied from.
+        None if program_icon.is_some() => {
+            let icon = program_icon.expect("checked above");
+            let side = (av * 0.84).round();
+            egui::Image::new((icon.id(), Vec2::splat(side))).paint_at(
+                ui,
+                Rect::from_center_size(av_rect.center(), Vec2::splat(side)),
+            );
+        }
         None => {
             let c = kind_color(it.kind);
             p.rect_filled(
@@ -190,24 +321,12 @@ pub(super) fn paint_row(
                 CornerRadius::same(8),
                 c.gamma_multiply(if v.dark_mode { 0.25 } else { 0.13 }),
             );
-            let code = it.kind == Kind::Text
-                && looks_like_code(&it.text.chars().take(600).collect::<String>());
-            if code {
-                p.text(
-                    av_rect.center(),
-                    Align2::CENTER_CENTER,
-                    "</>",
-                    FontId::monospace(av * 0.3),
-                    c,
-                );
-            } else {
-                icons::paint(
-                    &p,
-                    Rect::from_center_size(av_rect.center(), Vec2::splat(av * 0.46)),
-                    icons::kind(it.kind),
-                    c,
-                );
-            }
+            icons::paint(
+                &p,
+                Rect::from_center_size(av_rect.center(), Vec2::splat(av * 0.46)),
+                item_icon(it),
+                c,
+            );
         }
     }
 
@@ -314,32 +433,8 @@ pub(super) fn paint_row(
         );
         ix -= 18.0;
     }
-    if let Some(s) = hit.relevance.filter(|_| hit.semantic.is_some()) {
-        // Three bars: how close this match is to the best one.
-        let ratio = if max_sem > 0.0 { s / max_sem } else { 0.0 };
-        let level = if ratio > 0.93 {
-            3
-        } else if ratio > 0.8 {
-            2
-        } else {
-            1
-        };
-        for b in 0..3 {
-            let h = 4.0 + b as f32 * 3.0;
-            let r = m(Rect::from_min_size(
-                Pos2::new(ix - 18.0 + b as f32 * 6.0, iy + 6.0 - h),
-                Vec2::new(4.0, h),
-            ));
-            p.rect_filled(
-                r,
-                CornerRadius::same(1),
-                if b < level {
-                    a
-                } else {
-                    weak.gamma_multiply(0.35)
-                },
-            );
-        }
+    if let Some(level) = relevance_level(hit) {
+        paint_relevance(&p, rect, ix, iy + 6.0, level, a, weak);
     }
 }
 
@@ -425,22 +520,26 @@ impl App {
             };
         }
         let total = y;
+        let weaker = self.weaker.len();
+        let fold_h = if weaker > 0 { WEAKER_LINE } else { 0.0 };
 
         let mut sa = egui::ScrollArea::vertical().auto_shrink([false, false]);
         if in_popup {
             // Its own scroll place, apart from the full window's list.
             sa = sa.id_salt("popup-list");
         }
-        if self.scroll_to_selected {
+        let (off, view_h) = if in_popup {
+            self.popup_list_view
+        } else {
+            self.list_view
+        };
+        // Until the list has been drawn once, its height is unknown and every
+        // row would seem to be below it: the scroll waits for that frame.
+        if self.scroll_to_selected && view_h > 0.0 {
             self.scroll_to_selected = false;
             if let Some(i) = lines.iter().position(
                 |l| matches!(l, Line::Row(r) if Some(self.results[*r].id) == self.selected),
             ) {
-                let (off, view_h) = if in_popup {
-                    self.popup_list_view
-                } else {
-                    self.list_view
-                };
                 let top = ys[i]
                     - if i > 0 && matches!(lines[i - 1], Line::Header(..)) {
                         header_h
@@ -455,11 +554,6 @@ impl App {
             }
         }
 
-        let max_sem = self
-            .results
-            .iter()
-            .filter_map(|h| h.relevance)
-            .fold(f32::MIN, f32::max);
         let terms: Vec<String> = if searching {
             self.query
                 .to_lowercase()
@@ -471,16 +565,17 @@ impl App {
         };
         let mut actions = Vec::new();
         let frame = ui.ctx().cumulative_pass_nr();
-        let (library, results, thumbs, loader, selected, seen) = (
+        let (library, results, thumbs, loader, selected, seen, programs) = (
             &self.library,
             &self.results,
             &self.thumbs,
             &mut self.loader,
             self.selected,
             &mut self.thumb_seen,
+            &mut self.programs,
         );
         let out = sa.show_viewport(ui, |ui, viewport| {
-            ui.set_height(total);
+            ui.set_height(total + fold_h);
             let origin = ui.max_rect().min;
             let full = ui.available_width();
             let width = if centred {
@@ -508,6 +603,7 @@ impl App {
                             continue;
                         };
                         let thumb = thumb_for(it, thumbs, loader, (&mut *seen, frame));
+                        let program = it.program.as_deref().and_then(|p| programs.get(p));
                         let resp =
                             ui.interact(rect, egui::Id::unique(("row", it.id)), Sense::CLICK);
                         let chosen = Some(it.id) == selected;
@@ -527,10 +623,10 @@ impl App {
                             it,
                             hit,
                             thumb,
+                            program.and_then(|p| p.icon.as_ref()),
                             Some(it.id) == selected,
                             compact,
                             &terms,
-                            max_sem,
                         );
                         if resp.clicked() {
                             actions.push(Command::Select(it.id));
@@ -583,6 +679,15 @@ impl App {
                             }
                         }
                     }
+                }
+            }
+            if weaker > 0 && total <= viewport.max.y {
+                let rect = Rect::from_min_size(
+                    Pos2::new(left, origin.y + total),
+                    Vec2::new(width, fold_h),
+                );
+                if weaker_line(ui, rect, weaker) {
+                    actions.push(Command::ShowWeaker);
                 }
             }
             if let Some((Line::Header(label, n), y)) =

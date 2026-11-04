@@ -240,7 +240,12 @@ impl App {
                     }
                     self.after_dialog();
                 }
-                if let Some(p) = &it.source {
+                // A file it was added from, or the file or folder it names.
+                let place = it
+                    .source
+                    .as_deref()
+                    .or_else(|| (it.kind == Kind::Text).then(|| path_in(&it.text)).flatten());
+                if let Some(p) = place {
                     if icons::icon_button(ui, Icon::Folder, &t!("details-show-in-folder")).clicked()
                     {
                         if let Err(e) = reveal(p) {
@@ -280,9 +285,15 @@ impl App {
         if let Some(app) = &it.app {
             let ignored = self.cfg.rules.iter().any(|r| r.skips_app(app));
             let mut ignore = false;
+            // The program's own name once it is known, else its file name.
+            let name = it
+                .program
+                .as_deref()
+                .and_then(|p| self.programs.get(p))
+                .map_or_else(|| app.clone(), |p| p.name.clone());
             row(ui, |ui| {
                 ui.label(txt(
-                    &t!("details-copied-from", app = app.as_str()),
+                    &t!("details-copied-from", app = name.as_str()),
                     size::SMALL,
                     Some(weak),
                 ));
@@ -355,11 +366,29 @@ impl App {
                 }
                 Kind::Link => {
                     ui.hyperlink_to(
-                        RichText::new(it.text.trim()).size(size::LARGE),
+                        RichText::new(crate::net::readable_url(it.text.trim())).size(size::LARGE),
                         it.text.trim(),
                     );
                 }
                 Kind::Text => {
+                    if let Some(color) = color_in(&it.text) {
+                        let line = t!("item-color", value = color_other_way(&it.text, color));
+                        row(ui, |ui| {
+                            let (swatch, _) =
+                                ui.allocate_exact_size(Vec2::splat(48.0), Sense::hover());
+                            let edge = ui.visuals().weak_text_color().gamma_multiply(0.3);
+                            ui.painter()
+                                .rect_filled(swatch, CornerRadius::same(8), color);
+                            ui.painter().rect_stroke(
+                                swatch,
+                                CornerRadius::same(8),
+                                Stroke::new(1.0, edge),
+                                egui::StrokeKind::Inside,
+                            );
+                            lbl(ui, &line, size::BODY, ui.visuals().text_color());
+                        });
+                        ui.add_space(8.0);
+                    }
                     let d = self.detail_text(&it);
                     if d.monospace {
                         let code_bg = ui.visuals().panel_fill;
