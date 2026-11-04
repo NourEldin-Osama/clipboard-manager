@@ -64,6 +64,7 @@ Status: `[ ]` to do, `[~]` in progress, `[x]` done, `[!]` waiting for a decision
 | D51 | One font family: Noto Sans with Noto Sans Arabic, each in Regular and SemiBold, in five text sizes (12, 13, 14, 16, 20) | Claude | Decided |
 | D52 | Ctrl+1 to Ctrl+9 paste the first nine items in both windows; only the popup shows the numbers. A message after a mouse action names its key once per action in each run | Claude | Decided |
 | D53 | The getting-started checklist is for new installs only, and once closed it stays closed | Claude | Decided |
+| D54 | Search measures meaning from the typical item's score up to the best one, so it works the same with every model: a match is strong when it contains all the words or is at least half way to the best, and the relevance bars show the same measure (one bar below strong, two from there, three near the best) | You | Decided |
 
 ## Order of work, and why
 
