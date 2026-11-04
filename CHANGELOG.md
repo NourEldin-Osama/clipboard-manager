@@ -83,6 +83,10 @@ the notes here before a push that makes a release.
 - After quitting while the window was minimized, the next start opened it
   tiny, in a corner of the screen. It now keeps its place and size, and a
   window saved that way by an older version opens at its first size.
+- Smart search ranks meaning the same way as the relevance bars: from the
+  typical match up to the best one. With models that give unrelated text
+  nearly the best score, an item that only shares a word no longer comes
+  before a close meaning match.
 
 ## 0.5.1
 
