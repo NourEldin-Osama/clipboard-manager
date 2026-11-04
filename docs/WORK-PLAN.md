@@ -122,6 +122,7 @@ Status: `[ ]` to do, `[~]` in progress, `[x]` done, `[!]` waiting for a decision
 - [x] 2.35 The taskbar showed Windows' generic icon, because the exe had none; fixed with the app icon (D34, found after 0.4.0)
 - [x] 2.36 Every update download failed at its end: its limit was the signed size, and ureq refuses even the last read once the limit is used up (found when 0.4.0 tried to update to 0.4.1; 0.4.0 and 0.4.1 copies need the installer once)
 - [x] 2.37 The built-in text reader's model files are gone from their address: Amazon answers Access Denied for text-detection.rten and text-recognition.rten; the ocrs project now serves only ONNX versions there (found while testing resume); fixed: the app downloads the ONNX files (D36)
+- [x] 2.38 Quitting while the window was minimized saved it at -32000 with no size (eframe saves every 30 seconds and at quit), so the next start opened it tiny in a corner, and a dev build stopped on a negative size in the empty details pane; now the entry from before the window was minimized goes back in, and a window that starts smaller than the smallest size gets its first size (found in the Phase 13 check)
 
 ### Phase 3. Structure (no behavior change)
 - [x] 3.1 Split `view.rs` (theme, widgets, time format, top bar, list, grid, details, status bar, keyboard)

@@ -80,6 +80,9 @@ the notes here before a push that makes a release.
 - Esc closes an open menu, such as Sort by, without also clearing the
   search or hiding the window.
 - On a row with one line of text, long text no longer runs under the pin.
+- After quitting while the window was minimized, the next start opened it
+  tiny, in a corner of the screen. It now keeps its place and size, and a
+  window saved that way by an older version opens at its first size.
 
 ## 0.5.1
 

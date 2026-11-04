@@ -81,8 +81,8 @@ fn main() -> eframe::Result {
         viewport: egui::ViewportBuilder::default()
             .with_title(i18n::t!("app-title"))
             .with_app_id("clipboard-manager")
-            .with_inner_size([1040.0, 680.0])
-            .with_min_inner_size([560.0, 380.0])
+            .with_inner_size(app::WINDOW_SIZE)
+            .with_min_inner_size(app::SMALLEST_WINDOW)
             .with_drag_and_drop(true)
             .with_icon(icon()),
         persist_window: true,

@@ -356,6 +356,10 @@ const UNDO_FOR: Duration = Duration::from_secs(8);
 const KEY_HINT_FOR: Duration = Duration::from_secs(4);
 /// eframe's entry for the window's place and size in app.ron.
 const WINDOW_KEY: &str = "window";
+/// The window's size at the first start, in points.
+pub const WINDOW_SIZE: [f32; 2] = [1040.0, 680.0];
+/// The smallest the window can be made, in points.
+pub const SMALLEST_WINDOW: [f32; 2] = [560.0, 380.0];
 
 /// eframe saves the window's place and size just before the app's own
 /// `save`, every 30 seconds and when the app quits. A minimized window has
@@ -472,6 +476,8 @@ pub struct App {
     /// The window's place and size as eframe last saved them while it was
     /// not minimized (see `keep_window_state`).
     window_state: Option<String>,
+    /// The window's size at start was looked at.
+    start_size_checked: bool,
     detail: Option<DetailText>,
     research_pending: bool,
     last_search: Instant,
@@ -669,6 +675,7 @@ impl App {
             programs: programs::Programs::new(ctx.clone()),
             paste_program: (paste::NO_WINDOW, None),
             window_state: cc.storage.and_then(|s| s.get_string(WINDOW_KEY)),
+            start_size_checked: false,
             detail: None,
             research_pending: false,
             last_search: Instant::now(),
@@ -914,6 +921,18 @@ impl App {
     /// Runs every frame, including while the window is hidden.
     fn window_logic(&mut self, ctx: &egui::Context) {
         self.update_logic(ctx);
+        // Versions before 0.6 saved a minimized window with no size, and
+        // Windows then makes it tiny at start: it gets the first size back.
+        if !self.start_size_checked {
+            if let Some(inner) = ctx.input(|i| i.viewport().inner_rect) {
+                self.start_size_checked = true;
+                let [width, height] = SMALLEST_WINDOW;
+                if inner.width() < width || inner.height() < height {
+                    let size = Vec2::from(WINDOW_SIZE);
+                    ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(size));
+                }
+            }
+        }
         while let Ok(cmd) = self.tray_rx.try_recv() {
             match cmd {
                 TrayCmd::Show => self.win.show(),
