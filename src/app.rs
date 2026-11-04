@@ -410,6 +410,9 @@ pub struct App {
     /// Tab moved the focus last, so the focused control is outlined; a
     /// click hides the outline again.
     keyboard_focus: bool,
+    /// How wide the top bar's buttons were in the last frame, so the
+    /// search field takes the rest.
+    top_actions_w: f32,
     /// A text field in Settings had the keyboard when the keys were last
     /// looked at (see `keyboard`).
     settings_typing: bool,
@@ -586,6 +589,7 @@ impl App {
             folders_of: None,
             keyboard_focus: false,
             settings_typing: false,
+            top_actions_w: 300.0,
             preview: None,
             loader: {
                 let c = ctx.clone();

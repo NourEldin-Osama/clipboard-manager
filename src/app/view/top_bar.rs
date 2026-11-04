@@ -19,13 +19,14 @@ impl App {
             )
             .show(ui, |ui| {
                 row(ui, |ui| {
-                    // The four 34 px buttons at the far end, each after the
-                    // usual gap, and the search field's outline (up to 1.5 px
-                    // on each side).
-                    let actions_w = 4.0 * (34.0 + ui.spacing().item_spacing.x) + 3.0;
-                    let w = (ui.available_width() - actions_w).max(200.0);
+                    // The search field takes the room the buttons at the far
+                    // end used last time, less its outline (up to 1.5 px on
+                    // each side). When their width changes, a second pass of
+                    // the same frame lays the bar out again.
+                    let gap = ui.spacing().item_spacing.x;
+                    let w = (ui.available_width() - self.top_actions_w - gap - 3.0).max(200.0);
                     self.search_field(ui, w);
-                    far(ui, |ui| {
+                    let used = far(ui, |ui| {
                         if icons::icon_button(ui, Icon::Settings, &t!("top-settings")).clicked() {
                             self.open_settings(SettingsPage::General);
                         }
@@ -45,36 +46,119 @@ impl App {
                                 self.after_dialog();
                             }
                         });
-                        let view = self.cfg.view;
-                        let tip = t!(
-                            "top-view-tip",
-                            view = view.label(),
-                            next = view.next().label()
-                        );
-                        if icons::icon_button(ui, view_icon(view), &tip).clicked() {
-                            self.set_view(view.next());
-                        }
-                        let rec = self.flags.enabled.load(Ordering::SeqCst);
-                        let (icon, tip) = if rec {
-                            (Icon::Pause, t!("top-pause-recording"))
-                        } else {
-                            (Icon::Play, t!("top-resume-recording"))
-                        };
-                        let (fill, fg) = if rec {
-                            (None, None)
-                        } else {
-                            (Some(AMBER), Some(Color32::WHITE))
-                        };
-                        if icon_button_ex(ui, icon, &tip, Vec2::splat(34.0), 16.0, fill, fg)
-                            .clicked()
-                        {
-                            self.set_recording(!rec);
-                        }
+                        self.view_switch(ui);
+                        ui.add_space(8.0);
+                        self.pause_button(ui);
+                        ui.min_rect().width()
                     });
+                    if (used - self.top_actions_w).abs() > 0.5 {
+                        self.top_actions_w = used;
+                        ui.ctx()
+                            .request_discard("the top bar's buttons changed width");
+                    }
                 });
                 ui.add_space(4.0);
                 self.filter_chips(ui);
             });
+    }
+
+    /// Grid, List and Detail side by side in reading order, the current one
+    /// tinted. The view key still steps through them.
+    fn view_switch(&mut self, ui: &mut Ui) {
+        const BUTTON: f32 = 30.0;
+        const PAD: f32 = 2.0;
+        let count = ViewMode::ALL.len() as f32;
+        let (track, _) = ui.allocate_exact_size(
+            Vec2::new(count * BUTTON + 2.0 * PAD, BUTTON + 2.0 * PAD),
+            Sense::hover(),
+        );
+        let v = ui.visuals();
+        ui.painter().rect_filled(
+            track,
+            CornerRadius::same(10),
+            v.widgets.inactive.weak_bg_fill,
+        );
+        let tint = accent();
+        let shade = text_shade(tint, v.dark_mode);
+        let (text, strong, hovered) = (
+            v.text_color(),
+            v.strong_text_color(),
+            v.widgets.hovered.weak_bg_fill,
+        );
+        for (i, mode) in ViewMode::ALL.into_iter().enumerate() {
+            let at = Rect::from_min_size(
+                track.min + Vec2::new(PAD + i as f32 * BUTTON, PAD),
+                Vec2::splat(BUTTON),
+            );
+            let rect = flip(track, at);
+            let name = hint(&mode.label(), &self.cfg.keys.view);
+            let current = self.cfg.view == mode;
+            let resp = ui.interact(rect, egui::Id::unique(("view", i)), Sense::click());
+            resp.widget_info(|| {
+                egui::WidgetInfo::selected(egui::Role::RadioButton, true, current, &name)
+            });
+            let p = ui.painter();
+            if current {
+                p.rect_filled(rect, CornerRadius::same(8), tint.gamma_multiply(0.18));
+            } else if resp.hovered() {
+                p.rect_filled(rect, CornerRadius::same(8), hovered);
+            }
+            let color = match (current, resp.hovered()) {
+                (true, _) => shade,
+                (false, true) => strong,
+                (false, false) => text,
+            };
+            icons::paint(
+                p,
+                Rect::from_center_size(rect.center(), Vec2::splat(16.0)),
+                view_icon(mode),
+                color,
+            );
+            if tip(resp, &name).clicked() && !current {
+                self.set_view(mode);
+            }
+        }
+    }
+
+    /// Pause, with its word; Resume, in amber, while recording is paused.
+    fn pause_button(&mut self, ui: &mut Ui) {
+        let recording = self.flags.enabled.load(Ordering::SeqCst);
+        let (icon, word, name) = if recording {
+            (Icon::Pause, t!("top-pause"), t!("top-pause-recording"))
+        } else {
+            (Icon::Play, t!("top-resume"), t!("top-resume-recording"))
+        };
+        let label = txt(&word, size::CONTROL, None);
+        let (galley, inner) = icons::icon_text_size(ui, &label, size::CONTROL, 16.0);
+        let pad = 10.0;
+        let (rect, resp) =
+            ui.allocate_exact_size(Vec2::new(inner.x + 2.0 * pad, 34.0), Sense::click());
+        resp.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, &name));
+        let v = ui.visuals();
+        let p = ui.painter();
+        let color = if recording {
+            if resp.hovered() {
+                p.rect_filled(rect, CornerRadius::same(8), v.widgets.hovered.weak_bg_fill);
+            }
+            v.text_color()
+        } else {
+            p.rect_filled(rect, CornerRadius::same(8), button_fill(AMBER));
+            if resp.hovered() {
+                p.rect_filled(rect, CornerRadius::same(8), Color32::from_white_alpha(28));
+            }
+            Color32::WHITE
+        };
+        icons::paint_icon_text(
+            p,
+            rect.shrink2(Vec2::new(pad, 0.0)),
+            icon,
+            16.0,
+            galley,
+            color,
+        );
+        if tip(resp, &name).clicked() {
+            self.set_recording(!recording);
+        }
     }
 
     pub(super) fn search_field(&mut self, ui: &mut Ui, width: f32) {
