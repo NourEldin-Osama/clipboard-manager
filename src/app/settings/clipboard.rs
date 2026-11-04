@@ -78,11 +78,11 @@ impl App {
                     )
                 };
                 let menu = egui::ComboBox::from_id_salt("history")
-                    .selected_text(txt(&label(*max_items), 14.0, None))
+                    .selected_text(txt(&label(*max_items), size::BODY, None))
                     .width(140.0)
                     .show_ui(ui, |ui| {
                         for n in HISTORY_SIZES {
-                            ui.selectable_value(max_items, n, txt(&label(n), 14.0, None));
+                            ui.selectable_value(max_items, n, txt(&label(n), size::BODY, None));
                         }
                     });
                 set_choice_name(&menu.response, &row_title(ui), &label(*max_items));
@@ -96,11 +96,11 @@ impl App {
             def.delete_after_days,
             |ui, days| {
                 let menu = egui::ComboBox::from_id_salt("age")
-                    .selected_text(txt(&age_label(*days), 14.0, None))
+                    .selected_text(txt(&age_label(*days), size::BODY, None))
                     .width(140.0)
                     .show_ui(ui, |ui| {
                         for n in AGES {
-                            ui.selectable_value(days, n, txt(&age_label(n), 14.0, None));
+                            ui.selectable_value(days, n, txt(&age_label(n), size::BODY, None));
                         }
                     });
                 set_choice_name(&menu.response, &row_title(ui), &age_label(*days));
@@ -122,13 +122,13 @@ fn rules_section(ui: &mut Ui, d: &mut Config) {
                 ui.add_space(10.0);
                 let program = ui.add(
                     egui::TextEdit::singleline(&mut rule.app)
-                        .hint_text(txt(&t!("settings-rule-program"), 14.0, None))
+                        .hint_text(txt(&t!("settings-rule-program"), size::BODY, None))
                         .desired_width(150.0),
                 );
                 set_name(&program, &t!("settings-rule-program"));
                 let pattern = ui.add(
                     egui::TextEdit::singleline(&mut rule.pattern)
-                        .hint_text(txt(&t!("settings-rule-pattern"), 14.0, None))
+                        .hint_text(txt(&t!("settings-rule-pattern"), size::BODY, None))
                         .desired_width(220.0),
                 );
                 set_name(&pattern, &t!("settings-rule-pattern"));
@@ -139,7 +139,7 @@ fn rules_section(ui: &mut Ui, d: &mut Config) {
                 lbl(
                     ui,
                     &t!("settings-rule-regex"),
-                    13.0,
+                    size::CONTROL,
                     ui.visuals().text_color(),
                 );
                 far(ui, |ui| {
@@ -167,7 +167,7 @@ fn rules_section(ui: &mut Ui, d: &mut Config) {
     row(ui, |ui| {
         ui.add_space(10.0);
         if ui
-            .button(txt(&t!("settings-rule-add"), 13.0, None))
+            .button(txt(&t!("settings-rule-add"), size::CONTROL, None))
             .clicked()
         {
             d.rules.push(crate::rules::Rule::default());

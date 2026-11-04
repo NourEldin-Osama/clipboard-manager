@@ -11,7 +11,10 @@ impl App {
             &t!("settings-data-folder"),
             &t!("settings-data-folder-help"),
             |ui| {
-                if ui.button(txt(&t!("settings-open"), 14.0, None)).clicked() {
+                if ui
+                    .button(txt(&t!("settings-open"), size::BODY, None))
+                    .clicked()
+                {
                     if let Err(e) = reveal(&root) {
                         self.set_error(log_error!("error-opening-folder", error = e.to_string()));
                     }
@@ -19,7 +22,7 @@ impl App {
                 ui.add(
                     egui::Label::new(
                         RichText::new(root.display().to_string())
-                            .size(12.0)
+                            .size(size::SMALL)
                             .color(ui.visuals().weak_text_color()),
                     )
                     .truncate(),
@@ -32,7 +35,10 @@ impl App {
             &t!("settings-log-file"),
             &t!("settings-log-file-help"),
             |ui| {
-                if ui.button(txt(&t!("settings-show"), 14.0, None)).clicked() {
+                if ui
+                    .button(txt(&t!("settings-show"), size::BODY, None))
+                    .clicked()
+                {
                     if let Err(e) = reveal(&log) {
                         self.set_error(log_error!("error-opening-folder", error = e.to_string()));
                     }
@@ -51,7 +57,7 @@ impl App {
                     images = images,
                     pinned = pinned
                 ),
-                13.0,
+                size::CONTROL,
                 None,
             ));
         });
@@ -69,7 +75,7 @@ impl App {
                         .add(
                             egui::Button::new(txt(
                                 &t!("settings-delete-items", count = clip),
-                                14.0,
+                                size::BODY,
                                 Some(Color32::WHITE),
                             ))
                             .fill(button_fill(RED)),
@@ -78,7 +84,10 @@ impl App {
                     {
                         clear = true;
                     }
-                    if ui.button(txt(&t!("common-cancel"), 14.0, None)).clicked() {
+                    if ui
+                        .button(txt(&t!("common-cancel"), size::BODY, None))
+                        .clicked()
+                    {
                         self.confirm = None;
                     }
                 } else if ui
@@ -86,7 +95,7 @@ impl App {
                         clip > 0,
                         egui::Button::new(txt(
                             &t!("settings-clear"),
-                            14.0,
+                            size::BODY,
                             Some(text_shade(RED, ui.visuals().dark_mode)),
                         )),
                     )
@@ -112,7 +121,7 @@ impl App {
                         .add(
                             egui::Button::new(txt(
                                 &t!("settings-reset-everything"),
-                                14.0,
+                                size::BODY,
                                 Some(Color32::WHITE),
                             ))
                             .fill(button_fill(RED)),
@@ -121,13 +130,16 @@ impl App {
                     {
                         reset = true;
                     }
-                    if ui.button(txt(&t!("common-cancel"), 14.0, None)).clicked() {
+                    if ui
+                        .button(txt(&t!("common-cancel"), size::BODY, None))
+                        .clicked()
+                    {
                         self.confirm = None;
                     }
                 } else if ui
                     .add_enabled(
                         *d != Config::default(),
-                        egui::Button::new(txt(&t!("settings-reset"), 14.0, None)),
+                        egui::Button::new(txt(&t!("settings-reset"), size::BODY, None)),
                     )
                     .clicked()
                 {

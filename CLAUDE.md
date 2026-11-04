@@ -22,6 +22,8 @@ cargo deny check -W unmaintained            # licenses, advisories, duplicates, 
   `EMBED_URL=… cargo test -- --ignored server_lists_models_and_embeds`, `READER_URL=… OCR_IMAGE=…`
   (`server_reader_reads_text`), `OCR_IMAGE=…` (`windows_reader_reads_text`), and `models_dev_lists_models`
   (downloads the models.dev list, about 6 MB).
+- `SAMPLE_HOME=<empty folder> cargo test -- --ignored sample_history` fills a data folder with made-up items over two
+  weeks; start the app with `CLIPBOARD_MANAGER_HOME` set to it to check the window or take screenshots.
 - When the repo lives on Google Drive (as in Colab), build with `CARGO_TARGET_DIR` pointing outside it.
 - `CLIPBOARD_MANAGER_HOME=<dir>` gives a throwaway data folder (config, history) for testing.
 - `--profile dist` (thin LTO) is the shipping build. Don't build the release `.exe` locally; CI publishes it.

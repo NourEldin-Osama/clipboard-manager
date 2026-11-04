@@ -45,7 +45,7 @@ pub(super) fn paint_card(
     let cg = ui.fonts_mut(|f| {
         f.layout_job(bidi::job(
             &it.kind.label(),
-            FontId::proportional(12.5),
+            FontId::proportional(size::SMALL),
             shade,
         ))
     });
@@ -82,7 +82,7 @@ pub(super) fn paint_card(
             Align2::RIGHT_CENTER
         },
         &ago(it.created),
-        FontId::proportional(12.0),
+        FontId::proportional(size::SMALL),
         weak,
     );
     if it.pinned {
@@ -115,7 +115,7 @@ pub(super) fn paint_card(
         );
         let tp = ui.painter_at(row);
         let pill = |text: &str, c: Color32| {
-            ui.fonts_mut(|f| f.layout_job(bidi::job(text, FontId::proportional(11.5), c)))
+            ui.fonts_mut(|f| f.layout_job(bidi::job(text, FontId::proportional(size::SMALL), c)))
         };
         let galleys: Vec<_> = it
             .tags
@@ -203,7 +203,7 @@ pub(super) fn paint_card(
                     Align2::LEFT_TOP
                 },
                 format!("{} × {}", it.width, it.height),
-                FontId::proportional(13.0),
+                FontId::proportional(size::CONTROL),
                 weak,
             );
         }
@@ -211,9 +211,9 @@ pub(super) fn paint_card(
             let code = it.kind == Kind::Text
                 && looks_like_code(&it.text.chars().take(600).collect::<String>());
             let (font, line_h) = if code {
-                (FontId::monospace(12.5), 17.0)
+                (FontId::monospace(size::SMALL), 17.0)
             } else {
-                (FontId::proportional(14.5), 20.0)
+                (FontId::proportional(size::BODY), 20.0)
             };
             let color = if it.kind == Kind::Link {
                 v.hyperlink_color
@@ -261,7 +261,7 @@ pub(super) fn paint_card(
                     rows,
                     None,
                 );
-                bidi::paint(&bp, body, lines, color, None);
+                bidi::paint(&bp, body, lines, color, None, 0.0);
             } else {
                 let g = ui.fonts_mut(|f| {
                     f.layout_job(highlighted(

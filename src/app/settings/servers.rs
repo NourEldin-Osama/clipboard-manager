@@ -211,7 +211,7 @@ fn kind_tile(ui: &mut Ui, kind: ServerKind, selected: bool) -> egui::Response {
         Pos2::new(rect.center().x, rect.bottom() - 14.0),
         egui::Align2::CENTER_CENTER,
         &name,
-        FontId::proportional(12.5),
+        FontId::proportional(size::SMALL),
         color,
     );
     resp
@@ -255,7 +255,7 @@ fn model_field(ui: &mut Ui, model: &mut String, listed: &[String], default: Opti
     };
     let field = ui.add(
         egui::TextEdit::singleline(model)
-            .hint_text(txt(&hint, 14.0, None))
+            .hint_text(txt(&hint, size::BODY, None))
             .desired_width(280.0),
     );
     set_name(&field, &row_title(ui));
@@ -369,7 +369,7 @@ fn send_questions(ui: &mut Ui, search: &Option<String>, reader: &Option<String>)
         .inner_margin(Margin::symmetric(10, 0))
         .show(ui, |ui| {
             let strong = ui.visuals().strong_text_color();
-            let font = FontId::proportional(13.5);
+            let font = FontId::proportional(size::CONTROL);
             if let Some(url) = search {
                 let host = crate::net::host(url);
                 let question = t!("settings-server-send-question", host = host);
@@ -481,10 +481,10 @@ impl App {
                             ui.set_min_height(30.0);
                             icons::logo(ui, server.kind, 20.0, strong);
                             ui.add_space(4.0);
-                            lbl(ui, server.label(), 14.0, strong);
+                            lbl(ui, server.label(), size::BODY, strong);
                             far(ui, |ui| {
                                 if ui
-                                    .button(txt(&t!("settings-server-edit"), 13.0, None))
+                                    .button(txt(&t!("settings-server-edit"), size::CONTROL, None))
                                     .clicked()
                                 {
                                     edit = Some(server.clone());
@@ -493,10 +493,10 @@ impl App {
                                 lbl(
                                     ui,
                                     &t!("settings-server-models-count", count = count),
-                                    12.5,
+                                    size::SMALL,
                                     weak,
                                 );
-                                lbl(ui, crate::net::host(&server.base_url), 12.5, weak);
+                                lbl(ui, crate::net::host(&server.base_url), size::SMALL, weak);
                             });
                         });
                     });
@@ -505,7 +505,7 @@ impl App {
         row(ui, |ui| {
             ui.add_space(10.0);
             if ui
-                .button(txt(&t!("settings-server-add"), 13.0, None))
+                .button(txt(&t!("settings-server-add"), size::CONTROL, None))
                 .clicked()
             {
                 self.add_server(d);
@@ -554,7 +554,7 @@ impl App {
             let strong = ui.visuals().strong_text_color();
             let menu =
                 egui::ComboBox::from_id_salt(if search { "search-model" } else { "read-model" })
-                    .selected_text(txt(&current, 14.0, None))
+                    .selected_text(txt(&current, size::BODY, None))
                     .width(280.0)
                     .show_ui(ui, |ui| {
                         for server in &d.servers {
@@ -568,14 +568,14 @@ impl App {
                             }
                             row(ui, |ui| {
                                 icons::logo(ui, server.kind, 14.0, weak);
-                                lbl(ui, &server.label().to_uppercase(), 11.0, weak);
+                                lbl(ui, &server.label().to_uppercase(), size::SMALL, weak);
                             });
                             for m in models {
                                 let at = ModelRef {
                                     server: server.id,
                                     model: m.id,
                                 };
-                                let label = txt(&model_label(m), 14.0, None);
+                                let label = txt(&model_label(m), size::BODY, None);
                                 if ui.selectable_label(chosen == Some(at), label).clicked() {
                                     picked = Some(at);
                                 }
@@ -585,7 +585,7 @@ impl App {
                         if ui
                             .selectable_label(
                                 false,
-                                txt(&t!("settings-model-add-server"), 14.0, None),
+                                txt(&t!("settings-model-add-server"), size::BODY, None),
                             )
                             .clicked()
                         {
@@ -623,7 +623,7 @@ impl App {
                 answer = Some(true);
             }
             if ui
-                .button(txt(&t!("settings-server-send-cancel"), 13.0, None))
+                .button(txt(&t!("settings-server-send-cancel"), size::CONTROL, None))
                 .clicked()
             {
                 answer = Some(false);
@@ -715,7 +715,7 @@ impl App {
             } else {
                 t!("settings-server-edit-title")
             };
-            lbl(ui, &title, 17.0, strong);
+            title_lbl(ui, &title, size::LARGE, strong);
         });
 
         section(ui, &t!("settings-server-kind"));
@@ -749,7 +749,11 @@ impl App {
             |ui| {
                 if !launching
                     && ui
-                        .button(txt(&t!("settings-server-test-connection"), 13.0, None))
+                        .button(txt(
+                            &t!("settings-server-test-connection"),
+                            size::CONTROL,
+                            None,
+                        ))
                         .clicked()
                 {
                     check = true;
@@ -785,10 +789,10 @@ impl App {
             ui.add_space(10.0);
             let found = &editor.found;
             if launching {
-                lbl(ui, &t!("settings-server-launch-note"), 12.5, weak);
+                lbl(ui, &t!("settings-server-launch-note"), size::SMALL, weak);
             } else if found.pending.is_some() {
                 super::view::slow_spinner(ui, 12.0, None);
-                lbl(ui, &t!("settings-server-checking"), 12.5, weak);
+                lbl(ui, &t!("settings-server-checking"), size::SMALL, weak);
             } else if let Some(e) = &found.error {
                 icons::chip(ui, Icon::Warning, e, RED);
             } else if !found.url.is_empty() {
@@ -844,7 +848,7 @@ impl App {
                 let field = ui.add(
                     egui::TextEdit::singleline(&mut server.api_key)
                         .password(!*show_key)
-                        .hint_text(txt(&hint, 14.0, None))
+                        .hint_text(txt(&hint, size::BODY, None))
                         .desired_width(280.0),
                 );
                 set_name(&field, &row_title(ui));
@@ -890,7 +894,7 @@ impl App {
                     if testing {
                         super::view::slow_spinner(ui, 14.0, None);
                     } else if tip(
-                        ui.button(txt(&t!("settings-model-test"), 13.0, None)),
+                        ui.button(txt(&t!("settings-model-test"), size::CONTROL, None)),
                         &t!("settings-model-test-help"),
                     )
                     .clicked()
@@ -929,7 +933,7 @@ impl App {
                 (true, t!("settings-model-add-search")),
                 (false, t!("settings-model-add-read")),
             ] {
-                if ui.button(txt(&label, 13.0, None)).clicked() {
+                if ui.button(txt(&label, size::CONTROL, None)).clicked() {
                     let job = if search {
                         ModelJob::Search(SearchSettings::default())
                     } else {
@@ -1021,7 +1025,7 @@ impl App {
                     answer = Some(true);
                 }
                 if ui
-                    .button(txt(&t!("settings-server-send-cancel"), 13.0, None))
+                    .button(txt(&t!("settings-server-send-cancel"), size::CONTROL, None))
                     .clicked()
                 {
                     answer = Some(false);
@@ -1048,20 +1052,31 @@ impl App {
                         "settings-server-delete-question",
                         name = editor.server.label()
                     );
-                    lbl(ui, &question, 13.5, strong);
+                    lbl(ui, &question, size::CONTROL, strong);
                     if ui
-                        .button(txt(&t!("settings-server-delete-confirm"), 13.0, Some(red)))
+                        .button(txt(
+                            &t!("settings-server-delete-confirm"),
+                            size::CONTROL,
+                            Some(red),
+                        ))
                         .clicked()
                     {
                         delete = true;
                     }
-                    if ui.button(txt(&t!("common-cancel"), 13.0, None)).clicked() {
+                    if ui
+                        .button(txt(&t!("common-cancel"), size::CONTROL, None))
+                        .clicked()
+                    {
                         editor.deleting = false;
                     }
                 } else if ui
                     .add(
-                        egui::Button::new(txt(&t!("settings-server-delete"), 13.0, Some(red)))
-                            .frame_when_inactive(false),
+                        egui::Button::new(txt(
+                            &t!("settings-server-delete"),
+                            size::CONTROL,
+                            Some(red),
+                        ))
+                        .frame_when_inactive(false),
                     )
                     .clicked()
                 {
@@ -1075,7 +1090,7 @@ impl App {
                         can_save,
                         egui::Button::new(txt(
                             &t!("settings-server-save"),
-                            14.0,
+                            size::BODY,
                             Some(Color32::WHITE),
                         ))
                         .fill(super::view::button_fill(accent()))
@@ -1085,7 +1100,10 @@ impl App {
                 {
                     save = true;
                 }
-                if ui.button(txt(&t!("common-cancel"), 14.0, None)).clicked() {
+                if ui
+                    .button(txt(&t!("common-cancel"), size::BODY, None))
+                    .clicked()
+                {
                     close = true;
                 }
             });
@@ -1204,7 +1222,7 @@ fn model_settings(
                     };
                     let field = ui.add(
                         egui::TextEdit::singleline(&mut model.name)
-                            .hint_text(txt(&hint, 14.0, None))
+                            .hint_text(txt(&hint, size::BODY, None))
                             .desired_width(280.0),
                     );
                     set_name(&field, &row_title(ui));
@@ -1216,7 +1234,7 @@ fn model_settings(
                 if tip(
                     ui.add_enabled(
                         !running,
-                        egui::Button::new(txt(&t!("settings-model-fill"), 13.0, None)),
+                        egui::Button::new(txt(&t!("settings-model-fill"), size::CONTROL, None)),
                     ),
                     &t!("settings-model-fill-help"),
                 )
@@ -1229,7 +1247,7 @@ fn model_settings(
                     lbl(
                         ui,
                         &t!("settings-model-fill-looking"),
-                        12.5,
+                        size::SMALL,
                         ui.visuals().weak_text_color(),
                     );
                 }
@@ -1251,7 +1269,7 @@ fn search_settings(ui: &mut Ui, s: &mut SearchSettings, model: &str) {
                 ui.add_space(10.0);
                 icons::chip(ui, Icon::Info, &t!("settings-model-prompts-tip"), AMBER);
                 if ui
-                    .button(txt(&t!("settings-server-use-them"), 14.0, None))
+                    .button(txt(&t!("settings-server-use-them"), size::BODY, None))
                     .clicked()
                 {
                     s.query_prefix = query.into();
@@ -1269,7 +1287,7 @@ fn search_settings(ui: &mut Ui, s: &mut SearchSettings, model: &str) {
         |ui, prefix| {
             let field = ui.add(
                 egui::TextEdit::singleline(prefix)
-                    .hint_text(txt(&t!("settings-server-none"), 14.0, None))
+                    .hint_text(txt(&t!("settings-server-none"), size::BODY, None))
                     .desired_width(280.0),
             );
             set_name(&field, &row_title(ui));
@@ -1284,7 +1302,7 @@ fn search_settings(ui: &mut Ui, s: &mut SearchSettings, model: &str) {
         |ui, prefix| {
             let field = ui.add(
                 egui::TextEdit::singleline(prefix)
-                    .hint_text(txt(&t!("settings-server-none"), 14.0, None))
+                    .hint_text(txt(&t!("settings-server-none"), size::BODY, None))
                     .desired_width(280.0),
             );
             set_name(&field, &row_title(ui));
@@ -1334,11 +1352,11 @@ fn read_settings(ui: &mut Ui, r: &mut ReadSettings) {
         &t!("settings-reader-kind-help"),
         |ui| {
             let menu = egui::ComboBox::from_id_salt("reader-kind")
-                .selected_text(txt(&reader_kind_label(r.kind), 14.0, None))
+                .selected_text(txt(&reader_kind_label(r.kind), size::BODY, None))
                 .width(170.0)
                 .show_ui(ui, |ui| {
                     for kind in ReaderModel::ALL {
-                        let label = txt(&reader_kind_label(kind), 14.0, None);
+                        let label = txt(&reader_kind_label(kind), size::BODY, None);
                         if ui.selectable_label(r.kind == kind, label).clicked() && r.kind != kind {
                             // Its usual prompt; it stays editable.
                             r.kind = kind;

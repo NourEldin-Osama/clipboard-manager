@@ -150,28 +150,103 @@ pub(crate) fn mode_help(m: SearchMode) -> String {
     }
 }
 
-/// Adds the bundled Arabic font after egui's own, so Latin text looks the same
-/// and Arabic always has glyphs, whatever fonts the PC has.
+/// The five text sizes: small text such as times and counts; controls such as
+/// buttons and chips; body text in rows and settings; large text in the
+/// search field and empty lists; and page titles.
+pub(crate) mod size {
+    pub(crate) const SMALL: f32 = 12.0;
+    pub(crate) const CONTROL: f32 = 13.0;
+    pub(crate) const BODY: f32 = 14.0;
+    pub(crate) const LARGE: f32 = 16.0;
+    pub(crate) const TITLE: f32 = 20.0;
+}
+
+/// The widest a line of long text gets, in multiples of its text size:
+/// about 70 characters.
+pub(crate) const READING_WIDTH: f32 = 35.0;
+
+/// The font family of titles: Noto Sans and Noto Sans Arabic in SemiBold.
+const SEMIBOLD: &str = "semibold";
+
+/// The SemiBold font in `size`, for titles.
+pub(crate) fn semibold(size: f32) -> FontId {
+    FontId::new(size, egui::FontFamily::Name(SEMIBOLD.into()))
+}
+
+/// The bundled fonts: Noto Sans (Latin, Greek and Cyrillic) and Noto Sans
+/// Arabic, each in Regular and SemiBold, so both scripts look alike in one
+/// weight whatever fonts the PC has. egui's own fonts stay after them for
+/// symbols and emoji, and code keeps its monospace font.
 pub(crate) fn add_fonts(ctx: &egui::Context) {
-    use eframe::egui::{FontData, FontFamily, FontInsert, FontPriority, InsertFontFamily};
-    let families = [FontFamily::Proportional, FontFamily::Monospace]
-        .map(|family| InsertFontFamily {
-            family,
-            priority: FontPriority::Lowest,
-        })
-        .to_vec();
-    ctx.add_font(FontInsert::new(
-        "noto-sans-arabic",
-        FontData::from_static(include_bytes!(
-            "../../../assets/fonts/NotoSansArabic-Regular.ttf"
-        )),
-        families,
-    ));
+    use eframe::egui::{FontData, FontDefinitions, FontFamily};
+    let mut fonts = FontDefinitions::default();
+    let bundled: [(&str, &'static [u8]); 4] = [
+        (
+            "noto-sans",
+            include_bytes!("../../../assets/fonts/NotoSans-Regular.ttf"),
+        ),
+        (
+            "noto-sans-semibold",
+            include_bytes!("../../../assets/fonts/NotoSans-SemiBold.ttf"),
+        ),
+        (
+            "noto-sans-arabic",
+            include_bytes!("../../../assets/fonts/NotoSansArabic-Regular.ttf"),
+        ),
+        (
+            "noto-sans-arabic-semibold",
+            include_bytes!("../../../assets/fonts/NotoSansArabic-SemiBold.ttf"),
+        ),
+    ];
+    for (name, bytes) in bundled {
+        fonts.font_data.insert(
+            name.into(),
+            std::sync::Arc::new(FontData::from_static(bytes)),
+        );
+    }
+    let fallbacks: Vec<String> = fonts.families[&FontFamily::Proportional]
+        .iter()
+        .filter(|name| *name != "Ubuntu-Light")
+        .cloned()
+        .collect();
+    let family = |first: [&str; 2]| -> Vec<String> {
+        first
+            .iter()
+            .map(|name| name.to_string())
+            .chain(fallbacks.iter().cloned())
+            .collect()
+    };
+    fonts.families.insert(
+        FontFamily::Proportional,
+        family(["noto-sans", "noto-sans-arabic"]),
+    );
+    fonts.families.insert(
+        FontFamily::Name(SEMIBOLD.into()),
+        family(["noto-sans-semibold", "noto-sans-arabic-semibold"]),
+    );
+    if let Some(code) = fonts.families.get_mut(&FontFamily::Monospace) {
+        let after_text_fonts = code
+            .iter()
+            .position(|name| name == "Ubuntu-Light")
+            .map_or(code.len(), |at| at + 1);
+        code.insert(after_text_fonts, "noto-sans-arabic".into());
+    }
+    ctx.set_fonts(fonts);
 }
 
 pub(crate) fn style(ctx: &egui::Context) {
     let a = accent();
     ctx.all_styles_mut(|s| {
+        use egui::TextStyle;
+        // egui's own widgets (text fields, menus, tooltips) in the same sizes.
+        s.text_styles = [
+            (TextStyle::Small, FontId::proportional(size::SMALL)),
+            (TextStyle::Button, FontId::proportional(size::CONTROL)),
+            (TextStyle::Body, FontId::proportional(size::BODY)),
+            (TextStyle::Monospace, FontId::monospace(size::CONTROL)),
+            (TextStyle::Heading, semibold(size::TITLE)),
+        ]
+        .into();
         s.spacing.item_spacing = Vec2::new(8.0, 6.0);
         s.spacing.button_padding = Vec2::new(10.0, 5.0);
         for w in [

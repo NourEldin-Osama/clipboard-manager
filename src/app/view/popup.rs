@@ -189,7 +189,7 @@ impl App {
                         let red = text_shade(RED, ui.visuals().dark_mode);
                         icons::glyph(ui, Icon::Warning, 13.0, red);
                         let room = ui.available_width();
-                        let r = cut_line(ui, &error, room, 12.0, red, Sense::click());
+                        let r = cut_line(ui, &error, room, size::SMALL, red, Sense::click());
                         if tip(r, &t!("status-dismiss-error")).clicked() {
                             self.error = None;
                         }

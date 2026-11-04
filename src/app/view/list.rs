@@ -2,6 +2,60 @@
 
 use super::*;
 
+/// Room between a row's edge and what it shows. With the list panel's
+/// margin, the content lines up 16 points from the window's edge, as the
+/// search field, the cards and the status bar do.
+const ROW_PADDING: f32 = 8.0;
+
+/// In a wide window, List view keeps its rows at most this wide, centred,
+/// so the time and the pin stay near the text.
+const LIST_MAX_WIDTH: f32 = 900.0;
+
+/// The day header that stays at the top of the list while its rows scroll
+/// under it, and where it goes: at `top`, or above it while the next day's
+/// header pushes it out. None while the top shows a header in its place.
+fn pinned_header(lines: &[Line], ys: &[f32], top: f32, header_h: f32) -> Option<(usize, f32)> {
+    let is_header = |i: &usize| matches!(lines[*i], Line::Header(..));
+    let above = (0..lines.len()).filter(|&i| ys[i] < top).rfind(is_header)?;
+    let next = (above + 1..lines.len()).find(is_header);
+    Some((above, next.map_or(top, |i| top.min(ys[i] - header_h))))
+}
+
+/// A day's header: its name, as small section titles show them, on the side
+/// reading starts, and how many rows it has at the other end.
+fn paint_header(ui: &Ui, rect: Rect, label: Group, count: usize) {
+    let weak = ui.visuals().weak_text_color();
+    let (label_x, count_x, end) = if i18n::rtl() {
+        (
+            rect.right() - ROW_PADDING,
+            rect.left() + ROW_PADDING,
+            Align2::LEFT_BOTTOM,
+        )
+    } else {
+        (
+            rect.left() + ROW_PADDING,
+            rect.right() - ROW_PADDING,
+            Align2::RIGHT_BOTTOM,
+        )
+    };
+    let title = section_title(&label.text().to_uppercase(), weak).into_galley(
+        ui,
+        Some(egui::TextWrapMode::Extend),
+        f32::INFINITY,
+        FontId::proportional(size::SMALL),
+    );
+    let at = start_anchor(egui::Align::Max)
+        .anchor_size(Pos2::new(label_x, rect.bottom() - 7.0), title.size());
+    ui.painter().galley(at.min, title, weak);
+    ui.painter().text(
+        Pos2::new(count_x, rect.bottom() - 7.0),
+        end,
+        count.to_string(),
+        FontId::proportional(size::SMALL),
+        weak,
+    );
+}
+
 #[derive(Debug, PartialEq)]
 pub(super) enum Line {
     Header(Group, usize),
@@ -110,7 +164,7 @@ pub(super) fn paint_row(
 
     let av = if compact { 26.0 } else { 38.0 };
     let av_rect = m(Rect::from_min_size(
-        Pos2::new(rect.left() + 12.0, rect.center().y - av / 2.0),
+        Pos2::new(rect.left() + ROW_PADDING, rect.center().y - av / 2.0),
         Vec2::splat(av),
     ));
     match thumb {
@@ -157,7 +211,7 @@ pub(super) fn paint_row(
         }
     }
 
-    let x = rect.left() + 12.0 + av + 12.0;
+    let x = rect.left() + ROW_PADDING + av + 12.0;
     let right_w = if hot { 134.0 } else { 64.0 };
     let text_w = (rect.right() - x - right_w - 8.0).max(40.0);
     // The text column, mirrored with the rest; lines start at its reading edge.
@@ -179,7 +233,7 @@ pub(super) fn paint_row(
         ui,
         &title,
         terms,
-        FontId::proportional(14.0),
+        FontId::proportional(size::BODY),
         title_color,
         text_w,
     );
@@ -198,7 +252,14 @@ pub(super) fn paint_row(
     };
     p.galley(Pos2::new(line_x(tg.size().x), title_y), tg, title_color);
     if !sub.is_empty() {
-        let sg = one_line(ui, &sub, terms, FontId::proportional(12.5), weak, text_w);
+        let sg = one_line(
+            ui,
+            &sub,
+            terms,
+            FontId::proportional(size::SMALL),
+            weak,
+            text_w,
+        );
         p.galley(Pos2::new(line_x(sg.size().x), rect.top() + 32.0), sg, weak);
     }
 
@@ -213,7 +274,7 @@ pub(super) fn paint_row(
         rect.top() + 18.0
     };
     let time_at = m(Rect::from_min_size(
-        Pos2::new(rect.right() - 12.0, time_y),
+        Pos2::new(rect.right() - ROW_PADDING, time_y),
         Vec2::ZERO,
     ))
     .min;
@@ -228,10 +289,10 @@ pub(super) fn paint_row(
         time_at,
         time_anchor,
         &row_time(it.created),
-        FontId::proportional(11.5),
+        FontId::proportional(size::SMALL),
         weak,
     );
-    let mut ix = rect.right() - 12.0;
+    let mut ix = rect.right() - ROW_PADDING;
     // On one line the badges sit before the time instead of under it.
     let iy = if one_line_row {
         rect.center().y
@@ -312,7 +373,9 @@ pub(super) fn one_line(
         .next()
         .map(|(g, _)| g)
         .unwrap_or_else(|| {
-            ui.fonts_mut(|f| f.layout_no_wrap(String::new(), FontId::proportional(12.0), color))
+            ui.fonts_mut(|f| {
+                f.layout_no_wrap(String::new(), FontId::proportional(size::SMALL), color)
+            })
         })
     } else {
         let hit = ui.visuals().strong_text_color();
@@ -337,6 +400,7 @@ impl App {
         // The details pane is always beside the list in Detail view, so rows
         // there don't need an "open" button; the popup has no details pane.
         let can_open = self.cfg.view != ViewMode::Detail && !in_popup;
+        let centred = self.cfg.view == ViewMode::List && !in_popup;
 
         // Rows, with date/pinned headers when browsing.
         let mut lines: Vec<Line> = Vec::with_capacity(self.results.len() + 8);
@@ -418,7 +482,13 @@ impl App {
         let out = sa.show_viewport(ui, |ui, viewport| {
             ui.set_height(total);
             let origin = ui.max_rect().min;
-            let width = ui.available_width();
+            let full = ui.available_width();
+            let width = if centred {
+                full.min(LIST_MAX_WIDTH)
+            } else {
+                full
+            };
+            let left = origin.x + (full - width) / 2.0;
             for (i, l) in lines.iter().enumerate() {
                 let h = if matches!(l, Line::Header(..)) {
                     header_h
@@ -429,38 +499,9 @@ impl App {
                     continue;
                 }
                 let rect =
-                    Rect::from_min_size(Pos2::new(origin.x, origin.y + ys[i]), Vec2::new(width, h));
+                    Rect::from_min_size(Pos2::new(left, origin.y + ys[i]), Vec2::new(width, h));
                 match l {
-                    Line::Header(label, n) => {
-                        let p = ui.painter();
-                        let weak = ui.visuals().weak_text_color();
-                        let (label_x, count_x) = if i18n::rtl() {
-                            (rect.right() - 12.0, rect.left() + 12.0)
-                        } else {
-                            (rect.left() + 12.0, rect.right() - 12.0)
-                        };
-                        paint_text(
-                            ui,
-                            p,
-                            Pos2::new(label_x, rect.bottom() - 7.0),
-                            start_anchor(egui::Align::Max),
-                            &label.text().to_uppercase(),
-                            FontId::proportional(11.5),
-                            weak,
-                        );
-                        let end = if i18n::rtl() {
-                            Align2::LEFT_BOTTOM
-                        } else {
-                            Align2::RIGHT_BOTTOM
-                        };
-                        p.text(
-                            Pos2::new(count_x, rect.bottom() - 7.0),
-                            end,
-                            n.to_string(),
-                            FontId::proportional(11.5),
-                            weak,
-                        );
-                    }
+                    Line::Header(label, n) => paint_header(ui, rect, *label, *n),
                     Line::Row(r) => {
                         let hit = &results[*r];
                         let Some(it) = library.get(hit.id) else {
@@ -517,7 +558,8 @@ impl App {
                                 ));
                             }
                             let size = 28.0;
-                            let mut x = rect.right() - 8.0 - buttons.len() as f32 * (size + 2.0);
+                            let mut x =
+                                rect.right() - ROW_PADDING - buttons.len() as f32 * (size + 2.0);
                             for (icon, tip, action) in buttons {
                                 let b = flip(
                                     rect,
@@ -543,6 +585,31 @@ impl App {
                     }
                 }
             }
+            if let Some((Line::Header(label, n), y)) =
+                pinned_header(&lines, &ys, viewport.min.y, header_h).map(|(i, y)| (&lines[i], y))
+            {
+                let (label, n) = (*label, *n);
+                let rect =
+                    Rect::from_min_size(Pos2::new(left, origin.y + y), Vec2::new(width, header_h));
+                let below = Rect::from_min_max(
+                    rect.left_bottom(),
+                    rect.right_bottom() + Vec2::new(0.0, 10.0),
+                );
+                let shadow = egui::Shadow {
+                    offset: [0, 1],
+                    blur: 8,
+                    spread: 0,
+                    color: Color32::from_black_alpha(36),
+                };
+                ui.painter()
+                    .with_clip_rect(below)
+                    .add(shadow.as_shape(rect, CornerRadius::ZERO));
+                ui.painter()
+                    .rect_filled(rect, CornerRadius::ZERO, ui.visuals().panel_fill);
+                // Rows under it don't take its clicks.
+                let _ = ui.interact(rect, egui::Id::unique("day-header"), Sense::click());
+                paint_header(ui, rect, label, n);
+            }
         });
         let view = (out.state.clamped_offset().y, out.inner_rect.height());
         if in_popup {
@@ -561,28 +628,31 @@ impl App {
             if self.library.items().is_empty() {
                 icons::glyph(ui, Icon::Clipboard, 40.0, weak);
                 ui.add_space(8.0);
-                lbl(ui, &t!("list-empty-title"), 16.0, strong);
+                title_lbl(ui, &t!("list-empty-title"), size::LARGE, strong);
                 ui.add_space(4.0);
                 let help = t!("list-empty-help", key = self.cfg.popup_hotkey.as_str());
-                ui.label(txt(&help, 14.0, Some(weak)));
+                ui.label(txt(&help, size::BODY, Some(weak)));
             } else if !self.query.trim().is_empty() {
                 icons::glyph(ui, Icon::Search, 36.0, weak);
                 ui.add_space(8.0);
                 let none = t!("list-no-matches", query = self.query.trim());
-                ui.label(txt(&none, 15.0, Some(strong)));
+                ui.label(txt(&none, size::BODY, Some(strong)));
                 ui.add_space(4.0);
                 match (&self.backend, self.cfg.search_mode) {
                     (BackendState::Off, _) => {
-                        lbl(ui, &t!("list-meaning-finds-more"), 14.0, weak);
+                        lbl(ui, &t!("list-meaning-finds-more"), size::BODY, weak);
                         if ui
-                            .link(txt(&t!("list-set-up-meaning"), 14.0, None))
+                            .link(txt(&t!("list-set-up-meaning"), size::BODY, None))
                             .clicked()
                         {
                             self.open_settings(SettingsPage::Search);
                         }
                     }
                     (_, SearchMode::Keyword) => {
-                        if ui.link(txt(&t!("list-try-smart"), 14.0, None)).clicked() {
+                        if ui
+                            .link(txt(&t!("list-try-smart"), size::BODY, None))
+                            .clicked()
+                        {
                             self.cfg.search_mode = SearchMode::Hybrid;
                             self.save_config();
                             self.query_changed = Some(Instant::now() - QUERY_DEBOUNCE);
@@ -590,19 +660,19 @@ impl App {
                         }
                     }
                     _ => {
-                        lbl(ui, &t!("list-try-other-words"), 14.0, weak);
+                        lbl(ui, &t!("list-try-other-words"), size::BODY, weak);
                     }
                 }
                 if self.filter != Filter::All
                     && ui
-                        .link(txt(&search_all_instead(self.filter), 14.0, None))
+                        .link(txt(&search_all_instead(self.filter), size::BODY, None))
                         .clicked()
                 {
                     self.filter = Filter::All;
                     self.dirty = true;
                 }
             } else {
-                ui.label(txt(&none_yet(self.filter), 14.0, Some(weak)));
+                ui.label(txt(&none_yet(self.filter), size::BODY, Some(weak)));
             }
         });
     }
@@ -634,6 +704,27 @@ fn none_yet(filter: Filter) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_day_at_the_top_keeps_its_header_until_the_next_one_comes() {
+        // Today's header, two rows, yesterday's header, a row.
+        let lines = [
+            Line::Header(Group::Today, 2),
+            Line::Row(0),
+            Line::Row(1),
+            Line::Header(Group::Yesterday, 1),
+            Line::Row(2),
+        ];
+        let ys = [0.0, 30.0, 90.0, 150.0, 180.0];
+        // At the very top the header is in its own place.
+        assert_eq!(pinned_header(&lines, &ys, 0.0, 30.0), None);
+        // Scrolled into today's rows: today's header stays at the top.
+        assert_eq!(pinned_header(&lines, &ys, 50.0, 30.0), Some((0, 50.0)));
+        // Yesterday's header 20 points below the top pushes it 10 up.
+        assert_eq!(pinned_header(&lines, &ys, 130.0, 30.0), Some((0, 120.0)));
+        // Past yesterday's header, that one stays.
+        assert_eq!(pinned_header(&lines, &ys, 160.0, 30.0), Some((3, 160.0)));
+    }
 
     #[test]
     fn the_thumbnails_drawn_longest_ago_are_dropped_first() {

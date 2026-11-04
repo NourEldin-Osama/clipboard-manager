@@ -971,4 +971,73 @@ mod tests {
         drop(store);
         std::fs::remove_dir_all(dir).ok();
     }
+
+    /// Fills a data folder with made-up items over the last two weeks, for
+    /// checking the window and taking screenshots without anyone's history:
+    /// `SAMPLE_HOME=<empty folder> cargo test -- --ignored sample_history`,
+    /// then start the app with CLIPBOARD_MANAGER_HOME set to that folder.
+    #[test]
+    #[ignore]
+    fn sample_history() {
+        let home = std::env::var("SAMPLE_HOME").expect("SAMPLE_HOME");
+        let paths = crate::config::Paths::at(PathBuf::from(home)).unwrap();
+        let store = Store::open(&paths.db, &paths.images).unwrap();
+        let hour = 3600;
+        let day = 24 * hour;
+        let samples: [(Kind, &str, &str, i64); 16] = [
+            (Kind::Text, "Meeting moved to Thursday at 10:30, room 4B.", "Teams.exe", hour / 6),
+            (Kind::Link, "https://www.rust-lang.org/learn", "chrome.exe", hour),
+            (Kind::Text, "#5865F2", "Figma.exe", 2 * hour),
+            (Kind::Text, "fn main() {\n    println!(\"Hello, world!\");\n}", "Code.exe", 3 * hour),
+            (Kind::Text, "Invoice 4821: 3 boxes of paper, 2 toner cartridges. Total 1,240 SAR, due on the 15th.", "OUTLOOK.EXE", 5 * hour),
+            (Kind::Text, "موعد الاجتماع يوم الخميس الساعة العاشرة والنصف صباحًا", "Teams.exe", day + 2 * hour),
+            (Kind::Link, "https://ar.wikipedia.org/wiki/%D8%A7%D9%84%D8%B1%D9%8A%D8%A7%D8%B6", "msedge.exe", day + 4 * hour),
+            (Kind::Text, "C:\\Users\\Public\\Documents\\report-2026.pdf", "explorer.exe", day + 5 * hour),
+            (Kind::Text, "The quick brown fox jumps over the lazy dog. Pack my box with five dozen liquor jugs. How vexingly quick daft zebras jump! Sphinx of black quartz, judge my vow. The five boxing wizards jump quickly, and a wizard's job is to vex chumps quickly in fog.", "WINWORD.EXE", day + 7 * hour),
+            (Kind::Text, "git commit -m \"Fix the release notes\"", "WindowsTerminal.exe", 2 * day),
+            (Kind::Text, "rgb(88, 101, 242)", "Code.exe", 3 * day),
+            (Kind::Link, "https://github.com/NourEldin-Osama/clipboard-manager/releases", "chrome.exe", 4 * day),
+            (Kind::Text, "Dear team, the new version is out. Please update and tell me what you think.", "OUTLOOK.EXE", 6 * day),
+            (Kind::Text, "SELECT name, total FROM orders WHERE total > 1000 ORDER BY total DESC;", "Code.exe", 8 * day),
+            (Kind::Text, "Grocery list: milk, eggs, bread, dates, olive oil", "Notepad.exe", 11 * day),
+            (Kind::Text, "مرحبًا بالعالم", "Notepad.exe", 13 * day),
+        ];
+        let now = now();
+        let mut id = store.next_id().unwrap();
+        for (kind, text, app, age) in samples {
+            let mut it = Item::new(id, kind, Origin::Clipboard, text.into());
+            it.created = now - age;
+            it.app = Some(app.into());
+            it.pinned = text.starts_with("Meeting") || text.starts_with("git");
+            if text.starts_with("Invoice") {
+                it.tags = vec!["work".into()];
+            }
+            store.put(&it).unwrap();
+            id += 1;
+        }
+        // Two pictures: a chart, and a photo-like gradient.
+        for (n, age) in [(0u32, hour / 2), (1, 2 * day + hour)] {
+            let picture = image::RgbaImage::from_fn(480, 320, |x, y| {
+                if n == 0 {
+                    let bar = x / 80;
+                    let top = 300 - (bar * 37 % 240 + 40);
+                    if y > top && x % 80 > 12 {
+                        image::Rgba([88, 101, 242, 255])
+                    } else {
+                        image::Rgba([250, 250, 252, 255])
+                    }
+                } else {
+                    image::Rgba([(x / 2) as u8, (100 + y / 4) as u8, 180, 255])
+                }
+            });
+            let mut it = Item::new(id, Kind::Image, Origin::Clipboard, "".into());
+            it.created = now - age;
+            it.app = Some("SnippingTool.exe".into());
+            it.image = Some(store.images.save(id, &picture).unwrap());
+            it.width = picture.width();
+            it.height = picture.height();
+            store.put(&it).unwrap();
+            id += 1;
+        }
+    }
 }

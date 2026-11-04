@@ -51,7 +51,7 @@ impl App {
                         ui.spacing_mut().item_spacing.x = 2.0;
                         if tip(
                             ui.add(
-                                egui::Label::new(txt(&format!("# {t}"), 12.5, Some(shade)))
+                                egui::Label::new(txt(&format!("# {t}"), size::SMALL, Some(shade)))
                                     .sense(Sense::click()),
                             ),
                             &t!("details-only-this-tag"),
@@ -87,9 +87,9 @@ impl App {
                 let r = ui.add(
                     egui::TextEdit::singleline(text)
                         .id(id)
-                        .hint_text(txt(&t!("details-tag-hint"), 13.0, None))
+                        .hint_text(txt(&t!("details-tag-hint"), size::CONTROL, None))
                         .desired_width(150.0)
-                        .font(FontId::proportional(13.0)),
+                        .font(FontId::proportional(size::CONTROL)),
                 );
                 set_name(&r, &t!("details-tag-hint"));
                 if std::mem::take(&mut self.tag_focus) || enter {
@@ -118,7 +118,7 @@ impl App {
                             .add(
                                 egui::Button::new(txt(
                                     &format!("+ {k}"),
-                                    12.0,
+                                    size::SMALL,
                                     Some(text_shade(tag_color(k), ui.visuals().dark_mode)),
                                 ))
                                 .frame_when_inactive(false),
@@ -136,7 +136,7 @@ impl App {
                     } else {
                         t!("details-tag")
                     },
-                    12.5,
+                    size::SMALL,
                     ui.visuals().weak_text_color(),
                     None,
                 );
@@ -276,19 +276,19 @@ impl App {
         ui.add_space(2.0);
         let meta = self.meta_line(&it);
         let weak = ui.visuals().weak_text_color();
-        row(ui, |ui| ui.label(txt(&meta, 12.5, Some(weak))));
+        row(ui, |ui| ui.label(txt(&meta, size::SMALL, Some(weak))));
         if let Some(app) = &it.app {
             let ignored = self.cfg.rules.iter().any(|r| r.skips_app(app));
             let mut ignore = false;
             row(ui, |ui| {
                 ui.label(txt(
                     &t!("details-copied-from", app = app.as_str()),
-                    12.5,
+                    size::SMALL,
                     Some(weak),
                 ));
                 if !ignored {
                     let link = t!("details-ignore-app", app = app.as_str());
-                    ignore = ui.link(txt(&link, 12.5, None)).clicked();
+                    ignore = ui.link(txt(&link, size::SMALL, None)).clicked();
                 }
             });
             if ignore {
@@ -333,7 +333,7 @@ impl App {
                                 .file_name()
                                 .map(|f| f.to_string_lossy().into_owned())
                                 .unwrap_or_else(|| line.to_string());
-                            if tip(ui.link(txt(&name, 14.5, None)), line).clicked() {
+                            if tip(ui.link(txt(&name, size::BODY, None)), line).clicked() {
                                 if let Err(e) = reveal(&p) {
                                     self.set_error(log_error!(
                                         "error-opening-folder",
@@ -345,12 +345,19 @@ impl App {
                                 .parent()
                                 .map(|x| x.display().to_string())
                                 .unwrap_or_default();
-                            ui.label(txt(&parent, 12.0, Some(ui.visuals().weak_text_color())));
+                            ui.label(txt(
+                                &parent,
+                                size::SMALL,
+                                Some(ui.visuals().weak_text_color()),
+                            ));
                         });
                     }
                 }
                 Kind::Link => {
-                    ui.hyperlink_to(RichText::new(it.text.trim()).size(16.0), it.text.trim());
+                    ui.hyperlink_to(
+                        RichText::new(it.text.trim()).size(size::LARGE),
+                        it.text.trim(),
+                    );
                 }
                 Kind::Text => {
                     let d = self.detail_text(&it);
@@ -364,7 +371,9 @@ impl App {
                                 ui.set_width(ui.available_width());
                                 ui.add(
                                     egui::Label::new(
-                                        RichText::new(d.shown.as_str()).monospace().size(13.0),
+                                        RichText::new(d.shown.as_str())
+                                            .monospace()
+                                            .size(size::CONTROL),
                                     )
                                     .selectable(true),
                                 );
@@ -373,13 +382,31 @@ impl App {
                         // Arabic: wrapped in reading order (not selectable; copy takes all of it).
                         let shown = d.shown.clone();
                         let c = ui.visuals().text_color();
-                        bidi::paragraph(ui, &shown, FontId::proportional(15.0), c);
+                        bidi::long_text(ui, &shown, FontId::proportional(size::BODY), c);
                     } else {
-                        ui.add(
-                            egui::Label::new(RichText::new(d.shown.as_str()).size(15.0))
+                        // Lines of about 70 characters, on the side reading starts.
+                        let room = ui.available_rect_before_wrap();
+                        let width = room.width().min(size::BODY * READING_WIDTH);
+                        let x = if i18n::rtl() {
+                            room.right() - width
+                        } else {
+                            room.left()
+                        };
+                        let lines = Rect::from_min_size(
+                            Pos2::new(x, room.top()),
+                            Vec2::new(width, room.height()),
+                        );
+                        ui.scope_builder(egui::UiBuilder::new().max_rect(lines), |ui| {
+                            ui.add(
+                                egui::Label::new(
+                                    RichText::new(d.shown.as_str())
+                                        .size(size::BODY)
+                                        .line_height(Some(size::BODY * 1.6)),
+                                )
                                 .selectable(true)
                                 .wrap(),
-                        );
+                            );
+                        });
                     }
                 }
             });
@@ -435,7 +462,7 @@ impl App {
                 lbl(
                     ui,
                     &t!("details-image-missing"),
-                    14.0,
+                    size::BODY,
                     ui.visuals().weak_text_color(),
                 );
             }
@@ -446,7 +473,7 @@ impl App {
                 lbl(
                     ui,
                     &t!("details-text-in-image"),
-                    11.5,
+                    size::SMALL,
                     ui.visuals().weak_text_color(),
                 );
                 if icon_button_ex(
@@ -465,9 +492,9 @@ impl App {
             });
             if bidi::has_rtl(t) {
                 let c = ui.visuals().text_color();
-                bidi::paragraph(ui, t, FontId::proportional(14.0), c);
+                bidi::paragraph(ui, t, FontId::proportional(size::BODY), c);
             } else {
-                ui.add(egui::Label::new(RichText::new(t).size(14.0)).selectable(true));
+                ui.add(egui::Label::new(RichText::new(t).size(size::BODY)).selectable(true));
             }
         }
     }
@@ -476,7 +503,7 @@ impl App {
         ui.add_space(80.0);
         ui.vertical_centered(|ui| {
             let weak = ui.visuals().weak_text_color();
-            lbl(ui, &t!("details-select-an-item"), 14.0, weak);
+            lbl(ui, &t!("details-select-an-item"), size::BODY, weak);
             ui.add_space(18.0);
             let k = &self.cfg.keys;
             let rows = [
@@ -505,7 +532,7 @@ impl App {
                     };
                     shortcut::keycaps(&mut caps, &keys, false);
                     ui.add_space(8.0);
-                    lbl(ui, &what, 12.5, weak);
+                    lbl(ui, &what, size::SMALL, weak);
                 });
             }
         });

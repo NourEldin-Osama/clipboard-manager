@@ -4,6 +4,26 @@ What changed in each version, for the people who use the app. Each release
 starts its notes with the section of the version it was built from, so add
 the notes here before a push that makes a release.
 
+## 0.6.0
+
+- New type: Noto Sans for Latin, Greek and Cyrillic next to Noto Sans
+  Arabic, both in Regular and SemiBold, so the two scripts look alike.
+  Titles stand out in SemiBold, and the window uses five text sizes
+  instead of thirteen.
+- Long text in the details pane keeps its lines to about 70 characters,
+  with more room between them.
+- The search field, filters, cards, rows and status bar line up on one
+  left and one right edge. In a wide window, List view keeps its rows at
+  most 900 points wide, in the middle, so the time stays near the text.
+- The view button became three: Grid, List and Detail side by side, the
+  current one highlighted. Ctrl+L still steps through them.
+- Pause shows its word, and reads Resume, in amber, while recording is
+  paused.
+- While you scroll List or Detail view, the header of the day at the top
+  stays in view.
+- The status bar names a llama-server model by its file name, not its
+  whole path.
+
 ## 0.5.1
 
 - A search server that takes only text no longer fails on every image at

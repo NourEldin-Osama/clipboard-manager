@@ -60,7 +60,7 @@ pub(super) fn segmented<T: PartialEq + Copy, L: AsRef<str>>(
         let sel = *value == *v;
         let text = txt(
             label.as_ref(),
-            13.0,
+            size::CONTROL,
             Some(if sel {
                 text_shade(accent(), ui.visuals().dark_mode)
             } else {
@@ -92,7 +92,9 @@ pub(super) fn info(ui: &mut Ui, text: &str) {
 pub(super) fn section(ui: &mut Ui, title: &str) {
     ui.add_space(18.0);
     let weak = ui.visuals().weak_text_color();
-    row(ui, |ui| lbl(ui, &title.to_uppercase(), 11.5, weak));
+    row(ui, |ui| {
+        ui.label(section_title(&title.to_uppercase(), weak))
+    });
     ui.add_space(4.0);
 }
 
@@ -159,7 +161,7 @@ pub(super) fn setting_row(
                 } else {
                     ui.visuals().strong_text_color()
                 };
-                lbl(ui, label, 14.0, color);
+                lbl(ui, label, size::BODY, color);
                 if !help.is_empty() {
                     info(ui, help);
                 }
@@ -197,12 +199,15 @@ pub(super) fn note(ui: &mut Ui, text: &str) {
     Frame::new()
         .inner_margin(Margin::symmetric(10, 0))
         .show(ui, |ui| {
-            super::bidi::paragraph(ui, text, FontId::proportional(12.5), weak);
+            super::bidi::paragraph(ui, text, FontId::proportional(size::SMALL), weak);
         });
 }
 
 pub(super) fn path_field(ui: &mut Ui, p: &mut PathBuf, ext: &[&str]) {
-    if ui.button(txt(&t!("settings-browse"), 14.0, None)).clicked() {
+    if ui
+        .button(txt(&t!("settings-browse"), size::BODY, None))
+        .clicked()
+    {
         let mut dlg = rfd::FileDialog::new();
         if !ext.is_empty() {
             dlg = dlg

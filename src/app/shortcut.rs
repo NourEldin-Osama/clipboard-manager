@@ -4,7 +4,7 @@
 use eframe::egui::{Event, KeyboardShortcut, Modifiers, Pos2, Rect, Ui};
 
 use super::icons::{self, Icon};
-use super::view::accent;
+use super::view::{accent, size};
 use super::*;
 
 pub(super) fn parse(s: &str) -> Option<KeyboardShortcut> {
@@ -115,8 +115,9 @@ fn keycap(ui: &mut Ui, label: &str, dim: bool) {
         "Right" | "ArrowRight" => "→",
         l => l,
     };
-    let g =
-        ui.fonts_mut(|f| f.layout_no_wrap(shown.to_string(), FontId::proportional(12.5), color));
+    let g = ui.fonts_mut(|f| {
+        f.layout_no_wrap(shown.to_string(), FontId::proportional(size::SMALL), color)
+    });
     let size = Vec2::new((g.size().x + 14.0).max(24.0), 24.0);
     let (rect, _) = ui.allocate_exact_size(size, Sense::hover());
     let p = ui.painter();
@@ -263,7 +264,7 @@ pub(super) fn recorder(
         let text = problem.clone().unwrap_or_else(|| t!("shortcut-press-keys"));
         inner.label(view::txt(
             &text,
-            12.5,
+            size::SMALL,
             Some(view::text_shade(
                 if problem.is_some() { view::RED } else { a },
                 v.dark_mode,
@@ -273,7 +274,7 @@ pub(super) fn recorder(
     } else if value.trim().is_empty() {
         inner.label(view::txt(
             &t!("shortcut-off"),
-            12.5,
+            size::SMALL,
             Some(v.weak_text_color()),
         ));
     } else {

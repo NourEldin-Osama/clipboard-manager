@@ -2,6 +2,18 @@
 
 use super::*;
 
+/// A model's name as a server reports it, short enough for the status bar:
+/// llama-server reports its model file's whole path, which shows as the
+/// file's name. Names such as `org/model` stay as they are.
+fn short_model_name(name: &str) -> &str {
+    let is_path = name.contains('\\') || name.starts_with('/') || name.ends_with(".gguf");
+    if is_path {
+        name.rsplit(['\\', '/']).next().unwrap_or(name)
+    } else {
+        name
+    }
+}
+
 /// A button on the update bar.
 enum UpdateAction {
     Later,
@@ -77,7 +89,10 @@ impl App {
                         }
                         match &self.update {
                             UpdateState::Available(_) => {
-                                if ui.button(txt(&t!("update-skip"), 13.0, None)).clicked() {
+                                if ui
+                                    .button(txt(&t!("update-skip"), size::CONTROL, None))
+                                    .clicked()
+                                {
                                     action = Some(UpdateAction::Skip);
                                 }
                                 if primary_button(ui, &t!("update-download")).clicked() {
@@ -85,7 +100,10 @@ impl App {
                                 }
                             }
                             UpdateState::Downloading(..) => {
-                                if ui.button(txt(&t!("common-cancel"), 13.0, None)).clicked() {
+                                if ui
+                                    .button(txt(&t!("common-cancel"), size::CONTROL, None))
+                                    .clicked()
+                                {
                                     action = Some(UpdateAction::Cancel);
                                 }
                             }
@@ -97,7 +115,7 @@ impl App {
                             UpdateState::Failed {
                                 release: Some(_), ..
                             } if ui
-                                .button(txt(&t!("update-try-again"), 13.0, None))
+                                .button(txt(&t!("update-try-again"), size::CONTROL, None))
                                 .clicked() =>
                             {
                                 action = Some(UpdateAction::Retry);
@@ -105,7 +123,10 @@ impl App {
                             _ => {}
                         }
                         if let Some(url) = notes {
-                            if ui.link(txt(&t!("update-whats-new"), 13.0, None)).clicked() {
+                            if ui
+                                .link(txt(&t!("update-whats-new"), size::CONTROL, None))
+                                .clicked()
+                            {
                                 ctx.open_url(egui::OpenUrl::new_tab(url));
                             }
                         }
@@ -113,7 +134,7 @@ impl App {
                             UpdateState::Available(r) => {
                                 ui.label(txt(
                                     &t!("update-available", version = r.label()),
-                                    13.5,
+                                    size::CONTROL,
                                     Some(text_color),
                                 ));
                             }
@@ -125,7 +146,7 @@ impl App {
                                 if done >= total {
                                     ui.label(txt(
                                         &t!("update-verifying", version = r.label()),
-                                        13.5,
+                                        size::CONTROL,
                                         Some(text_color),
                                     ));
                                     slow_spinner(ui, 14.0, None);
@@ -134,7 +155,7 @@ impl App {
                                         Some(seconds) => t!("download-retrying", seconds = seconds),
                                         None => t!("update-downloading", version = r.label()),
                                     };
-                                    ui.label(txt(&line, 13.5, Some(text_color)));
+                                    ui.label(txt(&line, size::CONTROL, Some(text_color)));
                                     ui.add(
                                         egui::ProgressBar::new(done as f32 / total as f32)
                                             .desired_width(160.0)
@@ -144,7 +165,7 @@ impl App {
                                                     done = done >> 20,
                                                     total = total >> 20
                                                 ),
-                                                13.0,
+                                                size::CONTROL,
                                                 None,
                                             )),
                                     );
@@ -153,7 +174,7 @@ impl App {
                             UpdateState::Ready(r, _) => {
                                 ui.label(txt(
                                     &t!("update-ready-restart", version = r.label()),
-                                    13.5,
+                                    size::CONTROL,
                                     Some(text_color),
                                 ));
                             }
@@ -162,7 +183,7 @@ impl App {
                                 icons::glyph(ui, Icon::Warning, 14.0, red);
                                 let text = t!("update-failed", error = error.as_str());
                                 let width = ui.available_width();
-                                cut_line(ui, &text, width, 13.0, red, Sense::hover());
+                                cut_line(ui, &text, width, size::CONTROL, red, Sense::hover());
                             }
                             _ => {}
                         });
@@ -218,7 +239,9 @@ impl App {
             id => id.to_string(),
         };
         let name = match (model.name.trim(), &learned) {
-            ("", Some(learned)) if model.model.trim().is_empty() => learned.clone(),
+            ("", Some(learned)) if model.model.trim().is_empty() => {
+                short_model_name(learned).to_string()
+            }
             _ => super::settings::model_label(model),
         };
         Some((name, server.label().to_string(), id))
@@ -268,7 +291,7 @@ impl App {
                     } else {
                         t!("status-items", count = n)
                     };
-                    let count = txt(&count, 12.0, Some(weak)).into_galley(
+                    let count = txt(&count, size::SMALL, Some(weak)).into_galley(
                         ui,
                         Some(egui::TextWrapMode::Extend),
                         f32::INFINITY,
@@ -280,7 +303,7 @@ impl App {
                     } else {
                         text_shade(dot, ui.visuals().dark_mode)
                     };
-                    let job = pill_job(&text, 12.0, color, None);
+                    let job = pill_job(&text, size::SMALL, color, None);
                     let r = tip(
                         icons::pill(ui, Icon::Dot, job, color, false),
                         &self.model_tip(),
@@ -294,7 +317,7 @@ impl App {
                         slow_spinner(ui, 11.0, Some(weak));
                         ui.label(txt(
                             &t!("status-indexing", done = done, total = total),
-                            12.0,
+                            size::SMALL,
                             Some(weak),
                         ));
                         ui.add(
@@ -307,12 +330,12 @@ impl App {
                         slow_spinner(ui, 11.0, Some(weak));
                         ui.label(txt(
                             &t!("status-adding-files", count = self.imported),
-                            12.0,
+                            size::SMALL,
                             Some(weak),
                         ));
                     }
                     if !self.status.is_empty() {
-                        ui.label(txt(&self.status, 12.0, Some(weak)));
+                        ui.label(txt(&self.status, size::SMALL, Some(weak)));
                     }
                     if !self.flags.enabled.load(Ordering::SeqCst) {
                         icons::chip(ui, Icon::Pause, &t!("status-recording-paused"), AMBER);
@@ -324,7 +347,8 @@ impl App {
                         icons::glyph(ui, Icon::Warning, 13.0, amber);
                         let text = t!("status-shortcut-taken", keys = keys);
                         let r = ui.add(
-                            egui::Label::new(txt(&text, 12.0, Some(amber))).sense(Sense::click()),
+                            egui::Label::new(txt(&text, size::SMALL, Some(amber)))
+                                .sense(Sense::click()),
                         );
                         if tip(r, &t!("status-open-shortcut-settings")).clicked() {
                             self.open_settings(SettingsPage::Shortcuts);
@@ -336,7 +360,7 @@ impl App {
                         let room = ui.available_width()
                             - count.size().x
                             - 2.0 * ui.spacing().item_spacing.x;
-                        let r = cut_line(ui, e, room.max(0.0), 12.0, red, Sense::click());
+                        let r = cut_line(ui, e, room.max(0.0), size::SMALL, red, Sense::click());
                         if tip(r, &t!("status-dismiss-error")).clicked() {
                             self.error = None;
                         }
@@ -372,12 +396,13 @@ impl App {
                         .inner_margin(Margin::symmetric(16, 8))
                         .show(ui, |ui| {
                             row(ui, |ui| {
-                                ui.label(txt(toast.text.as_str(), 14.0, Some(fg)));
+                                ui.label(txt(toast.text.as_str(), size::BODY, Some(fg)));
                                 if let Some((label, _)) = &toast.action {
-                                    let button = egui::Button::new(txt(label, 13.0, Some(fg)))
-                                        .fill(Color32::TRANSPARENT)
-                                        .stroke(Stroke::new(1.0, fg))
-                                        .corner_radius(CornerRadius::same(12));
+                                    let button =
+                                        egui::Button::new(txt(label, size::CONTROL, Some(fg)))
+                                            .fill(Color32::TRANSPARENT)
+                                            .stroke(Stroke::new(1.0, fg))
+                                            .corner_radius(CornerRadius::same(12));
                                     clicked = ui.add(button).clicked();
                                 }
                             });
@@ -395,5 +420,24 @@ impl App {
                 self.error = None;
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_model_file_shows_by_its_name() {
+        assert_eq!(
+            short_model_name(r"C:\models\embeddinggemma-2-UD-Q4_K_XL.gguf"),
+            "embeddinggemma-2-UD-Q4_K_XL.gguf"
+        );
+        assert_eq!(short_model_name("/models/nomic.gguf"), "nomic.gguf");
+        assert_eq!(
+            short_model_name("openai/text-embedding-3-small"),
+            "openai/text-embedding-3-small"
+        );
+        assert_eq!(short_model_name("bge-small-en-v1.5"), "bge-small-en-v1.5");
     }
 }

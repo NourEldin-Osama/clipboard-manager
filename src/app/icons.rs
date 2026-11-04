@@ -7,7 +7,7 @@
 use eframe::egui::load::{SizeHint, TexturePoll};
 use eframe::egui::{Painter, Pos2, Rect, TextureOptions, Ui};
 
-use super::view;
+use super::view::{self, size};
 use crate::config::ServerKind;
 use crate::store::Kind;
 
@@ -398,7 +398,12 @@ pub(super) fn paint_icon_text(
 /// `color`; the icon and text take its text shade.
 pub(super) fn chip(ui: &mut Ui, icon: Icon, text: &str, color: Color32) -> egui::Response {
     let shade = view::text_shade(color, ui.visuals().dark_mode);
-    let (g, size) = icon_text_size(ui, &view::txt(text, 12.0, Some(shade)), 12.0, 12.0);
+    let (g, size) = icon_text_size(
+        ui,
+        &view::txt(text, size::SMALL, Some(shade)),
+        size::SMALL,
+        12.0,
+    );
     let pad = Vec2::new(8.0, 3.0);
     let (rect, resp) =
         ui.allocate_exact_size(size + pad * 2.0 + Vec2::new(0.0, 2.0), Sense::hover());
@@ -481,7 +486,7 @@ pub(super) fn menu_item(ui: &mut Ui, icon: Icon, text: &str) -> egui::Response {
         at,
         view::start_anchor(egui::Align::Center),
         text,
-        FontId::proportional(14.0),
+        FontId::proportional(size::BODY),
         color,
     );
     resp
