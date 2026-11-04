@@ -678,6 +678,18 @@ impl Default for Config {
 }
 
 impl Config {
+    /// What "Reset all settings" leaves: every setting at its default, but
+    /// the saved servers (with their keys) and the rules per app kept, as
+    /// they are things the user made. Agreements to send the history to a
+    /// server outside this PC go, so the app asks again.
+    pub fn reset(&self) -> Config {
+        Config {
+            servers: self.servers.clone(),
+            rules: self.rules.clone(),
+            ..Config::default()
+        }
+    }
+
     /// Whether the user agreed to send the history to the server at `url`.
     pub fn is_server_allowed(&self, url: &str) -> bool {
         self.allowed_servers.contains(&address_key(url))
@@ -1177,6 +1189,25 @@ mod tests {
             TextReader::Off
         };
         assert_eq!(cfg.text_reader(), windows);
+    }
+
+    #[test]
+    fn a_reset_keeps_servers_and_rules() {
+        let mut cfg = with_unsloth();
+        cfg.rules = vec![crate::rules::Rule {
+            app: "keepass.exe".into(),
+            ..Default::default()
+        }];
+        cfg.allow_server("http://192.0.2.1:8080/v1");
+        cfg.max_items = 100;
+        let reset = cfg.reset();
+        assert_eq!(reset.servers, cfg.servers);
+        assert_eq!(reset.rules, cfg.rules);
+        assert!(!reset.is_server_allowed("http://192.0.2.1:8080/v1"));
+        assert_eq!(reset.max_items, Config::default().max_items);
+        assert_eq!(reset.search_engine, SearchEngine::Off);
+        // Reset again, nothing changes.
+        assert!(reset.reset() == reset);
     }
 
     #[test]

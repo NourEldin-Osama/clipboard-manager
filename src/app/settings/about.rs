@@ -189,7 +189,7 @@ impl App {
                     }
                 } else if ui
                     .add_enabled(
-                        *d != Config::default(),
+                        *d != d.reset(),
                         egui::Button::new(txt(&t!("settings-reset"), size::BODY, None)),
                     )
                     .clicked()
@@ -200,7 +200,7 @@ impl App {
         );
         if reset {
             self.confirm = None;
-            *d = Config::default();
+            *d = d.reset();
         }
     }
 }

@@ -457,7 +457,7 @@ settings-delete-items =
     }
 settings-clear = مسح…
 settings-reset-all = إعادة ضبط كل الإعدادات
-settings-reset-all-hint = يعيد كل إعداد إلى قيمته الافتراضية، بما في ذلك نموذج البحث
+settings-reset-all-hint = يعيد كل إعداد إلى قيمته الافتراضية. تبقى خوادمك المحفوظة وقواعدك
 settings-reset-everything = إعادة ضبط الكل
 settings-reset = إعادة ضبط…
 settings-strictness-all = إظهار الكل

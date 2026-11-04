@@ -430,7 +430,7 @@ settings-delete-items =
     }
 settings-clear = Clear…
 settings-reset-all = Reset all settings
-settings-reset-all-hint = Puts every setting back to its default, including the search model
+settings-reset-all-hint = Puts every setting back to its default. Your saved servers and rules stay
 settings-reset-everything = Reset everything
 settings-reset = Reset…
 settings-strictness-all = Show all
