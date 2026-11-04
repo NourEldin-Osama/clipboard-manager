@@ -209,7 +209,8 @@ pub(super) fn thumbs_to_drop(
 }
 
 /// `hot` while the pointer is over the row: its hover buttons then take the
-/// right edge, so the time and badges are left out.
+/// right edge, so the time and badges are left out. `numbered` rows leave
+/// room at the start for the numbers of quick paste, and show `number`.
 #[allow(clippy::too_many_arguments)]
 pub(super) fn paint_row(
     ui: &Ui,
@@ -222,6 +223,8 @@ pub(super) fn paint_row(
     selected: bool,
     compact: bool,
     terms: &[String],
+    numbered: bool,
+    number: Option<usize>,
 ) {
     let v = ui.visuals();
     let p = ui.painter_at(rect);
@@ -251,9 +254,30 @@ pub(super) fn paint_row(
         );
     }
 
+    let gutter = if numbered { 16.0 } else { 0.0 };
+    if let Some(n) = number {
+        let at = m(Rect::from_center_size(
+            Pos2::new(rect.left() + ROW_PADDING + gutter / 2.0, rect.center().y),
+            Vec2::ZERO,
+        ))
+        .center();
+        let font = FontId::proportional(size::SMALL);
+        paint_text(
+            ui,
+            &p,
+            at,
+            Align2::CENTER_CENTER,
+            &n.to_string(),
+            font,
+            v.weak_text_color(),
+        );
+    }
     let av = if compact { 26.0 } else { 38.0 };
     let av_rect = m(Rect::from_min_size(
-        Pos2::new(rect.left() + ROW_PADDING, rect.center().y - av / 2.0),
+        Pos2::new(
+            rect.left() + ROW_PADDING + gutter,
+            rect.center().y - av / 2.0,
+        ),
         Vec2::splat(av),
     ));
     // A text that is a colour or a path shows that before its program.
@@ -330,7 +354,7 @@ pub(super) fn paint_row(
         }
     }
 
-    let x = rect.left() + ROW_PADDING + av + 12.0;
+    let x = rect.left() + ROW_PADDING + gutter + av + 12.0;
     let right_w = if hot { 134.0 } else { 64.0 };
     let text_w = (rect.right() - x - right_w - 8.0).max(40.0);
     // The text column, mirrored with the rest; lines start at its reading edge.
@@ -627,6 +651,8 @@ impl App {
                             Some(it.id) == selected,
                             compact,
                             &terms,
+                            in_popup,
+                            (in_popup && *r < 9).then_some(*r + 1),
                         );
                         if resp.clicked() {
                             actions.push(Command::Select(it.id));

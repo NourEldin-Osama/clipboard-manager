@@ -160,9 +160,11 @@ impl App {
                 shortcut::Recorded::Nothing => {}
             }
         }
+        let quick = t!("quick-paste-keys");
         for (label, keys) in [
             (t!("settings-shortcut-move"), "Up+Down"),
             (t!("settings-shortcut-move-grid"), "Left+Right"),
+            (t!("settings-shortcut-quick-paste"), quick.as_str()),
             (t!("settings-shortcut-escape"), "Escape"),
         ] {
             plain_setting(ui, &label, &t!("settings-shortcut-built-in"), "", |ui| {

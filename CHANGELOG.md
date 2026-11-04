@@ -61,6 +61,10 @@ the notes here before a push that makes a release.
   into Microsoft Edge", with its key. Its arrow holds the other ways,
   "Paste as plain text" and "Copy only". When the window wasn't opened
   over another program, it reads "Copy".
+- Ctrl+1 to Ctrl+9 paste one of the first nine items at once, in the
+  popup and in the full window. The popup numbers its first nine rows,
+  shows the keys in a quiet line at the bottom (your own keys, if you
+  changed them), and its search hint is short: "Search…".
 
 ## 0.5.1
 

@@ -658,11 +658,13 @@ impl App {
             lbl(ui, &t!("details-select-an-item"), size::BODY, weak);
             ui.add_space(18.0);
             let k = &self.cfg.keys;
+            let quick = t!("quick-paste-keys");
             let rows = [
                 ("Up+Down", t!("details-key-move")),
                 (k.paste.as_str(), t!("details-key-paste")),
                 (k.paste_plain.as_str(), t!("details-key-paste-plain")),
                 (k.copy_only.as_str(), t!("details-key-copy-only")),
+                (quick.as_str(), t!("details-key-quick")),
                 (k.pin.as_str(), t!("details-key-pin")),
                 (k.tag.as_str(), t!("details-key-tag")),
                 (k.delete.as_str(), t!("details-key-delete")),
