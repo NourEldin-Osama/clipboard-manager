@@ -26,6 +26,7 @@ impl App {
         setting_for(
             ui,
             &t!("settings-record"),
+            &t!("settings-record-hint"),
             &t!("settings-record-help"),
             &mut d.monitor_clipboard,
             def.monitor_clipboard,
@@ -34,7 +35,8 @@ impl App {
         setting_for(
             ui,
             &t!("settings-merge-duplicates"),
-            &t!("settings-merge-duplicates-help"),
+            &t!("settings-merge-duplicates-hint"),
+            "",
             &mut d.dedupe,
             def.dedupe,
             toggle,
@@ -43,6 +45,7 @@ impl App {
         setting_for(
             ui,
             &t!("settings-keep-up-to"),
+            &t!("settings-keep-up-to-hint"),
             &t!("settings-keep-up-to-help"),
             &mut d.max_items,
             def.max_items,
@@ -74,6 +77,7 @@ impl App {
         setting_for(
             ui,
             &t!("settings-delete-older"),
+            &t!("settings-delete-older-hint"),
             &t!("settings-delete-older-help"),
             &mut d.delete_after_days,
             def.delete_after_days,
@@ -99,6 +103,7 @@ impl App {
         plain_setting(
             ui,
             &t!("settings-clear-history"),
+            &t!("settings-clear-history-hint"),
             &t!("settings-clear-history-help"),
             |ui| {
                 if confirm == Some(Confirm::ClearHistory) {

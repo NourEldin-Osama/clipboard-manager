@@ -199,7 +199,7 @@ screenshots of the finished screens.
 
 ### Phase 11. Settings
 - [x] 11.1 Seven pages grouped by topic, each keeping its own scroll position (D50)
-- [ ] 11.2 A short gray line under each setting; the info button opens the long text on a click, Enter or Space
+- [x] 11.2 A short gray line under each setting (each help's first sentence, four written anew); the info button opens the rest on a click, Enter or Space
 - [ ] 11.3 Reset all settings keeps the saved servers and the rules per app, and says so
 
 ### Phase 12. Content

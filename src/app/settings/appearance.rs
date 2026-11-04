@@ -8,7 +8,8 @@ pub(super) fn appearance_page(ui: &mut Ui, d: &mut Config) {
     setting_for(
         ui,
         &t!("settings-theme"),
-        &t!("settings-theme-help"),
+        &t!("settings-theme-hint"),
+        "",
         &mut d.theme,
         def.theme,
         |ui, theme| {
@@ -26,7 +27,8 @@ pub(super) fn appearance_page(ui: &mut Ui, d: &mut Config) {
     setting_for(
         ui,
         &t!("settings-accent"),
-        &t!("settings-accent-help"),
+        &t!("settings-accent-hint"),
+        "",
         &mut d.accent,
         def.accent,
         |ui, chosen| {
@@ -47,6 +49,7 @@ pub(super) fn appearance_page(ui: &mut Ui, d: &mut Config) {
     setting_for(
         ui,
         &t!("settings-layout"),
+        &t!("settings-layout-hint"),
         &t!("settings-layout-help"),
         &mut d.view,
         def.view,
@@ -59,7 +62,8 @@ pub(super) fn appearance_page(ui: &mut Ui, d: &mut Config) {
     setting_for(
         ui,
         &t!("settings-density"),
-        &t!("settings-density-help"),
+        &t!("settings-density-hint"),
+        "",
         &mut d.density,
         def.density,
         |ui, density| {
@@ -76,6 +80,7 @@ pub(super) fn appearance_page(ui: &mut Ui, d: &mut Config) {
     setting_for(
         ui,
         &t!("settings-pinned-on-top"),
+        &t!("settings-pinned-on-top-hint"),
         &t!("settings-pinned-on-top-help"),
         &mut d.pinned_first,
         def.pinned_first,
@@ -84,7 +89,8 @@ pub(super) fn appearance_page(ui: &mut Ui, d: &mut Config) {
     setting_for(
         ui,
         &t!("settings-group-by-day"),
-        &t!("settings-group-by-day-help"),
+        &t!("settings-group-by-day-hint"),
+        "",
         &mut d.group_by_date,
         def.group_by_date,
         toggle,

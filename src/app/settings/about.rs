@@ -16,6 +16,7 @@ impl App {
         setting_for(
             ui,
             &t!("settings-update-check"),
+            &t!("settings-update-check-hint"),
             &t!("settings-update-check-help"),
             &mut d.update_check,
             def.update_check,
@@ -24,6 +25,7 @@ impl App {
         setting_for(
             ui,
             &t!("settings-update-download"),
+            &t!("settings-update-download-hint"),
             &t!("settings-update-download-help"),
             &mut d.update_download,
             def.update_download,
@@ -33,7 +35,8 @@ impl App {
         plain_setting(
             ui,
             &t!("settings-version"),
-            &t!("settings-version-help"),
+            &t!("settings-version-hint"),
+            "",
             |ui| {
                 if release_build
                     && ui
@@ -99,7 +102,8 @@ impl App {
         plain_setting(
             ui,
             &t!("settings-data-folder"),
-            &t!("settings-data-folder-help"),
+            &t!("settings-data-folder-hint"),
+            "",
             |ui| {
                 if ui
                     .button(txt(&t!("settings-open"), size::BODY, None))
@@ -123,6 +127,7 @@ impl App {
         plain_setting(
             ui,
             &t!("settings-log-file"),
+            &t!("settings-log-file-hint"),
             &t!("settings-log-file-help"),
             |ui| {
                 if ui
@@ -138,7 +143,7 @@ impl App {
         let items = self.library.items();
         let images = items.iter().filter(|i| i.kind == Kind::Image).count();
         let pinned = items.iter().filter(|i| i.pinned).count();
-        plain_setting(ui, &t!("settings-stored"), "", |ui| {
+        plain_setting(ui, &t!("settings-stored"), "", "", |ui| {
             ui.label(txt(
                 &t!(
                     "settings-stored-counts",
@@ -159,7 +164,8 @@ impl App {
         plain_setting(
             ui,
             &t!("settings-reset-all"),
-            &t!("settings-reset-all-help"),
+            &t!("settings-reset-all-hint"),
+            "",
             |ui| {
                 if confirm == Some(Confirm::ResetSettings) {
                     if ui

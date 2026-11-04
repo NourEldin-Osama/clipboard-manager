@@ -9,6 +9,7 @@ impl App {
         setting_for(
             ui,
             &t!("settings-skip-secrets"),
+            &t!("settings-skip-secrets-hint"),
             &t!("settings-skip-secrets-help"),
             &mut d.skip_secrets,
             def.skip_secrets,
@@ -18,7 +19,8 @@ impl App {
         plain_setting(
             ui,
             &t!("settings-skip-next"),
-            &t!("settings-skip-next-help"),
+            &t!("settings-skip-next-hint"),
+            "",
             |ui| {
                 change = ui
                     .button(txt(&t!("settings-change-key"), size::BODY, None))
@@ -72,7 +74,7 @@ impl App {
             (t!("settings-data-reader"), reader),
             (t!("settings-data-updates"), (updates, weak)),
         ] {
-            plain_setting(ui, &label, "", |ui| {
+            plain_setting(ui, &label, "", "", |ui| {
                 lbl(ui, &value, size::BODY, color);
             });
         }

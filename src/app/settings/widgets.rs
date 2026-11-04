@@ -82,11 +82,33 @@ pub(super) fn segmented<T: PartialEq + Copy, L: AsRef<str>>(
     changed
 }
 
+/// The info button beside a setting's name: a click, or Enter or Space,
+/// opens its details; screen readers read them as the button's name.
 pub(super) fn info(ui: &mut Ui, text: &str) {
-    tip(
-        icons::glyph(ui, Icon::Info, 14.0, ui.visuals().weak_text_color()),
-        text,
+    let (rect, resp) = ui.allocate_exact_size(Vec2::splat(22.0), Sense::click());
+    resp.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, text));
+    let v = ui.visuals();
+    if resp.hovered() || resp.has_focus() {
+        ui.painter()
+            .rect_filled(rect, CornerRadius::same(6), v.widgets.hovered.weak_bg_fill);
+    }
+    let color = if resp.hovered() {
+        v.strong_text_color()
+    } else {
+        v.weak_text_color()
+    };
+    icons::paint(
+        ui.painter(),
+        Rect::from_center_size(rect.center(), Vec2::splat(14.0)),
+        Icon::Info,
+        color,
     );
+    egui::Popup::from_toggle_button_response(&resp)
+        .width(360.0)
+        .show(|ui| {
+            let strong = ui.visuals().strong_text_color();
+            super::bidi::paragraph(ui, text, FontId::proportional(size::BODY), strong);
+        });
 }
 
 pub(super) fn section(ui: &mut Ui, title: &str) {
@@ -98,18 +120,20 @@ pub(super) fn section(ui: &mut Ui, title: &str) {
     ui.add_space(4.0);
 }
 
-/// One setting: label and ℹ on the left, control at the right edge. A value
-/// changed from its default tints the row and offers a reset; the caller must
-/// act on the returned click.
+/// One setting: its name, a short gray line under it and an info button
+/// with the details, and the control at the far edge. A value changed from
+/// its default tints the row and offers a reset; the caller must act on the
+/// returned click. An empty line or details are left out.
 #[must_use = "a changed row shows a reset button; act on its click"]
 pub(super) fn setting(
     ui: &mut Ui,
     label: &str,
-    help: &str,
+    line: &str,
+    details: &str,
     changed: bool,
     control: impl FnOnce(&mut Ui),
 ) -> bool {
-    setting_row(ui, label, help, changed, changed, control)
+    setting_row(ui, label, line, details, changed, changed, control)
 }
 
 /// A row for one value with a default: tinted while the value differs, and
@@ -117,12 +141,13 @@ pub(super) fn setting(
 pub(super) fn setting_for<T: PartialEq, R>(
     ui: &mut Ui,
     label: &str,
-    help: &str,
+    line: &str,
+    details: &str,
     value: &mut T,
     default: T,
     control: impl FnOnce(&mut Ui, &mut T) -> R,
 ) {
-    if setting(ui, label, help, *value != default, |ui| {
+    if setting(ui, label, line, details, *value != default, |ui| {
         control(ui, value);
     }) {
         *value = default;
@@ -130,14 +155,21 @@ pub(super) fn setting_for<T: PartialEq, R>(
 }
 
 /// A row with nothing to reset: an action, a path, or a fixed value.
-pub(super) fn plain_setting(ui: &mut Ui, label: &str, help: &str, control: impl FnOnce(&mut Ui)) {
-    setting_row(ui, label, help, false, false, control);
+pub(super) fn plain_setting(
+    ui: &mut Ui,
+    label: &str,
+    line: &str,
+    details: &str,
+    control: impl FnOnce(&mut Ui),
+) {
+    setting_row(ui, label, line, details, false, false, control);
 }
 
 pub(super) fn setting_row(
     ui: &mut Ui,
     label: &str,
-    help: &str,
+    line: &str,
+    details: &str,
     changed: bool,
     resettable: bool,
     control: impl FnOnce(&mut Ui),
@@ -162,8 +194,8 @@ pub(super) fn setting_row(
                     ui.visuals().strong_text_color()
                 };
                 lbl(ui, label, size::BODY, color);
-                if !help.is_empty() {
-                    info(ui, help);
+                if !details.is_empty() {
+                    info(ui, details);
                 }
                 far(ui, |ui| {
                     // The reset button's space is kept when it's hidden, so controls stay in one column.
@@ -190,6 +222,12 @@ pub(super) fn setting_row(
                     ui.ctx().data_mut(|d| d.remove::<String>(row_title_id()));
                 });
             });
+            if !line.is_empty() {
+                // Right under the name, as one block with it.
+                ui.spacing_mut().item_spacing.y = 0.0;
+                let weak = ui.visuals().weak_text_color();
+                super::bidi::paragraph(ui, line, FontId::proportional(size::SMALL), weak);
+            }
         });
     reset
 }
@@ -236,7 +274,7 @@ mod tests {
         ctx.enable_accesskit();
         let mut on = true;
         let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
-            plain_setting(ui, "Read text in images", "", |ui| {
+            plain_setting(ui, "Read text in images", "", "", |ui| {
                 toggle(ui, &mut on);
             });
         });

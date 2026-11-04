@@ -9,6 +9,7 @@ pub(super) fn general_settings(ui: &mut Ui, d: &mut Config) {
     setting_for(
         ui,
         &t!("settings-language"),
+        &t!("settings-language-hint"),
         &t!("settings-language-help"),
         &mut d.language,
         def.language,
@@ -26,6 +27,7 @@ pub(super) fn general_settings(ui: &mut Ui, d: &mut Config) {
     setting_for(
         ui,
         &t!("settings-time-format"),
+        &t!("settings-time-format-hint"),
         &t!("settings-time-format-help"),
         &mut d.time_format,
         def.time_format,
@@ -44,6 +46,7 @@ pub(super) fn general_settings(ui: &mut Ui, d: &mut Config) {
     setting_for(
         ui,
         &t!("settings-start-at-sign-in"),
+        &t!("settings-start-at-sign-in-hint"),
         &t!("settings-start-at-sign-in-help"),
         &mut d.start_at_login,
         def.start_at_login,
@@ -52,6 +55,7 @@ pub(super) fn general_settings(ui: &mut Ui, d: &mut Config) {
     setting_for(
         ui,
         &t!("settings-tray"),
+        &t!("settings-tray-hint"),
         &t!("settings-tray-help"),
         &mut d.tray,
         def.tray,
