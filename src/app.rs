@@ -367,6 +367,15 @@ enum ShortcutField {
 const UNDO_FOR: Duration = Duration::from_secs(8);
 /// How long a message that names a key stays.
 const KEY_HINT_FOR: Duration = Duration::from_secs(4);
+/// What Copy together puts on the clipboard: the texts, links and file
+/// paths of `items`, one after another; with how many there are and how
+/// many pictures are left out.
+fn texts_together<'a>(items: impl Iterator<Item = &'a Item>) -> (usize, String, usize) {
+    let (pictures, texts): (Vec<_>, Vec<_>) = items.partition(|it| it.kind == Kind::Image);
+    let texts: Vec<&str> = texts.iter().map(|it| it.text.trim_end()).collect();
+    (texts.len(), texts.join("\n"), pictures.len())
+}
+
 /// eframe's entry for the window's place and size in app.ron.
 const WINDOW_KEY: &str = "window";
 /// The window's size at the first start, in points.
@@ -2199,20 +2208,12 @@ impl App {
     /// together, one after another in list order, and maybe pastes them.
     /// Pictures are left out.
     fn copy_together(&mut self, ids: &[u64], paste: Paste) {
-        let mut texts = Vec::new();
-        let mut pictures = 0;
-        for it in ids.iter().filter_map(|&id| self.library.get(id)) {
-            if it.kind == Kind::Image {
-                pictures += 1;
-            } else {
-                texts.push(it.text.trim_end().to_string());
-            }
-        }
-        if texts.is_empty() {
+        let items = ids.iter().filter_map(|&id| self.library.get(id));
+        let (count, text, pictures) = texts_together(items);
+        if count == 0 {
             self.toast(t!("toast-pictures-not-together"));
             return;
         }
-        let (count, text) = (texts.len(), texts.join("\n"));
         let flags = self.flags.clone();
         self.background.run(move || Done::CopiedTogether {
             count,
@@ -2372,6 +2373,21 @@ mod tests {
             self.0.remove(key);
         }
         fn flush(&mut self) {}
+    }
+
+    #[test]
+    fn copy_together_joins_texts_in_order_and_leaves_pictures_out() {
+        let item =
+            |id: u64, kind: Kind, text: &str| Item::new(id, kind, Origin::Clipboard, text.into());
+        let items = [
+            item(1, Kind::Text, "first line\n"),
+            item(2, Kind::Image, ""),
+            item(3, Kind::Link, "https://example.com"),
+            item(4, Kind::Files, "C:\\a.txt\nC:\\b.txt"),
+        ];
+        let joined = "first line\nhttps://example.com\nC:\\a.txt\nC:\\b.txt";
+        assert_eq!(texts_together(items.iter()), (3, joined.to_string(), 1));
+        assert_eq!(texts_together(items[1..2].iter()), (0, String::new(), 1));
     }
 
     #[test]
