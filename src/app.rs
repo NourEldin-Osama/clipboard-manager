@@ -354,6 +354,30 @@ enum ShortcutField {
 const UNDO_FOR: Duration = Duration::from_secs(8);
 /// How long a message that names a key stays.
 const KEY_HINT_FOR: Duration = Duration::from_secs(4);
+/// eframe's entry for the window's place and size in app.ron.
+const WINDOW_KEY: &str = "window";
+/// The window's size at the first start, in points.
+pub const WINDOW_SIZE: [f32; 2] = [1040.0, 680.0];
+/// The smallest the window can be made, in points.
+pub const SMALLEST_WINDOW: [f32; 2] = [560.0, 380.0];
+
+/// eframe saves the window's place and size just before the app's own
+/// `save`, every 30 seconds and when the app quits. A minimized window has
+/// neither: Windows puts it at -32000 with no size, and the next start would
+/// open it tiny, in a corner of the screen. So while the window is minimized,
+/// the entry saved before goes back in; otherwise the new entry is kept.
+fn keep_window_state(
+    storage: &mut dyn eframe::Storage,
+    minimized: bool,
+    kept: &mut Option<String>,
+) {
+    if !minimized {
+        *kept = storage.get_string(WINDOW_KEY);
+    } else if let Some(entry) = kept {
+        storage.set_string(WINDOW_KEY, entry.clone());
+    }
+}
+
 /// How long the message about a server that refused an image stays.
 const IMAGES_REFUSED_FOR: Duration = Duration::from_secs(15);
 /// How often deleting by age runs while it is on.
@@ -449,6 +473,11 @@ pub struct App {
     programs: programs::Programs,
     /// The window pasting goes to and its program, read once per window.
     paste_program: (paste::Window, Option<PathBuf>),
+    /// The window's place and size as eframe last saved them while it was
+    /// not minimized (see `keep_window_state`).
+    window_state: Option<String>,
+    /// The window's size at start was looked at.
+    start_size_checked: bool,
     detail: Option<DetailText>,
     research_pending: bool,
     last_search: Instant,
@@ -645,6 +674,8 @@ impl App {
             },
             programs: programs::Programs::new(ctx.clone()),
             paste_program: (paste::NO_WINDOW, None),
+            window_state: cc.storage.and_then(|s| s.get_string(WINDOW_KEY)),
+            start_size_checked: false,
             detail: None,
             research_pending: false,
             last_search: Instant::now(),
@@ -890,6 +921,18 @@ impl App {
     /// Runs every frame, including while the window is hidden.
     fn window_logic(&mut self, ctx: &egui::Context) {
         self.update_logic(ctx);
+        // Versions before 0.6 saved a minimized window with no size, and
+        // Windows then makes it tiny at start: it gets the first size back.
+        if !self.start_size_checked {
+            if let Some(inner) = ctx.input(|i| i.viewport().inner_rect) {
+                self.start_size_checked = true;
+                let [width, height] = SMALLEST_WINDOW;
+                if inner.width() < width || inner.height() < height {
+                    let size = Vec2::from(WINDOW_SIZE);
+                    ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(size));
+                }
+            }
+        }
         while let Ok(cmd) = self.tray_rx.try_recv() {
             match cmd {
                 TrayCmd::Show => self.win.show(),
@@ -2040,6 +2083,7 @@ use view::{add_fonts, apply_theme, looks_like_code, set_accent, style};
 #[cfg(test)]
 mod tests {
     use super::*;
+    use eframe::Storage as _;
 
     #[test]
     fn an_indexing_run_grows_with_new_work_and_ends_when_empty() {
@@ -2055,5 +2099,36 @@ mod tests {
             seen,
             [(0, 500), (100, 500), (100, 550), (540, 550), (0, 0), (0, 3)]
         );
+    }
+
+    /// app.ron in memory.
+    struct Entries(HashMap<String, String>);
+
+    impl eframe::Storage for Entries {
+        fn get_string(&self, key: &str) -> Option<String> {
+            self.0.get(key).cloned()
+        }
+        fn set_string(&mut self, key: &str, value: String) {
+            self.0.insert(key.to_string(), value);
+        }
+        fn remove_string(&mut self, key: &str) {
+            self.0.remove(key);
+        }
+        fn flush(&mut self) {}
+    }
+
+    #[test]
+    fn a_minimized_window_keeps_its_place_and_size() {
+        let mut storage = Entries(HashMap::new());
+        let mut kept = None;
+        // What eframe saves before the app's `save`, then what the app leaves.
+        let mut save = |entry: &str, minimized: bool| {
+            storage.set_string(WINDOW_KEY, entry.to_string());
+            keep_window_state(&mut storage, minimized, &mut kept);
+            storage.get_string(WINDOW_KEY).unwrap()
+        };
+        assert_eq!(save("1040 by 680 at 32,32", false), "1040 by 680 at 32,32");
+        assert_eq!(save("0 by 0 at -32000", true), "1040 by 680 at 32,32");
+        assert_eq!(save("1200 by 900 at 40,40", false), "1200 by 900 at 40,40");
     }
 }
