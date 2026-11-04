@@ -115,8 +115,14 @@ fn keycap(ui: &mut Ui, label: &str, dim: bool) {
         "Right" | "ArrowRight" => "→",
         l => l,
     };
+    // A translated key such as "1 حتى 9" (1 to 9) is shown in reading order.
+    let font = FontId::proportional(size::SMALL);
     let g = ui.fonts_mut(|f| {
-        f.layout_no_wrap(shown.to_string(), FontId::proportional(size::SMALL), color)
+        if super::bidi::has_rtl(shown) {
+            f.layout_job(super::bidi::job(shown, font, color))
+        } else {
+            f.layout_no_wrap(shown.to_string(), font, color)
+        }
     });
     let size = Vec2::new((g.size().x + 14.0).max(24.0), 24.0);
     let (rect, _) = ui.allocate_exact_size(size, Sense::hover());
