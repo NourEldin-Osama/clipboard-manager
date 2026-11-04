@@ -505,6 +505,9 @@ impl App {
             vec![]
         };
         let mut actions = Vec::new();
+        // A right-click, or Shift+F10 on the selected card, opens a menu.
+        let mut open_menu = None;
+        let menu_key = self.menu_by_key;
         let frame = ui.ctx().cumulative_pass_nr();
         let (library, results, thumbs, loader, selected, seen, programs) = (
             &self.library,
@@ -565,6 +568,14 @@ impl App {
                 }
                 if resp.double_clicked() {
                     actions.push(Command::Copy(it.id, Paste::Yes));
+                }
+                if resp.secondary_clicked() {
+                    let at = resp.interact_pointer_pos().unwrap_or(rect.center());
+                    open_menu = Some((it.id, at, false));
+                } else if menu_key && chosen_card {
+                    let corner = Pos2::new(rect.left() + 16.0, rect.bottom() - 8.0);
+                    let at = flip(rect, Rect::from_min_size(corner, Vec2::ZERO)).min;
+                    open_menu = Some((it.id, at, true));
                 }
                 if hot {
                     let size = 30.0;
@@ -633,5 +644,7 @@ impl App {
         });
         self.list_view = (out.state.clamped_offset().y, out.inner_rect.height());
         self.apply_actions(actions);
+        self.after_rows(open_menu, false);
+        self.item_menu(ui, false);
     }
 }

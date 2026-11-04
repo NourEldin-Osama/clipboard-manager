@@ -70,6 +70,27 @@ fn shift_delete(event: egui::Event, modifiers: egui::Modifiers) -> egui::Event {
     }
 }
 
+/// Which of Ctrl+1 to Ctrl+9 was pressed this frame, counted from 0. The
+/// press is used up.
+fn quick_paste(ctx: &egui::Context) -> Option<usize> {
+    const DIGITS: [Key; 9] = [
+        Key::Num1,
+        Key::Num2,
+        Key::Num3,
+        Key::Num4,
+        Key::Num5,
+        Key::Num6,
+        Key::Num7,
+        Key::Num8,
+        Key::Num9,
+    ];
+    ctx.input_mut(|i| {
+        DIGITS
+            .iter()
+            .position(|&digit| i.consume_key(egui::Modifiers::COMMAND, digit))
+    })
+}
+
 impl App {
     /// The keys of the full window, or of the popup when `in_popup`: the same,
     /// less those for what the popup doesn't have (details, tags, views).
@@ -96,6 +117,33 @@ impl App {
         }
         if !in_popup {
             self.settings_typing = false;
+        }
+        // An open item menu takes the keys: the arrows move through it,
+        // Enter picks an entry and Esc closes it.
+        if self
+            .item_menu
+            .as_ref()
+            .is_some_and(|m| m.in_popup == in_popup)
+        {
+            return;
+        }
+        // Any other open menu, such as Sort by or the arrow of the details'
+        // main button, takes the keys too: Esc only closes it.
+        if egui::Popup::is_any_open(ctx) {
+            return;
+        }
+        // F1 opens the sheet of every key and closes it again; so does Esc.
+        let f1 = ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, Key::F1));
+        if self.keys_sheet == Some(in_popup) {
+            let esc = ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, Key::Escape));
+            if f1 || esc {
+                self.keys_sheet = None;
+            }
+            return;
+        }
+        if f1 {
+            self.keys_sheet = Some(in_popup);
+            return;
         }
         // The tag field belongs to the item in the details pane: selecting
         // another item or closing the pane closes it. Left open, it would
@@ -144,6 +192,14 @@ impl App {
                 ],
             )
         };
+        // Ctrl+1 to Ctrl+9 paste one of the first nine items shown.
+        let quick = if typing { None } else { quick_paste(ctx) };
+        // Shift+F10 opens the selected item's menu, as in other programs.
+        let menu = !typing && ctx.input_mut(|i| i.consume_key(egui::Modifiers::SHIFT, Key::F10));
+        if menu && self.selected.is_some() {
+            self.menu_by_key = true;
+            self.scroll_to_selected = true;
+        }
         let copy = if paste {
             Some(Paste::Yes)
         } else if paste_plain {
@@ -185,20 +241,21 @@ impl App {
                 self.move_selection(-forward);
             }
         }
+        if let Some(id) = quick.and_then(|n| self.results.get(n)).map(|hit| hit.id) {
+            self.run_by_key(Command::Copy(id, Paste::Yes));
+        }
         if let Some(id) = self.selected {
             if let Some(paste) = copy {
-                self.run(Command::Copy(id, paste));
+                self.run_by_key(Command::Copy(id, paste));
             }
             if del {
-                self.run(Command::Delete(id));
+                self.run_by_key(Command::Delete(id));
             }
             if pin {
-                self.run(Command::Pin(id));
+                self.run_by_key(Command::Pin(id));
             }
             if tag && !in_popup {
-                self.tag_input = Some((id, String::new()));
-                self.tag_focus = true;
-                self.details_open = true;
+                self.start_tagging(id);
             }
         }
         if esc {
@@ -271,6 +328,39 @@ mod tests {
         // Ctrl+X, held since an earlier frame, is still a cut.
         let cut = repair_input(vec![egui::Event::Cut], egui::Modifiers::COMMAND, 40.0);
         assert_eq!(cut, vec![egui::Event::Cut]);
+    }
+
+    #[test]
+    fn ctrl_and_a_digit_is_a_quick_paste() {
+        let press = |key: Key, modifiers: egui::Modifiers| {
+            let input = egui::RawInput {
+                events: vec![egui::Event::Key {
+                    key,
+                    physical_key: None,
+                    pressed: true,
+                    repeat: false,
+                    modifiers,
+                }],
+                focused: true,
+                ..Default::default()
+            };
+            let mut found = None;
+            let mut output = egui::Context::default().run_ui(input, |ui| {
+                found = quick_paste(ui.ctx());
+            });
+            // The font atlas upload no renderer takes here.
+            output.textures_delta.clear();
+            found
+        };
+        let ctrl = egui::Modifiers {
+            ctrl: true,
+            command: true,
+            ..egui::Modifiers::NONE
+        };
+        assert_eq!(press(Key::Num3, ctrl), Some(2));
+        assert_eq!(press(Key::Num9, ctrl), Some(8));
+        assert_eq!(press(Key::Num3, egui::Modifiers::NONE), None);
+        assert_eq!(press(Key::Num0, ctrl), None);
     }
 
     #[test]

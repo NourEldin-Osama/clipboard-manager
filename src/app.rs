@@ -269,6 +269,17 @@ struct Toast {
     action: Option<(String, Command)>,
 }
 
+/// An item's menu, opened by a right-click or by Shift+F10.
+struct ItemMenu {
+    id: u64,
+    /// Where it opens: at the pointer, or at the selected row for Shift+F10.
+    at: egui::Pos2,
+    /// It belongs to the popup's list, not the full window's.
+    in_popup: bool,
+    /// Its first entry is to take the keyboard, as after Shift+F10.
+    focus_first: bool,
+}
+
 /// Everything the user can do to the history, from a row, a card, the
 /// details pane, a key, a menu or a toast. The views send these to `run`
 /// instead of changing the history themselves.
@@ -310,6 +321,13 @@ pub(super) enum Paste {
     Plain,
 }
 
+/// One way to put an item back, as a button or menu entry shows it.
+pub(super) struct CopyWay {
+    pub(super) text: String,
+    pub(super) keys: String,
+    pub(super) paste: Paste,
+}
+
 /// A destructive action in Settings waiting for its second click.
 #[derive(Clone, Copy, PartialEq)]
 enum Confirm {
@@ -334,6 +352,8 @@ enum ShortcutField {
 
 /// How long a deleted item can still be brought back.
 const UNDO_FOR: Duration = Duration::from_secs(8);
+/// How long a message that names a key stays.
+const KEY_HINT_FOR: Duration = Duration::from_secs(4);
 /// How long the message about a server that refused an image stays.
 const IMAGES_REFUSED_FOR: Duration = Duration::from_secs(15);
 /// How often deleting by age runs while it is on.
@@ -427,6 +447,8 @@ pub struct App {
     loader: ImageLoader,
     /// The names and icons of the programs copies came from.
     programs: programs::Programs,
+    /// The window pasting goes to and its program, read once per window.
+    paste_program: (paste::Window, Option<PathBuf>),
     detail: Option<DetailText>,
     research_pending: bool,
     last_search: Instant,
@@ -484,6 +506,21 @@ pub struct App {
     tag_filter: Option<String>,
     /// The tag being typed in the details pane, for that item.
     tag_input: Option<(u64, String)>,
+    /// The open menu of an item.
+    item_menu: Option<ItemMenu>,
+    /// Shift+F10 was pressed: the selected row or card opens its menu the
+    /// next time it is drawn.
+    menu_by_key: bool,
+    /// The sheet of every key is open, over the popup (`true`) or the full
+    /// window (`false`).
+    keys_sheet: Option<bool>,
+    /// The command being run came from a key, so its message doesn't name it.
+    by_key: bool,
+    /// Keys a message has named in this run: each is named once.
+    taught: HashSet<String>,
+    /// The key to name when the copy in progress, done with the mouse, says
+    /// "Copied".
+    copy_hint: Option<String>,
     /// Give the tag field focus on its next frame (it was just opened).
     tag_focus: bool,
     /// Image saving, copying back and imports, off the UI thread.
@@ -607,6 +644,7 @@ impl App {
                 ImageLoader::new(image_files, move || c.request_repaint())
             },
             programs: programs::Programs::new(ctx.clone()),
+            paste_program: (paste::NO_WINDOW, None),
             detail: None,
             research_pending: false,
             last_search: Instant::now(),
@@ -634,6 +672,12 @@ impl App {
             next_update_check: Instant::now() + Duration::from_secs(10),
             tag_filter: None,
             tag_input: None,
+            item_menu: None,
+            menu_by_key: false,
+            keys_sheet: None,
+            by_key: false,
+            taught: HashSet::new(),
+            copy_hint: None,
             tag_focus: false,
             background: Background::spawn(ctx.clone()),
             imports_running: 0,
@@ -867,10 +911,18 @@ impl App {
         if self.win.opened.swap(false, Ordering::SeqCst) {
             self.selected = None;
             self.dirty = true;
+            self.item_menu = None;
+            self.menu_by_key = false;
+            self.keys_sheet = None;
             // An error from while the window was hidden (such as after starting
             // at sign-in) gets its full time on screen.
             if let Some((_, at)) = &mut self.error {
                 *at = Instant::now();
+            }
+            // Read now, so the main button names it when the window shows.
+            let window = self.win.previous.load(Ordering::SeqCst);
+            if paste::exists(window) {
+                let _ = self.paste_target_name(window);
             }
         }
         if self.start_hidden > 0 {
@@ -1113,16 +1165,50 @@ impl App {
         self.toast(t!("toast-images-turned-off"));
     }
 
+    /// `run` for a key press: its message doesn't name the key.
+    fn run_by_key(&mut self, command: Command) {
+        self.by_key = true;
+        self.run(command);
+        self.by_key = false;
+    }
+
+    /// The key to name in the message after a mouse action, the first time
+    /// in this run; `None` after a key press, once it was named, or when
+    /// the action has no key.
+    fn key_to_teach(&mut self, keys: &str) -> Option<String> {
+        let first = !self.by_key && !keys.trim().is_empty() && self.taught.insert(keys.to_string());
+        first.then(|| keys.to_string())
+    }
+
     /// Carries out what the user asked for.
     fn run(&mut self, command: Command) {
         match command {
             Command::Select(id) => self.selected = Some(id),
             Command::Copy(id, paste) => {
                 self.selected = Some(id);
+                let k = &self.cfg.keys;
+                let keys = match paste {
+                    Paste::Yes => &k.paste,
+                    Paste::Plain => &k.paste_plain,
+                    Paste::No => &k.copy_only,
+                };
+                self.copy_hint = (!self.by_key).then(|| keys.clone());
                 self.copy(id, paste);
             }
             Command::Delete(id) => self.delete(id),
-            Command::Pin(id) => self.toggle_pin(id),
+            Command::Pin(id) => {
+                self.toggle_pin(id);
+                // Pinning has no message of its own; this one teaches the key.
+                let keys = self.cfg.keys.pin.clone();
+                if let Some(keys) = self.key_to_teach(&keys) {
+                    let text = if self.library.get(id).is_some_and(|it| it.pinned) {
+                        t!("toast-pinned-key", keys = keys)
+                    } else {
+                        t!("toast-unpinned-key", keys = keys)
+                    };
+                    self.toast_for(text, KEY_HINT_FOR);
+                }
+            }
             Command::Open(id) => {
                 self.selected = Some(id);
                 self.details_open = true;
@@ -1238,6 +1324,41 @@ impl App {
         let ctx = self.win.ctx.clone();
         self.apply_settings(d, &ctx, false);
         self.toast_for(t!("toast-app-ignored", app = app), Duration::from_secs(6));
+    }
+
+    /// The ways to put an item back, the main one first: paste into the
+    /// program the window opened over, or only copy when there is none.
+    /// Without formatting to leave out, there is no plain-text way.
+    fn ways_to_copy(&mut self, it: &Item) -> Vec<CopyWay> {
+        let keys = self.cfg.keys.clone();
+        let way = |text: String, keys: String, paste: Paste| CopyWay { text, keys, paste };
+        let window = self.win.previous.load(Ordering::SeqCst);
+        if !paste::exists(window) {
+            let mut ways = vec![way(t!("item-copy"), keys.copy_only, Paste::No)];
+            if it.formatted {
+                ways.push(way(t!("item-copy-plain"), keys.paste_plain, Paste::Plain));
+            }
+            return ways;
+        }
+        let paste = match self.paste_target_name(window) {
+            Some(name) => t!("item-paste-into", app = name.as_str()),
+            None => t!("item-paste"),
+        };
+        let mut ways = vec![way(paste, keys.paste, Paste::Yes)];
+        if it.formatted {
+            ways.push(way(t!("item-paste-plain"), keys.paste_plain, Paste::Plain));
+        }
+        ways.push(way(t!("item-copy-only"), keys.copy_only, Paste::No));
+        ways
+    }
+
+    /// The own name of the program `window` belongs to, once it is known.
+    fn paste_target_name(&mut self, window: paste::Window) -> Option<String> {
+        if self.paste_program.0 != window {
+            self.paste_program = (window, paste::program(window));
+        }
+        let path = self.paste_program.1.clone()?;
+        self.programs.get(&path).map(|p| p.name.clone())
     }
 
     /// Pasting goes nowhere once the user is in another program: until a
@@ -1376,8 +1497,20 @@ impl App {
                 }
                 self.dirty = true;
                 let target = self.win.previous.load(Ordering::SeqCst);
+                let hint = self.copy_hint.take();
                 if how == Paste::No || !paste::exists(target) {
-                    self.toast(t!("toast-copied"));
+                    // Named only where the message can be seen.
+                    let hint = hint.filter(|keys| {
+                        !self.cfg.minimize_after_copy
+                            && !keys.trim().is_empty()
+                            && self.taught.insert(keys.clone())
+                    });
+                    match hint {
+                        Some(keys) => {
+                            self.toast_for(t!("toast-copied-key", keys = keys), KEY_HINT_FOR)
+                        }
+                        None => self.toast(t!("toast-copied")),
+                    }
                     if self.cfg.minimize_after_copy {
                         self.win.hide();
                     }
@@ -1771,7 +1904,12 @@ impl App {
             removed,
             since: Instant::now(),
         });
-        self.toast_for(t!("toast-deleted"), UNDO_FOR);
+        let keys = self.cfg.keys.delete.clone();
+        let text = match self.key_to_teach(&keys) {
+            Some(keys) => t!("toast-deleted-key", keys = keys),
+            None => t!("toast-deleted"),
+        };
+        self.toast_for(text, UNDO_FOR);
         if let Some(toast) = &mut self.toast {
             toast.action = Some((t!("toast-undo"), Command::UndoDelete));
         }

@@ -211,6 +211,14 @@ impl App {
                         BackendState::Ready { .. } => t!("search-hint-meaning"),
                         _ => t!("search-hint"),
                     };
+                    let in_popup = ui.ctx().viewport_id() != egui::ViewportId::ROOT;
+                    // The popup is too narrow for the long hint; screen
+                    // readers still read it.
+                    let shown_hint = if in_popup {
+                        t!("search-hint-short")
+                    } else {
+                        hint.clone()
+                    };
                     // Arabic is shown in reading order (the cursor still follows typing order).
                     let mut layouter = |ui: &Ui, text: &dyn egui::TextBuffer, _wrap: f32| {
                         let color = ui.visuals().text_color();
@@ -229,7 +237,7 @@ impl App {
                         .id(search_id())
                         .frame(Frame::NONE)
                         .hint_text(txt(
-                            &hint,
+                            &shown_hint,
                             size::LARGE,
                             Some(ui.visuals().weak_text_color()),
                         ))
@@ -246,7 +254,6 @@ impl App {
                     // While the popup is open, its search field takes the
                     // keyboard, not the full window's: the popup's first
                     // frame may come after the full window's.
-                    let in_popup = ui.ctx().viewport_id() != egui::ViewportId::ROOT;
                     if (in_popup || !self.win.is_popup_open())
                         && self.focus_search.swap(false, Ordering::SeqCst)
                     {

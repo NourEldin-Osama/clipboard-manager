@@ -210,16 +210,17 @@ screenshots of the finished screens.
 - [x] 12.4 Weak search matches fold into one line; relevance bars on grid cards. Strong: contains all the words, or its meaning score is at least halfway from the typical score to the best
 
 ### Phase 13. Pasting and keys
-- [ ] 13.1 The details pane's main button names the action and the program it pastes into
-- [ ] 13.2 Quick paste with Ctrl+1 to Ctrl+9, numbers in the popup, a line of key hints, a short search hint (D52)
-- [ ] 13.3 A right-click menu on items, also with Shift+F10; Delete away from Pin and Copy
-- [ ] 13.4 F1 opens a sheet of every key; a message after a mouse action names its key (D52)
+- [x] 13.1 The details pane's main button names the action and the program it pastes into
+- [x] 13.2 Quick paste with Ctrl+1 to Ctrl+9, numbers in the popup, a line of key hints, a short search hint (D52)
+- [x] 13.3 A right-click menu on items, also with Shift+F10; Delete away from Pin and Copy
+- [x] 13.4 F1 opens a sheet of every key; a message after a mouse action names its key (D52)
 
 ### Phase 14. New features
 - [ ] 14.1 Select several items at once
 - [ ] 14.2 A getting-started checklist for new installs (D53)
 - [ ] 14.3 What's new after an update (D47)
 - [ ] 14.4 Start llama-server for reading models, from a file or a Hugging Face name
+- [ ] 14.5 Smart search ranks meaning matches on the scale of D54, from the typical score up to the best, so a match that only shares a word no longer outranks close meaning matches with models such as EmbeddingGemma 2 (your choice)
 
 ### Phase 15. Version 0.6.0
 - [ ] 15.1 Remove the update from 0.4 settings, the old model folders' clean-up and the old vectors' deletion (D33)

@@ -131,6 +131,23 @@ impl App {
         });
     }
 
+    /// The quiet lines at the bottom: each key, then what it does. Keys
+    /// turned off in Settings are left out.
+    fn key_hints(&self, ui: &mut Ui) {
+        let k = &self.cfg.keys;
+        let hints: Vec<(String, String)> = [
+            (k.paste.clone(), t!("popup-key-paste")),
+            (k.paste_plain.clone(), t!("popup-key-plain")),
+            (k.copy_only.clone(), t!("popup-key-copy")),
+            (t!("quick-paste-keys"), t!("popup-key-quick")),
+            ("F1".to_string(), t!("popup-key-all")),
+        ]
+        .into_iter()
+        .filter(|(keys, _)| !keys.trim().is_empty())
+        .collect();
+        paint_key_hints(ui, &hints);
+    }
+
     /// The bar, the search field and the list. The keys work as in the full
     /// window.
     fn popup_ui(&mut self, ui: &mut Ui) {
@@ -176,6 +193,19 @@ impl App {
                 let width = ui.available_width();
                 self.search_field(ui, width);
             });
+        egui::Panel::bottom("popup-keys")
+            .show_separator_line(false)
+            .frame(
+                Frame::new()
+                    .inner_margin(Margin {
+                        left: 10,
+                        right: 10,
+                        top: 2,
+                        bottom: 8,
+                    })
+                    .fill(fill),
+            )
+            .show(ui, |ui| self.key_hints(ui));
         if let Some((error, _)) = self.error.clone() {
             egui::Panel::bottom("popup-error")
                 .show_separator_line(false)
@@ -209,6 +239,7 @@ impl App {
             )
             .show(ui, |ui| self.list(ui, true));
         self.toasts(&ctx);
+        self.keys_sheet(&ctx, true);
         // Settings opened here, by a link in the empty list, need the full window.
         if !had_settings && self.draft.is_some() {
             self.win.show_full();
@@ -230,6 +261,63 @@ impl App {
             focus_outline(&ctx);
         }
         bidi::read_in_reading_order(&ctx);
+    }
+}
+
+/// Pairs of keys and what they do, side by side in centered lines. A pair
+/// that doesn't fit on a line starts the next one.
+fn paint_key_hints(ui: &mut Ui, hints: &[(String, String)]) {
+    let (strong, weak) = (ui.visuals().text_color(), ui.visuals().weak_text_color());
+    let room = ui.available_width().max(0.0);
+    let font = FontId::proportional(size::SMALL);
+    let pairs: Vec<_> = hints
+        .iter()
+        .map(|(keys, what)| {
+            (
+                one_line(ui, keys, &[], font.clone(), strong, room),
+                one_line(ui, what, &[], font.clone(), weak, room),
+            )
+        })
+        .collect();
+    // Between a key and its words, and between pairs.
+    let (gap, spacing) = (5.0, 16.0);
+    let width = |i: usize| pairs[i].0.size().x + gap + pairs[i].1.size().x;
+    let mut lines: Vec<Vec<usize>> = Vec::new();
+    let mut used = 0.0;
+    for i in 0..pairs.len() {
+        match lines.last_mut() {
+            Some(line) if used + spacing + width(i) <= room => {
+                line.push(i);
+                used += spacing + width(i);
+            }
+            _ => {
+                lines.push(vec![i]);
+                used = width(i);
+            }
+        }
+    }
+    let line_h = 18.0;
+    let (rect, _) =
+        ui.allocate_exact_size(Vec2::new(room, line_h * lines.len() as f32), Sense::hover());
+    for (row, line) in lines.iter().enumerate() {
+        let total = line.iter().map(|&i| width(i)).sum::<f32>() + spacing * (line.len() - 1) as f32;
+        let mut x = rect.center().x - total / 2.0;
+        let y = rect.top() + line_h * (row as f32 + 0.5);
+        for &i in line {
+            let (keys, what) = &pairs[i];
+            // Laid out left to right, then mirrored for Arabic.
+            let mut place = |galley: &Arc<egui::Galley>, color: Color32, after: f32| {
+                let size = galley.size();
+                let at = flip(
+                    rect,
+                    Rect::from_min_size(Pos2::new(x, y - size.y / 2.0), size),
+                );
+                ui.painter().galley(at.min, galley.clone(), color);
+                x += size.x + after;
+            };
+            place(keys, strong, gap);
+            place(what, weak, spacing);
+        }
     }
 }
 

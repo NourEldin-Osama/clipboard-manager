@@ -26,7 +26,171 @@ pub(crate) fn reveal(p: &std::path::Path) -> std::io::Result<()> {
     started.map(|_| ())
 }
 
+/// The details' main button: the main way to put the item back, with its
+/// key, and an arrow to the other ways when there are any. A long program
+/// name is cut short when the header has no room for it.
+fn main_button(ui: &mut Ui, ways: &[CopyWay]) -> Option<Paste> {
+    let (main, others) = ways.split_first()?;
+    let height = 34.0;
+    let arrow_w = if others.is_empty() { 0.0 } else { 30.0 };
+    let key_color = Color32::from_white_alpha(190);
+    let keys = ui.fonts_mut(|f| {
+        f.layout_no_wrap(
+            main.keys.clone(),
+            FontId::proportional(size::SMALL),
+            key_color,
+        )
+    });
+    let keys_w = if main.keys.trim().is_empty() {
+        0.0
+    } else {
+        keys.size().x + 10.0
+    };
+    let room = ui.available_width() - 8.0 - 28.0 - keys_w - arrow_w;
+    let font = FontId::proportional(size::BODY);
+    let label = one_line(ui, &main.text, &[], font, Color32::WHITE, room.max(60.0));
+    let main_w = 14.0 + label.size().x + keys_w + 14.0;
+    let (rect, _) = ui.allocate_exact_size(Vec2::new(main_w + arrow_w, height), Sense::hover());
+    // Laid out left to right, then mirrored for Arabic.
+    let part = |x: f32, w: f32| {
+        flip(
+            rect,
+            Rect::from_min_size(Pos2::new(x, rect.top()), Vec2::new(w, height)),
+        )
+    };
+    let main_rect = part(rect.left(), main_w);
+    let arrow_rect = part(rect.left() + main_w, arrow_w);
+    // Each part rounds only its outer corners.
+    let (start, end) = (
+        CornerRadius {
+            nw: 8,
+            sw: 8,
+            ne: 0,
+            se: 0,
+        },
+        CornerRadius {
+            nw: 0,
+            sw: 0,
+            ne: 8,
+            se: 8,
+        },
+    );
+    let (main_round, arrow_round) = match (others.is_empty(), i18n::rtl()) {
+        (true, _) => (CornerRadius::same(8), CornerRadius::ZERO),
+        (false, false) => (start, end),
+        (false, true) => (end, start),
+    };
+    let p = ui.painter();
+    p.rect_filled(rect, CornerRadius::same(8), button_fill(accent()));
+    let resp = ui.interact(
+        main_rect,
+        egui::Id::unique("details-main-button"),
+        Sense::click(),
+    );
+    resp.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, &main.text));
+    let lit = |resp: &egui::Response, round: CornerRadius, at: Rect| {
+        if resp.hovered() {
+            let pressed = resp.is_pointer_button_down_on();
+            let shade = Color32::from_white_alpha(if pressed { 10 } else { 28 });
+            ui.painter().rect_filled(at, round, shade);
+        }
+    };
+    lit(&resp, main_round, main_rect);
+    let at = |x: f32, size: Vec2| {
+        flip(
+            rect,
+            Rect::from_min_size(Pos2::new(x, rect.center().y - size.y / 2.0), size),
+        )
+        .min
+    };
+    let label_size = label.size();
+    ui.painter()
+        .galley(at(rect.left() + 14.0, label_size), label, Color32::WHITE);
+    if keys_w > 0.0 {
+        let x = rect.left() + 14.0 + label_size.x + 10.0;
+        ui.painter().galley(at(x, keys.size()), keys, key_color);
+    }
+    let mut chosen = tip(resp, &hint(&main.text, &main.keys))
+        .clicked()
+        .then_some(main.paste);
+    if !others.is_empty() {
+        let more = t!("details-more-ways");
+        let arrow = ui.interact(
+            arrow_rect,
+            egui::Id::unique("details-more-ways"),
+            Sense::click(),
+        );
+        arrow.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, &more));
+        lit(&arrow, arrow_round, arrow_rect);
+        // A thin line between the two parts.
+        let edge = if i18n::rtl() {
+            arrow_rect.right()
+        } else {
+            arrow_rect.left()
+        };
+        ui.painter().rect_filled(
+            Rect::from_center_size(
+                Pos2::new(edge, rect.center().y),
+                Vec2::new(1.0, height - 14.0),
+            ),
+            0.0,
+            Color32::from_white_alpha(70),
+        );
+        icons::paint(
+            ui.painter(),
+            Rect::from_center_size(arrow_rect.center(), Vec2::splat(14.0)),
+            Icon::Dropdown,
+            Color32::WHITE,
+        );
+        let arrow = tip(arrow, &more);
+        egui::Popup::menu(&arrow).show(|ui| {
+            let width = menu_width(
+                ui,
+                others.iter().map(|w| (w.text.as_str(), w.keys.as_str())),
+            );
+            ui.set_width(width);
+            for way in others {
+                if menu_entry(ui, &way.text, &way.keys, None).clicked() {
+                    chosen = Some(way.paste);
+                }
+            }
+        });
+    }
+    chosen
+}
+
 impl App {
+    /// Opens the tag field of an item in the details pane.
+    pub(super) fn start_tagging(&mut self, id: u64) {
+        self.selected = Some(id);
+        self.tag_input = Some((id, String::new()));
+        self.tag_focus = true;
+        self.details_open = true;
+    }
+
+    /// Asks where to save an image item, and saves it there as PNG.
+    pub(super) fn save_image_as(&mut self, it: &Item) {
+        if let (Some(src), Some(dst)) = (
+            &it.image,
+            rfd::FileDialog::new()
+                .set_file_name(format!("clip-{}.png", it.id))
+                .save_file(),
+        ) {
+            let images = &self.library.store().images;
+            if let Err(e) = images.open(it.id, src).and_then(|i| Ok(i.save(&dst)?)) {
+                self.set_error(log_error!("error-saving-image", error = e.to_string()));
+            }
+        }
+        self.after_dialog();
+    }
+
+    /// Shows a file or folder in the system's file manager.
+    pub(super) fn show_in_folder(&mut self, place: &std::path::Path) {
+        if let Err(e) = reveal(place) {
+            self.set_error(log_error!("error-opening-folder", error = e.to_string()));
+        }
+    }
+
     /// Tag pills with remove buttons, then an input for adding more.
     pub(super) fn tag_editor(&mut self, ui: &mut Ui, it: &Item) {
         let mut remove: Option<String> = None;
@@ -227,33 +391,12 @@ impl App {
                 if it.kind == Kind::Image
                     && icons::icon_button(ui, Icon::Save, &t!("details-save-image")).clicked()
                 {
-                    if let (Some(src), Some(dst)) = (
-                        &it.image,
-                        rfd::FileDialog::new()
-                            .set_file_name(format!("clip-{}.png", it.id))
-                            .save_file(),
-                    ) {
-                        let images = &self.library.store().images;
-                        if let Err(e) = images.open(it.id, src).and_then(|i| Ok(i.save(&dst)?)) {
-                            self.set_error(log_error!("error-saving-image", error = e.to_string()));
-                        }
-                    }
-                    self.after_dialog();
+                    self.save_image_as(&it);
                 }
-                // A file it was added from, or the file or folder it names.
-                let place = it
-                    .source
-                    .as_deref()
-                    .or_else(|| (it.kind == Kind::Text).then(|| path_in(&it.text)).flatten());
-                if let Some(p) = place {
+                if let Some(p) = place_of(&it) {
                     if icons::icon_button(ui, Icon::Folder, &t!("details-show-in-folder")).clicked()
                     {
-                        if let Err(e) = reveal(p) {
-                            self.set_error(log_error!(
-                                "error-opening-folder",
-                                error = e.to_string()
-                            ));
-                        }
+                        self.show_in_folder(p);
                     }
                 }
                 if it.kind == Kind::Link
@@ -262,19 +405,9 @@ impl App {
                 {
                     ctx.open_url(egui::OpenUrl::new_tab(it.text.trim()));
                 }
-                let copy_tip = hint(&t!("details-copy"), &keys.copy_only);
-                if icon_button_ex(
-                    ui,
-                    Icon::Copy,
-                    &copy_tip,
-                    Vec2::new(44.0, 34.0),
-                    16.0,
-                    Some(button_fill(accent())),
-                    Some(Color32::WHITE),
-                )
-                .clicked()
-                {
-                    self.run(Command::Copy(it.id, Paste::No));
+                let ways = self.ways_to_copy(&it);
+                if let Some(paste) = main_button(ui, &ways) {
+                    self.run(Command::Copy(it.id, paste));
                 }
             });
         });
@@ -283,8 +416,6 @@ impl App {
         let weak = ui.visuals().weak_text_color();
         row(ui, |ui| ui.label(txt(&meta, size::SMALL, Some(weak))));
         if let Some(app) = &it.app {
-            let ignored = self.cfg.rules.iter().any(|r| r.skips_app(app));
-            let mut ignore = false;
             // The program's own name once it is known, else its file name.
             let name = it
                 .program
@@ -297,14 +428,7 @@ impl App {
                     size::SMALL,
                     Some(weak),
                 ));
-                if !ignored {
-                    let link = t!("details-ignore-app", app = app.as_str());
-                    ignore = ui.link(txt(&link, size::SMALL, None)).clicked();
-                }
             });
-            if ignore {
-                self.ignore_app(app);
-            }
         }
         ui.add_space(6.0);
         self.tag_editor(ui, &it);
@@ -535,11 +659,15 @@ impl App {
             lbl(ui, &t!("details-select-an-item"), size::BODY, weak);
             ui.add_space(18.0);
             let k = &self.cfg.keys;
+            let quick = t!("quick-paste-keys");
             let rows = [
                 ("Up+Down", t!("details-key-move")),
                 (k.paste.as_str(), t!("details-key-paste")),
                 (k.paste_plain.as_str(), t!("details-key-paste-plain")),
                 (k.copy_only.as_str(), t!("details-key-copy-only")),
+                (quick.as_str(), t!("details-key-quick")),
+                ("Shift+F10", t!("details-key-menu")),
+                ("F1", t!("details-key-all")),
                 (k.pin.as_str(), t!("details-key-pin")),
                 (k.tag.as_str(), t!("details-key-tag")),
                 (k.delete.as_str(), t!("details-key-delete")),

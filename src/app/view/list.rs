@@ -209,7 +209,8 @@ pub(super) fn thumbs_to_drop(
 }
 
 /// `hot` while the pointer is over the row: its hover buttons then take the
-/// right edge, so the time and badges are left out.
+/// right edge, so the time and badges are left out. `numbered` rows leave
+/// room at the start for the numbers of quick paste, and show `number`.
 #[allow(clippy::too_many_arguments)]
 pub(super) fn paint_row(
     ui: &Ui,
@@ -222,6 +223,8 @@ pub(super) fn paint_row(
     selected: bool,
     compact: bool,
     terms: &[String],
+    numbered: bool,
+    number: Option<usize>,
 ) {
     let v = ui.visuals();
     let p = ui.painter_at(rect);
@@ -251,9 +254,30 @@ pub(super) fn paint_row(
         );
     }
 
+    let gutter = if numbered { 16.0 } else { 0.0 };
+    if let Some(n) = number {
+        let at = m(Rect::from_center_size(
+            Pos2::new(rect.left() + ROW_PADDING + gutter / 2.0, rect.center().y),
+            Vec2::ZERO,
+        ))
+        .center();
+        let font = FontId::proportional(size::SMALL);
+        paint_text(
+            ui,
+            &p,
+            at,
+            Align2::CENTER_CENTER,
+            &n.to_string(),
+            font,
+            v.weak_text_color(),
+        );
+    }
     let av = if compact { 26.0 } else { 38.0 };
     let av_rect = m(Rect::from_min_size(
-        Pos2::new(rect.left() + ROW_PADDING, rect.center().y - av / 2.0),
+        Pos2::new(
+            rect.left() + ROW_PADDING + gutter,
+            rect.center().y - av / 2.0,
+        ),
         Vec2::splat(av),
     ));
     // A text that is a colour or a path shows that before its program.
@@ -330,8 +354,22 @@ pub(super) fn paint_row(
         }
     }
 
-    let x = rect.left() + ROW_PADDING + av + 12.0;
-    let right_w = if hot { 134.0 } else { 64.0 };
+    let x = rect.left() + ROW_PADDING + gutter + av + 12.0;
+    let sub = if compact { String::new() } else { subtitle(it) };
+    // On one line the pin and the relevance bars sit before the time, so
+    // the text ends before them.
+    let badges = if compact || sub.is_empty() {
+        let pin = if it.pinned { 18.0 } else { 0.0 };
+        let bars = if relevance_level(hit).is_some() {
+            22.0
+        } else {
+            0.0
+        };
+        pin + bars
+    } else {
+        0.0
+    };
+    let right_w = if hot { 150.0 } else { 64.0 + badges };
     let text_w = (rect.right() - x - right_w - 8.0).max(40.0);
     // The text column, mirrored with the rest; lines start at its reading edge.
     let column = m(Rect::from_min_size(
@@ -340,7 +378,6 @@ pub(super) fn paint_row(
     ));
     let title_color = v.strong_text_color();
     let weak = v.weak_text_color();
-    let sub = if compact { String::new() } else { subtitle(it) };
     let title = row_title(it);
     let title = if title.is_empty() {
         t!("item-empty")
@@ -564,6 +601,9 @@ impl App {
             vec![]
         };
         let mut actions = Vec::new();
+        // A right-click, or Shift+F10 on the selected row, opens a menu.
+        let mut open_menu = None;
+        let menu_key = self.menu_by_key;
         let frame = ui.ctx().cumulative_pass_nr();
         let (library, results, thumbs, loader, selected, seen, programs) = (
             &self.library,
@@ -627,6 +667,8 @@ impl App {
                             Some(it.id) == selected,
                             compact,
                             &terms,
+                            in_popup,
+                            (in_popup && *r < 9).then_some(*r + 1),
                         );
                         if resp.clicked() {
                             actions.push(Command::Select(it.id));
@@ -634,8 +676,17 @@ impl App {
                         if resp.double_clicked() {
                             actions.push(Command::Copy(it.id, Paste::Yes));
                         }
+                        if resp.secondary_clicked() {
+                            let at = resp.interact_pointer_pos().unwrap_or(rect.center());
+                            open_menu = Some((it.id, at, false));
+                        } else if menu_key && chosen {
+                            let below_text = Pos2::new(rect.left() + 56.0, rect.bottom() - 4.0);
+                            let at = flip(rect, Rect::from_min_size(below_text, Vec2::ZERO)).min;
+                            open_menu = Some((it.id, at, true));
+                        }
                         if hot {
-                            // Hover actions replace the time at the right edge.
+                            // Hover actions replace the time at the right edge;
+                            // Delete keeps apart from the others.
                             let pin = if it.pinned {
                                 (Icon::PinFilled, t!("item-unpin"))
                             } else {
@@ -653,10 +704,12 @@ impl App {
                                     Command::Open(it.id),
                                 ));
                             }
-                            let size = 28.0;
-                            let mut x =
-                                rect.right() - ROW_PADDING - buttons.len() as f32 * (size + 2.0);
-                            for (icon, tip, action) in buttons {
+                            let (size, apart) = (28.0, 14.0);
+                            let mut x = rect.right()
+                                - ROW_PADDING
+                                - buttons.len() as f32 * (size + 2.0)
+                                - apart;
+                            for (i, (icon, tip, action)) in buttons.into_iter().enumerate() {
                                 let b = flip(
                                     rect,
                                     Rect::from_min_size(
@@ -675,7 +728,7 @@ impl App {
                                 {
                                     actions.push(action);
                                 }
-                                x += size + 2.0;
+                                x += size + 2.0 + if i == 0 { apart } else { 0.0 };
                             }
                         }
                     }
@@ -723,6 +776,8 @@ impl App {
             self.list_view = view;
         }
         self.apply_actions(actions);
+        self.after_rows(open_menu, in_popup);
+        self.item_menu(ui, in_popup);
     }
 
     pub(super) fn empty_list(&mut self, ui: &mut Ui) {

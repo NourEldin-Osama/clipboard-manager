@@ -57,6 +57,29 @@ the notes here before a push that makes a release.
 - The list no longer opens scrolled down by one row, with the first item
   hidden under its header, at start or the first time the window opens
   after starting hidden.
+- The details pane's main button says what it does and where: "Paste
+  into Microsoft Edge", with its key. Its arrow holds the other ways,
+  "Paste as plain text" and "Copy only". When the window wasn't opened
+  over another program, it reads "Copy".
+- Ctrl+1 to Ctrl+9 paste one of the first nine items at once, in the
+  popup and in the full window. The popup numbers its first nine rows,
+  shows the keys in a quiet line at the bottom (your own keys, if you
+  changed them), and its search hint is short: "Search…".
+- A right-click on a row or a card, in the popup too, opens a menu with
+  every action and its key, what suits the item (Open in browser, Show
+  in folder, Save image as…, Copy the text in the image), "Don't record
+  copies from" its program, and Delete last, in red. Shift+F10 opens it
+  for the selected item. "Don't record copies from" moved there from the
+  details pane.
+- On a row, the Delete button keeps apart from Pin and Copy, as on cards.
+- F1 opens a sheet with every key, over the full window or the popup;
+  F1 or Esc closes it.
+- The first time in a run that you pin, copy or delete with the mouse,
+  the message names the key that does the same: "Pinned. Next time:
+  Ctrl+P".
+- Esc closes an open menu, such as Sort by, without also clearing the
+  search or hiding the window.
+- On a row with one line of text, long text no longer runs under the pin.
 
 ## 0.5.1
 

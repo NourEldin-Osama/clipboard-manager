@@ -450,6 +450,83 @@ pub(super) fn check_row(ui: &mut Ui, text: &str, checked: bool) -> egui::Respons
     resp
 }
 
+/// A menu entry: its text at the reading start and its keys at the far end.
+/// `color` tints the text, as red does for Delete.
+pub(super) fn menu_entry(
+    ui: &mut Ui,
+    text: &str,
+    keys: &str,
+    color: Option<Color32>,
+) -> egui::Response {
+    let (rect, resp) =
+        ui.allocate_exact_size(Vec2::new(ui.available_width(), 30.0), Sense::click());
+    resp.widget_info(|| egui::WidgetInfo::labeled(egui::Role::MenuItem, true, text));
+    let v = ui.visuals();
+    // The keyboard moves through a menu by focus.
+    let lit = resp.hovered() || resp.has_focus();
+    if lit {
+        ui.painter()
+            .rect_filled(rect, CornerRadius::same(6), v.widgets.hovered.weak_bg_fill);
+    }
+    let color = match color {
+        Some(c) => text_shade(c, v.dark_mode),
+        None if lit => v.strong_text_color(),
+        None => v.text_color(),
+    };
+    let at = |x: f32| {
+        flip(
+            rect,
+            Rect::from_min_size(Pos2::new(x, rect.center().y), Vec2::ZERO),
+        )
+        .min
+    };
+    paint_text(
+        ui,
+        ui.painter(),
+        at(rect.left() + 10.0),
+        start_anchor(egui::Align::Center),
+        text,
+        FontId::proportional(size::BODY),
+        color,
+    );
+    if !keys.trim().is_empty() {
+        let end = if i18n::rtl() {
+            Align2::LEFT_CENTER
+        } else {
+            Align2::RIGHT_CENTER
+        };
+        paint_text(
+            ui,
+            ui.painter(),
+            at(rect.right() - 10.0),
+            end,
+            keys,
+            FontId::proportional(size::SMALL),
+            v.weak_text_color(),
+        );
+    }
+    resp
+}
+
+/// Wide enough for the widest of `entries`, each its text and its keys.
+pub(super) fn menu_width<'a>(
+    ui: &Ui,
+    entries: impl IntoIterator<Item = (&'a str, &'a str)>,
+) -> f32 {
+    let width = |text: &str, size: f32| {
+        ui.fonts_mut(|f| {
+            f.layout_no_wrap(text.to_string(), FontId::proportional(size), Color32::WHITE)
+                .size()
+                .x
+        })
+    };
+    entries
+        .into_iter()
+        .map(|(text, keys)| width(text, size::BODY) + 36.0 + width(keys, size::SMALL) + 20.0)
+        .fold(MENU_W, f32::max)
+        .min(440.0)
+}
+
 /// Width of the small icon menus (add files, more tags).
 pub(super) const MENU_W: f32 = 220.0;
 
