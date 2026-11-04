@@ -1,6 +1,8 @@
 # Work plan
 
 The plan for the round of changes asked for on 2026-10-23: bug fixes, improvements and new features.
+Phases 9 to 15, planned on 2026-11-03, are the work after 0.5.0: the server fixes left from 0.5.0 and the 17 points of
+the design review.
 This file is updated with every change.
 
 Status: `[ ]` to do, `[~]` in progress, `[x]` done, `[!]` waiting for a decision or for you.
@@ -51,6 +53,17 @@ Status: `[ ]` to do, `[~]` in progress, `[x]` done, `[!]` waiting for a decision
 | D40 | Server types show their brands' logos: llama.cpp, vLLM and Unsloth in their colours, the others white and tinted like the icons (Simple Icons, Lobe Icons and llama.cpp's own logo) | You | Decided |
 | D41 | The server editor tests the connection and each model, takes model names the server doesn't list, and Fill in details looks a model up on models.dev (downloaded only when clicked; nothing from the history is sent) and fills in the prompts well-known embedding models are trained with. The vector size is shortened on this PC, which works with every server, as `dimensions` would fail on most models | You (Claude for the vector size) | Decided |
 | D42 | GLM-OCR joins the reading model types, asked with "Text Recognition:" from its model card; llama.cpp serves it from ggml-org's GGUF | Claude | Decided |
+| D43 | OpenRouter stays. Every request to it asks only for providers that don't collect user data, and says whether it is a search or an item (`input_type`), so OpenRouter search models index once more | You | Decided |
+| D44 | windows-registry stays at 0.6 until auto-launch moves to 0.100, so the exe has one copy of it | You | Decided |
+| D45 | Each phase ends with a check in a test copy: a dev build with its own data folder and a copy of the saved servers, using the main folder's build cache. Claude says before each run and asks before any model download | You | Decided |
+| D46 | In a wide window, List rows are at most about 900 points wide, centered, with the time, pin and relevance next to the text | You | Decided |
+| D47 | The app remembers the last version it ran; the first start of a newer one shows its notes from the change log built into the exe, so an update installed on quit is covered too, without the internet | You | Decided |
+| D48 | Version 0.5.1 after Phase 9, then one 0.6.0 after Phases 10 to 15, with no push in between | You | Decided |
+| D49 | When a server refuses an image, that model gets the image's read text instead until the next start or a model change, and one message offers to turn off Send images; the app doesn't change the setting by itself | Claude | Decided |
+| D50 | Settings in seven pages by topic (General, Appearance, Clipboard, Privacy, Search & AI, Shortcuts and pasting, About), a short gray line under each setting, and the long text behind an info button that opens on a click, Enter or Space. Reset all settings keeps the saved servers and the rules per app | Claude | Decided |
+| D51 | One font family: Noto Sans with Noto Sans Arabic, each in Regular and SemiBold, in five text sizes (12, 13, 14, 16, 20) | Claude | Decided |
+| D52 | Ctrl+1 to Ctrl+9 paste the first nine items in both windows; only the popup shows the numbers. A message after a mouse action names its key once per action in each run | Claude | Decided |
+| D53 | The getting-started checklist is for new installs only, and once closed it stays closed | Claude | Decided |
 
 ## Order of work, and why
 
@@ -161,6 +174,54 @@ Status: `[ ]` to do, `[~]` in progress, `[x]` done, `[!]` waiting for a decision
 - [x] 8.6 More tests: installing, rolling back and cleaning up an update, a staged update, a 0.2.1 settings file, a search server the worker can't reach (D31)
 - [!] 8.7 Code signing with SignPath, after your application is approved (D7: later)
 - [x] 8.8 Remove the code for older versions: old setting names, the one-time history encryption, the update fields for 0.2.x copies (D32)
+
+Phases 9 to 15 come in this order: the server fixes first, as a small release (D48); then type and layout, which
+every later screen uses; then settings, content, keys and the new features; and the 0.6.0 clean-up last, with the
+screenshots of the finished screens.
+
+### Phase 9. Server fixes (version 0.5.1)
+- [ ] 9.1 Server errors in the interface language: can't reach, needs a key, not found, refused (with the server's own words), failed, doesn't take images, unexpected answer; the log stays in English
+- [ ] 9.2 Test also sends an image when Send images is on, and says whether the server takes images
+- [ ] 9.3 A server that refuses images: the images go as their read text, with one message and a button that turns off Send images (D49)
+- [ ] 9.4 OpenRouter: only providers that don't collect user data, and the search or item hint (D43)
+- [ ] 9.5 Crate updates within the versions `Cargo.toml` allows; windows-registry waits (D44)
+- [ ] 9.6 The README roadmap lists only what is still to do
+- [ ] 9.7 Esc while typing in a Settings field leaves the field, not Settings
+- [ ] 9.8 A check in a test copy with your servers: Unsloth with its key, LM Studio, Sentence Transformers, and the model menu opened with a real click (D45)
+
+### Phase 10. Type and layout
+- [ ] 10.1 Noto Sans and Noto Sans Arabic in Regular and SemiBold, five text sizes, more space between the lines of long text (D51)
+- [ ] 10.2 One left and one right edge for every part of the window; List rows at most about 900 points wide (D46)
+- [ ] 10.3 A view switch in three parts, and Pause with a word
+- [ ] 10.4 The day header stays at the top while scrolling
+
+### Phase 11. Settings
+- [ ] 11.1 Seven pages grouped by topic, each keeping its own scroll position (D50)
+- [ ] 11.2 A short gray line under each setting; the info button opens the long text on a click, Enter or Space
+- [ ] 11.3 Reset all settings keeps the saved servers and the rules per app, and says so
+
+### Phase 12. Content
+- [ ] 12.1 The program a copy came from: its icon and its own name, and the program in front for a WebView2 helper
+- [ ] 12.2 Content in its best form: decoded web addresses, a code icon, color swatches, file paths
+- [ ] 12.3 Calmer grid cards
+- [ ] 12.4 Weak search matches fold into one line; relevance bars on grid cards
+
+### Phase 13. Pasting and keys
+- [ ] 13.1 The details pane's main button names the action and the program it pastes into
+- [ ] 13.2 Quick paste with Ctrl+1 to Ctrl+9, numbers in the popup, a line of key hints, a short search hint (D52)
+- [ ] 13.3 A right-click menu on items, also with Shift+F10; Delete away from Pin and Copy
+- [ ] 13.4 F1 opens a sheet of every key; a message after a mouse action names its key (D52)
+
+### Phase 14. New features
+- [ ] 14.1 Select several items at once
+- [ ] 14.2 A getting-started checklist for new installs (D53)
+- [ ] 14.3 What's new after an update (D47)
+- [ ] 14.4 Start llama-server for reading models, from a file or a Hugging Face name
+
+### Phase 15. Version 0.6.0
+- [ ] 15.1 Remove the update from 0.4 settings, the old model folders' clean-up and the old vectors' deletion (D33)
+- [ ] 15.2 New screenshots from a test copy with made-up items
+- [ ] 15.3 README, README_AR, the change log and version 0.6.0 (D48)
 
 ## Change log
 

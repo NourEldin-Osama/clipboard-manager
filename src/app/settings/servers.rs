@@ -8,6 +8,8 @@ use crate::config::{
     ServerKind,
 };
 use crate::embed::server::SearchTest;
+use crate::i18n::log_server_error;
+use crate::net::ServerError;
 
 /// A server being added or edited: a copy, which Save puts in the settings.
 pub(in crate::app) struct ServerEditor {
@@ -262,7 +264,7 @@ fn model_field(ui: &mut Ui, model: &mut String, listed: &[String], default: Opti
 fn start_test(server: &Server, model: &Model, ctx: &egui::Context) -> Test {
     let (tx, rx) = channel();
     let c = ctx.clone();
-    let failed = |e: anyhow::Error| log_error!("error-model-test", error = format!("{e:#}"));
+    let failed = |e: anyhow::Error| log_server_error!("error-model-test", &e);
     if let Some(cfg) = server.search_config(model) {
         std::thread::spawn(move || {
             let r = crate::embed::server::test_search(cfg)
@@ -390,27 +392,23 @@ fn test_line(ui: &mut Ui, test: &Test) {
     super::view::row_wrapped(ui, |ui| {
         ui.add_space(10.0);
         match result {
-            Ok(Tested::Search(t)) if t.vectors > 1 => icons::chip(
-                ui,
-                Icon::Check,
-                &t!(
-                    "settings-model-test-multi",
-                    vectors = t.vectors,
-                    size = t.size,
-                    seconds = seconds(&t.took)
-                ),
-                GREEN,
-            ),
-            Ok(Tested::Search(t)) => icons::chip(
-                ui,
-                Icon::Check,
-                &t!(
-                    "settings-model-test-search",
-                    size = t.size,
-                    seconds = seconds(&t.took)
-                ),
-                GREEN,
-            ),
+            Ok(Tested::Search(t)) => {
+                let works = if t.vectors > 1 {
+                    t!(
+                        "settings-model-test-multi",
+                        vectors = t.vectors,
+                        size = t.size,
+                        seconds = seconds(&t.took)
+                    )
+                } else {
+                    t!(
+                        "settings-model-test-search",
+                        size = t.size,
+                        seconds = seconds(&t.took)
+                    )
+                };
+                icons::chip(ui, Icon::Check, &works, GREEN)
+            }
             Ok(Tested::Read { text, took }) => {
                 let shown: String = text
                     .split_whitespace()
@@ -433,6 +431,32 @@ fn test_line(ui: &mut Ui, test: &Test) {
                 )
             }
             Err(e) => icons::chip(ui, Icon::Warning, e, RED),
+        };
+    });
+    // Whether images work, on a line of its own.
+    let Ok(Tested::Search(SearchTest {
+        images: Some(images),
+        ..
+    })) = result
+    else {
+        return;
+    };
+    super::view::row_wrapped(ui, |ui| {
+        ui.add_space(10.0);
+        match images {
+            Ok(()) => icons::chip(ui, Icon::Check, &t!("settings-model-test-images"), GREEN),
+            Err(e) => {
+                let text = match e.downcast_ref::<ServerError>() {
+                    Some(ServerError::NoImages { said, .. }) => {
+                        t!("settings-model-test-no-images", said = said.as_str())
+                    }
+                    _ => t!(
+                        "settings-model-test-images-failed",
+                        error = crate::net::error_text(e)
+                    ),
+                };
+                icons::chip(ui, Icon::Warning, &text, AMBER)
+            }
         };
     });
 }

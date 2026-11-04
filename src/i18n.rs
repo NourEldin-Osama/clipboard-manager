@@ -8,7 +8,8 @@
 //!
 //! An error uses `log_error!` instead: it returns the text to show, and
 //! writes the same text in English to the log, so the log reads the same
-//! for everyone.
+//! for everyone. `log_server_error!` does the same for a model server's
+//! error, which the window words by its kind.
 //!
 //! Items store their time as UTC Unix seconds; `local` converts each one with
 //! the offset that applied at that moment (daylight saving included).
@@ -74,6 +75,24 @@ macro_rules! log_error {
     }};
 }
 pub(crate) use log_error;
+
+/// Like `log_error!`, for a text with an error as its `error` value: the log
+/// gets the error as it is, in English with the details, and the window gets
+/// a model server's error in the interface language (`net::ServerError`).
+macro_rules! log_server_error {
+    ($key:literal, $error:expr) => {{
+        let error: &::anyhow::Error = $error;
+        let mut args = ::fluent_bundle::FluentArgs::new();
+        args.set("error", format!("{error:#}"));
+        ::log::error!(
+            "{}",
+            $crate::i18n::text_in($crate::config::Language::English, $key, Some(&args))
+        );
+        args.set("error", $crate::net::error_text(error));
+        $crate::i18n::text($key, Some(&args))
+    }};
+}
+pub(crate) use log_server_error;
 
 type Bundle = FluentBundle<FluentResource>;
 
@@ -245,8 +264,8 @@ mod tests {
         }
     }
 
-    /// Every key passed to `t!` or `log_error!` in the source code,
-    /// skipping comments.
+    /// Every key passed to `t!`, `log_error!` or `log_server_error!` in the
+    /// source code, skipping comments.
     fn keys_in_code() -> BTreeSet<String> {
         let src = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
         let mut keys = BTreeSet::new();
@@ -261,7 +280,7 @@ mod tests {
                 .filter(|line| !line.trim_start().starts_with("//"))
                 .collect::<Vec<_>>()
                 .join("\n");
-            let calls = ["t!(", "log_error!("]
+            let calls = ["t!(", "log_error!(", "log_server_error!("]
                 .into_iter()
                 .flat_map(|name| code.match_indices(name));
             for (at, name) in calls {

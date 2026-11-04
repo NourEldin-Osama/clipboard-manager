@@ -16,7 +16,8 @@ use image::DynamicImage;
 use serde_json::{json, Value};
 
 use super::{Embedder, Embedding, TextRole};
-use crate::config::{LaunchConfig, ServerConfig};
+use crate::config::{LaunchConfig, ServerConfig, ServerKind};
+use crate::net::ServerError;
 
 /// The llama-server we started, kept globally so it can be stopped on exit
 /// even though the worker thread never unwinds.
@@ -32,6 +33,41 @@ pub fn stop_launched_server() {
 pub struct ServerEmbedder {
     cfg: ServerConfig,
     agent: ureq::Agent,
+    /// How the server takes an image: as its type is known to, until it
+    /// refuses that and takes the other way.
+    image_request: ImageRequest,
+}
+
+/// How a server takes an image to embed.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum ImageRequest {
+    /// vLLM's way: a chat message with the image (`messages`).
+    Messages,
+    /// llama.cpp's and OpenRouter's way: an input with a content list.
+    Content,
+}
+
+impl ImageRequest {
+    fn body(self, image_url: &str) -> Value {
+        let image = json!([{ "type": "image_url", "image_url": { "url": image_url } }]);
+        match self {
+            Self::Messages => json!({
+                "encoding_format": "float",
+                "messages": [{ "role": "user", "content": image }]
+            }),
+            Self::Content => json!({
+                "encoding_format": "float",
+                "input": [{ "content": image }]
+            }),
+        }
+    }
+
+    fn other(self) -> Self {
+        match self {
+            Self::Messages => Self::Content,
+            Self::Content => Self::Messages,
+        }
+    }
 }
 
 impl ServerEmbedder {
@@ -41,7 +77,17 @@ impl ServerEmbedder {
             .http_status_as_error(false)
             .build()
             .into();
-        let mut s = Self { cfg, agent };
+        let image_request = match cfg.server_kind {
+            ServerKind::LlamaCpp | ServerKind::OpenRouter | ServerKind::Unsloth => {
+                ImageRequest::Content
+            }
+            _ => ImageRequest::Messages,
+        };
+        let mut s = Self {
+            cfg,
+            agent,
+            image_request,
+        };
         if let Some(launch) = s.cfg.launch.clone() {
             stop_launched_server();
             *CHILD.lock().unwrap() = Some(spawn_llama_server(&launch)?);
@@ -72,8 +118,12 @@ impl ServerEmbedder {
         }
     }
 
-    fn post(&self, body: Value, role: &str) -> Result<Value> {
-        let url = format!("{}/embeddings", self.cfg.base_url.trim_end_matches('/'));
+    fn embeddings_url(&self) -> String {
+        format!("{}/embeddings", self.cfg.base_url.trim_end_matches('/'))
+    }
+
+    fn post(&self, body: Value, role: &str) -> Result<Value, ServerError> {
+        let url = self.embeddings_url();
         let mut req = self
             .agent
             .post(&url)
@@ -88,25 +138,48 @@ impl ServerEmbedder {
         }
         let mut resp = req
             .send_json(&body)
-            .with_context(|| format!("cannot reach {url}"))?;
+            .map_err(|e| ServerError::unreachable(&url, &e))?;
         let status = resp.status();
-        let text = resp.body_mut().read_to_string()?;
-        if status.as_u16() == 401 || status.as_u16() == 403 {
-            bail!("{url} rejected the request ({status}): set the server's API key in Settings");
-        }
+        let text = resp
+            .body_mut()
+            .read_to_string()
+            .map_err(|e| ServerError::unreachable(&url, &e))?;
         if !status.is_success() {
-            bail!(
-                "{url} returned {status}: {}",
-                text.chars().take(400).collect::<String>()
-            );
+            return Err(ServerError::from_answer(&url, status, &text));
         }
-        Ok(serde_json::from_str(&text)?)
+        serde_json::from_str(&text).map_err(|e| ServerError::bad_answer(&url, e))
     }
 
-    /// An empty model name means "the server's default", so the field is left out.
-    fn with_model(&self, mut body: Value) -> Value {
+    /// Sends an image the given way. A server that can't take it refuses
+    /// it, or fails as llama.cpp does without its image projector; an image
+    /// too big, too soon, or a server busy or restarting is another error.
+    fn post_image(&self, way: ImageRequest, image_url: &str) -> Result<Value, ServerError> {
+        let body = self.request_body(way.body(image_url), TextRole::Document);
+        self.post(body, "document").map_err(|e| match e {
+            ServerError::Refused { url, status, said }
+            | ServerError::Failed { url, status, said }
+                if !matches!(status.as_u16(), 413 | 429 | 502 | 503 | 504) =>
+            {
+                ServerError::NoImages { url, said }
+            }
+            other => other,
+        })
+    }
+
+    /// What every request carries besides its input: the model's name (an
+    /// empty name means "the server's default", so it is left out), and for
+    /// OpenRouter, whether the text is a search or an item, and that only
+    /// providers that don't collect user data may answer.
+    fn request_body(&self, mut body: Value, role: TextRole) -> Value {
         if !self.cfg.model.trim().is_empty() {
             body["model"] = json!(self.cfg.model.trim());
+        }
+        if self.cfg.server_kind == ServerKind::OpenRouter {
+            body["input_type"] = json!(match role {
+                TextRole::Query => "search_query",
+                TextRole::Document => "search_document",
+            });
+            body["provider"] = json!({ "data_collection": "deny" });
         }
         body
     }
@@ -180,13 +253,13 @@ pub fn list_models(base_url: &str, api_key: &str, embedding_list: bool) -> Resul
     };
     let url = format!("{base}/models");
     let mut listed: Vec<String> = Vec::new();
-    let mut list_error: Option<anyhow::Error> = None;
+    let mut list_error: Option<ServerError> = None;
     match get(&url) {
         Ok(mut resp) => {
             let status = resp.status();
             let text = resp.body_mut().read_to_string().unwrap_or_default();
             if status.as_u16() == 401 || status.as_u16() == 403 {
-                bail!("the server needs an API key (got {status}); check the API key field");
+                return Err(ServerError::from_answer(&url, status, &text).into());
             }
             if status.is_success() {
                 if let Ok(v) = serde_json::from_str::<Value>(&text) {
@@ -217,11 +290,11 @@ pub fn list_models(base_url: &str, api_key: &str, embedding_list: bool) -> Resul
                     }
                 }
                 if listed.is_empty() {
-                    list_error = Some(anyhow!("{url} returned {status}"));
+                    list_error = Some(ServerError::from_answer(&url, status, &text));
                 }
             }
         }
-        Err(e) => return Err(anyhow::Error::new(e).context(format!("cannot reach {url}"))),
+        Err(e) => return Err(ServerError::unreachable(&url, &e).into()),
     }
     listed.dedup();
     let mut embedding: Vec<String> = Vec::new();
@@ -262,7 +335,8 @@ pub fn list_models(base_url: &str, api_key: &str, embedding_list: bool) -> Resul
         _ => None,
     };
     if listed.is_empty() && embedding.is_empty() && default.is_none() {
-        return Err(list_error.unwrap_or_else(|| anyhow!("the server offered no embedding models")));
+        let url = base.to_string();
+        return Err(list_error.unwrap_or(ServerError::NoModels { url }).into());
     }
     Ok(ServerModels {
         listed,
@@ -272,18 +346,20 @@ pub fn list_models(base_url: &str, api_key: &str, embedding_list: bool) -> Resul
 }
 
 /// What a test request to a search model found.
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct SearchTest {
     /// Numbers in each vector the model gives, before any shortening.
     pub size: usize,
     /// Vectors for each text: 1, or more for a multi-vector model.
     pub vectors: usize,
     pub took: Duration,
+    /// With Send images on: whether the server took the test image.
+    pub images: Option<Result<()>>,
 }
 
 /// Embeds one short text, to check that the model answers and to see how
-/// big its vectors are. It never starts or stops llama-server: one the app
-/// started is asked as it runs.
+/// big its vectors are, and the test image with Send images on. It never
+/// starts or stops llama-server: one the app started is asked as it runs.
 pub fn test_search(mut cfg: ServerConfig) -> Result<SearchTest> {
     if let Some(launch) = cfg.launch.take() {
         cfg.base_url = format!("http://127.0.0.1:{}/v1", launch.port);
@@ -297,10 +373,17 @@ pub fn test_search(mut cfg: ServerConfig) -> Result<SearchTest> {
         Embedding::Dense(v) => (v.len(), 1),
         Embedding::Multi(vs) => (vs.first().map_or(0, Vec::len), vs.len()),
     };
+    let images = embedder.cfg.images.then(|| {
+        let image = image::load_from_memory(crate::ocr::TEST_IMAGE)?;
+        embedder.embed_image(&image).map(|_| ()).inspect_err(|e| {
+            log::warn!("testing images: {e:#}");
+        })
+    });
     Ok(SearchTest {
         size,
         vectors,
         took,
+        images,
     })
 }
 
@@ -330,13 +413,16 @@ impl Embedder for ServerEmbedder {
             }
             None => self.cfg.model.trim().to_string(),
         };
-        let salt = crate::store::fnv1a(
-            format!(
-                "{}|{}|{}",
-                self.cfg.query_prefix, self.cfg.document_prefix, self.cfg.truncate_dims
-            )
-            .as_bytes(),
+        let mut settings = format!(
+            "{}|{}|{}",
+            self.cfg.query_prefix, self.cfg.document_prefix, self.cfg.truncate_dims
         );
+        // OpenRouter is told whether a text is a search or an item, which
+        // changes its vectors.
+        if self.cfg.server_kind == ServerKind::OpenRouter {
+            settings.push_str("|input_type");
+        }
+        let salt = crate::store::fnv1a(settings.as_bytes());
         format!("server:{model}:{salt:x}")
     }
 
@@ -353,22 +439,20 @@ impl Embedder for ServerEmbedder {
             TextRole::Document => &self.cfg.document_prefix,
         };
         let input: Vec<String> = texts.iter().map(|t| format!("{prefix}{t}")).collect();
+        let body = self.request_body(json!({ "input": input, "encoding_format": "float" }), role);
         let role = if role == TextRole::Query {
             "query"
         } else {
             "document"
         };
-        let v = self.post(
-            self.with_model(json!({ "input": input, "encoding_format": "float" })),
-            role,
-        )?;
-        let out = self.parse(&v)?;
+        let v = self.post(body, role)?;
+        let url = self.embeddings_url();
+        let out = self
+            .parse(&v)
+            .map_err(|e| ServerError::bad_answer(&url, e))?;
         if out.len() != texts.len() {
-            bail!(
-                "server returned {} embeddings for {} inputs",
-                out.len(),
-                texts.len()
-            );
+            let count = format!("{} embeddings for {} inputs", out.len(), texts.len());
+            return Err(ServerError::bad_answer(&url, count).into());
         }
         Ok(out)
     }
@@ -386,20 +470,29 @@ impl Embedder for ServerEmbedder {
             "data:image/png;base64,{}",
             base64::engine::general_purpose::STANDARD.encode(&png)
         );
-        // vLLM's multimodal embeddings request shape.
-        let v = self.post(
-            self.with_model(json!({
-                "encoding_format": "float",
-                "messages": [{ "role": "user", "content": [
-                    { "type": "image_url", "image_url": { "url": url } }
-                ]}]
-            })),
-            "document",
-        )?;
-        self.parse(&v)?
+        // A server that refuses one way may take the other; it then gets
+        // that way from now on. Refused both ways, the first answer says why.
+        let first = self.image_request;
+        let v = match self.post_image(first, &url) {
+            Err(refused @ ServerError::NoImages { .. }) => {
+                match self.post_image(first.other(), &url) {
+                    Ok(v) => {
+                        self.image_request = first.other();
+                        v
+                    }
+                    Err(ServerError::NoImages { .. }) => return Err(refused.into()),
+                    Err(other) => return Err(other.into()),
+                }
+            }
+            answer => answer?,
+        };
+        let url = self.embeddings_url();
+        let embedding = self
+            .parse(&v)
+            .map_err(|e| ServerError::bad_answer(&url, e))?
             .into_iter()
-            .next()
-            .ok_or_else(|| anyhow!("no embedding returned"))
+            .next();
+        embedding.ok_or_else(|| ServerError::bad_answer(&url, "no embedding").into())
     }
 }
 
@@ -437,9 +530,178 @@ fn spawn_llama_server(l: &LaunchConfig) -> Result<Child> {
         .with_context(|| format!("starting {}", l.llama_server.display()))
 }
 
+/// A stand-in embedding server for tests.
+#[cfg(test)]
+mod stand_in {
+    use std::io::{Read, Write};
+    use std::net::{TcpListener, TcpStream};
+
+    use serde_json::{json, Value};
+
+    use super::ImageRequest;
+
+    /// Starts a server that answers each text with a small vector, and
+    /// refuses images as a server that takes only text does, unless they
+    /// come the way it `takes`. Its address ends with `/v1`; it runs until
+    /// the tests end.
+    pub fn serve(takes: Option<ImageRequest>) -> String {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let url = format!("http://{}/v1", listener.local_addr().unwrap());
+        std::thread::spawn(move || {
+            for stream in listener.incoming().flatten() {
+                std::thread::spawn(move || answer(stream, takes));
+            }
+        });
+        url
+    }
+
+    fn answer(mut stream: TcpStream, takes: Option<ImageRequest>) {
+        let mut request = Vec::new();
+        let mut buf = [0u8; 4096];
+        let body_start = loop {
+            match stream.read(&mut buf) {
+                Ok(0) | Err(_) => return,
+                Ok(n) => request.extend_from_slice(&buf[..n]),
+            }
+            if let Some(at) = request.windows(4).position(|w| w == b"\r\n\r\n") {
+                break at + 4;
+            }
+        };
+        let head = String::from_utf8_lossy(&request[..body_start]).to_lowercase();
+        let length: usize = head
+            .lines()
+            .find_map(|line| line.strip_prefix("content-length:"))
+            .and_then(|n| n.trim().parse().ok())
+            .unwrap_or(0);
+        while request.len() < body_start + length {
+            match stream.read(&mut buf) {
+                Ok(0) | Err(_) => return,
+                Ok(n) => request.extend_from_slice(&buf[..n]),
+            }
+        }
+        let asked: Value = serde_json::from_slice(&request[body_start..]).unwrap_or_default();
+        let inputs = asked["input"].as_array().cloned().unwrap_or_default();
+        let image = if asked["messages"].is_array() {
+            Some(ImageRequest::Messages)
+        } else if inputs.iter().any(|input| input.get("content").is_some()) {
+            Some(ImageRequest::Content)
+        } else {
+            None
+        };
+        let count = match image {
+            None => inputs.len(),
+            Some(way) if takes == Some(way) => 1,
+            Some(_) => 0,
+        };
+        let (status, body) = if count == 0 {
+            (
+                "400 Bad Request",
+                json!({ "detail": "'input' is required for embeddings" }),
+            )
+        } else {
+            let data: Vec<Value> = (0..count)
+                .map(|i| json!({ "index": i, "embedding": [1.0, 0.5, i as f64] }))
+                .collect();
+            ("200 OK", json!({ "data": data, "model": "stand-in" }))
+        };
+        let body = body.to_string();
+        let _ = write!(
+            stream,
+            "HTTP/1.1 {status}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+            body.len()
+        );
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_test_says_whether_the_server_takes_images() {
+        let text_only = stand_in::serve(None);
+        let found = test_search(ServerConfig {
+            images: true,
+            ..ServerConfig::plain(&text_only)
+        })
+        .unwrap();
+        assert_eq!((found.size, found.vectors), (3, 1));
+        let refused = found.images.unwrap().unwrap_err();
+        assert!(
+            matches!(
+                refused.downcast_ref::<ServerError>(),
+                Some(ServerError::NoImages { said, .. }) if said == "'input' is required for embeddings"
+            ),
+            "{refused:#}"
+        );
+        // Without Send images, no image is sent.
+        assert!(test_search(ServerConfig::plain(&text_only))
+            .unwrap()
+            .images
+            .is_none());
+        let with_images = stand_in::serve(Some(ImageRequest::Messages));
+        let found = test_search(ServerConfig {
+            images: true,
+            ..ServerConfig::plain(&with_images)
+        })
+        .unwrap();
+        assert!(found.images.unwrap().is_ok());
+    }
+
+    #[test]
+    fn images_go_the_way_the_server_takes_them() {
+        let image = DynamicImage::new_rgb8(8, 8);
+        let embedder = |server_kind, url: &str| {
+            ServerEmbedder::new(ServerConfig {
+                server_kind,
+                images: true,
+                ..ServerConfig::plain(url)
+            })
+            .unwrap()
+        };
+        // llama.cpp takes them its own way at once.
+        let llama_cpp = stand_in::serve(Some(ImageRequest::Content));
+        let mut e = embedder(ServerKind::LlamaCpp, &llama_cpp);
+        assert!(e.embed_image(&image).is_ok());
+        assert_eq!(e.image_request, ImageRequest::Content);
+        // A server of another type that takes only that way gets it after
+        // one refusal, and from then on.
+        let mut e = embedder(ServerKind::Other, &llama_cpp);
+        assert_eq!(e.image_request, ImageRequest::Messages);
+        assert!(e.embed_image(&image).is_ok());
+        assert_eq!(e.image_request, ImageRequest::Content);
+        // vLLM's way works for a llama.cpp type that is vLLM after all.
+        let vllm = stand_in::serve(Some(ImageRequest::Messages));
+        let mut e = embedder(ServerKind::LlamaCpp, &vllm);
+        assert!(e.embed_image(&image).is_ok());
+        assert_eq!(e.image_request, ImageRequest::Messages);
+    }
+
+    #[test]
+    fn openrouter_hears_what_each_text_is_for_and_to_keep_no_data() {
+        let embedder = |server_kind| {
+            ServerEmbedder::new(ServerConfig {
+                server_kind,
+                model: "m".into(),
+                ..ServerConfig::plain("https://openrouter.ai/api/v1")
+            })
+            .unwrap()
+        };
+        let openrouter = embedder(ServerKind::OpenRouter);
+        let search = openrouter.request_body(json!({ "input": ["a"] }), TextRole::Query);
+        assert_eq!(search["input_type"], "search_query");
+        assert_eq!(search["provider"]["data_collection"], "deny");
+        let item = openrouter.request_body(json!({ "input": ["a"] }), TextRole::Document);
+        assert_eq!(item["input_type"], "search_document");
+        // Other servers get neither, and keep the index they have.
+        let other = embedder(ServerKind::Other);
+        let body = other.request_body(json!({ "input": ["a"] }), TextRole::Query);
+        assert!(body.get("input_type").is_none() && body.get("provider").is_none());
+        assert_eq!(body["model"], "m");
+        let before = format!("server:m:{:x}", crate::store::fnv1a(b"||0"));
+        assert_eq!(other.key(), before);
+        assert_ne!(openrouter.key(), before, "OpenRouter's index is made again");
+    }
 
     /// Needs a running server, e.g. `python tools/st_server.py --model sentence-transformers/clip-ViT-B-32`:
     /// EMBED_URL=http://127.0.0.1:8001/v1 SIGLIP_IMAGES=<dir> cargo test -- --ignored server

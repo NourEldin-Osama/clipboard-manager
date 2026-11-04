@@ -11,7 +11,8 @@ use anyhow::{anyhow, Result};
 use crate::config::EmbedBackend;
 use crate::config::TextReader;
 use crate::embed::{server::ServerEmbedder, Embedder, Embedding, TextRole};
-use crate::i18n::{log_error, t};
+use crate::i18n::{log_server_error, t};
+use crate::net::ServerError;
 use crate::ocr::Reader;
 use crate::store::{Kind, Store};
 
@@ -37,6 +38,11 @@ pub enum Event {
         stored: Vec<(u64, Embedding)>,
     },
     BackendOff,
+    /// The search model's server refused an image: images now go to it as
+    /// their read text.
+    ImagesRefused {
+        key: String,
+    },
     Ocr {
         id: u64,
         text: String,
@@ -98,6 +104,9 @@ impl Worker {
                     backend: None,
                     have: HashSet::new(),
                     failed: HashSet::new(),
+                    images_refused: false,
+                    image_worked: false,
+                    index_error_shown: false,
                     pending: p,
                 };
                 st.run(rx);
@@ -237,6 +246,13 @@ struct State {
     have: HashSet<u64>,
     /// Items a model or the OCR library panicked on: skipped until restart.
     failed: HashSet<u64>,
+    /// The current model's server refused an image, so images go to it as
+    /// their read text.
+    images_refused: bool,
+    /// The current model's server took an image.
+    image_worked: bool,
+    /// A failure to index an item was shown since the model loaded.
+    index_error_shown: bool,
     pending: Arc<std::sync::atomic::AtomicUsize>,
 }
 
@@ -299,10 +315,7 @@ impl State {
                         log::warn!("reading text in an image failed: {e:#}");
                     } else {
                         self.ocr_error_shown = true;
-                        self.emit(Event::Error(log_error!(
-                            "error-ocr-unavailable",
-                            error = format!("{e:#}")
-                        )));
+                        self.emit(Event::Error(log_server_error!("error-ocr-unavailable", &e)));
                     }
                 }
             }
@@ -346,16 +359,16 @@ impl State {
                 });
             }
             Ok(_) => {}
-            Err(e) => self.emit(Event::Error(log_error!(
-                "error-query-embedding",
-                error = format!("{e:#}")
-            ))),
+            Err(e) => self.emit(Event::Error(log_server_error!("error-query-embedding", &e))),
         }
     }
 
     fn set_backend(&mut self, b: EmbedBackend) {
         self.embedder = None;
         self.have.clear();
+        self.images_refused = false;
+        self.image_worked = false;
+        self.index_error_shown = false;
         self.backend = Some(b.clone());
         let loaded: Result<Option<Box<dyn Embedder>>> = match &b {
             EmbedBackend::None => Ok(None),
@@ -387,10 +400,7 @@ impl State {
             }
             Ok(None) => self.emit(Event::BackendOff),
             Err(e) => {
-                self.emit(Event::Error(log_error!(
-                    "error-model",
-                    error = format!("{e:#}")
-                )));
+                self.emit(Event::Error(log_server_error!("error-model", &e)));
                 self.emit(Event::BackendOff);
             }
         }
@@ -410,10 +420,7 @@ impl State {
                 Ok(o) => self.ocr = Some(o),
                 Err(e) => {
                     self.ocr_failed = true;
-                    self.emit(Event::Error(log_error!(
-                        "error-ocr-unavailable",
-                        error = format!("{e:#}")
-                    )));
+                    self.emit(Event::Error(log_server_error!("error-ocr-unavailable", &e)));
                 }
             }
         }
@@ -483,25 +490,28 @@ impl State {
                 Ok(Some(i)) => i,
                 _ => continue,
             };
-            if item.kind == Kind::Image && emb.supports_images() {
+            if item.kind == Kind::Image && emb.supports_images() && !self.images_refused {
                 let r = item
                     .image
                     .clone()
                     .ok_or_else(|| anyhow!("image item without file"))
                     .and_then(|p| self.store.images.open(id, &p))
                     .and_then(|img| emb.embed_image(&img));
-                self.finish(&key, id, r);
-            } else {
-                let text: String = item.searchable_text().chars().take(8000).collect();
-                if text.trim().is_empty() {
-                    self.emit(Event::Embedded {
-                        id,
-                        key: key.clone(),
-                        embedding: None,
-                    });
-                } else {
-                    texts.push((id, text));
+                if !self.refuses_images(&key, &r) {
+                    self.image_worked |= r.is_ok();
+                    self.finish(&key, id, r);
+                    continue;
                 }
+            }
+            let text: String = item.searchable_text().chars().take(8000).collect();
+            if text.trim().is_empty() {
+                self.emit(Event::Embedded {
+                    id,
+                    key: key.clone(),
+                    embedding: None,
+                });
+            } else {
+                texts.push((id, text));
             }
         }
         if !texts.is_empty() {
@@ -525,6 +535,31 @@ impl State {
                 Err(e) => self.finish(&key, texts[0].0, Err(e)),
             }
         }
+    }
+
+    /// Whether `result` is the first sign that the model's server takes no
+    /// images. Images then go to it as their read text until the model
+    /// changes or the app restarts, and the app hears it once. After an image
+    /// worked, a refusal is about that image only.
+    fn refuses_images(&mut self, key: &str, result: &Result<Embedding>) -> bool {
+        let Err(e) = result else {
+            return false;
+        };
+        let refused = matches!(
+            e.downcast_ref::<ServerError>(),
+            Some(ServerError::NoImages { .. })
+        );
+        if !refused || self.image_worked {
+            return false;
+        }
+        log::warn!(
+            "{e:#}; images go to this model as their read text until the model changes or the app restarts"
+        );
+        self.images_refused = true;
+        self.emit(Event::ImagesRefused {
+            key: key.to_string(),
+        });
+        true
     }
 
     /// Saves a whole batch's vectors in one transaction, then reports each one.
@@ -552,8 +587,15 @@ impl State {
                 self.have.insert(id);
                 Some(e)
             }
+            // A server that stopped fails every item: the first failure
+            // shows, the others go only to a debug log.
+            Err(e) if self.index_error_shown => {
+                log::debug!("embedding item {id} failed: {e:#}");
+                None
+            }
             Err(e) => {
-                log::warn!("embedding item {id} failed: {e:#}");
+                self.index_error_shown = true;
+                self.emit(Event::Error(log_server_error!("error-indexing", &e)));
                 None
             }
         };
@@ -653,8 +695,114 @@ mod tests {
             backend: None,
             have: HashSet::new(),
             failed: HashSet::new(),
+            images_refused: false,
+            image_worked: false,
+            index_error_shown: false,
             pending: Arc::default(),
         }
+    }
+
+    /// A model whose server stopped.
+    struct Stopped;
+
+    impl Embedder for Stopped {
+        fn key(&self) -> String {
+            "stopped".into()
+        }
+        fn supports_images(&self) -> bool {
+            false
+        }
+        fn embed_texts(&mut self, _: &[String], _: TextRole) -> Result<Vec<Embedding>> {
+            Err(ServerError::Unreachable {
+                url: "http://127.0.0.1:8888/v1/embeddings".into(),
+                reason: "connection refused".into(),
+            }
+            .into())
+        }
+        fn embed_image(&mut self, _: &image::DynamicImage) -> Result<Embedding> {
+            unreachable!("text only")
+        }
+    }
+
+    #[test]
+    fn a_server_that_stopped_gets_one_message() {
+        let dir = std::env::temp_dir().join(format!("cbm-worker-stopped-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let store = Arc::new(Store::open(&dir.join("t.redb"), &dir).unwrap());
+        for id in 1..=3 {
+            let it = crate::store::Item::new(
+                id,
+                Kind::Text,
+                crate::store::Origin::Clipboard,
+                format!("text {id}").into(),
+            );
+            store.put(&it).unwrap();
+        }
+        let (events, rx) = channel();
+        let mut st = state(store.clone(), events);
+        st.embedder = Some(Box::new(Stopped));
+        st.run_one(Next::Embed(vec![1, 2]));
+        st.run_one(Next::Embed(vec![3]));
+        let errors = rx
+            .try_iter()
+            .filter(|event| matches!(event, Event::Error(_)))
+            .count();
+        assert_eq!(errors, 1);
+        drop((st, store));
+        std::fs::remove_dir_all(dir).ok();
+    }
+
+    /// A model on a server that takes only text, with Send images on.
+    struct TextOnly;
+
+    impl Embedder for TextOnly {
+        fn key(&self) -> String {
+            "text-only".into()
+        }
+        fn supports_images(&self) -> bool {
+            true
+        }
+        fn embed_texts(&mut self, texts: &[String], _: TextRole) -> Result<Vec<Embedding>> {
+            Ok(texts.iter().map(|_| Embedding::Dense(vec![1.0])).collect())
+        }
+        fn embed_image(&mut self, _: &image::DynamicImage) -> Result<Embedding> {
+            Err(ServerError::NoImages {
+                url: "http://127.0.0.1:8888/v1/embeddings".into(),
+                said: "'input' is required for embeddings".into(),
+            }
+            .into())
+        }
+    }
+
+    #[test]
+    fn a_server_that_refuses_images_gets_their_read_text() {
+        let dir = std::env::temp_dir().join(format!("cbm-worker-images-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let store = Arc::new(Store::open(&dir.join("t.redb"), &dir).unwrap());
+        for id in [1, 2] {
+            let mut it = crate::store::Item::new(
+                id,
+                Kind::Image,
+                crate::store::Origin::Clipboard,
+                "".into(),
+            );
+            it.image = Some(store.images.save(id, &image::RgbaImage::new(4, 4)).unwrap());
+            it.ocr = Some(format!("read text {id}").into());
+            store.put(&it).unwrap();
+        }
+        let (events, rx) = channel();
+        let mut st = state(store.clone(), events);
+        st.embedder = Some(Box::new(TextOnly));
+        st.run_one(Next::Embed(vec![1, 2]));
+        assert!(st.have.contains(&1) && st.have.contains(&2));
+        assert_eq!(store.embeddings("text-only").unwrap().len(), 2);
+        let refused = rx
+            .try_iter()
+            .filter(|event| matches!(event, Event::ImagesRefused { .. }))
+            .count();
+        assert_eq!(refused, 1, "the app hears it once");
+        drop((st, store));
+        std::fs::remove_dir_all(dir).ok();
     }
 
     #[test]

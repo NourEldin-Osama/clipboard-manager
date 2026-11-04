@@ -143,6 +143,9 @@ status bar shows progress.
    ```
 4. In the app add a **llama.cpp** server, add a search model, and click **Fill in details**: it fills in the model's
    retrieval prompts (`task: search result | query: …` / `title: none | text: …`).
+5. To find images by what they show, also download the model's `mmproj-F16.gguf`, add
+   `--mmproj mmproj-F16.gguf -ub 4096 -b 4096` to the command, and turn on **Send images** for the model. **Test** says
+   whether images work. With its default batch size, llama-server reads each image at a quarter of its detail.
 
 If you'd rather not keep a console open, turn on **Start llama-server for me** in the llama.cpp server's settings and
 browse to `llama-server.exe` and the `.gguf` file. The app then starts the server without opening a window when one of
@@ -168,7 +171,8 @@ Ollama, LM Studio, vLLM and Unsloth have types of their own and work the same wa
 #### OpenRouter
 Add an **OpenRouter** server, paste your OpenRouter API key, and pick one of its embedding models, for example
 `openai/text-embedding-3-small`. OpenRouter is not on this PC, so the app asks before it sends your history there.
-Free models may keep what you send them.
+Every request asks OpenRouter for providers that don't collect user data, so a model offered only by providers that
+keep data refuses, and says so. Each embedding request also says whether it is a search or an item (`input_type`).
 
 ### BiUltraVBERT / ColUltraVBERT via vLLM (text ↔ document-image retrieval)
 These MIT-licensed models are served by vLLM (Linux or WSL2 with a GPU recommended):
@@ -286,8 +290,6 @@ The GUI, database and clipboard handling are all Rust. Searching by meaning, and
 on the model servers you choose; Windows reads text on its own.
 
 ## Roadmap
-- Optional AES-GCM encryption at rest
-- System tray icon and close-to-tray
 - PDF text extraction for imported folders
 
 ## License

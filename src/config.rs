@@ -36,6 +36,8 @@ pub enum EmbedBackend {
 /// one of its models (see `Config::search_backend`).
 #[derive(Clone, PartialEq)]
 pub struct ServerConfig {
+    /// What the server is: OpenRouter gets requests of its own.
+    pub server_kind: ServerKind,
     pub base_url: String,
     /// Sent as `Authorization: Bearer <key>` when not empty.
     pub api_key: String,
@@ -79,6 +81,8 @@ pub enum ReaderModel {
 /// server with a vision model.
 #[derive(Clone, PartialEq)]
 pub struct ReaderServer {
+    /// What the server is: OpenRouter gets requests of its own.
+    pub server_kind: ServerKind,
     pub base_url: String,
     /// Sent as `Authorization: Bearer <key>` when not empty.
     pub api_key: String,
@@ -98,6 +102,7 @@ impl ReaderServer {
 impl Default for ReaderServer {
     fn default() -> Self {
         Self {
+            server_kind: ServerKind::Other,
             base_url: "http://127.0.0.1:8080/v1".into(),
             api_key: String::new(),
             model: String::new(),
@@ -111,6 +116,7 @@ impl Default for ReaderServer {
 impl std::fmt::Debug for ReaderServer {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("ReaderServer")
+            .field("server_kind", &self.server_kind)
             .field("base_url", &self.base_url)
             .field("api_key", &hidden(&self.api_key))
             .field("model", &self.model)
@@ -150,6 +156,7 @@ impl Default for ServerConfig {
 impl std::fmt::Debug for ServerConfig {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("ServerConfig")
+            .field("server_kind", &self.server_kind)
             .field("base_url", &self.base_url)
             .field("api_key", &hidden(&self.api_key))
             .field("model", &self.model)
@@ -165,6 +172,7 @@ impl std::fmt::Debug for ServerConfig {
 impl ServerConfig {
     pub fn plain(base_url: &str) -> Self {
         Self {
+            server_kind: ServerKind::Other,
             base_url: base_url.into(),
             api_key: String::new(),
             model: String::new(),
@@ -312,6 +320,7 @@ impl Server {
             return None;
         };
         Some(ServerConfig {
+            server_kind: self.kind,
             base_url: self.base_url.clone(),
             api_key: self.api_key.clone(),
             model: model.model.clone(),
@@ -329,6 +338,7 @@ impl Server {
             return None;
         };
         Some(ReaderServer {
+            server_kind: self.kind,
             base_url: self.base_url.clone(),
             api_key: self.api_key.clone(),
             model: model.model.clone(),
@@ -692,6 +702,17 @@ impl Config {
     /// The id a new server gets.
     pub fn next_server_id(&self) -> u32 {
         self.servers.iter().map(|s| s.id).max().unwrap_or(0) + 1
+    }
+
+    /// The settings of the search model chosen, to change them.
+    pub fn search_settings_mut(&mut self) -> Option<&mut SearchSettings> {
+        let at = self.search_model?;
+        let server = self.servers.iter_mut().find(|s| s.id == at.server)?;
+        let model = server.models.iter_mut().find(|m| m.id == at.model)?;
+        match &mut model.job {
+            ModelJob::Search(search) => Some(search),
+            ModelJob::Read(_) => None,
+        }
     }
 
     /// The meaning-search model in use, put together for the worker: none
@@ -1105,6 +1126,7 @@ mod tests {
         assert_eq!(
             cfg.search_backend(),
             EmbedBackend::Server(Box::new(ServerConfig {
+                server_kind: ServerKind::Unsloth,
                 api_key: "unsloth-key".into(),
                 model: "embed-a".into(),
                 query_prefix: "q: ".into(),
@@ -1115,6 +1137,7 @@ mod tests {
         assert_eq!(
             cfg.text_reader(),
             TextReader::Server(ReaderServer {
+                server_kind: ServerKind::Unsloth,
                 base_url: "http://127.0.0.1:8888/v1".into(),
                 api_key: "unsloth-key".into(),
                 model: "vision".into(),
@@ -1226,6 +1249,7 @@ mod tests {
         assert_eq!(
             cfg.search_backend(),
             EmbedBackend::Server(Box::new(ServerConfig {
+                server_kind: ServerKind::Unsloth,
                 api_key: "unsloth-key".into(),
                 query_prefix: SearchSettings::GEMMA_QUERY.into(),
                 document_prefix: SearchSettings::GEMMA_DOCUMENT.into(),
@@ -1239,6 +1263,7 @@ mod tests {
         assert_eq!(
             cfg.text_reader(),
             TextReader::Server(ReaderServer {
+                server_kind: ServerKind::LlamaCpp,
                 base_url: "http://127.0.0.1:8080/v1".into(),
                 api_key: String::new(),
                 model: "minicpm-ocr".into(),
