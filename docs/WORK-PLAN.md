@@ -180,14 +180,16 @@ every later screen uses; then settings, content, keys and the new features; and 
 screenshots of the finished screens.
 
 ### Phase 9. Server fixes (version 0.5.1)
-- [ ] 9.1 Server errors in the interface language: can't reach, needs a key, not found, refused (with the server's own words), failed, doesn't take images, unexpected answer; the log stays in English
-- [ ] 9.2 Test also sends an image when Send images is on, and says whether the server takes images
-- [ ] 9.3 A server that refuses images: the images go as their read text, with one message and a button that turns off Send images (D49)
-- [ ] 9.4 OpenRouter: only providers that don't collect user data, and the search or item hint (D43)
-- [ ] 9.5 Crate updates within the versions `Cargo.toml` allows; windows-registry waits (D44)
-- [ ] 9.6 The README roadmap lists only what is still to do
-- [ ] 9.7 Esc while typing in a Settings field leaves the field, not Settings
-- [ ] 9.8 A check in a test copy with your servers: Unsloth with its key, LM Studio, Sentence Transformers, and the model menu opened with a real click (D45)
+- [x] 9.1 Server errors in the interface language: can't reach, needs a key, not found, refused (with the server's own words), failed, doesn't take images, unexpected answer; the log stays in English
+- [x] 9.2 Test also sends an image when Send images is on, and says whether the server takes images
+- [x] 9.3 A server that refuses images: the images go as their read text, with one message and a button that turns off Send images (D49)
+- [x] 9.4 OpenRouter: only providers that don't collect user data, and the search or item hint (D43)
+- [x] 9.5 Crate updates within the versions `Cargo.toml` allows; windows-registry waits (D44)
+- [x] 9.6 The README roadmap lists only what is still to do
+- [x] 9.7 Esc while typing in a Settings field leaves the field, not Settings; Esc in a server's editor goes back to its page
+- [x] 9.8 A check in a test copy with your servers (D45): Unsloth with its key, llama.cpp with EmbeddingGemma 2 and its image projector, vLLM with bge-small-en-v1.5, the model menu opened with a real click; LM Studio and Sentence Transformers were not running
+- [x] 9.9 A search server that stops while the app runs: one message in the status bar, not a log line for each item
+- [x] 9.10 Images also go in llama.cpp's and OpenRouter's request format, so Send images works with EmbeddingGemma 2 on llama.cpp
 
 ### Phase 10. Type and layout
 - [ ] 10.1 Noto Sans and Noto Sans Arabic in Regular and SemiBold, five text sizes, more space between the lines of long text (D51)
@@ -251,3 +253,4 @@ screenshots of the finished screens.
 | 2026-11-01 | `1fae543`, `6fc8a7e`, merge `3ad5229` | The text reader's models download as ONNX files (2.37, D36); checked by downloading them from the real address and reading a test image with both formats |
 | 2026-11-01 | `a03e64d` to `a753dbb` (4 commits), merge `da7f969` | Version 0.4.3: the Model type menu for the server text reader (6.11, D37), with a README guide; checked with a stand-in server, not with the real models or in the app's window; Unlimited-OCR-2 has no llama.cpp or vLLM guide yet, only SGLang |
 | 2026-11-02 | `544b8f9` to `db8143a` (11 commits), merge `fd6d77c` | Version 0.5.0: your own servers only (6.12, D38 to D41): the built-in search model and text reader are gone; saved servers with several models each, a type and logo, any port, Test and Fill in details from models.dev; GLM-OCR as a reading model type (6.13, D42). Checked: the update step on a copy of your settings file, and the screens in a dev build with a stand-in server, which found 4 small faults, fixed in the last 4 commits; not checked with real model servers |
+| 2026-11-04 | `902ac42` to `53cbaeb` (16 commits), merge `525adbb` | Version 0.5.1 (Phase 9): server errors in both languages; Test tries an image; images a text-only server refuses are indexed by their read text, with one message and a button; one message when the search server stops; images also in llama.cpp's and OpenRouter's request format; OpenRouter asks for providers that keep no data and sends the search or item hint; Esc in Settings; crate updates. Checked in a test copy with Unsloth (its key), llama.cpp (EmbeddingGemma 2 with its image projector: images work) and vLLM (bge-small-en-v1.5; vLLM 0.30 can't load the EmbeddingGemma 2 GGUF), which found 4 small faults, fixed here |
