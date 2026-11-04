@@ -204,7 +204,7 @@ screenshots of the finished screens.
 
 ### Phase 12. Content
 - [x] 12.1 The program a copy came from: its icon and its own name, and the program in front for a WebView2 helper
-- [ ] 12.2 Content in its best form: decoded web addresses, a code icon, color swatches, file paths
+- [~] 12.2 Content in its best form: decoded web addresses, a code icon, color swatches, file paths (the code icon waits for your choice)
 - [ ] 12.3 Calmer grid cards
 - [ ] 12.4 Weak search matches fold into one line; relevance bars on grid cards
 

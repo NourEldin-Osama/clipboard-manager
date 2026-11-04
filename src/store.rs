@@ -135,6 +135,14 @@ impl Item {
     /// Everything keyword search looks at.
     pub fn searchable_text(&self) -> String {
         let mut s = String::from(&*self.text);
+        // A link is found by its letters as people read them too.
+        if self.kind == Kind::Link {
+            let readable = crate::net::readable_url(&self.text);
+            if readable != *self.text {
+                s.push('\n');
+                s.push_str(&readable);
+            }
+        }
         if let Some(o) = self.ocr.as_deref().filter(|o| !o.is_empty()) {
             s.push('\n');
             s.push_str(o);

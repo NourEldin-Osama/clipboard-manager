@@ -188,6 +188,7 @@ item-files-count =
        *[other] { $count } files
     }
 item-empty = (empty)
+item-color = Color · { $value }
 item-delete = Delete
 item-pin = Pin
 item-unpin = Unpin

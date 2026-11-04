@@ -197,6 +197,7 @@ item-files-count =
        *[other] { $count } ملف
     }
 item-empty = (فارغ)
+item-color = لون · { $value }
 item-delete = حذف
 item-pin = تثبيت
 item-unpin = إلغاء التثبيت

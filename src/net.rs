@@ -21,6 +21,51 @@ pub fn host(url: &str) -> &str {
         .map_or(authority, |(_, host)| host)
 }
 
+/// A web address as people read it: its letters in other scripts decoded,
+/// as in `wiki/الرياض` for `wiki/%D8%A7%D9%84...`. Only runs of escapes that
+/// make whole letters beyond ASCII are decoded, so `%20`, `%2F` and the
+/// like keep their meaning in the address.
+pub fn readable_url(url: &str) -> std::borrow::Cow<'_, str> {
+    if !url.contains('%') {
+        return url.into();
+    }
+    let bytes = url.as_bytes();
+    let escaped = |at: usize| -> Option<u8> {
+        let hex = url.get(at + 1..at + 3)?;
+        (bytes[at] == b'%')
+            .then(|| u8::from_str_radix(hex, 16).ok())
+            .flatten()
+            .filter(|byte| *byte >= 0x80)
+    };
+    let mut out = String::with_capacity(url.len());
+    let mut at = 0;
+    while at < bytes.len() {
+        let start = at;
+        let mut run = Vec::new();
+        while let Some(byte) = escaped(at) {
+            run.push(byte);
+            at += 3;
+        }
+        // Letters that would change how the line reads, such as a hidden
+        // right-to-left mark, stay escaped.
+        let hidden = |c: char| {
+            c.is_control()
+                || matches!(c, '\u{200e}' | '\u{200f}' | '\u{202a}'..='\u{202e}' | '\u{2066}'..='\u{2069}')
+        };
+        match String::from_utf8(run) {
+            Ok(text) if !text.is_empty() && !text.chars().any(hidden) => out.push_str(&text),
+            // Not whole letters, or hidden ones: kept as written.
+            Ok(_) | Err(_) if at > start => out.push_str(&url[start..at]),
+            _ => {
+                let c = url[at..].chars().next().expect("not at the end");
+                out.push(c);
+                at += c.len_utf8();
+            }
+        }
+    }
+    out.into()
+}
+
 /// Whether `url` points at this PC: `localhost` or a loopback address such
 /// as 127.0.0.1 or ::1. Anything else is another machine, which gets what
 /// the app sends it.
@@ -203,6 +248,29 @@ pub fn error_text(error: &anyhow::Error) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn web_addresses_read_as_written() {
+        assert_eq!(
+            readable_url("https://ar.wikipedia.org/wiki/%D8%A7%D9%84%D8%B1%D9%8A%D8%A7%D8%B6"),
+            "https://ar.wikipedia.org/wiki/الرياض"
+        );
+        // Escapes that carry the address's meaning stay.
+        assert_eq!(
+            readable_url("https://x.org/a%20b%2Fc?q=%26"),
+            "https://x.org/a%20b%2Fc?q=%26"
+        );
+        // Bytes that make no whole letter, or a hidden direction mark, stay.
+        assert_eq!(readable_url("https://x.org/%D8"), "https://x.org/%D8");
+        assert_eq!(
+            readable_url("https://x.org/%E2%80%AEevil"),
+            "https://x.org/%E2%80%AEevil"
+        );
+        assert!(matches!(
+            readable_url("https://x.org/plain"),
+            std::borrow::Cow::Borrowed(_)
+        ));
+    }
 
     #[test]
     fn answers_get_the_kind_of_their_status() {

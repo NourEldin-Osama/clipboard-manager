@@ -168,6 +168,11 @@ pub(super) fn paint_row(
         Pos2::new(rect.left() + ROW_PADDING, rect.center().y - av / 2.0),
         Vec2::splat(av),
     ));
+    // A text that is a colour or a path shows that before its program.
+    let color = (it.kind == Kind::Text)
+        .then(|| color_in(&it.text))
+        .flatten();
+    let path = (it.kind == Kind::Text).then(|| path_in(&it.text)).flatten();
     match thumb {
         Some(t) => {
             let s = t.size_vec2();
@@ -183,6 +188,34 @@ pub(super) fn paint_row(
                 .uv(uv)
                 .corner_radius(6.0)
                 .paint_at(ui, av_rect);
+        }
+        None if color.is_some() => {
+            let swatch = av_rect.shrink(3.0);
+            p.rect_filled(swatch, CornerRadius::same(8), color.expect("checked above"));
+            p.rect_stroke(
+                swatch,
+                CornerRadius::same(8),
+                Stroke::new(1.0, v.weak_text_color().gamma_multiply(0.3)),
+                egui::StrokeKind::Inside,
+            );
+        }
+        None if path.is_some() => {
+            let c = kind_color(Kind::Files);
+            p.rect_filled(
+                av_rect,
+                CornerRadius::same(8),
+                c.gamma_multiply(if v.dark_mode { 0.25 } else { 0.13 }),
+            );
+            let icon = match path.and_then(|p| p.extension()) {
+                Some(_) => Icon::File,
+                None => Icon::Folder,
+            };
+            icons::paint(
+                &p,
+                Rect::from_center_size(av_rect.center(), Vec2::splat(av * 0.46)),
+                icon,
+                c,
+            );
         }
         // Text, links and files show the program they were copied from.
         None if program_icon.is_some() => {
