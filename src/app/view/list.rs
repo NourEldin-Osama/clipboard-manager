@@ -179,7 +179,7 @@ pub(super) fn paint_row(
         ui,
         &title,
         terms,
-        FontId::proportional(14.0),
+        FontId::proportional(size::BODY),
         title_color,
         text_w,
     );
@@ -198,7 +198,14 @@ pub(super) fn paint_row(
     };
     p.galley(Pos2::new(line_x(tg.size().x), title_y), tg, title_color);
     if !sub.is_empty() {
-        let sg = one_line(ui, &sub, terms, FontId::proportional(12.5), weak, text_w);
+        let sg = one_line(
+            ui,
+            &sub,
+            terms,
+            FontId::proportional(size::SMALL),
+            weak,
+            text_w,
+        );
         p.galley(Pos2::new(line_x(sg.size().x), rect.top() + 32.0), sg, weak);
     }
 
@@ -228,7 +235,7 @@ pub(super) fn paint_row(
         time_at,
         time_anchor,
         &row_time(it.created),
-        FontId::proportional(11.5),
+        FontId::proportional(size::SMALL),
         weak,
     );
     let mut ix = rect.right() - 12.0;
@@ -312,7 +319,9 @@ pub(super) fn one_line(
         .next()
         .map(|(g, _)| g)
         .unwrap_or_else(|| {
-            ui.fonts_mut(|f| f.layout_no_wrap(String::new(), FontId::proportional(12.0), color))
+            ui.fonts_mut(|f| {
+                f.layout_no_wrap(String::new(), FontId::proportional(size::SMALL), color)
+            })
         })
     } else {
         let hit = ui.visuals().strong_text_color();
@@ -445,7 +454,7 @@ impl App {
                             Pos2::new(label_x, rect.bottom() - 7.0),
                             start_anchor(egui::Align::Max),
                             &label.text().to_uppercase(),
-                            FontId::proportional(11.5),
+                            FontId::proportional(size::SMALL),
                             weak,
                         );
                         let end = if i18n::rtl() {
@@ -457,7 +466,7 @@ impl App {
                             Pos2::new(count_x, rect.bottom() - 7.0),
                             end,
                             n.to_string(),
-                            FontId::proportional(11.5),
+                            FontId::proportional(size::SMALL),
                             weak,
                         );
                     }
@@ -561,28 +570,31 @@ impl App {
             if self.library.items().is_empty() {
                 icons::glyph(ui, Icon::Clipboard, 40.0, weak);
                 ui.add_space(8.0);
-                lbl(ui, &t!("list-empty-title"), 16.0, strong);
+                title_lbl(ui, &t!("list-empty-title"), size::LARGE, strong);
                 ui.add_space(4.0);
                 let help = t!("list-empty-help", key = self.cfg.popup_hotkey.as_str());
-                ui.label(txt(&help, 14.0, Some(weak)));
+                ui.label(txt(&help, size::BODY, Some(weak)));
             } else if !self.query.trim().is_empty() {
                 icons::glyph(ui, Icon::Search, 36.0, weak);
                 ui.add_space(8.0);
                 let none = t!("list-no-matches", query = self.query.trim());
-                ui.label(txt(&none, 15.0, Some(strong)));
+                ui.label(txt(&none, size::BODY, Some(strong)));
                 ui.add_space(4.0);
                 match (&self.backend, self.cfg.search_mode) {
                     (BackendState::Off, _) => {
-                        lbl(ui, &t!("list-meaning-finds-more"), 14.0, weak);
+                        lbl(ui, &t!("list-meaning-finds-more"), size::BODY, weak);
                         if ui
-                            .link(txt(&t!("list-set-up-meaning"), 14.0, None))
+                            .link(txt(&t!("list-set-up-meaning"), size::BODY, None))
                             .clicked()
                         {
                             self.open_settings(SettingsPage::Search);
                         }
                     }
                     (_, SearchMode::Keyword) => {
-                        if ui.link(txt(&t!("list-try-smart"), 14.0, None)).clicked() {
+                        if ui
+                            .link(txt(&t!("list-try-smart"), size::BODY, None))
+                            .clicked()
+                        {
                             self.cfg.search_mode = SearchMode::Hybrid;
                             self.save_config();
                             self.query_changed = Some(Instant::now() - QUERY_DEBOUNCE);
@@ -590,19 +602,19 @@ impl App {
                         }
                     }
                     _ => {
-                        lbl(ui, &t!("list-try-other-words"), 14.0, weak);
+                        lbl(ui, &t!("list-try-other-words"), size::BODY, weak);
                     }
                 }
                 if self.filter != Filter::All
                     && ui
-                        .link(txt(&search_all_instead(self.filter), 14.0, None))
+                        .link(txt(&search_all_instead(self.filter), size::BODY, None))
                         .clicked()
                 {
                     self.filter = Filter::All;
                     self.dirty = true;
                 }
             } else {
-                ui.label(txt(&none_yet(self.filter), 14.0, Some(weak)));
+                ui.label(txt(&none_yet(self.filter), size::BODY, Some(weak)));
             }
         });
     }

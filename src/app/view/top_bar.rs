@@ -131,11 +131,11 @@ impl App {
                     let mut layouter = |ui: &Ui, text: &dyn egui::TextBuffer, _wrap: f32| {
                         let color = ui.visuals().text_color();
                         let job = if bidi::has_rtl(text.as_str()) {
-                            bidi::job(text.as_str(), FontId::proportional(16.0), color)
+                            bidi::job(text.as_str(), FontId::proportional(size::LARGE), color)
                         } else {
                             LayoutJob::simple_singleline(
                                 text.as_str().to_string(),
-                                FontId::proportional(16.0),
+                                FontId::proportional(size::LARGE),
                                 color,
                             )
                         };
@@ -144,8 +144,12 @@ impl App {
                     let te = egui::TextEdit::singleline(&mut self.query)
                         .id(search_id())
                         .frame(Frame::NONE)
-                        .hint_text(txt(&hint, 16.0, Some(ui.visuals().weak_text_color())))
-                        .font(FontId::proportional(16.0))
+                        .hint_text(txt(
+                            &hint,
+                            size::LARGE,
+                            Some(ui.visuals().weak_text_color()),
+                        ))
+                        .font(FontId::proportional(size::LARGE))
                         .align(if i18n::rtl() {
                             Align2::RIGHT_CENTER
                         } else {
@@ -227,7 +231,7 @@ impl App {
                 } else {
                     (ui.visuals().text_color(), ui.visuals().weak_text_color())
                 };
-                let job = pill_job(&f.label(), 13.5, fg, Some((n.to_string(), weak)));
+                let job = pill_job(&f.label(), size::CONTROL, fg, Some((n.to_string(), weak)));
                 if icons::pill(ui, filter_icon(f), job, accent(), selected).clicked() {
                     self.filter = f;
                     self.dirty = true;
@@ -239,7 +243,11 @@ impl App {
                 self.sort_menu(ui);
                 if !self.query.trim().is_empty() {
                     let text = t!("top-results", count = self.results.len());
-                    ui.label(txt(&text, 12.5, Some(ui.visuals().weak_text_color())));
+                    ui.label(txt(
+                        &text,
+                        size::SMALL,
+                        Some(ui.visuals().weak_text_color()),
+                    ));
                 }
             });
         });
@@ -256,7 +264,7 @@ impl App {
             let weak = ui.visuals().weak_text_color();
             row(ui, |ui| {
                 ui.add_space(10.0);
-                lbl(ui, &t!("top-sort-by-heading"), 11.0, weak);
+                lbl(ui, &t!("top-sort-by-heading"), size::SMALL, weak);
             });
             for s in SortOrder::ALL {
                 if s == SortOrder::BestMatch && !searching {
@@ -302,7 +310,7 @@ impl App {
             let shade = text_shade(c, ui.visuals().dark_mode);
             let job = pill_job(
                 t,
-                13.0,
+                size::CONTROL,
                 if sel {
                     shade
                 } else {
@@ -332,7 +340,7 @@ impl App {
                 if ui
                     .button(txt(
                         &t!("tags-remove-everywhere", tag = t.as_str(), count = *n),
-                        14.0,
+                        size::BODY,
                         None,
                     ))
                     .clicked()

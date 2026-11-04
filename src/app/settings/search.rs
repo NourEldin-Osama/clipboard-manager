@@ -58,11 +58,11 @@ impl App {
                         )
                     });
                 let menu = egui::ComboBox::from_id_salt("strict")
-                    .selected_text(txt(&current, 14.0, None))
+                    .selected_text(txt(&current, size::BODY, None))
                     .width(150.0)
                     .show_ui(ui, |ui| {
                         for (v, l) in choices {
-                            ui.selectable_value(min_similarity, v, txt(&l, 14.0, None));
+                            ui.selectable_value(min_similarity, v, txt(&l, size::BODY, None));
                         }
                     });
                 set_choice_name(&menu.response, &row_title(ui), &current);
@@ -80,7 +80,7 @@ impl App {
                 text_shade(dot, ui.visuals().dark_mode)
             };
             icons::glyph(ui, Icon::Dot, 12.0, color);
-            ui.label(txt(&text, 13.0, Some(color)));
+            ui.label(txt(&text, size::CONTROL, Some(color)));
         });
         ui.add_space(4.0);
         let engine = d.search_engine;
@@ -147,7 +147,7 @@ impl App {
         row(ui, |ui| {
             ui.add_space(10.0);
             if ui
-                .button(txt(&t!("settings-server-add"), 13.0, None))
+                .button(txt(&t!("settings-server-add"), size::CONTROL, None))
                 .clicked()
             {
                 self.add_server(d);

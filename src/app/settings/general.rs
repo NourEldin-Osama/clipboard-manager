@@ -97,7 +97,7 @@ impl App {
                     && ui
                         .add_enabled(
                             self.update_rx.is_none(),
-                            egui::Button::new(txt(&t!("settings-check-now"), 13.0, None)),
+                            egui::Button::new(txt(&t!("settings-check-now"), size::CONTROL, None)),
                         )
                         .clicked()
                 {
@@ -122,16 +122,24 @@ impl App {
                 };
                 // The version comes after the status, so it is laid out first
                 // and the status is cut to the room it leaves.
-                let version = txt(&crate::update::current_label(), 13.0, None).into_galley(
-                    ui,
-                    Some(egui::TextWrapMode::Extend),
-                    f32::INFINITY,
-                    egui::FontSelection::Default,
-                );
+                let version = txt(&crate::update::current_label(), size::CONTROL, None)
+                    .into_galley(
+                        ui,
+                        Some(egui::TextWrapMode::Extend),
+                        f32::INFINITY,
+                        egui::FontSelection::Default,
+                    );
                 if !status.is_empty() {
                     let room =
                         ui.available_width() - version.size().x - 2.0 * ui.spacing().item_spacing.x;
-                    cut_line(ui, &status, room.max(0.0), 12.5, weak, Sense::hover());
+                    cut_line(
+                        ui,
+                        &status,
+                        room.max(0.0),
+                        size::SMALL,
+                        weak,
+                        Sense::hover(),
+                    );
                 }
                 ui.label(version);
             },

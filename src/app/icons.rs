@@ -7,7 +7,7 @@
 use eframe::egui::load::{SizeHint, TexturePoll};
 use eframe::egui::{Painter, Pos2, Rect, TextureOptions, Ui};
 
-use super::view;
+use super::view::{self, size};
 use crate::config::ServerKind;
 use crate::store::Kind;
 
@@ -481,7 +481,7 @@ pub(super) fn menu_item(ui: &mut Ui, icon: Icon, text: &str) -> egui::Response {
         at,
         view::start_anchor(egui::Align::Center),
         text,
-        FontId::proportional(14.0),
+        FontId::proportional(size::BODY),
         color,
     );
     resp

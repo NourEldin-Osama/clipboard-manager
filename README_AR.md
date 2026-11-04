@@ -42,6 +42,6 @@
 
 ## الترخيص
 
-مرخّص بموجب MIT أو Apache-2.0، حسب اختيارك. خط Noto Sans Arabic مرخّص بموجب SIL Open Font License، والأيقونات من Fluent UI System Icons (MIT) وMaterial Symbols (Apache 2.0)، وتراخيص شعارات الخوادم في `assets/logos`.
+مرخّص بموجب MIT أو Apache-2.0، حسب اختيارك. خطا Noto Sans وNoto Sans Arabic مرخّصان بموجب SIL Open Font License، والأيقونات من Fluent UI System Icons (MIT) وMaterial Symbols (Apache 2.0)، وتراخيص شعارات الخوادم في `assets/logos`.
 
 </div>

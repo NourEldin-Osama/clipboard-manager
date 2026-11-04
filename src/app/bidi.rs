@@ -17,6 +17,8 @@ use eframe::egui::text::{LayoutJob, TextFormat, TextWrapping};
 use eframe::egui::{Galley, Pos2, Rect, Ui};
 use unicode_bidi::{BidiClass, Direction, Level, ParagraphBidiInfo};
 
+use super::view::READING_WIDTH;
+
 use super::*;
 
 thread_local! {
@@ -282,6 +284,7 @@ pub(super) fn paint(
     lines: Vec<(Arc<Galley>, bool)>,
     color: Color32,
     right: Option<bool>,
+    gap: f32,
 ) {
     let mut y = rect.top();
     for (g, rtl) in lines {
@@ -292,7 +295,7 @@ pub(super) fn paint(
             rect.left()
         };
         p.galley(Pos2::new(x, y), g, color);
-        y += h;
+        y += h + gap;
     }
 }
 
@@ -332,6 +335,25 @@ pub(super) fn job(text: &str, font: FontId, color: Color32) -> LayoutJob {
 /// and lines up on the right.
 pub(super) fn paragraph(ui: &mut Ui, text: &str, font: FontId, color: Color32) -> egui::Response {
     let width = ui.available_width();
+    block(ui, text, font, color, width, 0.0)
+}
+
+/// Long text to read, as a paragraph: lines at most about 70 characters
+/// wide on the side reading starts, with a little room between them.
+pub(super) fn long_text(ui: &mut Ui, text: &str, font: FontId, color: Color32) -> egui::Response {
+    let width = ui.available_width().min(font.size * READING_WIDTH);
+    let gap = (font.size * 0.2).round();
+    block(ui, text, font, color, width, gap)
+}
+
+fn block(
+    ui: &mut Ui,
+    text: &str,
+    font: FontId,
+    color: Color32,
+    width: f32,
+    gap: f32,
+) -> egui::Response {
     let rtl = crate::i18n::rtl();
     let lines = lines(
         ui,
@@ -344,16 +366,23 @@ pub(super) fn paragraph(ui: &mut Ui, text: &str, font: FontId, color: Color32) -
         usize::MAX,
         None,
     );
-    let h: f32 = lines.iter().map(|(g, _)| g.size().y).sum();
-    let (rect, resp) = ui.allocate_exact_size(Vec2::new(width, h), Sense::hover());
+    let gaps = gap * lines.len().saturating_sub(1) as f32;
+    let h: f32 = lines.iter().map(|(g, _)| g.size().y).sum::<f32>() + gaps;
+    let (whole, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), h), Sense::hover());
+    let rect = if rtl {
+        Rect::from_min_max(Pos2::new(whole.right() - width, whole.top()), whole.max)
+    } else {
+        Rect::from_min_size(whole.min, Vec2::new(width, h))
+    };
     resp.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Label, true, text));
-    paint(ui.painter(), rect, lines, color, Some(rtl));
+    paint(ui.painter(), rect, lines, color, Some(rtl), gap);
     resp
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::app::view::size;
 
     /// The names a screen reader gets for one frame of `draw`.
     fn spoken(draw: impl FnMut(&mut Ui)) -> Vec<String> {
@@ -375,7 +404,7 @@ mod tests {
     #[test]
     fn screen_readers_get_arabic_in_reading_order() {
         let text = "سجل الحافظة";
-        let font = FontId::proportional(14.0);
+        let font = FontId::proportional(size::BODY);
         let shown = job(text, font.clone(), Color32::WHITE).text;
         assert_ne!(shown, text, "drawn in display order");
         let names = spoken(|ui| {

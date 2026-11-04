@@ -113,6 +113,45 @@ pub(crate) fn lbl(ui: &mut Ui, text: &str, size: f32, color: Color32) -> egui::R
     ui.label(txt(text, size, Some(color)))
 }
 
+/// Like `txt`, in the SemiBold weight of titles.
+pub(crate) fn title_txt(text: &str, size: f32, color: Option<Color32>) -> egui::WidgetText {
+    let font = semibold(size);
+    if bidi::has_rtl(text) {
+        bidi::job(text, font, color.unwrap_or(Color32::PLACEHOLDER)).into()
+    } else {
+        let r = RichText::new(text).font(font);
+        match color {
+            Some(c) => r.color(c).into(),
+            None => r.into(),
+        }
+    }
+}
+
+/// A title as a label, in `size` and `color`.
+pub(crate) fn title_lbl(ui: &mut Ui, text: &str, size: f32, color: Color32) -> egui::Response {
+    ui.label(title_txt(text, size, Some(color)))
+}
+
+/// A small section title in SemiBold. Latin letters get a little space
+/// between them; Arabic letters join, so they get none.
+pub(crate) fn section_title(text: &str, color: Color32) -> egui::WidgetText {
+    if bidi::has_rtl(text) {
+        return title_txt(text, size::SMALL, Some(color));
+    }
+    let mut job = LayoutJob::default();
+    job.append(
+        text,
+        0.0,
+        TextFormat {
+            font_id: semibold(size::SMALL),
+            color,
+            extra_letter_spacing: 0.6,
+            ..Default::default()
+        },
+    );
+    job.into()
+}
+
 /// One line of `text` in reading order, cut with "…" to fit `width`; hovering
 /// a cut line shows all of it. (A truncated egui label would cut a
 /// right-to-left line at its start.)
@@ -161,7 +200,7 @@ pub(crate) fn tip(resp: egui::Response, text: &str) -> egui::Response {
         resp.on_hover_ui(move |ui| {
             ui.set_max_width(340.0);
             let c = ui.visuals().text_color();
-            bidi::paragraph(ui, &text, FontId::proportional(13.0), c);
+            bidi::paragraph(ui, &text, FontId::proportional(size::CONTROL), c);
         })
     } else {
         resp.on_hover_text(text)
@@ -230,7 +269,7 @@ pub(crate) fn pill_job(
     job.halign = egui::Align::LEFT;
     if let Some((n, c)) = count {
         let fmt = TextFormat {
-            font_id: FontId::proportional(size - 1.5),
+            font_id: FontId::proportional(size::SMALL),
             color: c,
             ..Default::default()
         };
@@ -311,7 +350,8 @@ pub(super) fn mode_button(ui: &mut Ui, label: &str, emphasised: bool) -> egui::R
     } else {
         v.weak_text_color()
     };
-    let g = ui.fonts_mut(|f| f.layout_job(bidi::job(label, FontId::proportional(13.0), color)));
+    let g = ui
+        .fonts_mut(|f| f.layout_job(bidi::job(label, FontId::proportional(size::CONTROL), color)));
     let (rect, resp) = ui.allocate_exact_size(
         Vec2::new(g.size().x + 8.0 + 10.0 + 18.0, 28.0),
         Sense::click(),
@@ -362,7 +402,7 @@ pub(crate) fn chip(ui: &mut Ui, text: impl Into<String>, color: Color32) -> egui
         .fill(color.gamma_multiply(0.14))
         .corner_radius(CornerRadius::same(10))
         .inner_margin(Margin::symmetric(8, 3))
-        .show(ui, |ui| ui.label(txt(&text, 12.0, Some(shade))))
+        .show(ui, |ui| ui.label(txt(&text, size::SMALL, Some(shade))))
         .response
 }
 
@@ -394,7 +434,7 @@ pub(super) fn check_row(ui: &mut Ui, text: &str, checked: bool) -> egui::Respons
         at,
         start_anchor(egui::Align::Center),
         text,
-        FontId::proportional(14.0),
+        FontId::proportional(size::BODY),
         color,
     );
     if checked {
@@ -475,7 +515,7 @@ pub(super) fn mode_option(ui: &mut Ui, m: SearchMode, active: bool) -> egui::Res
         at(8.0),
         start_anchor(egui::Align::Min),
         &mode_label(m),
-        FontId::proportional(14.0),
+        FontId::proportional(size::BODY),
         title,
     );
     paint_text(
@@ -484,7 +524,7 @@ pub(super) fn mode_option(ui: &mut Ui, m: SearchMode, active: bool) -> egui::Res
         at(27.0),
         start_anchor(egui::Align::Min),
         &mode_help(m),
-        FontId::proportional(11.5),
+        FontId::proportional(size::SMALL),
         v.weak_text_color(),
     );
     if active {
@@ -509,7 +549,7 @@ pub(crate) fn primary_button(ui: &mut Ui, text: &str) -> egui::Response {
     ui.scope(|ui| {
         ui.spacing_mut().button_padding.x = 16.0;
         ui.add(
-            egui::Button::new(txt(text, 14.0, Some(Color32::WHITE)))
+            egui::Button::new(txt(text, size::BODY, Some(Color32::WHITE)))
                 .fill(button_fill(accent()))
                 .min_size(Vec2::new(0.0, 32.0)),
         )

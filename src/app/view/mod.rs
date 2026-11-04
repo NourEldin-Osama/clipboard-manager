@@ -39,12 +39,12 @@ use widgets::*;
 pub(crate) use details::reveal;
 pub(crate) use items::looks_like_code;
 pub(crate) use theme::{
-    accent, accent_name, add_fonts, apply_theme, button_fill, set_accent, style, text_shade,
-    ACCENTS, AMBER, GREEN, RED,
+    accent, accent_name, add_fonts, apply_theme, button_fill, semibold, set_accent, size, style,
+    text_shade, ACCENTS, AMBER, GREEN, READING_WIDTH, RED,
 };
 pub(crate) use widgets::{
     chip, cut_line, far, flip, lbl, paint_text, primary_button, row, row_layout, row_wrapped,
-    set_choice_name, set_name, slow_spinner, start_anchor, tip, txt,
+    section_title, set_choice_name, set_name, slow_spinner, start_anchor, tip, title_lbl, txt,
 };
 
 impl App {
@@ -261,7 +261,7 @@ impl eframe::App for App {
             let g = ctx.fonts_mut(|f| {
                 f.layout_job(bidi::job(
                     &t!("list-drop-files"),
-                    FontId::proportional(22.0),
+                    semibold(size::TITLE),
                     Color32::WHITE,
                 ))
             });

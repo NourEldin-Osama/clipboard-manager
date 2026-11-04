@@ -8,8 +8,8 @@ use super::icons::{self, Icon};
 use super::shortcut;
 use super::view::{
     accent, accent_name, button_fill, chip, cut_line, far, flip, lbl, paint_text, primary_button,
-    reveal, row, set_choice_name, set_name, start_anchor, text_shade, tip, txt, ACCENTS, AMBER,
-    GREEN, RED,
+    reveal, row, section_title, set_choice_name, set_name, size, start_anchor, text_shade, tip,
+    title_lbl, txt, ACCENTS, AMBER, GREEN, RED,
 };
 use super::*;
 use crate::config::{Density, Language, ReaderModel, TextReader, TimeFormat};
@@ -201,12 +201,12 @@ impl App {
                     }
                     ui.add_space(8.0);
                     let strong = ui.visuals().strong_text_color();
-                    lbl(ui, &t!("settings-title"), 20.0, strong);
+                    title_lbl(ui, &t!("settings-title"), size::TITLE, strong);
                     // A server's settings wait for its Save.
                     if self.server_editor.is_none() {
                         far(ui, |ui| {
                             let weak = ui.visuals().weak_text_color();
-                            lbl(ui, &t!("settings-saved-automatically"), 12.5, weak);
+                            lbl(ui, &t!("settings-saved-automatically"), size::SMALL, weak);
                             icons::glyph(ui, Icon::Check, 13.0, weak);
                         });
                     }
@@ -277,7 +277,7 @@ impl App {
                         at,
                         start_anchor(egui::Align::Center),
                         &name,
-                        FontId::proportional(14.0),
+                        FontId::proportional(size::BODY),
                         color,
                     );
                     if r.clicked() {

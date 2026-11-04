@@ -4,7 +4,7 @@
 use eframe::egui::{Event, KeyboardShortcut, Modifiers, Pos2, Rect, Ui};
 
 use super::icons::{self, Icon};
-use super::view::accent;
+use super::view::{accent, size};
 use super::*;
 
 pub(super) fn parse(s: &str) -> Option<KeyboardShortcut> {
@@ -115,8 +115,9 @@ fn keycap(ui: &mut Ui, label: &str, dim: bool) {
         "Right" | "ArrowRight" => "→",
         l => l,
     };
-    let g =
-        ui.fonts_mut(|f| f.layout_no_wrap(shown.to_string(), FontId::proportional(12.5), color));
+    let g = ui.fonts_mut(|f| {
+        f.layout_no_wrap(shown.to_string(), FontId::proportional(size::SMALL), color)
+    });
     let size = Vec2::new((g.size().x + 14.0).max(24.0), 24.0);
     let (rect, _) = ui.allocate_exact_size(size, Sense::hover());
     let p = ui.painter();

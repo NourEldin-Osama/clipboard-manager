@@ -192,7 +192,7 @@ screenshots of the finished screens.
 - [x] 9.10 Images also go in llama.cpp's and OpenRouter's request format, so Send images works with EmbeddingGemma 2 on llama.cpp
 
 ### Phase 10. Type and layout
-- [ ] 10.1 Noto Sans and Noto Sans Arabic in Regular and SemiBold, five text sizes, more space between the lines of long text (D51)
+- [x] 10.1 Noto Sans and Noto Sans Arabic in Regular and SemiBold, five text sizes, more space between the lines of long text (D51)
 - [ ] 10.2 One left and one right edge for every part of the window; List rows at most about 900 points wide (D46)
 - [ ] 10.3 A view switch in three parts, and Pause with a word
 - [ ] 10.4 The day header stays at the top while scrolling
