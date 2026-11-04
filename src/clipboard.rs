@@ -281,7 +281,7 @@ fn source_program() -> Option<PathBuf> {
 
 /// The whole path of the program a window belongs to.
 #[cfg(windows)]
-fn window_program(window: windows_sys::Win32::Foundation::HWND) -> Option<PathBuf> {
+pub(crate) fn window_program(window: windows_sys::Win32::Foundation::HWND) -> Option<PathBuf> {
     use windows_sys::Win32::Foundation::CloseHandle;
     use windows_sys::Win32::System::Threading::{
         OpenProcess, QueryFullProcessImageNameW, PROCESS_QUERY_LIMITED_INFORMATION,

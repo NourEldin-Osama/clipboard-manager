@@ -210,6 +210,11 @@ item-pin = تثبيت
 item-unpin = إلغاء التثبيت
 item-copy = نسخ
 item-open-details = فتح التفاصيل
+item-paste-into = لصق في { $app }
+item-paste = لصق
+item-paste-plain = لصق كنص عادي
+item-copy-only = نسخ فقط
+item-copy-plain = نسخ كنص عادي
 hint-with-keys = { $action } ({ $keys })
 details-only-this-tag = إظهار العناصر ذات هذا الوسم فقط
 details-remove-tag = إزالة الوسم
@@ -229,7 +234,7 @@ details-pin-keep = تثبيت: احتفظ به دائمًا
 details-save-image = حفظ الصورة باسم…
 details-show-in-folder = إظهار في المجلد
 details-open-in-browser = فتح في المتصفح
-details-copy = نسخ
+details-more-ways = طرق أخرى للصق أو النسخ
 details-code-lines =
     { $count ->
         [one] سطر برمجي واحد

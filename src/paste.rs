@@ -31,6 +31,17 @@ pub fn window_in_front() -> Window {
     NO_WINDOW
 }
 
+/// The whole path of the program the window belongs to.
+#[cfg(windows)]
+pub fn program(window: Window) -> Option<std::path::PathBuf> {
+    crate::clipboard::window_program(window as _)
+}
+
+#[cfg(not(windows))]
+pub fn program(_window: Window) -> Option<std::path::PathBuf> {
+    None
+}
+
 /// Whether the window is still open: its program may have closed since.
 #[cfg(windows)]
 pub fn exists(window: Window) -> bool {

@@ -310,6 +310,13 @@ pub(super) enum Paste {
     Plain,
 }
 
+/// One way to put an item back, as a button or menu entry shows it.
+pub(super) struct CopyWay {
+    pub(super) text: String,
+    pub(super) keys: String,
+    pub(super) paste: Paste,
+}
+
 /// A destructive action in Settings waiting for its second click.
 #[derive(Clone, Copy, PartialEq)]
 enum Confirm {
@@ -427,6 +434,8 @@ pub struct App {
     loader: ImageLoader,
     /// The names and icons of the programs copies came from.
     programs: programs::Programs,
+    /// The window pasting goes to and its program, read once per window.
+    paste_program: (paste::Window, Option<PathBuf>),
     detail: Option<DetailText>,
     research_pending: bool,
     last_search: Instant,
@@ -607,6 +616,7 @@ impl App {
                 ImageLoader::new(image_files, move || c.request_repaint())
             },
             programs: programs::Programs::new(ctx.clone()),
+            paste_program: (paste::NO_WINDOW, None),
             detail: None,
             research_pending: false,
             last_search: Instant::now(),
@@ -871,6 +881,11 @@ impl App {
             // at sign-in) gets its full time on screen.
             if let Some((_, at)) = &mut self.error {
                 *at = Instant::now();
+            }
+            // Read now, so the main button names it when the window shows.
+            let window = self.win.previous.load(Ordering::SeqCst);
+            if paste::exists(window) {
+                let _ = self.paste_target_name(window);
             }
         }
         if self.start_hidden > 0 {
@@ -1238,6 +1253,41 @@ impl App {
         let ctx = self.win.ctx.clone();
         self.apply_settings(d, &ctx, false);
         self.toast_for(t!("toast-app-ignored", app = app), Duration::from_secs(6));
+    }
+
+    /// The ways to put an item back, the main one first: paste into the
+    /// program the window opened over, or only copy when there is none.
+    /// Without formatting to leave out, there is no plain-text way.
+    fn ways_to_copy(&mut self, it: &Item) -> Vec<CopyWay> {
+        let keys = self.cfg.keys.clone();
+        let way = |text: String, keys: String, paste: Paste| CopyWay { text, keys, paste };
+        let window = self.win.previous.load(Ordering::SeqCst);
+        if !paste::exists(window) {
+            let mut ways = vec![way(t!("item-copy"), keys.copy_only, Paste::No)];
+            if it.formatted {
+                ways.push(way(t!("item-copy-plain"), keys.paste_plain, Paste::Plain));
+            }
+            return ways;
+        }
+        let paste = match self.paste_target_name(window) {
+            Some(name) => t!("item-paste-into", app = name.as_str()),
+            None => t!("item-paste"),
+        };
+        let mut ways = vec![way(paste, keys.paste, Paste::Yes)];
+        if it.formatted {
+            ways.push(way(t!("item-paste-plain"), keys.paste_plain, Paste::Plain));
+        }
+        ways.push(way(t!("item-copy-only"), keys.copy_only, Paste::No));
+        ways
+    }
+
+    /// The own name of the program `window` belongs to, once it is known.
+    fn paste_target_name(&mut self, window: paste::Window) -> Option<String> {
+        if self.paste_program.0 != window {
+            self.paste_program = (window, paste::program(window));
+        }
+        let path = self.paste_program.1.clone()?;
+        self.programs.get(&path).map(|p| p.name.clone())
     }
 
     /// Pasting goes nowhere once the user is in another program: until a

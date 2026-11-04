@@ -57,6 +57,10 @@ the notes here before a push that makes a release.
 - The list no longer opens scrolled down by one row, with the first item
   hidden under its header, at start or the first time the window opens
   after starting hidden.
+- The details pane's main button says what it does and where: "Paste
+  into Microsoft Edge", with its key. Its arrow holds the other ways,
+  "Paste as plain text" and "Copy only". When the window wasn't opened
+  over another program, it reads "Copy".
 
 ## 0.5.1
 

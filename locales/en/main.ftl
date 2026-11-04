@@ -199,6 +199,11 @@ item-pin = Pin
 item-unpin = Unpin
 item-copy = Copy
 item-open-details = Open details
+item-paste-into = Paste into { $app }
+item-paste = Paste
+item-paste-plain = Paste as plain text
+item-copy-only = Copy only
+item-copy-plain = Copy as plain text
 hint-with-keys = { $action } ({ $keys })
 details-only-this-tag = Show only items with this tag
 details-remove-tag = Remove tag
@@ -218,7 +223,7 @@ details-pin-keep = Pin: keep forever
 details-save-image = Save image as…
 details-show-in-folder = Show in folder
 details-open-in-browser = Open in browser
-details-copy = Copy
+details-more-ways = More ways to paste or copy
 details-code-lines =
     { $count ->
         [one] 1 line of code
