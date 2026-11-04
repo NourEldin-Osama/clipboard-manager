@@ -174,6 +174,10 @@ impl eframe::App for App {
         raw_input.events = repair_input(events, modifiers, line_points);
     }
 
+    fn save(&mut self, storage: &mut dyn eframe::Storage) {
+        keep_window_state(storage, self.was_minimized, &mut self.window_state);
+    }
+
     fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
         self.finish_delete();
         self.install_on_exit();
