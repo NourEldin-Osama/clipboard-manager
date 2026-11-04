@@ -4,6 +4,24 @@ What changed in each version, for the people who use the app. Each release
 starts its notes with the section of the version it was built from, so add
 the notes here before a push that makes a release.
 
+## 0.5.1
+
+- A search server that takes only text no longer fails on every image at
+  each start. After its first refusal, images go to it as the text read in
+  them, so search by meaning finds them, and one message offers to turn off
+  **Send images** for that model.
+- **Test** also sends a small test image when **Send images** is on, and
+  says whether the server takes images.
+- Server errors are worded in your language: the server can't be reached,
+  needs an API key, doesn't know the address or model, refused the request
+  (with its own words), failed, or answered something unexpected.
+- OpenRouter: every request asks only for providers that don't collect your
+  data, and says whether it is a search or an item, as its embedding models
+  expect. OpenRouter search models build their index once more.
+- In Settings, Esc while typing in a field leaves the field; the next Esc
+  goes back, from a server's editor to its page, then out of Settings.
+  Before, one Esc left Settings and dropped a server's unsaved changes.
+
 ## 0.5.0
 
 - Meaning search and reading text now run on your own servers. Save each
