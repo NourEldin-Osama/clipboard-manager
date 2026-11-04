@@ -407,25 +407,7 @@ fn test_line(ui: &mut Ui, test: &Test) {
                         seconds = seconds(&t.took)
                     )
                 };
-                icons::chip(ui, Icon::Check, &works, GREEN);
-                match &t.images {
-                    Some(Ok(())) => {
-                        icons::chip(ui, Icon::Check, &t!("settings-model-test-images"), GREEN)
-                    }
-                    Some(Err(e)) => {
-                        let text = match e.downcast_ref::<ServerError>() {
-                            Some(ServerError::NoImages { said, .. }) => {
-                                t!("settings-model-test-no-images", said = said.as_str())
-                            }
-                            _ => t!(
-                                "settings-model-test-images-failed",
-                                error = crate::net::error_text(e)
-                            ),
-                        };
-                        icons::chip(ui, Icon::Warning, &text, AMBER)
-                    }
-                    None => return,
-                }
+                icons::chip(ui, Icon::Check, &works, GREEN)
             }
             Ok(Tested::Read { text, took }) => {
                 let shown: String = text
@@ -449,6 +431,32 @@ fn test_line(ui: &mut Ui, test: &Test) {
                 )
             }
             Err(e) => icons::chip(ui, Icon::Warning, e, RED),
+        };
+    });
+    // Whether images work, on a line of its own.
+    let Ok(Tested::Search(SearchTest {
+        images: Some(images),
+        ..
+    })) = result
+    else {
+        return;
+    };
+    super::view::row_wrapped(ui, |ui| {
+        ui.add_space(10.0);
+        match images {
+            Ok(()) => icons::chip(ui, Icon::Check, &t!("settings-model-test-images"), GREEN),
+            Err(e) => {
+                let text = match e.downcast_ref::<ServerError>() {
+                    Some(ServerError::NoImages { said, .. }) => {
+                        t!("settings-model-test-no-images", said = said.as_str())
+                    }
+                    _ => t!(
+                        "settings-model-test-images-failed",
+                        error = crate::net::error_text(e)
+                    ),
+                };
+                icons::chip(ui, Icon::Warning, &text, AMBER)
+            }
         };
     });
 }
