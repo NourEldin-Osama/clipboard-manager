@@ -398,7 +398,12 @@ pub(super) fn paint_icon_text(
 /// `color`; the icon and text take its text shade.
 pub(super) fn chip(ui: &mut Ui, icon: Icon, text: &str, color: Color32) -> egui::Response {
     let shade = view::text_shade(color, ui.visuals().dark_mode);
-    let (g, size) = icon_text_size(ui, &view::txt(text, 12.0, Some(shade)), 12.0, 12.0);
+    let (g, size) = icon_text_size(
+        ui,
+        &view::txt(text, size::SMALL, Some(shade)),
+        size::SMALL,
+        12.0,
+    );
     let pad = Vec2::new(8.0, 3.0);
     let (rect, resp) =
         ui.allocate_exact_size(size + pad * 2.0 + Vec2::new(0.0, 2.0), Sense::hover());

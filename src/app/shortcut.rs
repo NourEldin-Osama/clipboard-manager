@@ -264,7 +264,7 @@ pub(super) fn recorder(
         let text = problem.clone().unwrap_or_else(|| t!("shortcut-press-keys"));
         inner.label(view::txt(
             &text,
-            12.5,
+            size::SMALL,
             Some(view::text_shade(
                 if problem.is_some() { view::RED } else { a },
                 v.dark_mode,
@@ -274,7 +274,7 @@ pub(super) fn recorder(
     } else if value.trim().is_empty() {
         inner.label(view::txt(
             &t!("shortcut-off"),
-            12.5,
+            size::SMALL,
             Some(v.weak_text_color()),
         ));
     } else {
