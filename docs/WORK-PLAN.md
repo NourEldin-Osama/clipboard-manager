@@ -198,9 +198,9 @@ screenshots of the finished screens.
 - [x] 10.4 The day header stays at the top while scrolling, in the style of section titles
 
 ### Phase 11. Settings
-- [ ] 11.1 Seven pages grouped by topic, each keeping its own scroll position (D50)
-- [ ] 11.2 A short gray line under each setting; the info button opens the long text on a click, Enter or Space
-- [ ] 11.3 Reset all settings keeps the saved servers and the rules per app, and says so
+- [x] 11.1 Seven pages grouped by topic, each keeping its own scroll position (D50)
+- [x] 11.2 A short gray line under each setting (each help's first sentence, four written anew); the info button opens the rest on a click, Enter or Space
+- [x] 11.3 Reset all settings keeps the saved servers and the rules per app, and says so
 
 ### Phase 12. Content
 - [ ] 12.1 The program a copy came from: its icon and its own name, and the program in front for a WebView2 helper

@@ -24,6 +24,7 @@ impl App {
         setting_for(
             ui,
             &t!("settings-search-mode"),
+            &t!("settings-search-mode-hint"),
             &t!("settings-search-mode-help"),
             &mut d.search_mode,
             def.search_mode,
@@ -42,6 +43,7 @@ impl App {
         setting_for(
             ui,
             &t!("settings-strictness"),
+            &t!("settings-strictness-hint"),
             &t!("settings-strictness-help"),
             &mut d.min_similarity,
             def.min_similarity,
@@ -87,6 +89,7 @@ impl App {
         plain_setting(
             ui,
             &t!("settings-engine"),
+            &t!("settings-search-engine-hint"),
             &t!("settings-search-engine-help"),
             |ui| {
                 segmented(
@@ -121,6 +124,7 @@ impl App {
         plain_setting(
             ui,
             &t!("settings-engine"),
+            &t!("settings-read-engine-hint"),
             &t!("settings-read-engine-help"),
             |ui| {
                 segmented(ui, &mut d.read_engine, &engines);

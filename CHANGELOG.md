@@ -23,6 +23,17 @@ the notes here before a push that makes a release.
   stays in view.
 - The status bar names a llama-server model by its file name, not its
   whole path.
+- Settings has seven pages, each about one thing: General, Appearance,
+  Clipboard (what is kept, and for how long), Privacy (what is never
+  kept, and where your data goes), Search & AI, Shortcuts and pasting,
+  and About (updates, the data folder, resetting). Each page keeps its
+  own scroll position.
+- A short gray line under each setting says what it does. The info
+  button beside it opens the rest on a click, or with Enter or Space, and
+  screen readers read it.
+- Privacy shows where each kind of data goes: your history, search by
+  meaning, text in images and the update check.
+- **Reset all settings** keeps your saved servers and your rules per app.
 
 ## 0.5.1
 

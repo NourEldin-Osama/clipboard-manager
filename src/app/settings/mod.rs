@@ -14,10 +14,11 @@ use super::view::{
 use super::*;
 use crate::config::{Density, Language, ReaderModel, TextReader, TimeFormat};
 
+mod about;
 mod appearance;
 mod clipboard;
-mod data;
 mod general;
+mod privacy;
 mod search;
 mod servers;
 mod shortcuts;
@@ -30,34 +31,40 @@ use widgets::*;
 
 pub(super) use servers::{model_label, PendingSend, ServerEditor};
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+/// The pages, each about one question.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(super) enum SettingsPage {
     General,
-    Search,
-    Clipboard,
-    Shortcuts,
     Appearance,
-    Data,
+    /// What is kept, and for how long.
+    Clipboard,
+    /// What is never kept, and where the data goes.
+    Privacy,
+    Search,
+    Shortcuts,
+    About,
 }
 
 impl SettingsPage {
-    const ALL: [SettingsPage; 6] = [
+    const ALL: [SettingsPage; 7] = [
         Self::General,
-        Self::Search,
-        Self::Clipboard,
-        Self::Shortcuts,
         Self::Appearance,
-        Self::Data,
+        Self::Clipboard,
+        Self::Privacy,
+        Self::Search,
+        Self::Shortcuts,
+        Self::About,
     ];
 
     fn label(self) -> (Icon, String) {
         match self {
             Self::General => (Icon::General, t!("settings-page-general")),
-            Self::Search => (Icon::Search, t!("settings-page-search")),
-            Self::Clipboard => (Icon::Clipboard, t!("settings-page-clipboard")),
-            Self::Shortcuts => (Icon::Keyboard, t!("settings-page-shortcuts")),
             Self::Appearance => (Icon::Palette, t!("settings-page-appearance")),
-            Self::Data => (Icon::Lock, t!("settings-page-data")),
+            Self::Clipboard => (Icon::Clipboard, t!("settings-page-clipboard")),
+            Self::Privacy => (Icon::Lock, t!("settings-page-privacy")),
+            Self::Search => (Icon::Search, t!("settings-page-search")),
+            Self::Shortcuts => (Icon::Keyboard, t!("settings-page-shortcuts")),
+            Self::About => (Icon::Info, t!("settings-page-about")),
         }
     }
 }
@@ -302,7 +309,9 @@ impl App {
                     .fill(content),
             )
             .show(ui, |ui| {
+                // Each page keeps its own scroll position.
                 egui::ScrollArea::vertical()
+                    .id_salt(("settings", self.settings_page))
                     .auto_shrink([false, false])
                     .show(ui, |ui| {
                         // A readable column, next to the page list (on the right in Arabic).
@@ -321,13 +330,14 @@ impl App {
                             .settings_page
                         {
                             SettingsPage::General => self.general_page(ui, &mut d),
-                            SettingsPage::Search => self.search_page(ui, &mut d),
+                            SettingsPage::Appearance => appearance_page(ui, &mut d),
                             SettingsPage::Clipboard => self.clipboard_page(ui, &mut d),
+                            SettingsPage::Privacy => self.privacy_page(ui, &mut d),
+                            SettingsPage::Search => self.search_page(ui, &mut d),
                             SettingsPage::Shortcuts => {
                                 self.shortcuts_page(ui, &mut d, &mut apply_keys)
                             }
-                            SettingsPage::Appearance => appearance_page(ui, &mut d),
-                            SettingsPage::Data => self.data_page(ui, &mut d),
+                            SettingsPage::About => self.about_page(ui, &mut d),
                         });
                         ui.add_space(24.0);
                     });

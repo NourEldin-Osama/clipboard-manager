@@ -9,32 +9,35 @@ impl App {
     pub(super) fn shortcuts_page(&mut self, ui: &mut Ui, d: &mut Config, apply_keys: &mut bool) {
         let def = Config::default();
         section(ui, &t!("settings-shortcuts-global"));
-        let globals: [(ShortcutField, String, String, KeyField); 3] = [
+        let globals: [(ShortcutField, String, String, String, KeyField); 3] = [
             (
                 ShortcutField::Popup,
                 t!("settings-shortcut-popup"),
+                t!("settings-shortcut-popup-hint"),
                 t!("settings-shortcut-popup-help"),
                 |c| &mut c.popup_hotkey,
             ),
             (
                 ShortcutField::Window,
                 t!("settings-shortcut-window"),
+                t!("settings-shortcut-window-hint"),
                 t!("settings-shortcut-window-help"),
                 |c| &mut c.window_hotkey,
             ),
             (
                 ShortcutField::IgnoreNext,
                 t!("settings-shortcut-ignore"),
-                t!("settings-shortcut-ignore-help"),
+                t!("settings-shortcut-ignore-hint"),
+                String::new(),
                 |c| &mut c.ignore_next_hotkey,
             ),
         ];
-        for (id, label, help, field) in globals {
+        for (id, label, line, details, field) in globals {
             let default = field(&mut def.clone()).clone();
             let value = field(d);
             let invalid = !value.trim().is_empty() && HotKey::from_str(value.trim()).is_err();
             let mut result = shortcut::Recorded::Nothing;
-            let reset = setting(ui, &label, &help, *value != default, |ui| {
+            let reset = setting(ui, &label, &line, &details, *value != default, |ui| {
                 result = shortcut::recorder(
                     ui,
                     value,
@@ -71,10 +74,11 @@ impl App {
         }
 
         section(ui, &t!("settings-shortcuts-local"));
-        let locals: [(ShortcutField, String, String, KeyField); 7] = [
+        let locals: [(ShortcutField, String, String, String, KeyField); 7] = [
             (
                 ShortcutField::Paste,
                 t!("settings-shortcut-paste"),
+                t!("settings-shortcut-paste-hint"),
                 t!("settings-shortcut-paste-help"),
                 |c| &mut c.keys.paste,
             ),
@@ -82,11 +86,13 @@ impl App {
                 ShortcutField::PastePlain,
                 t!("settings-shortcut-paste-plain"),
                 String::new(),
+                String::new(),
                 |c| &mut c.keys.paste_plain,
             ),
             (
                 ShortcutField::CopyOnly,
                 t!("settings-shortcut-copy-only"),
+                String::new(),
                 String::new(),
                 |c| &mut c.keys.copy_only,
             ),
@@ -94,11 +100,13 @@ impl App {
                 ShortcutField::Pin,
                 t!("settings-shortcut-pin"),
                 String::new(),
+                String::new(),
                 |c| &mut c.keys.pin,
             ),
             (
                 ShortcutField::Delete,
                 t!("settings-shortcut-delete"),
+                String::new(),
                 String::new(),
                 |c| &mut c.keys.delete,
             ),
@@ -106,20 +114,22 @@ impl App {
                 ShortcutField::Tag,
                 t!("settings-shortcut-tag"),
                 String::new(),
+                String::new(),
                 |c| &mut c.keys.tag,
             ),
             (
                 ShortcutField::View,
                 t!("settings-shortcut-view"),
                 String::new(),
+                String::new(),
                 |c| &mut c.keys.view,
             ),
         ];
         let current: Vec<(ShortcutField, String)> = locals
             .iter()
-            .map(|(id, _, _, f)| (*id, f(&mut d.clone()).clone()))
+            .map(|(id, _, _, _, f)| (*id, f(&mut d.clone()).clone()))
             .collect();
-        for (id, label, help, field) in locals {
+        for (id, label, line, details, field) in locals {
             let default = field(&mut def.clone()).clone();
             let value = field(d);
             let clash = !value.is_empty()
@@ -127,7 +137,7 @@ impl App {
                     .iter()
                     .any(|(other, v)| *other != id && v.eq_ignore_ascii_case(value));
             let mut result = shortcut::Recorded::Nothing;
-            let reset = setting(ui, &label, &help, *value != default, |ui| {
+            let reset = setting(ui, &label, &line, &details, *value != default, |ui| {
                 result = shortcut::recorder(
                     ui,
                     value,
@@ -155,10 +165,20 @@ impl App {
             (t!("settings-shortcut-move-grid"), "Left+Right"),
             (t!("settings-shortcut-escape"), "Escape"),
         ] {
-            plain_setting(ui, &label, &t!("settings-shortcut-built-in"), |ui| {
+            plain_setting(ui, &label, &t!("settings-shortcut-built-in"), "", |ui| {
                 shortcut::fixed(ui, keys)
             });
         }
         note(ui, &t!("settings-shortcuts-note"));
+        section(ui, &t!("settings-pasting"));
+        setting_for(
+            ui,
+            &t!("settings-hide-window"),
+            &t!("settings-hide-window-hint"),
+            &t!("settings-hide-window-help"),
+            &mut d.minimize_after_copy,
+            def.minimize_after_copy,
+            toggle,
+        );
     }
 }

@@ -541,15 +541,21 @@ impl App {
             .unwrap_or_else(|| t!("settings-model-choose"));
         let mut picked = None;
         let mut add = false;
-        let help = if search {
-            t!("settings-search-model-help")
+        let (line, details) = if search {
+            (
+                t!("settings-search-model-hint"),
+                t!("settings-search-model-help"),
+            )
         } else {
-            t!("settings-read-model-help")
+            (
+                t!("settings-read-model-hint"),
+                t!("settings-read-model-help"),
+            )
         };
         let in_use = chosen
             .and_then(|at| d.server(at.server))
             .map(|server| server.kind);
-        plain_setting(ui, &t!("settings-model"), &help, |ui| {
+        plain_setting(ui, &t!("settings-model"), &line, &details, |ui| {
             let weak = ui.visuals().weak_text_color();
             let strong = ui.visuals().strong_text_color();
             let menu =
@@ -726,7 +732,8 @@ impl App {
         plain_setting(
             ui,
             &t!("settings-server-name"),
-            &t!("settings-server-name-help"),
+            &t!("settings-server-name-hint"),
+            "",
             |ui| {
                 let field = ui.add(
                     egui::TextEdit::singleline(&mut server.name)
@@ -745,6 +752,7 @@ impl App {
         plain_setting(
             ui,
             &t!("settings-server-address"),
+            &t!("settings-server-address-hint"),
             &t!("settings-server-address-help"),
             |ui| {
                 if !launching
@@ -828,6 +836,7 @@ impl App {
         plain_setting(
             ui,
             &t!("settings-server-key"),
+            &t!("settings-server-key-hint"),
             &t!("settings-server-key-help"),
             |ui| {
                 let (eye, label) = if *show_key {
@@ -876,7 +885,7 @@ impl App {
                 } else {
                     t!("settings-model-job-read")
                 };
-                setting_row(ui, &model_label(model), "", open, false, |ui| {
+                setting_row(ui, &model_label(model), "", "", open, false, |ui| {
                     if icons::icon_button_ex(
                         ui,
                         Icon::Delete,
@@ -1208,12 +1217,14 @@ fn model_settings(
             plain_setting(
                 ui,
                 &t!("settings-model-on-the-server"),
+                &t!("settings-model-on-the-server-hint"),
                 &t!("settings-model-on-the-server-help"),
                 |ui| model_field(ui, &mut model.model, listed, default_name),
             );
             plain_setting(
                 ui,
                 &t!("settings-model-name"),
+                &t!("settings-model-name-hint"),
                 &t!("settings-model-name-help"),
                 |ui| {
                     let hint = match model.model.trim() {
@@ -1281,6 +1292,7 @@ fn search_settings(ui: &mut Ui, s: &mut SearchSettings, model: &str) {
     setting_for(
         ui,
         &t!("settings-server-query-prompt"),
+        &t!("settings-server-query-prompt-hint"),
         &t!("settings-server-query-prompt-help"),
         &mut s.query_prefix,
         String::new(),
@@ -1296,7 +1308,8 @@ fn search_settings(ui: &mut Ui, s: &mut SearchSettings, model: &str) {
     setting_for(
         ui,
         &t!("settings-server-item-prompt"),
-        &t!("settings-server-item-prompt-help"),
+        &t!("settings-server-item-prompt-hint"),
+        "",
         &mut s.document_prefix,
         String::new(),
         |ui, prefix| {
@@ -1311,6 +1324,7 @@ fn search_settings(ui: &mut Ui, s: &mut SearchSettings, model: &str) {
     setting_for(
         ui,
         &t!("settings-server-vector-size"),
+        &t!("settings-server-vector-size-hint"),
         &t!("settings-server-vector-size-help"),
         &mut s.dimensions,
         0,
@@ -1338,6 +1352,7 @@ fn search_settings(ui: &mut Ui, s: &mut SearchSettings, model: &str) {
     setting_for(
         ui,
         &t!("settings-server-images"),
+        &t!("settings-server-images-hint"),
         &t!("settings-server-images-help"),
         &mut s.images,
         false,
@@ -1349,6 +1364,7 @@ fn read_settings(ui: &mut Ui, r: &mut ReadSettings) {
     plain_setting(
         ui,
         &t!("settings-reader-kind"),
+        &t!("settings-reader-kind-hint"),
         &t!("settings-reader-kind-help"),
         |ui| {
             let menu = egui::ComboBox::from_id_salt("reader-kind")
@@ -1370,6 +1386,7 @@ fn read_settings(ui: &mut Ui, r: &mut ReadSettings) {
     plain_setting(
         ui,
         &t!("settings-reader-prompt"),
+        &t!("settings-reader-prompt-hint"),
         &t!("settings-reader-prompt-help"),
         |ui| {
             let field = ui.add(
@@ -1395,7 +1412,8 @@ fn launch_settings(ui: &mut Ui, server: &mut Server) {
     setting_for(
         ui,
         &t!("settings-server-launch"),
-        &t!("settings-server-launch-help"),
+        &t!("settings-server-launch-hint"),
+        "",
         &mut launch,
         false,
         toggle,
@@ -1421,16 +1439,18 @@ fn launch_settings(ui: &mut Ui, server: &mut Server) {
     plain_setting(
         ui,
         &t!("settings-server-program"),
-        &t!("settings-server-program-help"),
+        &t!("settings-server-program-hint"),
+        "",
         |ui| path_field(ui, &mut l.llama_server, &["exe"]),
     );
-    plain_setting(ui, &t!("settings-server-model-file"), "", |ui| {
+    plain_setting(ui, &t!("settings-server-model-file"), "", "", |ui| {
         path_field(ui, &mut l.gguf, &["gguf"])
     });
     plain_setting(
         ui,
         &t!("settings-server-projector"),
-        &t!("settings-server-projector-help"),
+        &t!("settings-server-projector-hint"),
+        "",
         |ui| {
             let mut p = l.mmproj.clone().unwrap_or_default();
             path_field(ui, &mut p, &["gguf"]);
@@ -1441,13 +1461,14 @@ fn launch_settings(ui: &mut Ui, server: &mut Server) {
             };
         },
     );
-    plain_setting(ui, &t!("settings-server-port"), "", |ui| {
+    plain_setting(ui, &t!("settings-server-port"), "", "", |ui| {
         ui.add(egui::DragValue::new(&mut l.port).range(1024..=65535));
     });
     plain_setting(
         ui,
         &t!("settings-server-extra-args"),
-        &t!("settings-server-extra-args-help"),
+        &t!("settings-server-extra-args-hint"),
+        "",
         |ui| {
             let field = ui.add(egui::TextEdit::singleline(&mut l.extra_args).desired_width(280.0));
             set_name(&field, &row_title(ui));

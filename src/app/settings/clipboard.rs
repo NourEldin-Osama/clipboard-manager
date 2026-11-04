@@ -1,4 +1,4 @@
-//! Settings, Clipboard: what is recorded and how much history is kept.
+//! Settings, Clipboard: what is kept, and for how long.
 
 use super::*;
 
@@ -26,6 +26,7 @@ impl App {
         setting_for(
             ui,
             &t!("settings-record"),
+            &t!("settings-record-hint"),
             &t!("settings-record-help"),
             &mut d.monitor_clipboard,
             def.monitor_clipboard,
@@ -33,33 +34,18 @@ impl App {
         );
         setting_for(
             ui,
-            &t!("settings-skip-secrets"),
-            &t!("settings-skip-secrets-help"),
-            &mut d.skip_secrets,
-            def.skip_secrets,
-            toggle,
-        );
-        setting_for(
-            ui,
             &t!("settings-merge-duplicates"),
-            &t!("settings-merge-duplicates-help"),
+            &t!("settings-merge-duplicates-hint"),
+            "",
             &mut d.dedupe,
             def.dedupe,
             toggle,
         );
-        section(ui, &t!("settings-after-copying"));
-        setting_for(
-            ui,
-            &t!("settings-hide-window"),
-            &t!("settings-hide-window-help"),
-            &mut d.minimize_after_copy,
-            def.minimize_after_copy,
-            toggle,
-        );
-        section(ui, &t!("settings-history-size"));
+        section(ui, &t!("settings-how-long"));
         setting_for(
             ui,
             &t!("settings-keep-up-to"),
+            &t!("settings-keep-up-to-hint"),
             &t!("settings-keep-up-to-help"),
             &mut d.max_items,
             def.max_items,
@@ -91,6 +77,7 @@ impl App {
         setting_for(
             ui,
             &t!("settings-delete-older"),
+            &t!("settings-delete-older-hint"),
             &t!("settings-delete-older-help"),
             &mut d.delete_after_days,
             def.delete_after_days,
@@ -106,71 +93,57 @@ impl App {
                 set_choice_name(&menu.response, &row_title(ui), &age_label(*days));
             },
         );
-        rules_section(ui, d);
+        self.clear_history_setting(ui);
     }
-}
 
-/// The rules for copies that aren't recorded: one row each, then "Add a rule".
-fn rules_section(ui: &mut Ui, d: &mut Config) {
-    section(ui, &t!("settings-rules"));
-    note(ui, &t!("settings-rules-help"));
-    ui.add_space(4.0);
-    let mut remove = None;
-    for (index, rule) in d.rules.iter_mut().enumerate() {
-        ui.push_id(index, |ui| {
-            row(ui, |ui| {
-                ui.add_space(10.0);
-                let program = ui.add(
-                    egui::TextEdit::singleline(&mut rule.app)
-                        .hint_text(txt(&t!("settings-rule-program"), size::BODY, None))
-                        .desired_width(150.0),
-                );
-                set_name(&program, &t!("settings-rule-program"));
-                let pattern = ui.add(
-                    egui::TextEdit::singleline(&mut rule.pattern)
-                        .hint_text(txt(&t!("settings-rule-pattern"), size::BODY, None))
-                        .desired_width(220.0),
-                );
-                set_name(&pattern, &t!("settings-rule-pattern"));
-                tip(
-                    toggle(ui, &mut rule.is_regex),
-                    &t!("settings-rule-regex-help"),
-                );
-                lbl(
-                    ui,
-                    &t!("settings-rule-regex"),
-                    size::CONTROL,
-                    ui.visuals().text_color(),
-                );
-                far(ui, |ui| {
-                    if icons::icon_button(ui, Icon::Delete, &t!("settings-rule-delete")).clicked() {
-                        remove = Some(index);
+    fn clear_history_setting(&mut self, ui: &mut Ui) {
+        let mut clear = false;
+        let confirm = self.confirm;
+        let clip = self.library.clearable_count();
+        plain_setting(
+            ui,
+            &t!("settings-clear-history"),
+            &t!("settings-clear-history-hint"),
+            &t!("settings-clear-history-help"),
+            |ui| {
+                if confirm == Some(Confirm::ClearHistory) {
+                    if ui
+                        .add(
+                            egui::Button::new(txt(
+                                &t!("settings-delete-items", count = clip),
+                                size::BODY,
+                                Some(Color32::WHITE),
+                            ))
+                            .fill(button_fill(RED)),
+                        )
+                        .clicked()
+                    {
+                        clear = true;
                     }
-                });
-            });
-            match rule.compile() {
-                Err(crate::rules::Problem::Empty) => note(ui, &t!("settings-rule-needs")),
-                Err(crate::rules::Problem::BadPattern(error)) => note(
-                    ui,
-                    &format!(
-                        "⚠ {}",
-                        t!("settings-rule-bad-pattern", error = error.as_str())
-                    ),
-                ),
-                Ok(_) => {}
-            }
-        });
-    }
-    if let Some(index) = remove {
-        d.rules.remove(index);
-    }
-    row(ui, |ui| {
-        ui.add_space(10.0);
-        if ui
-            .button(txt(&t!("settings-rule-add"), size::CONTROL, None))
-            .clicked()
-        {
-            d.rules.push(crate::rules::Rule::default());
+                    if ui
+                        .button(txt(&t!("common-cancel"), size::BODY, None))
+                        .clicked()
+                    {
+                        self.confirm = None;
+                    }
+                } else if ui
+                    .add_enabled(
+                        clip > 0,
+                        egui::Button::new(txt(
+                            &t!("settings-clear"),
+                            size::BODY,
+                            Some(text_shade(RED, ui.visuals().dark_mode)),
+                        )),
+                    )
+                    .clicked()
+                {
+                    self.confirm = Some(Confirm::ClearHistory);
+                }
+            },
+        );
+        if clear {
+            self.confirm = None;
+            self.run(Command::ClearHistory);
         }
-    });
+    }
 }
