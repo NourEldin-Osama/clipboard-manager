@@ -95,6 +95,41 @@ impl Release {
     }
 }
 
+/// Whether the running version is newer than `earlier`, such as "0.5.1".
+pub fn newer_than(earlier: &str) -> bool {
+    numbers(VERSION) > numbers(earlier)
+}
+
+/// The notes for `version` from the change log built into the app, one per
+/// entry, as plain text.
+pub fn notes(version: &str) -> Vec<String> {
+    notes_in(include_str!("../CHANGELOG.md"), version)
+}
+
+/// The entries under `## <version>`: each starts with "- ", and its lines
+/// that start with two spaces go on. Bold marks and backticks are left out.
+fn notes_in(changelog: &str, version: &str) -> Vec<String> {
+    let heading = format!("## {version}");
+    let mut notes: Vec<String> = Vec::new();
+    let mut inside = false;
+    for line in changelog.lines() {
+        if line.starts_with("## ") {
+            inside = line.trim_end() == heading;
+        } else if !inside {
+            continue;
+        } else if let Some(first) = line.strip_prefix("- ") {
+            notes.push(first.trim().to_string());
+        } else if let (true, Some(note)) = (line.starts_with("  "), notes.last_mut()) {
+            note.push(' ');
+            note.push_str(line.trim());
+        }
+    }
+    notes
+        .into_iter()
+        .map(|note| note.replace("**", "").replace('`', ""))
+        .collect()
+}
+
 fn numbers(v: &str) -> Vec<u64> {
     v.split(['.', '-', '+'])
         .map_while(|p| p.parse().ok())
@@ -359,6 +394,32 @@ fn clean_up_at(exe: &Path) {
 mod tests {
     use super::*;
     use ed25519_dalek::Signer as _;
+
+    #[test]
+    fn notes_are_the_entries_of_one_version() {
+        let changelog = "# Changelog\r\n\r\nWhat changed.\r\n\r\n## 0.6.0\r\n\r\n\
+            - **Reset all settings** keeps your servers.\r\n\
+            - Web addresses show `ar.wikipedia.org` as you read\r\n  them, \
+            and search finds them.\r\n\r\n## 0.5.1\r\n\r\n- An older note.\r\n";
+        assert_eq!(
+            notes_in(changelog, "0.6.0"),
+            [
+                "Reset all settings keeps your servers.",
+                "Web addresses show ar.wikipedia.org as you read them, and search finds them.",
+            ]
+        );
+        assert_eq!(notes_in(changelog, "0.5.1"), ["An older note."]);
+        assert!(notes_in(changelog, "0.4.0").is_empty());
+        // The change log in the app has notes for the running version.
+        assert!(!notes(VERSION).is_empty());
+    }
+
+    #[test]
+    fn a_newer_version_compares_by_its_numbers() {
+        assert!(newer_than("0.0.1"));
+        assert!(!newer_than(VERSION));
+        assert!(!newer_than("999.0.0"));
+    }
 
     /// Made with the real release key:
     /// `printf 'hello update\n' | openssl pkeyutl -sign -rawin`.

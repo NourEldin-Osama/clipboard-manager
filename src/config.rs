@@ -634,6 +634,9 @@ pub struct Config {
     pub allowed_servers: Vec<String>,
     /// Copies that aren't recorded (see `rules`).
     pub rules: Vec<crate::rules::Rule>,
+    /// The version that ran last: the first start of a newer one says what
+    /// is new (D47).
+    pub last_version: String,
 }
 
 impl Default for Config {
@@ -673,6 +676,7 @@ impl Default for Config {
             servers: Vec::new(),
             allowed_servers: Vec::new(),
             rules: Vec::new(),
+            last_version: String::new(),
         }
     }
 }
@@ -681,11 +685,13 @@ impl Config {
     /// What "Reset all settings" leaves: every setting at its default, but
     /// the saved servers (with their keys) and the rules per app kept, as
     /// they are things the user made. Agreements to send the history to a
-    /// server outside this PC go, so the app asks again.
+    /// server outside this PC go, so the app asks again. The version that
+    /// ran last isn't a setting and stays.
     pub fn reset(&self) -> Config {
         Config {
             servers: self.servers.clone(),
             rules: self.rules.clone(),
+            last_version: self.last_version.clone(),
             ..Config::default()
         }
     }

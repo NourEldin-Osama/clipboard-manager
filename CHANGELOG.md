@@ -87,6 +87,9 @@ the notes here before a push that makes a release.
   typical match up to the best one. With models that give unrelated text
   nearly the best score, an item that only shares a word no longer comes
   before a close meaning match.
+- After an update, the first window that shows says "Updated to 0.6.0",
+  with What's new: these notes, built into the app, so they show without
+  the internet, even when the update installed as the app quit.
 
 ## 0.5.1
 

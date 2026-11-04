@@ -309,6 +309,8 @@ pub(super) enum Command {
     StopSendingImages(String),
     /// Shows the weaker matches folded below the results.
     ShowWeaker,
+    /// Opens what is new in this version over the full window.
+    ShowWhatsNew,
 }
 
 /// Whether putting an item back on the clipboard also pastes it into the
@@ -543,6 +545,11 @@ pub struct App {
     /// The sheet of every key is open, over the popup (`true`) or the full
     /// window (`false`).
     keys_sheet: Option<bool>,
+    /// This is the first start of a newer version: the first window that
+    /// shows says so.
+    whats_new_pending: bool,
+    /// What is new in this version is open over the full window.
+    whats_new_open: bool,
     /// The command being run came from a key, so its message doesn't name it.
     by_key: bool,
     /// Keys a message has named in this run: each is named once.
@@ -566,6 +573,8 @@ impl App {
         instance: crate::single_instance::Guard,
     ) -> anyhow::Result<Self> {
         let ctx = cc.egui_ctx.clone();
+        // No settings yet means a new install, which has nothing new to hear.
+        let had_settings = paths.config.exists();
         let (cfg, settings_problem, updated) = Config::load(&paths.config);
         i18n::set(cfg.language, cfg.time_format);
         add_fonts(&ctx);
@@ -706,6 +715,8 @@ impl App {
             item_menu: None,
             menu_by_key: false,
             keys_sheet: None,
+            whats_new_pending: false,
+            whats_new_open: false,
             by_key: false,
             taught: HashSet::new(),
             copy_hint: None,
@@ -767,6 +778,14 @@ impl App {
                 app.toast_for(notes.join("\n"), Duration::from_secs(15));
             }
             // Saved in the new form now, so the next start has nothing to update.
+            app.save_config();
+        }
+        // The first start of a newer version says what is new (D47); settings
+        // without a version come from a version before 0.6.
+        let last = app.cfg.last_version.clone();
+        if last != update::VERSION {
+            app.whats_new_pending = had_settings && (last.is_empty() || update::newer_than(&last));
+            app.cfg.last_version = update::VERSION.to_string();
             app.save_config();
         }
         if let Some(aside) = app.library.store().moved_aside.clone() {
@@ -957,6 +976,7 @@ impl App {
             self.item_menu = None;
             self.menu_by_key = false;
             self.keys_sheet = None;
+            self.whats_new_open = false;
             // An error from while the window was hidden (such as after starting
             // at sign-in) gets its full time on screen.
             if let Some((_, at)) = &mut self.error {
@@ -1268,6 +1288,10 @@ impl App {
             }
             Command::StopSendingImages(key) => self.stop_sending_images(&key),
             Command::ShowWeaker => self.show_weaker(),
+            Command::ShowWhatsNew => {
+                self.win.show_full();
+                self.whats_new_open = true;
+            }
             Command::CopyText(text) => {
                 let flags = self.flags.clone();
                 self.background.run(move || {

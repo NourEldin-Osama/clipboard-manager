@@ -132,6 +132,13 @@ impl App {
         if egui::Popup::is_any_open(ctx) {
             return;
         }
+        // What is new takes the keys while it is open; Esc closes it.
+        if self.whats_new_open && !in_popup {
+            if ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, Key::Escape)) {
+                self.whats_new_open = false;
+            }
+            return;
+        }
         // F1 opens the sheet of every key and closes it again; so does Esc.
         let f1 = ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, Key::F1));
         if self.keys_sheet == Some(in_popup) {

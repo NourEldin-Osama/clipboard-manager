@@ -371,6 +371,19 @@ impl App {
     }
 
     pub(super) fn toasts(&mut self, ctx: &egui::Context) {
+        // Said when a window first draws, so a start hidden at sign-in
+        // doesn't use the message up unseen.
+        if std::mem::take(&mut self.whats_new_pending) {
+            let version = crate::update::VERSION;
+            self.toast_for(
+                t!("toast-updated", version = version),
+                Duration::from_secs(15),
+            );
+            let has_notes = !crate::update::notes(version).is_empty();
+            if let Some(toast) = self.toast.as_mut().filter(|_| has_notes) {
+                toast.action = Some((t!("update-whats-new"), Command::ShowWhatsNew));
+            }
+        }
         let mut clicked = false;
         if let Some(toast) = &self.toast {
             if toast.shown.elapsed() > toast.how_long {
