@@ -168,8 +168,7 @@ pub(super) fn paint_card(
             paint_lines(ui, &bp, body, below, &lines);
         }
         _ => {
-            let code = it.kind == Kind::Text
-                && looks_like_code(&it.text.chars().take(600).collect::<String>());
+            let code = is_code(it);
             let text: String = match it.kind {
                 Kind::Files => it
                     .text
@@ -342,7 +341,7 @@ fn paint_footer(
         Some(texture) => {
             egui::Image::new((texture.id(), Vec2::splat(16.0))).paint_at(ui, icon_rect);
         }
-        None => icons::paint(&p, icon_rect, icons::kind(it.kind), weak),
+        None => icons::paint(&p, icon_rect, item_icon(it), weak),
     }
     let name = match (program, &it.app) {
         (Some(program), _) => program.name.clone(),

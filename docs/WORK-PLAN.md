@@ -204,7 +204,7 @@ screenshots of the finished screens.
 
 ### Phase 12. Content
 - [x] 12.1 The program a copy came from: its icon and its own name, and the program in front for a WebView2 helper
-- [~] 12.2 Content in its best form: decoded web addresses, a code icon, color swatches, file paths (the code icon waits for your choice)
+- [x] 12.2 Content in its best form: decoded web addresses, a code icon (Fluent Code, your choice), color swatches, file paths
 - [x] 12.3 Calmer grid cards: no kind badge, a footer with the program and the time, short text larger, pictures centered
 - [x] 12.4 Weak search matches fold into one line; relevance bars on grid cards. Strong: contains all the words, or its meaning score is at least halfway from the typical score to the best
 

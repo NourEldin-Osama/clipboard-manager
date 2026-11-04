@@ -11,6 +11,20 @@ pub(crate) fn looks_like_code(s: &str) -> bool {
     sample.lines().count() > 1 && symbols * 20 > sample.len().max(1)
 }
 
+/// A text item that looks like code.
+pub(super) fn is_code(it: &Item) -> bool {
+    it.kind == Kind::Text && looks_like_code(&it.text.chars().take(600).collect::<String>())
+}
+
+/// The icon for an item: code gets its own, other items their kind's.
+pub(super) fn item_icon(it: &Item) -> Icon {
+    if is_code(it) {
+        Icon::Code
+    } else {
+        icons::kind(it.kind)
+    }
+}
+
 // ----- time --------------------------------------------------------------------
 
 // Stored times are UTC seconds; `i18n::local` shows each in the user's zone.

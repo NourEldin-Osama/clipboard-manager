@@ -322,24 +322,12 @@ pub(super) fn paint_row(
                 CornerRadius::same(8),
                 c.gamma_multiply(if v.dark_mode { 0.25 } else { 0.13 }),
             );
-            let code = it.kind == Kind::Text
-                && looks_like_code(&it.text.chars().take(600).collect::<String>());
-            if code {
-                p.text(
-                    av_rect.center(),
-                    Align2::CENTER_CENTER,
-                    "</>",
-                    FontId::monospace(av * 0.3),
-                    c,
-                );
-            } else {
-                icons::paint(
-                    &p,
-                    Rect::from_center_size(av_rect.center(), Vec2::splat(av * 0.46)),
-                    icons::kind(it.kind),
-                    c,
-                );
-            }
+            icons::paint(
+                &p,
+                Rect::from_center_size(av_rect.center(), Vec2::splat(av * 0.46)),
+                item_icon(it),
+                c,
+            );
         }
     }
 
