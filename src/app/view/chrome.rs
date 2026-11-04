@@ -342,6 +342,10 @@ impl App {
                     if !self.status.is_empty() {
                         ui.label(txt(&self.status, size::SMALL, Some(weak)));
                     }
+                    if !self.reader_status.is_empty() {
+                        slow_spinner(ui, 11.0, Some(weak));
+                        ui.label(txt(&self.reader_status, size::SMALL, Some(weak)));
+                    }
                     if !self.flags.enabled.load(Ordering::SeqCst) {
                         icons::chip(ui, Icon::Pause, &t!("status-recording-paused"), AMBER);
                     }

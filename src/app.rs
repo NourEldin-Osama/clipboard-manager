@@ -497,6 +497,8 @@ pub struct App {
     programs: programs::Programs,
     /// The window pasting goes to and its program, read once per window.
     paste_program: (paste::Window, Option<PathBuf>),
+    /// What the reading model's llama-server is doing while it starts.
+    reader_status: String,
     /// The window's place and size as eframe last saved them while it was
     /// not minimized (see `keep_window_state`).
     window_state: Option<String>,
@@ -713,6 +715,7 @@ impl App {
             },
             programs: programs::Programs::new(ctx.clone()),
             paste_program: (paste::NO_WINDOW, None),
+            reader_status: String::new(),
             window_state: cc.storage.and_then(|s| s.get_string(WINDOW_KEY)),
             start_size_checked: false,
             detail: None,
@@ -1728,6 +1731,7 @@ impl App {
         while let Ok(e) = self.events.try_recv() {
             match e {
                 Event::Status(s) => self.status = s,
+                Event::ReaderStatus(s) => self.reader_status = s,
                 Event::Error(s) => self.set_error(s),
                 Event::Queue(n) => {
                     self.queue_total = run_total(self.queue_total, self.queue, n);

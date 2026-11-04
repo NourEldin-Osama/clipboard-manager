@@ -32,6 +32,9 @@ pub enum Job {
 pub enum Event {
     /// A status line, in the interface language.
     Status(String),
+    /// What the reading model's llama-server is doing while it starts, in
+    /// the interface language; empty once it answers or stops.
+    ReaderStatus(String),
     /// An error to show, in the interface language (the log has it in English).
     Error(String),
     /// A backend is loaded; carries the embeddings already stored for it.
@@ -458,7 +461,9 @@ impl State {
     /// and search goes on meanwhile.
     fn start_reader_server(&mut self) {
         llama::stop(Role::Read);
-        self.reader_start = None;
+        if self.reader_start.take().is_some() {
+            self.emit(Event::ReaderStatus(String::new()));
+        }
         let TextReader::Server(cfg) = &mut self.text_reader else {
             return;
         };
@@ -475,7 +480,7 @@ impl State {
                 } else {
                     t!("status-reader-downloading")
                 };
-                self.emit(Event::Status(status));
+                self.emit(Event::ReaderStatus(status));
             }
             Err(e) => {
                 self.ocr_failed = true;
@@ -503,7 +508,7 @@ impl State {
             Ok(Some(status)) => {
                 self.reader_start = None;
                 self.ocr_failed = true;
-                self.emit(Event::Status(String::new()));
+                self.emit(Event::ReaderStatus(String::new()));
                 let status = status.to_string();
                 self.emit(Event::Error(log_error!(
                     "error-reader-server-stopped",
@@ -523,7 +528,7 @@ impl State {
                         started.elapsed()
                     );
                     self.reader_start = None;
-                    self.emit(Event::Status(String::new()));
+                    self.emit(Event::ReaderStatus(String::new()));
                     for id in self.waiting.drain(..) {
                         queues.fresh.push_back(Job::Ocr(id));
                     }
