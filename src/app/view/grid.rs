@@ -461,6 +461,9 @@ impl App {
             }
             return;
         }
+        // As wide as the cards, which leave room for the scroll bar.
+        let full = ui.available_width();
+        self.checklist_above(ui, 0.0, full - 12.0);
         let compact = self.cfg.density == Density::Compact;
         let gap = 14.0;
         let card_h = if compact { 150.0 } else { 210.0 };

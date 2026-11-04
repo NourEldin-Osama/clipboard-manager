@@ -90,6 +90,11 @@ the notes here before a push that makes a release.
 - After an update, the first window that shows says "Updated to 0.6.0",
   with What's new: these notes, built into the app, so they show without
   the internet, even when the update installed as the app quit.
+- A new install shows a short checklist to get started: copy something,
+  paste with the popup's key, pin an item, and, if you like, turn on
+  search by meaning. Each step ticks itself when you do it. The checklist
+  shows in the empty list, then above the list, until every step is done
+  or you close it.
 
 ## 0.5.1
 

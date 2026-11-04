@@ -15,6 +15,7 @@ use super::shortcut;
 use super::*;
 use crate::config::Density;
 
+mod checklist;
 mod chrome;
 mod details;
 mod grid;

@@ -785,6 +785,11 @@ impl App {
         let last = app.cfg.last_version.clone();
         if last != update::VERSION {
             app.whats_new_pending = had_settings && (last.is_empty() || update::newer_than(&last));
+            // The checklist is for new installs (D53): a history that already
+            // has items when it first could show skips it.
+            if last.is_empty() && !app.library.items().is_empty() {
+                app.cfg.checklist.closed = true;
+            }
             app.cfg.last_version = update::VERSION.to_string();
             app.save_config();
         }
@@ -1587,6 +1592,10 @@ impl App {
                     self.toast_for(t!("toast-copied-admin"), Duration::from_secs(8));
                 } else {
                     self.win.hide();
+                    if !self.cfg.checklist.pasted {
+                        self.cfg.checklist.pasted = true;
+                        self.save_config();
+                    }
                     std::thread::spawn(move || {
                         if let Err(e) = paste::paste_into(target) {
                             log::warn!("pasting failed, the item is copied: {e:#}");

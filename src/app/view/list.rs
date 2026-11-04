@@ -525,6 +525,17 @@ impl App {
             }
             return;
         }
+        let centred = self.cfg.view == ViewMode::List && !in_popup;
+        if !in_popup {
+            // As wide as the rows, and where they are.
+            let full = ui.available_width();
+            let width = if centred {
+                full.min(LIST_MAX_WIDTH)
+            } else {
+                full
+            };
+            self.checklist_above(ui, (full - width) / 2.0, width);
+        }
         let compact = self.cfg.density == Density::Compact;
         let row_h = if compact { 40.0 } else { 58.0 };
         let header_h = 30.0;
@@ -532,7 +543,6 @@ impl App {
         // The details pane is always beside the list in Detail view, so rows
         // there don't need an "open" button; the popup has no details pane.
         let can_open = self.cfg.view != ViewMode::Detail && !in_popup;
-        let centred = self.cfg.view == ViewMode::List && !in_popup;
 
         // Rows, with date/pinned headers when browsing.
         let mut lines: Vec<Line> = Vec::with_capacity(self.results.len() + 8);
@@ -790,8 +800,16 @@ impl App {
                 ui.add_space(8.0);
                 title_lbl(ui, &t!("list-empty-title"), size::LARGE, strong);
                 ui.add_space(4.0);
-                let help = t!("list-empty-help", key = self.cfg.popup_hotkey.as_str());
-                ui.label(txt(&help, size::BODY, Some(weak)));
+                if self.cfg.checklist.closed {
+                    let help = t!("list-empty-help", key = self.cfg.popup_hotkey.as_str());
+                    ui.label(txt(&help, size::BODY, Some(weak)));
+                } else {
+                    ui.add_space(12.0);
+                    ui.scope(|ui| {
+                        ui.set_max_width(ui.available_width().min(460.0));
+                        self.checklist(ui);
+                    });
+                }
             } else if !self.query.trim().is_empty() {
                 icons::glyph(ui, Icon::Search, 36.0, weak);
                 ui.add_space(8.0);

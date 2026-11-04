@@ -637,6 +637,20 @@ pub struct Config {
     /// The version that ran last: the first start of a newer one says what
     /// is new (D47).
     pub last_version: String,
+    /// The getting-started checklist for new installs (D53).
+    pub checklist: Checklist,
+}
+
+/// What the getting-started checklist keeps; its other steps are read from
+/// the history and the settings.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Checklist {
+    /// An item was pasted into another program.
+    pub pasted: bool,
+    /// Closed, done, or skipped because the history had items when this
+    /// version first started: it never shows again.
+    pub closed: bool,
 }
 
 impl Default for Config {
@@ -677,6 +691,7 @@ impl Default for Config {
             allowed_servers: Vec::new(),
             rules: Vec::new(),
             last_version: String::new(),
+            checklist: Checklist::default(),
         }
     }
 }
@@ -686,12 +701,13 @@ impl Config {
     /// the saved servers (with their keys) and the rules per app kept, as
     /// they are things the user made. Agreements to send the history to a
     /// server outside this PC go, so the app asks again. The version that
-    /// ran last isn't a setting and stays.
+    /// ran last and the checklist aren't settings and stay.
     pub fn reset(&self) -> Config {
         Config {
             servers: self.servers.clone(),
             rules: self.rules.clone(),
             last_version: self.last_version.clone(),
+            checklist: self.checklist.clone(),
             ..Config::default()
         }
     }
@@ -1206,9 +1222,15 @@ mod tests {
         }];
         cfg.allow_server("http://192.0.2.1:8080/v1");
         cfg.max_items = 100;
+        cfg.last_version = "0.6.0".into();
+        cfg.checklist.closed = true;
         let reset = cfg.reset();
         assert_eq!(reset.servers, cfg.servers);
         assert_eq!(reset.rules, cfg.rules);
+        // Not settings: a reset neither says what is new again nor brings
+        // back a closed checklist.
+        assert_eq!(reset.last_version, "0.6.0");
+        assert!(reset.checklist.closed);
         assert!(!reset.is_server_allowed("http://192.0.2.1:8080/v1"));
         assert_eq!(reset.max_items, Config::default().max_items);
         assert_eq!(reset.search_engine, SearchEngine::Off);
