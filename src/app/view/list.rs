@@ -355,7 +355,21 @@ pub(super) fn paint_row(
     }
 
     let x = rect.left() + ROW_PADDING + gutter + av + 12.0;
-    let right_w = if hot { 150.0 } else { 64.0 };
+    let sub = if compact { String::new() } else { subtitle(it) };
+    // On one line the pin and the relevance bars sit before the time, so
+    // the text ends before them.
+    let badges = if compact || sub.is_empty() {
+        let pin = if it.pinned { 18.0 } else { 0.0 };
+        let bars = if relevance_level(hit).is_some() {
+            22.0
+        } else {
+            0.0
+        };
+        pin + bars
+    } else {
+        0.0
+    };
+    let right_w = if hot { 150.0 } else { 64.0 + badges };
     let text_w = (rect.right() - x - right_w - 8.0).max(40.0);
     // The text column, mirrored with the rest; lines start at its reading edge.
     let column = m(Rect::from_min_size(
@@ -364,7 +378,6 @@ pub(super) fn paint_row(
     ));
     let title_color = v.strong_text_color();
     let weak = v.weak_text_color();
-    let sub = if compact { String::new() } else { subtitle(it) };
     let title = row_title(it);
     let title = if title.is_empty() {
         t!("item-empty")
