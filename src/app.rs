@@ -276,10 +276,7 @@ struct ItemMenu {
     at: egui::Pos2,
     /// It belongs to the popup's list, not the full window's.
     in_popup: bool,
-    /// Shift+F10 opened it: the search field gets the keyboard back when
-    /// it closes.
-    by_key: bool,
-    /// Its first entry is to take the keyboard.
+    /// Its first entry is to take the keyboard, as after Shift+F10.
     focus_first: bool,
 }
 

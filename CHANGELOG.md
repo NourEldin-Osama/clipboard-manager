@@ -77,6 +77,9 @@ the notes here before a push that makes a release.
 - The first time in a run that you pin, copy or delete with the mouse,
   the message names the key that does the same: "Pinned. Next time:
   Ctrl+P".
+- Esc closes an open menu, such as Sort by, without also clearing the
+  search or hiding the window.
+- On a row with one line of text, long text no longer runs under the pin.
 
 ## 0.5.1
 

@@ -95,7 +95,6 @@ impl App {
             id,
             at,
             in_popup,
-            by_key,
             focus_first: by_key,
         });
         if by_key {
@@ -120,7 +119,7 @@ impl App {
         let Some(menu) = self.item_menu.as_ref().filter(|m| m.in_popup == in_popup) else {
             return;
         };
-        let (id, at, by_key, focus_first) = (menu.id, menu.at, menu.by_key, menu.focus_first);
+        let (id, at, focus_first) = (menu.id, menu.at, menu.focus_first);
         let Some(it) = self.library.get(id).cloned() else {
             self.item_menu = None;
             return;
@@ -176,7 +175,9 @@ impl App {
         }
         if !open || chosen.is_some() {
             self.item_menu = None;
-            if by_key {
+            // Typing goes to the search field again; Esc took the keyboard
+            // away from it. Tagging takes it for its own field.
+            if !matches!(chosen, Some(Action::Tag)) {
                 self.focus_search.store(true, Ordering::SeqCst);
             }
         }

@@ -127,6 +127,11 @@ impl App {
         {
             return;
         }
+        // Any other open menu, such as Sort by or the arrow of the details'
+        // main button, takes the keys too: Esc only closes it.
+        if egui::Popup::is_any_open(ctx) {
+            return;
+        }
         // F1 opens the sheet of every key and closes it again; so does Esc.
         let f1 = ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, Key::F1));
         if self.keys_sheet == Some(in_popup) {
