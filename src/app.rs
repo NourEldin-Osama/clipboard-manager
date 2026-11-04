@@ -296,6 +296,8 @@ pub(super) enum Command {
     /// Turns off Send images for the search model with this key, after its
     /// server refused an image.
     StopSendingImages(String),
+    /// Shows the weaker matches folded below the results.
+    ShowWeaker,
 }
 
 /// Whether putting an item back on the clipboard also pastes it into the
@@ -391,6 +393,11 @@ pub struct App {
     query_vec: Option<(String, Arc<Embedding>)>,
     filter: Filter,
     results: Vec<Hit>,
+    /// Weaker matches, folded under one line below the results.
+    weaker: Vec<Hit>,
+    /// The search the weaker matches were shown for; another search folds
+    /// them again.
+    weaker_shown_for: Option<String>,
     /// The history or the query changed: search again.
     dirty: bool,
     searcher: Searcher,
@@ -575,6 +582,8 @@ impl App {
             query_vec: None,
             filter: Filter::All,
             results: Vec::new(),
+            weaker: Vec::new(),
+            weaker_shown_for: None,
             dirty: true,
             searcher: {
                 let c = ctx.clone();
@@ -1129,6 +1138,7 @@ impl App {
                 self.toast(t!("toast-saved"));
             }
             Command::StopSendingImages(key) => self.stop_sending_images(&key),
+            Command::ShowWeaker => self.show_weaker(),
             Command::CopyText(text) => {
                 let flags = self.flags.clone();
                 self.background.run(move || {
@@ -1616,7 +1626,12 @@ impl App {
 
     fn show_results(&mut self, hits: Vec<Hit>) {
         self.searching = false;
-        self.results = hits;
+        // Weaker matches wait under one line, unless shown for this search.
+        if self.weaker_shown_for.as_deref() == Some(self.query.trim()) {
+            (self.results, self.weaker) = (hits, Vec::new());
+        } else {
+            (self.results, self.weaker) = hits.into_iter().partition(|h| !h.weak);
+        }
         let still_there = self
             .selected
             .is_some_and(|id| self.results.iter().any(|h| h.id == id));
@@ -1634,6 +1649,11 @@ impl App {
         }
         let gone: HashSet<u64> = ids.iter().copied().collect();
         self.results.retain(|h| !gone.contains(&h.id));
+        self.weaker.retain(|h| !gone.contains(&h.id));
+        // With every strong match gone, the weaker ones are all there is.
+        if self.results.is_empty() {
+            self.results.append(&mut self.weaker);
+        }
         for id in ids {
             self.thumbs.remove(id);
             self.thumb_seen.remove(id);
@@ -1775,6 +1795,13 @@ impl App {
         self.dirty = true;
     }
 
+    /// Shows the weaker matches folded below the results, until the search
+    /// changes.
+    fn show_weaker(&mut self) {
+        self.weaker_shown_for = Some(self.query.trim().to_string());
+        self.results.append(&mut self.weaker);
+    }
+
     fn move_selection(&mut self, delta: i32) {
         if self.results.is_empty() {
             return;
@@ -1782,6 +1809,10 @@ impl App {
         let cur = self
             .selected
             .and_then(|id| self.results.iter().position(|h| h.id == id));
+        // Going on from the last result shows the weaker matches below it.
+        if delta > 0 && cur == Some(self.results.len() - 1) && !self.weaker.is_empty() {
+            self.show_weaker();
+        }
         let next = match cur {
             Some(c) => (c as i32 + delta).clamp(0, self.results.len() as i32 - 1) as usize,
             None => 0,

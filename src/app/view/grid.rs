@@ -20,6 +20,7 @@ pub(super) fn paint_card(
     it: &Item,
     thumb: Option<TextureHandle>,
     program: Option<&Program>,
+    relevance: Option<usize>,
     selected: bool,
     terms: &[String],
 ) {
@@ -63,7 +64,13 @@ pub(super) fn paint_card(
         };
         p.rect_filled(footer, r, fill);
     } else {
-        paint_footer(ui, footer.shrink2(Vec2::new(pad, 0.0)), it, program);
+        paint_footer(
+            ui,
+            footer.shrink2(Vec2::new(pad, 0.0)),
+            it,
+            program,
+            relevance,
+        );
     }
     let strip_top = footer.top();
     let tags_top = if it.tags.is_empty() {
@@ -272,8 +279,15 @@ fn paint_lines(ui: &Ui, p: &egui::Painter, body: Rect, at: Pos2, lines: &[(Strin
     }
 }
 
-/// The program a card came from, with its icon, and when, with the pin.
-fn paint_footer(ui: &Ui, row: Rect, it: &Item, program: Option<&Program>) {
+/// The program a card came from, with its icon, and when, with the pin and
+/// how close a search match is to the best one.
+fn paint_footer(
+    ui: &Ui,
+    row: Rect,
+    it: &Item,
+    program: Option<&Program>,
+    relevance: Option<usize>,
+) {
     let v = ui.visuals();
     let weak = v.weak_text_color();
     let p = ui.painter_at(row);
@@ -298,7 +312,7 @@ fn paint_footer(ui: &Ui, row: Rect, it: &Item, program: Option<&Program>) {
         FontId::proportional(size::SMALL),
         weak,
     );
-    let mut room = row.width() - age.width() - 8.0;
+    let mut used = age.width() + 8.0;
     if it.pinned {
         let x = if i18n::rtl() {
             age.right() + 12.0
@@ -311,8 +325,13 @@ fn paint_footer(ui: &Ui, row: Rect, it: &Item, program: Option<&Program>) {
             Icon::PinFilled,
             accent(),
         );
-        room -= 20.0;
+        used += 20.0;
     }
+    if let Some(level) = relevance {
+        paint_relevance(&p, row, row.right() - used, y + 5.0, level, accent(), weak);
+        used += 26.0;
+    }
+    let room = row.width() - used;
     // Then the program at the reading start: its icon and its own name, or
     // for older copies the kind's icon and the program's file name.
     let icon_rect = flip(
@@ -453,7 +472,9 @@ impl App {
         self.grid_cols = cols;
         let rows = self.results.len().div_ceil(cols);
         let pitch = card_h + gap;
-        let total = rows as f32 * pitch;
+        let weaker = self.weaker.len();
+        let fold_h = if weaker > 0 { WEAKER_LINE } else { 0.0 };
+        let total = rows as f32 * pitch + fold_h;
 
         let mut sa = egui::ScrollArea::vertical().auto_shrink([false, false]);
         if self.scroll_to_selected {
@@ -482,6 +503,11 @@ impl App {
         } else {
             vec![]
         };
+        let max_sem = self
+            .results
+            .iter()
+            .filter_map(|h| h.relevance)
+            .fold(f32::MIN, f32::max);
         let mut actions = Vec::new();
         let frame = ui.ctx().cumulative_pass_nr();
         let (library, results, thumbs, loader, selected, seen, programs) = (
@@ -526,7 +552,18 @@ impl App {
                 let hot = ui.rect_contains_pointer(rect);
                 let program = it.program.as_deref().and_then(|p| programs.get(p));
                 let chosen_card = Some(it.id) == selected;
-                paint_card(ui, rect, hot, it, thumb, program, chosen_card, &terms);
+                let relevance = relevance_level(hit, max_sem);
+                paint_card(
+                    ui,
+                    rect,
+                    hot,
+                    it,
+                    thumb,
+                    program,
+                    relevance,
+                    chosen_card,
+                    &terms,
+                );
                 if resp.clicked() {
                     actions.push(Command::Select(it.id));
                 }
@@ -585,6 +622,16 @@ impl App {
                             actions.push(action);
                         }
                     }
+                }
+            }
+            let line_top = rows as f32 * pitch;
+            if weaker > 0 && line_top <= viewport.max.y {
+                let rect = Rect::from_min_size(
+                    Pos2::new(origin.x, origin.y + line_top),
+                    Vec2::new(width, fold_h),
+                );
+                if weaker_line(ui, rect, weaker) {
+                    actions.push(Command::ShowWeaker);
                 }
             }
         });

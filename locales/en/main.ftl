@@ -90,6 +90,11 @@ top-results =
         [one] 1 result
        *[other] { $count } results
     }
+list-show-weaker =
+    { $count ->
+        [one] Show 1 weaker match
+       *[other] Show { $count } weaker matches
+    }
 list-empty-title = Your clipboard history will appear here
 list-empty-help =
     Copy anything, or drop files here.

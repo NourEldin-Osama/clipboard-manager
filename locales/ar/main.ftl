@@ -92,6 +92,13 @@ top-results =
         [few] { $count } نتائج
        *[other] { $count } نتيجة
     }
+list-show-weaker =
+    { $count ->
+        [one] إظهار نتيجة أضعف واحدة
+        [two] إظهار نتيجتين أضعف
+        [few] إظهار { $count } نتائج أضعف
+       *[other] إظهار { $count } نتيجة أضعف
+    }
 list-empty-title = سيظهر سجل الحافظة هنا
 list-empty-help =
     انسخ أي شيء، أو أفلت الملفات هنا.

@@ -11,6 +11,95 @@ const ROW_PADDING: f32 = 8.0;
 /// so the time and the pin stay near the text.
 const LIST_MAX_WIDTH: f32 = 900.0;
 
+/// Height of the line under the results that shows the weaker matches.
+pub(super) const WEAKER_LINE: f32 = 48.0;
+
+/// The line under the results that shows the weaker matches folded there,
+/// in the middle of `rect`. Returns whether it was clicked.
+pub(super) fn weaker_line(ui: &Ui, rect: Rect, count: usize) -> bool {
+    let text = t!("list-show-weaker", count = count);
+    let resp = ui.interact(rect, egui::Id::unique("show-weaker"), Sense::click());
+    resp.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, &text));
+    let color = ui.visuals().hyperlink_color;
+    let font = FontId::proportional(size::BODY);
+    let text_w = ui
+        .fonts_mut(|f| f.layout_no_wrap(text.clone(), font.clone(), color))
+        .size()
+        .x;
+    let (icon, gap) = (16.0, 6.0);
+    let content = Rect::from_center_size(rect.center(), Vec2::new(icon + gap + text_w, 24.0));
+    let p = ui.painter();
+    if resp.hovered() {
+        let fill = ui.visuals().widgets.hovered.weak_bg_fill;
+        p.rect_filled(
+            content.expand2(Vec2::new(12.0, 6.0)),
+            CornerRadius::same(8),
+            fill,
+        );
+    }
+    let icon_rect = Rect::from_min_size(
+        Pos2::new(content.left(), content.center().y - icon / 2.0),
+        Vec2::splat(icon),
+    );
+    icons::paint(p, flip(content, icon_rect), Icon::Dropdown, color);
+    let start = Pos2::new(content.left() + icon + gap, content.center().y);
+    let start = flip(content, Rect::from_min_size(start, Vec2::ZERO)).min;
+    paint_text(
+        ui,
+        p,
+        start,
+        start_anchor(egui::Align::Center),
+        &text,
+        font,
+        color,
+    );
+    resp.on_hover_cursor(egui::CursorIcon::PointingHand)
+        .clicked()
+}
+
+/// How close a meaning match is to the best one, in three steps; `None`
+/// without a meaning score. `best` is the highest relevance in the list.
+pub(super) fn relevance_level(hit: &Hit, best: f32) -> Option<usize> {
+    let s = hit.relevance.filter(|_| hit.semantic.is_some())?;
+    let ratio = if best > 0.0 { s / best } else { 0.0 };
+    Some(if ratio > 0.93 {
+        3
+    } else if ratio > 0.8 {
+        2
+    } else {
+        1
+    })
+}
+
+/// Three bars ending at `end_x` and standing on `bottom_y`, the first
+/// `level` of them lit. Placed left to right, then mirrored in `within`.
+pub(super) fn paint_relevance(
+    p: &egui::Painter,
+    within: Rect,
+    end_x: f32,
+    bottom_y: f32,
+    level: usize,
+    lit: Color32,
+    unlit: Color32,
+) {
+    for b in 0..3 {
+        let h = 4.0 + b as f32 * 3.0;
+        let r = flip(
+            within,
+            Rect::from_min_size(
+                Pos2::new(end_x - 18.0 + b as f32 * 6.0, bottom_y - h),
+                Vec2::new(4.0, h),
+            ),
+        );
+        let color = if b < level {
+            lit
+        } else {
+            unlit.gamma_multiply(0.35)
+        };
+        p.rect_filled(r, CornerRadius::same(1), color);
+    }
+}
+
 /// The day header that stays at the top of the list while its rows scroll
 /// under it, and where it goes: at `top`, or above it while the next day's
 /// header pushes it out. None while the top shows a header in its place.
@@ -357,32 +446,8 @@ pub(super) fn paint_row(
         );
         ix -= 18.0;
     }
-    if let Some(s) = hit.relevance.filter(|_| hit.semantic.is_some()) {
-        // Three bars: how close this match is to the best one.
-        let ratio = if max_sem > 0.0 { s / max_sem } else { 0.0 };
-        let level = if ratio > 0.93 {
-            3
-        } else if ratio > 0.8 {
-            2
-        } else {
-            1
-        };
-        for b in 0..3 {
-            let h = 4.0 + b as f32 * 3.0;
-            let r = m(Rect::from_min_size(
-                Pos2::new(ix - 18.0 + b as f32 * 6.0, iy + 6.0 - h),
-                Vec2::new(4.0, h),
-            ));
-            p.rect_filled(
-                r,
-                CornerRadius::same(1),
-                if b < level {
-                    a
-                } else {
-                    weak.gamma_multiply(0.35)
-                },
-            );
-        }
+    if let Some(level) = relevance_level(hit, max_sem) {
+        paint_relevance(&p, rect, ix, iy + 6.0, level, a, weak);
     }
 }
 
@@ -468,6 +533,8 @@ impl App {
             };
         }
         let total = y;
+        let weaker = self.weaker.len();
+        let fold_h = if weaker > 0 { WEAKER_LINE } else { 0.0 };
 
         let mut sa = egui::ScrollArea::vertical().auto_shrink([false, false]);
         if in_popup {
@@ -524,7 +591,7 @@ impl App {
             &mut self.programs,
         );
         let out = sa.show_viewport(ui, |ui, viewport| {
-            ui.set_height(total);
+            ui.set_height(total + fold_h);
             let origin = ui.max_rect().min;
             let full = ui.available_width();
             let width = if centred {
@@ -629,6 +696,15 @@ impl App {
                             }
                         }
                     }
+                }
+            }
+            if weaker > 0 && total <= viewport.max.y {
+                let rect = Rect::from_min_size(
+                    Pos2::new(left, origin.y + total),
+                    Vec2::new(width, fold_h),
+                );
+                if weaker_line(ui, rect, weaker) {
+                    actions.push(Command::ShowWeaker);
                 }
             }
             if let Some((Line::Header(label, n), y)) =
