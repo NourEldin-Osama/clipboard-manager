@@ -226,7 +226,7 @@ screenshots of the finished screens.
 
 ### Phase 15. Version 0.6.0
 - [x] 15.1 Remove the update from 0.4 settings, the old model folders' clean-up and the old vectors' deletion (D33)
-- [ ] 15.2 New screenshots from a test copy with made-up items
+- [x] 15.2 New screenshots from a test copy with made-up items
 - [x] 15.3 README, README_AR, the change log and version 0.6.0 (D48)
 
 ## Change log
