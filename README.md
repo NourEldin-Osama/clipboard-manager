@@ -33,19 +33,21 @@ public feature descriptions only, and it shares no code or assets with Planck an
 | **Clipboard history** | Text, links, images and copied files. Duplicate copies are merged and moved to the top. Pin items to keep them forever. |
 | **Tags** | Label any item with one or more tags (`Ctrl+T`, or *Add tag* in the details pane; existing tags are suggested as you type). The most used tags appear as filters beside the kind filters, tags are searchable (`work` or `#work`), and tagged items, like pinned ones, are never pruned or cleared. Right-click a tag filter to remove it from every item. |
 | **Global hotkeys** | `Alt+V` opens a quick popup at the mouse pointer to search and paste, `Alt+Shift+V` opens the full window, `Alt+C` skips recording the next copy. All three can be changed in Settings. |
-| **Keyboard-first** | Type to search, `↑/↓` to move, `Enter` (or double-click) pastes into the program you opened the window from with the shortcut, `Shift+Enter` pastes text without its formatting, `Ctrl+Enter` only copies, `Ctrl+P` pins, `Ctrl+T` tags, `Shift+Del` deletes, `Ctrl+L` switches layout, `Esc` closes the details pane, clears the search or hides the window. In the grid, `↑/↓` move a row and `←/→` one card. Every shortcut except the arrows and `Esc` can be changed in *Settings → Shortcuts and pasting*: click it and press the new keys. |
+| **Keyboard-first** | Type to search, `↑/↓` to move, `Enter` (or double-click) pastes into the program you opened the window from with the shortcut, `Shift+Enter` pastes text without its formatting, `Ctrl+Enter` only copies, `Ctrl+1` to `Ctrl+9` paste one of the first nine items (numbered in the popup), `Ctrl+P` pins, `Ctrl+T` tags, `Shift+Del` deletes, `Ctrl+L` switches layout, `Esc` closes the details pane, clears the search or hides the window. In the grid, `↑/↓` move a row and `←/→` one card. A right-click or `Shift+F10` opens an item's menu with every action and its key, and `F1` shows every key. Every shortcut except the arrows, `Esc`, `Ctrl+1` to `Ctrl+9`, `Shift+F10` and `F1` can be changed in *Settings → Shortcuts and pasting*: click it and press the new keys. |
+| **Several items at once** | `Ctrl`+click adds or removes an item, `Shift`+click selects a range, `Shift+↑/↓` extend it and `Ctrl+A` selects everything shown. The status bar then pins, tags, copies together or deletes them all, and the keys and the right-click menu act on all of them. One Undo brings back a whole deleted group. *Copy together* puts the texts, links and file paths one after another, in list order. |
 | **English and Arabic** | Switch the language in *Settings → General*. Arabic lays the whole window out right to left, and Arabic text, whether part of the interface or something you copied, is shaped, ordered and wrapped correctly, even when it mixes in numbers or English. To add a language, see [docs/TRANSLATING.md](docs/TRANSLATING.md). The bundled fonts, [Noto Sans](https://github.com/notofonts/latin-greek-cyrillic) and [Noto Sans Arabic](https://github.com/notofonts/arabic) in two weights (SIL Open Font License), mean it doesn't depend on the PC's fonts. |
 | **12- or 24-hour clock** | Times are stored in UTC and shown in your time zone, including daylight saving, with the clock you choose in *Settings → General*. |
 | **System tray and start at sign-in** | In *Settings → General*: keep the app running in the system tray (closing or minimising the window hides it there; click the icon to open it, right-click to pause recording or quit), and start it hidden when you sign in. |
 | **Text in images** | Text in images and screenshots becomes searchable. *Settings → Search & AI → Read text in images* chooses the engine: Windows' own (the default; it reads the languages installed in Windows), or a vision model on one of your servers (llama.cpp, vLLM, SGLang, Ollama…): DeepSeek-OCR-2, Unlimited-OCR-2, MiniCPM-OCR and GLM-OCR come with their own settings, and any other model works with your own prompt ([how to set one up](#reading-text-in-images-with-a-model-server)). |
 | **Sort by** | The menu at the end of the filter row: *Best match* (while searching), *Recent*, *Oldest*, *A to Z* and *Most used* (items you copy back from the list most often). Searching and browsing each remember their own choice. *Settings → Appearance → Pinned on top* keeps pinned items first while browsing (not while searching). |
 | **Semantic search** | Smart mode ranks by meaning (similarity), with a boost for items that contain your words; results are ordered best first and the relevance bars match that order. You can also choose *Meaning* or *Keyword* only. |
-| **Your own model servers** | Save the servers your models run on, each with its type (llama.cpp, Ollama, LM Studio, vLLM, Unsloth, OpenRouter or another one, with its logo), address on any port and API key, and the models you use on it, each with its own name and settings. Pick the model in use from one menu: each model keeps its own index, so switching back needs no new indexing. **Test** checks a model, and **Fill in details** looks it up on [models.dev](https://models.dev) and fills in the prompts well-known models need. The app can also launch `llama-server` for you. Multi-vector (ColBERT-style) output is detected and scored with MaxSim, and Matryoshka vectors can be shortened. |
+| **Your own model servers** | Save the servers your models run on, each with its type (llama.cpp, Ollama, LM Studio, vLLM, Unsloth, OpenRouter or another one, with its logo), address on any port and API key, and the models you use on it, each with its own name and settings. Pick the model in use from one menu: each model keeps its own index, so switching back needs no new indexing. **Test** checks a model, and **Fill in details** looks it up on [models.dev](https://models.dev) and fills in the prompts well-known models need. The app can also start `llama-server` for you, for search and for reading text, from a model file or a Hugging Face name. Multi-vector (ColBERT-style) output is detected and scored with MaxSim, and Matryoshka vectors can be shortened. |
 | **Library import** | Drag files or folders onto the window, or use `＋ → Import folder…`. Images and text and code files are indexed alongside your clipboard. |
 | **Privacy** | Nothing leaves your machine, and on Windows your history is encrypted on disk with a key tied to your Windows account. Clipboard content that password managers mark as sensitive (`ExcludeClipboardContentFromMonitorProcessing`) is never recorded. Neither is anything that looks like an API key, token, private key or random password (on by default; you can turn it off in *Settings → Privacy*, or click **Save anyway** on the message when it guessed wrong). You can pause recording at any time. |
 | **Smart ranking** | Image and text similarities are each scaled by their best match before being merged, because text-to-image similarity scores are naturally much lower than text-to-text ones. Without this, photos would be buried under text. |
 | **Look and feel** | A list grouped by Pinned / Today / Yesterday / This week, with kind icons, thumbnails, matched words highlighted and relevance bars while searching. Three layouts, switched with the view button beside the search box: **Grid** (cards), **List** (full-width rows) and **Detail** (list plus a details pane with a large preview). Hovering an item shows delete, pin, copy and open-details buttons (the card's content stays put). Light and dark themes, five accent colours, comfortable or compact density. |
-| **Settings that explain themselves** | Sections down the side (General, Search & AI, Clipboard, Shortcuts, Appearance, Data & privacy). Every option has an ℹ explanation and plain-language choices. Settings you've changed are highlighted, each with a one-click reset. Changes apply instantly; a server's settings wait for **Save**. |
+| **Settings that explain themselves** | Seven pages down the side: General, Appearance, Clipboard, Privacy, Search & AI, Shortcuts and pasting, and About. A short line under each setting says what it does, and its ℹ button explains the rest. *Privacy* shows where each kind of data goes. Settings you've changed are highlighted, each with a one-click reset. Changes apply instantly; a server's settings wait for **Save**. |
+| **Getting started, and what's new** | A new install shows a short checklist that ticks itself as you copy, paste, pin and, if you like, turn on search by meaning. After an update, the first window says so, and *What's new* shows the notes, built into the app. |
 
 The only network access is the servers you add, models.dev when you click **Fill in details**, and the update check
 described below (it can be turned off). Nothing you copy is sent, unless you choose a search or text reader server
@@ -147,9 +149,11 @@ status bar shows progress.
    `--mmproj mmproj-F16.gguf -ub 4096 -b 4096` to the command, and turn on **Send images** for the model. **Test** says
    whether images work. With its default batch size, llama-server reads each image at a quarter of its detail.
 
-If you'd rather not keep a console open, turn on **Start llama-server for me** in the llama.cpp server's settings and
-browse to `llama-server.exe` and the `.gguf` file. The app then starts the server without opening a window when one of
-its models is in use, and stops it when the app exits.
+If you'd rather not keep a console open, turn on **Start llama-server for me** in the llama.cpp server's settings,
+browse to `llama-server.exe`, and choose the `.gguf` file or type the model's Hugging Face name (llama-server downloads
+it the first time). The app then starts the server without opening a window when one of its models is in use, and stops
+it when the app exits. It does the same for reading models; a search model and a reading model each need a server of
+their own, on its own port.
 
 #### Sentence Transformers: any model on the Hugging Face Hub
 Sentence Transformers has no HTTP server of its own, so one is included: [`tools/st_server.py`](tools/st_server.py)
@@ -228,7 +232,9 @@ vllm serve openbmb/MiniCPM-OCR-1.0 --served-model-name minicpm-ocr --max-model-l
 ```powershell
 .\llama-server.exe -hf ggml-org/GLM-OCR-GGUF --port 8080
 ```
-The address is `http://127.0.0.1:8080/v1`. Other OCR models that llama.cpp runs the same way (LightOnOCR, PaddleOCR-VL,
+The address is `http://127.0.0.1:8080/v1`. The app can also start it: add a **llama.cpp** server, turn on **Start
+llama-server for me**, and type `ggml-org/GLM-OCR-GGUF` as the Hugging Face name; give it a port of its own if a search
+model's server already uses 8080. Other OCR models that llama.cpp runs the same way (LightOnOCR, PaddleOCR-VL,
 Dots.OCR, HunyuanOCR…) work as **Another model**, with the prompt their model card gives, often `OCR`.
 
 ## Performance
@@ -266,9 +272,10 @@ src/
   paste.rs       pasting into the program the user was in (brings it to the front, presses Ctrl+V)
   screen.rs      the mouse pointer and its screen, for placing the quick popup
   worker.rs      background indexer thread; owns the OCR engine + embedder; queries pre-empt indexing
+  llama.rs       starts and stops llama-server for the search model and the reading model
   embed/
     mod.rs       Embedding (dense / multi-vector), cosine & MaxSim, Embedder trait
-    server.rs    OpenAI-compatible client + optional llama-server launcher
+    server.rs    OpenAI-compatible client
   ocr/
     mod.rs       the chosen text reader
     windows_reader.rs  Windows' own text reader (Windows.Media.Ocr)
