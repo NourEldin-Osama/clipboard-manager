@@ -3,15 +3,18 @@
 //! new copies, then indexing of the existing history.
 
 use std::collections::{HashSet, VecDeque};
-use std::sync::mpsc::{channel, Receiver, Sender};
+use std::sync::atomic::Ordering::Relaxed;
+use std::sync::mpsc::{channel, Receiver, RecvTimeoutError, Sender};
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 use anyhow::{anyhow, Result};
 
 use crate::config::EmbedBackend;
 use crate::config::TextReader;
 use crate::embed::{server::ServerEmbedder, Embedder, Embedding, TextRole};
-use crate::i18n::{log_server_error, t};
+use crate::i18n::{log_error, log_server_error, t};
+use crate::llama::{self, Role};
 use crate::net::ServerError;
 use crate::ocr::Reader;
 use crate::store::{Kind, Store};
@@ -29,6 +32,9 @@ pub enum Job {
 pub enum Event {
     /// A status line, in the interface language.
     Status(String),
+    /// What the reading model's llama-server is doing while it starts, in
+    /// the interface language; empty once it answers or stops.
+    ReaderStatus(String),
     /// An error to show, in the interface language (the log has it in English).
     Error(String),
     /// A backend is loaded; carries the embeddings already stored for it.
@@ -108,6 +114,9 @@ impl Worker {
                     image_worked: false,
                     index_error_shown: false,
                     pending: p,
+                    reader_start: None,
+                    reader_checked: Instant::now(),
+                    waiting: Vec::new(),
                 };
                 st.run(rx);
             })
@@ -254,6 +263,13 @@ struct State {
     /// A failure to index an item was shown since the model loaded.
     index_error_shown: bool,
     pending: Arc<std::sync::atomic::AtomicUsize>,
+    /// When the reading model's llama-server was started, while it doesn't
+    /// answer yet: images wait for it, and search goes on.
+    reader_start: Option<Instant>,
+    /// When that server was last looked at.
+    reader_checked: Instant,
+    /// Images waiting for that server.
+    waiting: Vec<u64>,
 }
 
 impl State {
@@ -264,13 +280,25 @@ impl State {
 
     fn run(&mut self, rx: Receiver<Message>) {
         let mut queues = Queues::default();
+        self.start_reader_server();
         loop {
+            self.check_reader_server(&mut queues);
             // Wait only when there is nothing to do, then take everything that
             // has arrived, so a newer search or a model switch goes first.
+            // While the reading model's llama-server starts, look at it again
+            // every second.
             if queues.is_empty() {
-                match rx.recv() {
-                    Ok(m) => queues.push(m),
-                    Err(_) => return,
+                if self.reader_start.is_some() {
+                    match rx.recv_timeout(Duration::from_secs(1)) {
+                        Ok(m) => queues.push(m),
+                        Err(RecvTimeoutError::Timeout) => {}
+                        Err(RecvTimeoutError::Disconnected) => return,
+                    }
+                } else {
+                    match rx.recv() {
+                        Ok(m) => queues.push(m),
+                        Err(_) => return,
+                    }
                 }
             }
             for m in rx.try_iter() {
@@ -307,6 +335,7 @@ impl State {
                 self.ocr = None;
                 self.ocr_failed = false;
                 self.ocr_error_shown = false;
+                self.start_reader_server();
             }
             Next::Ocr(id) => {
                 if let Err(e) = self.do_ocr(id) {
@@ -427,8 +456,97 @@ impl State {
         self.ocr.as_ref()
     }
 
+    /// Starts llama-server for a reading model the app starts itself, in the
+    /// background: images wait until it answers (see `check_reader_server`),
+    /// and search goes on meanwhile.
+    fn start_reader_server(&mut self) {
+        llama::stop(Role::Read);
+        if self.reader_start.take().is_some() {
+            self.emit(Event::ReaderStatus(String::new()));
+        }
+        let TextReader::Server(cfg) = &mut self.text_reader else {
+            return;
+        };
+        let Some(launch) = cfg.launch.clone() else {
+            return;
+        };
+        cfg.base_url = format!("http://127.0.0.1:{}/v1", launch.port);
+        match llama::start(Role::Read, &launch) {
+            Ok(()) => {
+                self.reader_start = Some(Instant::now());
+                // By its name, the first start downloads the model.
+                let status = if launch.hf.trim().is_empty() {
+                    t!("status-reader-starting")
+                } else {
+                    t!("status-reader-downloading")
+                };
+                self.emit(Event::ReaderStatus(status));
+            }
+            Err(e) => {
+                self.ocr_failed = true;
+                self.emit(Event::Error(log_server_error!("error-ocr-unavailable", &e)));
+            }
+        }
+    }
+
+    /// Images that waited for the reading model's llama-server go back in the
+    /// queue once it answers, or once there is nothing to wait for any more.
+    /// If it stopped while starting, it says so, and the images go back
+    /// unread.
+    fn check_reader_server(&mut self, queues: &mut Queues) {
+        let Some(started) = self.reader_start else {
+            for id in self.waiting.drain(..) {
+                queues.fresh.push_back(Job::Ocr(id));
+            }
+            return;
+        };
+        if self.reader_checked.elapsed() < Duration::from_secs(1) {
+            return;
+        }
+        self.reader_checked = Instant::now();
+        match llama::exited(Role::Read) {
+            Ok(Some(status)) => {
+                self.reader_start = None;
+                self.ocr_failed = true;
+                self.emit(Event::ReaderStatus(String::new()));
+                let status = status.to_string();
+                self.emit(Event::Error(log_error!(
+                    "error-reader-server-stopped",
+                    status = status
+                )));
+                for id in self.waiting.drain(..) {
+                    queues.fresh.push_back(Job::Ocr(id));
+                }
+            }
+            Ok(None) => {
+                let TextReader::Server(cfg) = &self.text_reader else {
+                    return;
+                };
+                if llama::ready(&cfg.base_url) {
+                    log::info!(
+                        "the reading model's llama-server answers after {:?}",
+                        started.elapsed()
+                    );
+                    self.reader_start = None;
+                    self.emit(Event::ReaderStatus(String::new()));
+                    for id in self.waiting.drain(..) {
+                        queues.fresh.push_back(Job::Ocr(id));
+                    }
+                }
+            }
+            Err(e) => log::warn!("looking at the reading model's llama-server: {e:#}"),
+        }
+    }
+
     fn do_ocr(&mut self, id: u64) -> Result<()> {
         if self.failed.contains(&id) {
+            return Ok(());
+        }
+        // Its llama-server is still starting: the image waits for it.
+        if self.reader_start.is_some() {
+            self.waiting.push(id);
+            // Still to do, though `run` counts this step as done.
+            self.pending.fetch_add(1, Relaxed);
             return Ok(());
         }
         let Some(item) = self.store.get(id)? else {
@@ -699,6 +817,9 @@ mod tests {
             image_worked: false,
             index_error_shown: false,
             pending: Arc::default(),
+            reader_start: None,
+            reader_checked: Instant::now(),
+            waiting: Vec::new(),
         }
     }
 

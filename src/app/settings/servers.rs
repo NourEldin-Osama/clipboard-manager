@@ -1408,6 +1408,14 @@ fn reader_kind_label(kind: ReaderModel) -> String {
 
 /// llama.cpp only: the app can start llama-server itself.
 fn launch_settings(ui: &mut Ui, server: &mut Server) {
+    // One llama-server runs one model.
+    let has = |search: bool| {
+        server
+            .models
+            .iter()
+            .any(|m| matches!(m.job, ModelJob::Search(_)) == search)
+    };
+    let both = has(true) && has(false);
     let mut launch = server.launch.is_some();
     setting_for(
         ui,
@@ -1426,6 +1434,7 @@ fn launch_settings(ui: &mut Ui, server: &mut Server) {
                 "llama-server"
             }),
             gguf: PathBuf::new(),
+            hf: String::new(),
             mmproj: None,
             port: 8765,
             extra_args: "--pooling mean -c 2048 -ub 2048".into(),
@@ -1436,6 +1445,11 @@ fn launch_settings(ui: &mut Ui, server: &mut Server) {
     let Some(l) = &mut server.launch else {
         return;
     };
+    if both {
+        super::view::row_wrapped(ui, |ui| {
+            icons::chip(ui, Icon::Warning, &t!("settings-server-one-model"), AMBER);
+        });
+    }
     plain_setting(
         ui,
         &t!("settings-server-program"),
@@ -1446,6 +1460,20 @@ fn launch_settings(ui: &mut Ui, server: &mut Server) {
     plain_setting(ui, &t!("settings-server-model-file"), "", "", |ui| {
         path_field(ui, &mut l.gguf, &["gguf"])
     });
+    plain_setting(
+        ui,
+        &t!("settings-server-hf"),
+        &t!("settings-server-hf-hint"),
+        "",
+        |ui| {
+            let field = ui.add(
+                egui::TextEdit::singleline(&mut l.hf)
+                    .hint_text("ggml-org/GLM-OCR-GGUF")
+                    .desired_width(280.0),
+            );
+            set_name(&field, &row_title(ui));
+        },
+    );
     plain_setting(
         ui,
         &t!("settings-server-projector"),
@@ -1468,7 +1496,7 @@ fn launch_settings(ui: &mut Ui, server: &mut Server) {
         ui,
         &t!("settings-server-extra-args"),
         &t!("settings-server-extra-args-hint"),
-        "",
+        &t!("settings-server-extra-args-help"),
         |ui| {
             let field = ui.add(egui::TextEdit::singleline(&mut l.extra_args).desired_width(280.0));
             set_name(&field, &row_title(ui));

@@ -525,6 +525,17 @@ impl App {
             }
             return;
         }
+        let centred = self.cfg.view == ViewMode::List && !in_popup;
+        if !in_popup {
+            // As wide as the rows, and where they are.
+            let full = ui.available_width();
+            let width = if centred {
+                full.min(LIST_MAX_WIDTH)
+            } else {
+                full
+            };
+            self.checklist_above(ui, (full - width) / 2.0, width);
+        }
         let compact = self.cfg.density == Density::Compact;
         let row_h = if compact { 40.0 } else { 58.0 };
         let header_h = 30.0;
@@ -532,7 +543,6 @@ impl App {
         // The details pane is always beside the list in Detail view, so rows
         // there don't need an "open" button; the popup has no details pane.
         let can_open = self.cfg.view != ViewMode::Detail && !in_popup;
-        let centred = self.cfg.view == ViewMode::List && !in_popup;
 
         // Rows, with date/pinned headers when browsing.
         let mut lines: Vec<Line> = Vec::with_capacity(self.results.len() + 8);
@@ -605,7 +615,7 @@ impl App {
         let mut open_menu = None;
         let menu_key = self.menu_by_key;
         let frame = ui.ctx().cumulative_pass_nr();
-        let (library, results, thumbs, loader, selected, seen, programs) = (
+        let (library, results, thumbs, loader, selected, seen, programs, marked) = (
             &self.library,
             &self.results,
             &self.thumbs,
@@ -613,6 +623,7 @@ impl App {
             self.selected,
             &mut self.thumb_seen,
             &mut self.programs,
+            &self.marked,
         );
         let out = sa.show_viewport(ui, |ui, viewport| {
             ui.set_height(total + fold_h);
@@ -647,11 +658,13 @@ impl App {
                         let resp =
                             ui.interact(rect, egui::Id::unique(("row", it.id)), Sense::CLICK);
                         let chosen = Some(it.id) == selected;
+                        // Selected alone or together with others.
+                        let lit = chosen || (!in_popup && marked.contains(&it.id));
                         resp.widget_info(|| {
                             egui::WidgetInfo::selected(
                                 egui::Role::ListBoxOption,
                                 true,
-                                chosen,
+                                lit,
                                 item_name(it),
                             )
                         });
@@ -664,14 +677,20 @@ impl App {
                             hit,
                             thumb,
                             program.and_then(|p| p.icon.as_ref()),
-                            Some(it.id) == selected,
+                            lit,
                             compact,
                             &terms,
                             in_popup,
                             (in_popup && *r < 9).then_some(*r + 1),
                         );
                         if resp.clicked() {
-                            actions.push(Command::Select(it.id));
+                            // Ctrl and Shift select several, but not in the popup.
+                            let keys = ui.input(|i| i.modifiers);
+                            actions.push(match (in_popup, keys.command, keys.shift) {
+                                (false, true, _) => Command::ToggleMark(it.id),
+                                (false, _, true) => Command::MarkRange(it.id),
+                                _ => Command::Select(it.id),
+                            });
                         }
                         if resp.double_clicked() {
                             actions.push(Command::Copy(it.id, Paste::Yes));
@@ -790,8 +809,16 @@ impl App {
                 ui.add_space(8.0);
                 title_lbl(ui, &t!("list-empty-title"), size::LARGE, strong);
                 ui.add_space(4.0);
-                let help = t!("list-empty-help", key = self.cfg.popup_hotkey.as_str());
-                ui.label(txt(&help, size::BODY, Some(weak)));
+                if self.cfg.checklist.closed {
+                    let help = t!("list-empty-help", key = self.cfg.popup_hotkey.as_str());
+                    ui.label(txt(&help, size::BODY, Some(weak)));
+                } else {
+                    ui.add_space(12.0);
+                    ui.scope(|ui| {
+                        ui.set_max_width(ui.available_width().min(460.0));
+                        self.checklist(ui);
+                    });
+                }
             } else if !self.query.trim().is_empty() {
                 icons::glyph(ui, Icon::Search, 36.0, weak);
                 ui.add_space(8.0);

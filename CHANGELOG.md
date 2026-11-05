@@ -83,6 +83,33 @@ the notes here before a push that makes a release.
 - After quitting while the window was minimized, the next start opened it
   tiny, in a corner of the screen. It now keeps its place and size, and a
   window saved that way by an older version opens at its first size.
+- Smart search ranks meaning the same way as the relevance bars: from the
+  typical match up to the best one. With models that give unrelated text
+  nearly the best score, an item that only shares a word no longer comes
+  before a close meaning match.
+- After an update, the first window that shows says "Updated to 0.6.0",
+  with What's new: these notes, built into the app, so they show without
+  the internet, even when the update installed as the app quit.
+- A new install shows a short checklist to get started: copy something,
+  paste with the popup's key, pin an item, and, if you like, turn on
+  search by meaning. Each step ticks itself when you do it. The checklist
+  shows in the empty list, then above the list, until every step is done
+  or you close it.
+- Select several items at once: Ctrl+click adds or removes one, Shift+click
+  selects a range, Shift+Up and Shift+Down extend it, and Ctrl+A selects
+  everything shown. The status bar then shows "3 selected" with Pin, Add a
+  tag, Copy together and Delete, and the keys and the right-click menu act
+  on them all. One Undo brings back a whole deleted group. Copy together
+  puts texts, links and file paths one after another, in list order;
+  pictures are left out. Esc goes back to one item. The popup keeps one
+  item at a time.
+- "Start llama-server for me" also starts reading models, such as
+  GLM-OCR: from a file on this PC, or by its Hugging Face name, such as
+  ggml-org/GLM-OCR-GGUF, which llama-server downloads the first time.
+  While it starts, images wait to be read, search keeps working, and the
+  status bar says what is happening. A search model and a reading model
+  each need a llama.cpp server of their own, with its own port; the
+  server's settings say so.
 
 ## 0.5.1
 

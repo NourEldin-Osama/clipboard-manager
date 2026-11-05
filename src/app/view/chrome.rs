@@ -280,6 +280,11 @@ impl App {
                     .fill(fill),
             )
             .show(ui, |ui| {
+                let group = self.group();
+                if !group.is_empty() {
+                    self.group_bar(ui, &group);
+                    return;
+                }
                 row(ui, |ui| {
                     let weak = ui.visuals().weak_text_color();
                     // The item count goes at the far end. It is laid out first,
@@ -337,6 +342,10 @@ impl App {
                     if !self.status.is_empty() {
                         ui.label(txt(&self.status, size::SMALL, Some(weak)));
                     }
+                    if !self.reader_status.is_empty() {
+                        slow_spinner(ui, 11.0, Some(weak));
+                        ui.label(txt(&self.reader_status, size::SMALL, Some(weak)));
+                    }
                     if !self.flags.enabled.load(Ordering::SeqCst) {
                         icons::chip(ui, Icon::Pause, &t!("status-recording-paused"), AMBER);
                     }
@@ -370,7 +379,93 @@ impl App {
             });
     }
 
+    /// While several items are selected, the status bar holds what can be
+    /// done to them all, each with its key.
+    fn group_bar(&mut self, ui: &mut Ui, group: &[u64]) {
+        let k = self.cfg.keys.clone();
+        let v = ui.visuals().clone();
+        let all_pinned = group
+            .iter()
+            .all(|&id| self.library.get(id).is_some_and(|it| it.pinned));
+        let (mut command, mut tags, mut clear) = (None, None, false);
+        row(ui, |ui| {
+            let count = t!("group-selected", count = group.len());
+            ui.label(title_txt(&count, size::SMALL, Some(v.strong_text_color())));
+            ui.add_space(10.0);
+            let button = |ui: &mut Ui, icon: Icon, text: &str, keys: &str, color: Color32| {
+                let job = pill_job(text, size::SMALL, color, None);
+                tip(icons::pill(ui, icon, job, color, false), &hint(text, keys)).clicked()
+            };
+            let plain = v.text_color();
+            let pin = if all_pinned {
+                t!("group-unpin")
+            } else {
+                t!("group-pin")
+            };
+            if button(ui, Icon::Pin, &pin, &k.pin, plain) {
+                command = Some(Command::PinGroup(group.to_vec()));
+            }
+            if button(ui, Icon::Tag, &t!("group-tag"), &k.tag, plain) {
+                self.group_tag = Some(String::new());
+            }
+            let copy = t!("group-copy");
+            if button(ui, Icon::Copy, &copy, &k.copy_only, plain) {
+                command = Some(Command::CopyTogether(group.to_vec(), Paste::No));
+            }
+            let red = text_shade(RED, v.dark_mode);
+            if button(ui, Icon::Delete, &t!("group-delete"), &k.delete, red) {
+                command = Some(Command::DeleteGroup(group.to_vec()));
+            }
+            if let Some(text) = self.group_tag.as_mut() {
+                // Open until Enter adds the tags, or Esc or another
+                // selection closes it, so it keeps the keyboard.
+                let id = egui::Id::unique("group-tag");
+                let enter =
+                    ui.memory(|m| m.has_focus(id)) && ui.input(|i| i.key_pressed(Key::Enter));
+                let hint_text = t!("details-tag-hint");
+                let r = ui.add(
+                    egui::TextEdit::singleline(text)
+                        .id(id)
+                        .hint_text(txt(&hint_text, size::SMALL, None))
+                        .desired_width(150.0)
+                        .font(FontId::proportional(size::SMALL)),
+                );
+                set_name(&r, &hint_text);
+                r.request_focus();
+                if enter && !text.trim().is_empty() {
+                    tags = Some(text.clone());
+                }
+            }
+            far(ui, |ui| {
+                let link = txt(&t!("group-clear"), size::SMALL, None);
+                clear = tip(ui.link(link), &hint(&t!("group-clear"), "Escape")).clicked();
+            });
+        });
+        if let Some(command) = command {
+            self.run(command);
+        }
+        if let Some(tags) = tags {
+            self.tag_group(&tags);
+        }
+        if clear {
+            self.clear_marks();
+        }
+    }
+
     pub(super) fn toasts(&mut self, ctx: &egui::Context) {
+        // Said when a window first draws, so a start hidden at sign-in
+        // doesn't use the message up unseen.
+        if std::mem::take(&mut self.whats_new_pending) {
+            let version = crate::update::VERSION;
+            self.toast_for(
+                t!("toast-updated", version = version),
+                Duration::from_secs(15),
+            );
+            let has_notes = !crate::update::notes(version).is_empty();
+            if let Some(toast) = self.toast.as_mut().filter(|_| has_notes) {
+                toast.action = Some((t!("update-whats-new"), Command::ShowWhatsNew));
+            }
+        }
         let mut clicked = false;
         if let Some(toast) = &self.toast {
             if toast.shown.elapsed() > toast.how_long {

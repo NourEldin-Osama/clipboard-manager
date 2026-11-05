@@ -132,6 +132,13 @@ impl App {
         if egui::Popup::is_any_open(ctx) {
             return;
         }
+        // What is new takes the keys while it is open; Esc closes it.
+        if self.whats_new_open && !in_popup {
+            if ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, Key::Escape)) {
+                self.whats_new_open = false;
+            }
+            return;
+        }
         // F1 opens the sheet of every key and closes it again; so does Esc.
         let f1 = ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, Key::F1));
         if self.keys_sheet == Some(in_popup) {
@@ -159,6 +166,7 @@ impl App {
         // Typing in a field other than search (a tag, say) isn't a command.
         // The tag field counts even before egui has moved focus to it.
         let typing = self.tag_input.is_some()
+            || self.group_tag.is_some()
             || ctx
                 .memory(|m| m.focused())
                 .is_some_and(|id| id != search_id());
@@ -194,6 +202,13 @@ impl App {
         };
         // Ctrl+1 to Ctrl+9 paste one of the first nine items shown.
         let quick = if typing { None } else { quick_paste(ctx) };
+        // Ctrl+A selects every item shown; the popup keeps one at a time.
+        if !in_popup
+            && !typing
+            && ctx.input_mut(|i| i.consume_key(egui::Modifiers::COMMAND, Key::A))
+        {
+            self.mark_all();
+        }
         // Shift+F10 opens the selected item's menu, as in other programs.
         let menu = !typing && ctx.input_mut(|i| i.consume_key(egui::Modifiers::SHIFT, Key::F10));
         if menu && self.selected.is_some() {
@@ -224,16 +239,33 @@ impl App {
         } else {
             1
         };
-        if down {
-            self.move_selection(step);
-        }
-        if up {
-            self.move_selection(-step);
+        // With Shift, Up and Down take the items passed over into the ones
+        // selected together; without, one item is selected again.
+        let shift = !in_popup && ctx.input(|i| i.modifiers.shift);
+        for (pressed, delta) in [(down, step), (up, -step)] {
+            if !pressed {
+                continue;
+            }
+            let from = self.anchor.or(self.selected);
+            if !shift {
+                self.clear_marks();
+            }
+            self.move_selection(delta);
+            match (shift, self.selected) {
+                (true, Some(to)) => {
+                    self.anchor = from;
+                    self.mark_range(to);
+                }
+                _ => self.anchor = self.selected,
+            }
         }
         if grid && self.query.is_empty() {
             // Cards fill from the reading start, so in Arabic the next card is
             // to the left.
             let forward = if i18n::rtl() { -1 } else { 1 };
+            if right || left {
+                self.clear_marks();
+            }
             if right {
                 self.move_selection(forward);
             }
@@ -244,7 +276,22 @@ impl App {
         if let Some(id) = quick.and_then(|n| self.results.get(n)).map(|hit| hit.id) {
             self.run_by_key(Command::Copy(id, Paste::Yes));
         }
-        if let Some(id) = self.selected {
+        // With several items selected, the keys act on them all.
+        let group = if in_popup { Vec::new() } else { self.group() };
+        if !group.is_empty() {
+            if let Some(paste) = copy {
+                self.run_by_key(Command::CopyTogether(group.clone(), paste));
+            }
+            if del {
+                self.run_by_key(Command::DeleteGroup(group.clone()));
+            }
+            if pin {
+                self.run_by_key(Command::PinGroup(group.clone()));
+            }
+            if tag {
+                self.group_tag = Some(String::new());
+            }
+        } else if let Some(id) = self.selected {
             if let Some(paste) = copy {
                 self.run_by_key(Command::Copy(id, paste));
             }
@@ -259,7 +306,11 @@ impl App {
             }
         }
         if esc {
-            if self.tag_input.is_some() {
+            if self.group_tag.is_some() {
+                self.group_tag = None;
+            } else if !in_popup && !self.marked.is_empty() {
+                self.clear_marks();
+            } else if self.tag_input.is_some() {
                 self.tag_input = None;
             } else if !in_popup && self.details_open && self.cfg.view != ViewMode::Detail {
                 self.details_open = false;

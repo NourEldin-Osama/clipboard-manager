@@ -214,8 +214,59 @@ item-copy-plain = Copy as plain text
 item-copy-image-text = Copy the text in the image
 item-ignore-app = Don't record copies from { $app }
 item-menu = Actions
+item-paste-group =
+    { $count ->
+        [one] Paste 1 item
+       *[other] Paste { $count } items together
+    }
+item-copy-group =
+    { $count ->
+        [one] Copy 1 item
+       *[other] Copy { $count } items together
+    }
+item-pin-group =
+    { $count ->
+        [one] Pin 1 item
+       *[other] Pin { $count } items
+    }
+item-unpin-group =
+    { $count ->
+        [one] Unpin 1 item
+       *[other] Unpin { $count } items
+    }
+item-tag-group =
+    { $count ->
+        [one] Add a tag to 1 item
+       *[other] Add a tag to { $count } items
+    }
+item-delete-group =
+    { $count ->
+        [one] Delete 1 item
+       *[other] Delete { $count } items
+    }
+group-selected =
+    { $count ->
+        [one] 1 selected
+       *[other] { $count } selected
+    }
+group-pin = Pin
+group-unpin = Unpin
+group-tag = Add a tag
+group-copy = Copy together
+group-delete = Delete
+group-clear = Clear the selection
 keys-sheet-title = Keys
 keys-sheet-close = Close
+checklist-title = Get started
+checklist-copy = Copy something in any program
+checklist-paste = Press { $keys } in another program, then paste an item
+checklist-paste-no-key = Open this window over another program, then paste an item
+checklist-pin = Pin an item, so it stays at the top
+checklist-meaning = Turn on search by meaning (optional)
+checklist-set-up = Set up
+checklist-close = Close the checklist
+whats-new-title = What's new in { $version }
+whats-new-close = Close
 hint-with-keys = { $action } ({ $keys })
 details-only-this-tag = Show only items with this tag
 details-remove-tag = Remove tag
@@ -594,7 +645,10 @@ settings-server-images = Send images
 settings-server-images-hint = Send copied images too, for models that understand images
 settings-server-images-help = For example CLIP, SigLIP, BiUltraVBERT, or EmbeddingGemma 2 with its mmproj file, on a server that takes images. Otherwise images are found by the text in them.
 settings-server-launch = Start llama-server for me
-settings-server-launch-hint = The app starts llama-server with your .gguf file in the background and stops it when you quit
+settings-server-launch-hint = The app starts llama-server with your model, from a file or by its Hugging Face name, in the background and stops it when you quit
+settings-server-hf = Or a Hugging Face name
+settings-server-hf-hint = Such as ggml-org/GLM-OCR-GGUF: llama-server downloads it the first time, and it is used instead of the file
+settings-server-one-model = One llama-server runs one model. To start a search model and a reading model, save them as two llama.cpp servers, each with its own port.
 settings-server-program = llama-server program
 settings-server-program-hint = llama-server.exe from a llama.cpp release
 settings-server-model-file = Model file (.gguf)
@@ -603,6 +657,7 @@ settings-server-projector-hint = Optional mmproj file, for models that embed ima
 settings-server-port = Port
 settings-server-extra-args = Extra arguments
 settings-server-extra-args-hint = Passed to llama-server as-is
+settings-server-extra-args-help = A search model usually needs --pooling mean. A reading model needs room for the picture and its text, such as -c 8192, and no --pooling.
 settings-shortcuts-global = Anywhere in Windows
 settings-shortcut-popup = Open the quick popup
 settings-shortcut-popup-hint = A small window at the mouse pointer: search, then paste into the program you are in
@@ -655,6 +710,7 @@ error-model = Could not load the search model: { $error }
 error-model-test = The test failed: { $error }
 error-models-dev = Could not look the model up on models.dev: { $error }
 error-ocr-unavailable = Cannot read text in images: { $error }
+error-reader-server-stopped = The llama-server for reading text stopped while starting ({ $status }). Check its model file or Hugging Face name, and its extra arguments.
 error-server-unreachable = Can't reach the server at { $host }. Check that it is running and that its address is right.
 error-server-needs-key = The server needs an API key, or the key is wrong. Check the key in the server's settings.
 error-server-not-found = The server doesn't know this address or model: “{ $said }”
@@ -668,12 +724,49 @@ error-settings-unreadable-no-copy = Could not read the settings ({ $error }). Th
 error-history-moved-aside = Your history couldn't be opened, so a new, empty one started. The old one was kept as { $file }
 error-start-failed = Clipboard Manager could not start.
 status-starting-llama = Starting llama-server…
+status-reader-starting = Starting llama-server to read text in images…
+status-reader-downloading = Starting llama-server to read text in images; it downloads the model the first time…
 status-connecting = Connecting to { $host }…
 toast-copied = Copied
 toast-copied-admin = Copied. That program runs as administrator, so Windows doesn't let this app paste into it. Press Ctrl+V there.
 toast-copied-text = Copied text
 toast-saved = Saved
 toast-deleted = Deleted
+toast-updated = Updated to { $version }
+toast-pinned-group =
+    { $count ->
+        [one] Pinned 1 item
+       *[other] Pinned { $count } items
+    }
+toast-unpinned-group =
+    { $count ->
+        [one] Unpinned 1 item
+       *[other] Unpinned { $count } items
+    }
+toast-deleted-group =
+    { $count ->
+        [one] Deleted 1 item
+       *[other] Deleted { $count } items
+    }
+toast-copied-group =
+    { $count ->
+        [one] Copied 1 item
+       *[other] Copied { $count } items together
+    }
+toast-copied-group-pictures =
+    { $count ->
+        [one] Copied 1 item
+       *[other] Copied { $count } items together
+    }, without { $pictures ->
+        [one] 1 picture
+       *[other] { $pictures } pictures
+    }
+toast-pictures-not-together = Pictures can't be copied together
+toast-tag-added-group =
+    { $count ->
+        [one] Added #{ $tag } to 1 item
+       *[other] Added #{ $tag } to { $count } items
+    }
 toast-deleted-key = Deleted. Next time: { $keys }
 toast-copied-key = Copied. Next time: { $keys }
 toast-pinned-key = Pinned. Next time: { $keys }

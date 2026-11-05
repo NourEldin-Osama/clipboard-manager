@@ -283,11 +283,13 @@ fn rank(s: &Snapshot, q: &Query) -> Vec<Ranked> {
             .collect();
     }
 
-    // Ordered by similarity. Each modality is scaled by its own best match, so
-    // a photo that is the best image match isn't buried under text matches.
+    // Ordered by how close the meaning is to the best match's, measured from
+    // the typical item's score (D54), each modality on its own scale: a photo
+    // that is the best image match isn't buried under text matches, and with
+    // a model that gives unrelated text nearly the best score, sharing a word
+    // doesn't lift an unrelated item above a close meaning match.
     let mut by_idx: HashMap<usize, Ranked> = HashMap::new();
     for (list, scale) in [(&sem_text, scales[0]), (&sem_image, scales[1])] {
-        let best = list.first().map(|&(_, s)| s).unwrap_or(1.0).max(1e-6);
         for &(idx, s) in list {
             let closeness = scale.closeness(s);
             by_idx.insert(
@@ -295,7 +297,7 @@ fn rank(s: &Snapshot, q: &Query) -> Vec<Ranked> {
                 Ranked {
                     idx,
                     keyword: 0.0,
-                    relevance: Some(s / best),
+                    relevance: Some(closeness),
                     closeness: Some(closeness),
                     strong: closeness >= CLOSE_TO_BEST,
                 },
@@ -328,7 +330,7 @@ fn rank(s: &Snapshot, q: &Query) -> Vec<Ranked> {
     v
 }
 
-/// How much containing all the query words adds to a similarity scaled to 0..1.
+/// How much containing all the query words adds to a closeness of 0..1.
 const KEYWORD_WEIGHT: f32 = 0.25;
 
 /// Puts `hits` in the chosen order. `BestMatch` keeps the ranking from
@@ -576,6 +578,34 @@ mod tests {
     /// An item whose meaning scores `s` against the query vector `[1, 0]`.
     fn scoring(s: f32) -> Embedding {
         Embedding::dense(vec![s, (1.0 - s * s).sqrt()], 0)
+    }
+
+    #[test]
+    fn smart_puts_close_meaning_above_a_shared_word_on_any_scale() {
+        let texts = [
+            "meeting room booking",
+            "call with the team on thursday at ten",
+            "grocery list",
+            "invoice 4821",
+            "wifi password",
+        ];
+        let items: Vec<Item> = (1..=5)
+            .map(|id| item(id, texts[id as usize - 1], 1))
+            .collect();
+        // The first only shares the word, its meaning near the typical item's;
+        // the second means it. Some models give unrelated text nearly the best
+        // score, as the second set does.
+        for scores in [[0.35, 0.8, 0.1, 0.2, 0.15], [0.7, 0.79, 0.66, 0.68, 0.67]] {
+            let embeddings = (1..=5).map(|id| (id, scoring(scores[id as usize - 1])));
+            let s = snapshot(items.clone(), embeddings.collect());
+            let q = query(
+                "meeting",
+                Some(Embedding::dense(vec![1.0, 0.0], 0)),
+                SearchMode::Hybrid,
+            );
+            let found = ids(&search(&s, &q));
+            assert_eq!(&found[..2], &[2, 1], "{scores:?}");
+        }
     }
 
     #[test]

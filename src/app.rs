@@ -309,6 +309,19 @@ pub(super) enum Command {
     StopSendingImages(String),
     /// Shows the weaker matches folded below the results.
     ShowWeaker,
+    /// Ctrl+click: adds an item to the ones selected together, or takes it
+    /// out.
+    ToggleMark(u64),
+    /// Shift+click: selects the items from where the range starts to this one.
+    MarkRange(u64),
+    /// Pins the items, or unpins them all when all are pinned.
+    PinGroup(Vec<u64>),
+    /// Deletes the items; one Undo brings them all back.
+    DeleteGroup(Vec<u64>),
+    /// Puts the items' texts on the clipboard together, and maybe pastes them.
+    CopyTogether(Vec<u64>, Paste),
+    /// Opens what is new in this version over the full window.
+    ShowWhatsNew,
 }
 
 /// Whether putting an item back on the clipboard also pastes it into the
@@ -354,6 +367,15 @@ enum ShortcutField {
 const UNDO_FOR: Duration = Duration::from_secs(8);
 /// How long a message that names a key stays.
 const KEY_HINT_FOR: Duration = Duration::from_secs(4);
+/// What Copy together puts on the clipboard: the texts, links and file
+/// paths of `items`, one after another; with how many there are and how
+/// many pictures are left out.
+fn texts_together<'a>(items: impl Iterator<Item = &'a Item>) -> (usize, String, usize) {
+    let (pictures, texts): (Vec<_>, Vec<_>) = items.partition(|it| it.kind == Kind::Image);
+    let texts: Vec<&str> = texts.iter().map(|it| it.text.trim_end()).collect();
+    (texts.len(), texts.join("\n"), pictures.len())
+}
+
 /// eframe's entry for the window's place and size in app.ron.
 const WINDOW_KEY: &str = "window";
 /// The window's size at the first start, in points.
@@ -386,7 +408,9 @@ const AGE_PRUNE_EVERY: Duration = Duration::from_secs(60 * 60);
 /// The last deleted item, kept for "Undo" until its toast ends; only then is
 /// it removed from the database, with its vectors and image file.
 struct PendingDelete {
-    removed: Removed,
+    /// Taken from the last to the first, so each comes back in its place
+    /// when they go back in the other order.
+    removed: Vec<Removed>,
     since: Instant,
 }
 
@@ -473,6 +497,8 @@ pub struct App {
     programs: programs::Programs,
     /// The window pasting goes to and its program, read once per window.
     paste_program: (paste::Window, Option<PathBuf>),
+    /// What the reading model's llama-server is doing while it starts.
+    reader_status: String,
     /// The window's place and size as eframe last saved them while it was
     /// not minimized (see `keep_window_state`).
     window_state: Option<String>,
@@ -537,12 +563,25 @@ pub struct App {
     tag_input: Option<(u64, String)>,
     /// The open menu of an item.
     item_menu: Option<ItemMenu>,
+    /// Items selected together with the selected one, in the full window:
+    /// Ctrl+click, Shift+click, Shift+arrows or Ctrl+A. Fewer than two
+    /// shown means one item is selected (see `group`).
+    marked: HashSet<u64>,
+    /// Where a Shift range starts.
+    anchor: Option<u64>,
+    /// The field for a tag for every item selected together, while open.
+    group_tag: Option<String>,
     /// Shift+F10 was pressed: the selected row or card opens its menu the
     /// next time it is drawn.
     menu_by_key: bool,
     /// The sheet of every key is open, over the popup (`true`) or the full
     /// window (`false`).
     keys_sheet: Option<bool>,
+    /// This is the first start of a newer version: the first window that
+    /// shows says so.
+    whats_new_pending: bool,
+    /// What is new in this version is open over the full window.
+    whats_new_open: bool,
     /// The command being run came from a key, so its message doesn't name it.
     by_key: bool,
     /// Keys a message has named in this run: each is named once.
@@ -566,6 +605,8 @@ impl App {
         instance: crate::single_instance::Guard,
     ) -> anyhow::Result<Self> {
         let ctx = cc.egui_ctx.clone();
+        // No settings yet means a new install, which has nothing new to hear.
+        let had_settings = paths.config.exists();
         let (cfg, settings_problem, updated) = Config::load(&paths.config);
         i18n::set(cfg.language, cfg.time_format);
         add_fonts(&ctx);
@@ -674,6 +715,7 @@ impl App {
             },
             programs: programs::Programs::new(ctx.clone()),
             paste_program: (paste::NO_WINDOW, None),
+            reader_status: String::new(),
             window_state: cc.storage.and_then(|s| s.get_string(WINDOW_KEY)),
             start_size_checked: false,
             detail: None,
@@ -704,8 +746,13 @@ impl App {
             tag_filter: None,
             tag_input: None,
             item_menu: None,
+            marked: HashSet::new(),
+            anchor: None,
+            group_tag: None,
             menu_by_key: false,
             keys_sheet: None,
+            whats_new_pending: false,
+            whats_new_open: false,
             by_key: false,
             taught: HashSet::new(),
             copy_hint: None,
@@ -767,6 +814,19 @@ impl App {
                 app.toast_for(notes.join("\n"), Duration::from_secs(15));
             }
             // Saved in the new form now, so the next start has nothing to update.
+            app.save_config();
+        }
+        // The first start of a newer version says what is new (D47); settings
+        // without a version come from a version before 0.6.
+        let last = app.cfg.last_version.clone();
+        if last != update::VERSION {
+            app.whats_new_pending = had_settings && (last.is_empty() || update::newer_than(&last));
+            // The checklist is for new installs (D53): a history that already
+            // has items when it first could show skips it.
+            if last.is_empty() && !app.library.items().is_empty() {
+                app.cfg.checklist.closed = true;
+            }
+            app.cfg.last_version = update::VERSION.to_string();
             app.save_config();
         }
         if let Some(aside) = app.library.store().moved_aside.clone() {
@@ -957,6 +1017,8 @@ impl App {
             self.item_menu = None;
             self.menu_by_key = false;
             self.keys_sheet = None;
+            self.clear_marks();
+            self.whats_new_open = false;
             // An error from while the window was hidden (such as after starting
             // at sign-in) gets its full time on screen.
             if let Some((_, at)) = &mut self.error {
@@ -1226,7 +1288,16 @@ impl App {
     /// Carries out what the user asked for.
     fn run(&mut self, command: Command) {
         match command {
-            Command::Select(id) => self.selected = Some(id),
+            Command::Select(id) => {
+                self.selected = Some(id);
+                self.anchor = Some(id);
+                self.clear_marks();
+            }
+            Command::ToggleMark(id) => self.toggle_mark(id),
+            Command::MarkRange(id) => self.mark_range(id),
+            Command::PinGroup(ids) => self.pin_group(&ids),
+            Command::DeleteGroup(ids) => self.delete_group(&ids),
+            Command::CopyTogether(ids, paste) => self.copy_together(&ids, paste),
             Command::Copy(id, paste) => {
                 self.selected = Some(id);
                 let k = &self.cfg.keys;
@@ -1268,6 +1339,10 @@ impl App {
             }
             Command::StopSendingImages(key) => self.stop_sending_images(&key),
             Command::ShowWeaker => self.show_weaker(),
+            Command::ShowWhatsNew => {
+                self.win.show_full();
+                self.whats_new_open = true;
+            }
             Command::CopyText(text) => {
                 let flags = self.flags.clone();
                 self.background.run(move || {
@@ -1563,6 +1638,10 @@ impl App {
                     self.toast_for(t!("toast-copied-admin"), Duration::from_secs(8));
                 } else {
                     self.win.hide();
+                    if !self.cfg.checklist.pasted {
+                        self.cfg.checklist.pasted = true;
+                        self.save_config();
+                    }
                     std::thread::spawn(move || {
                         if let Err(e) = paste::paste_into(target) {
                             log::warn!("pasting failed, the item is copied: {e:#}");
@@ -1574,6 +1653,40 @@ impl App {
                 self.set_error(log_error!("error-copying", error = e.to_string()))
             }
             Done::TextCopied(Ok(())) => self.toast(t!("toast-copied-text")),
+            Done::CopiedTogether {
+                count,
+                pictures,
+                paste: how,
+                result: Ok(()),
+            } => {
+                let target = self.win.previous.load(Ordering::SeqCst);
+                if how != Paste::No && paste::exists(target) && !paste::is_out_of_reach(target) {
+                    self.win.hide();
+                    if !self.cfg.checklist.pasted {
+                        self.cfg.checklist.pasted = true;
+                        self.save_config();
+                    }
+                    std::thread::spawn(move || {
+                        if let Err(e) = paste::paste_into(target) {
+                            log::warn!("pasting failed, the items are copied: {e:#}");
+                        }
+                    });
+                } else {
+                    let text = if pictures > 0 {
+                        t!(
+                            "toast-copied-group-pictures",
+                            count = count,
+                            pictures = pictures
+                        )
+                    } else {
+                        t!("toast-copied-group", count = count)
+                    };
+                    self.toast_for(text, Duration::from_secs(4));
+                }
+            }
+            Done::CopiedTogether { result: Err(e), .. } => {
+                self.set_error(log_error!("error-copying", error = e.to_string()))
+            }
             Done::TextCopied(Err(e)) => {
                 self.set_error(log_error!("error-copying", error = e.to_string()))
             }
@@ -1618,6 +1731,7 @@ impl App {
         while let Ok(e) = self.events.try_recv() {
             match e {
                 Event::Status(s) => self.status = s,
+                Event::ReaderStatus(s) => self.reader_status = s,
                 Event::Error(s) => self.set_error(s),
                 Event::Queue(n) => {
                     self.queue_total = run_total(self.queue_total, self.queue, n);
@@ -1944,7 +2058,7 @@ impl App {
                 .map(|h| h.id);
         }
         self.pending_delete = Some(PendingDelete {
-            removed,
+            removed: vec![removed],
             since: Instant::now(),
         });
         let keys = self.cfg.keys.delete.clone();
@@ -1961,8 +2075,10 @@ impl App {
     /// Makes the pending delete final: database row, vectors and image file.
     pub(super) fn finish_delete(&mut self) {
         if let Some(pending) = self.pending_delete.take() {
-            if let Err(e) = self.library.forget(pending.removed) {
-                self.set_error(log_error!("error-deleting", error = e.to_string()));
+            for removed in pending.removed {
+                if let Err(e) = self.library.forget(removed) {
+                    self.set_error(log_error!("error-deleting", error = e.to_string()));
+                }
             }
         }
     }
@@ -1971,9 +2087,155 @@ impl App {
         let Some(pending) = self.pending_delete.take() else {
             return;
         };
-        self.selected = Some(pending.removed.item.id);
-        self.library.put_back(pending.removed);
+        // The first in the list was taken last.
+        self.selected = pending.removed.last().map(|r| r.item.id);
+        for removed in pending.removed.into_iter().rev() {
+            self.library.put_back(removed);
+        }
         self.dirty = true;
+    }
+
+    /// The items selected together, in list order; empty while only one
+    /// item is selected.
+    pub(super) fn group(&self) -> Vec<u64> {
+        if self.marked.len() < 2 {
+            return Vec::new();
+        }
+        let shown = self.results.iter().map(|h| h.id);
+        let group: Vec<u64> = shown.filter(|id| self.marked.contains(id)).collect();
+        if group.len() < 2 {
+            return Vec::new();
+        }
+        group
+    }
+
+    /// Back to one item selected.
+    fn clear_marks(&mut self) {
+        self.marked.clear();
+        self.group_tag = None;
+    }
+
+    fn toggle_mark(&mut self, id: u64) {
+        if self.marked.is_empty() {
+            self.marked.extend(self.selected);
+        }
+        if !self.marked.remove(&id) {
+            self.marked.insert(id);
+        }
+        self.selected = Some(id);
+        self.anchor = Some(id);
+    }
+
+    /// Selects every item from where the range starts to `id`, in list order.
+    fn mark_range(&mut self, id: u64) {
+        let from = self.anchor.or(self.selected).unwrap_or(id);
+        let place = |x: u64| self.results.iter().position(|h| h.id == x);
+        if let (Some(a), Some(b)) = (place(from), place(id)) {
+            let range = &self.results[a.min(b)..=a.max(b)];
+            self.marked = range.iter().map(|h| h.id).collect();
+        }
+        self.anchor = Some(from);
+        self.selected = Some(id);
+    }
+
+    /// Ctrl+A: every item shown.
+    fn mark_all(&mut self) {
+        self.marked = self.results.iter().map(|h| h.id).collect();
+        if self.selected.is_none() {
+            self.selected = self.results.first().map(|h| h.id);
+        }
+    }
+
+    /// Pins every item of `ids`, or unpins them all when all are pinned.
+    fn pin_group(&mut self, ids: &[u64]) {
+        let pinned = |app: &Self, id: u64| app.library.get(id).is_some_and(|it| it.pinned);
+        let pin = ids.iter().any(|&id| !pinned(self, id));
+        for &id in ids {
+            if pinned(self, id) != pin {
+                self.toggle_pin(id);
+            }
+        }
+        self.toast(if pin {
+            t!("toast-pinned-group", count = ids.len())
+        } else {
+            t!("toast-unpinned-group", count = ids.len())
+        });
+    }
+
+    /// Deletes every item of `ids`; one Undo brings them all back.
+    fn delete_group(&mut self, ids: &[u64]) {
+        // One undo at a time: an earlier delete becomes final now.
+        self.finish_delete();
+        let place: HashMap<u64, usize> = self
+            .library
+            .items()
+            .iter()
+            .enumerate()
+            .map(|(i, it)| (it.id, i))
+            .collect();
+        let mut ids: Vec<u64> = ids
+            .iter()
+            .copied()
+            .filter(|id| place.contains_key(id))
+            .collect();
+        // Taken from the last to the first, each keeps its place.
+        ids.sort_by_key(|id| std::cmp::Reverse(place[id]));
+        let row = self.results.iter().position(|h| ids.contains(&h.id));
+        let mut removed = Vec::with_capacity(ids.len());
+        for &id in &ids {
+            if let Some(r) = self.library.take(id) {
+                self.loader.forget(id, false);
+                removed.push(r);
+            }
+        }
+        self.drop_stale_tag_filter();
+        self.drop_removed(&ids);
+        self.clear_marks();
+        // Keep the selection on the row that takes the first one's place.
+        if let Some(i) = row {
+            let last = self.results.len().saturating_sub(1);
+            self.selected = self.results.get(i.min(last)).map(|h| h.id);
+        }
+        let count = removed.len();
+        self.pending_delete = Some(PendingDelete {
+            removed,
+            since: Instant::now(),
+        });
+        self.toast_for(t!("toast-deleted-group", count = count), UNDO_FOR);
+        if let Some(toast) = &mut self.toast {
+            toast.action = Some((t!("toast-undo"), Command::UndoDelete));
+        }
+        self.dirty = true;
+    }
+
+    /// Puts the texts, links and file paths of `ids` on the clipboard
+    /// together, one after another in list order, and maybe pastes them.
+    /// Pictures are left out.
+    fn copy_together(&mut self, ids: &[u64], paste: Paste) {
+        let items = ids.iter().filter_map(|&id| self.library.get(id));
+        let (count, text, pictures) = texts_together(items);
+        if count == 0 {
+            self.toast(t!("toast-pictures-not-together"));
+            return;
+        }
+        let flags = self.flags.clone();
+        self.background.run(move || Done::CopiedTogether {
+            count,
+            pictures,
+            paste,
+            result: write_clipboard(&flags, || clipboard::copy_text(&text)),
+        });
+    }
+
+    /// Adds the tags typed in the bar to every item selected together.
+    pub(super) fn tag_group(&mut self, tags: &str) {
+        let group = self.group();
+        for &id in &group {
+            self.run(Command::AddTags(id, tags.to_string()));
+        }
+        let tag = tags.trim().trim_start_matches('#');
+        self.toast(t!("toast-tag-added-group", tag = tag, count = group.len()));
+        self.group_tag = None;
     }
 
     /// Shows the weaker matches folded below the results, until the search
@@ -2115,6 +2377,21 @@ mod tests {
             self.0.remove(key);
         }
         fn flush(&mut self) {}
+    }
+
+    #[test]
+    fn copy_together_joins_texts_in_order_and_leaves_pictures_out() {
+        let item =
+            |id: u64, kind: Kind, text: &str| Item::new(id, kind, Origin::Clipboard, text.into());
+        let items = [
+            item(1, Kind::Text, "first line\n"),
+            item(2, Kind::Image, ""),
+            item(3, Kind::Link, "https://example.com"),
+            item(4, Kind::Files, "C:\\a.txt\nC:\\b.txt"),
+        ];
+        let joined = "first line\nhttps://example.com\nC:\\a.txt\nC:\\b.txt";
+        assert_eq!(texts_together(items.iter()), (3, joined.to_string(), 1));
+        assert_eq!(texts_together(items[1..2].iter()), (0, String::new(), 1));
     }
 
     #[test]

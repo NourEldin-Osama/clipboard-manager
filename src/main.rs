@@ -16,6 +16,7 @@ mod images;
 mod import;
 mod installed;
 mod library;
+mod llama;
 mod net;
 mod ocr;
 mod paste;

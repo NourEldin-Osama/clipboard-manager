@@ -225,8 +225,73 @@ item-copy-plain = نسخ كنص عادي
 item-copy-image-text = نسخ النص الموجود في الصورة
 item-ignore-app = عدم تسجيل النسخ من { $app }
 item-menu = الإجراءات
+item-paste-group =
+    { $count ->
+        [one] لصق عنصر واحد
+        [two] لصق العنصرين معًا
+        [few] لصق { $count } عناصر معًا
+       *[other] لصق { $count } عنصر معًا
+    }
+item-copy-group =
+    { $count ->
+        [one] نسخ عنصر واحد
+        [two] نسخ العنصرين معًا
+        [few] نسخ { $count } عناصر معًا
+       *[other] نسخ { $count } عنصر معًا
+    }
+item-pin-group =
+    { $count ->
+        [one] تثبيت عنصر واحد
+        [two] تثبيت العنصرين
+        [few] تثبيت { $count } عناصر
+       *[other] تثبيت { $count } عنصر
+    }
+item-unpin-group =
+    { $count ->
+        [one] إلغاء تثبيت عنصر واحد
+        [two] إلغاء تثبيت العنصرين
+        [few] إلغاء تثبيت { $count } عناصر
+       *[other] إلغاء تثبيت { $count } عنصر
+    }
+item-tag-group =
+    { $count ->
+        [one] إضافة وسم إلى عنصر واحد
+        [two] إضافة وسم إلى العنصرين
+        [few] إضافة وسم إلى { $count } عناصر
+       *[other] إضافة وسم إلى { $count } عنصر
+    }
+item-delete-group =
+    { $count ->
+        [one] حذف عنصر واحد
+        [two] حذف العنصرين
+        [few] حذف { $count } عناصر
+       *[other] حذف { $count } عنصر
+    }
+group-selected =
+    { $count ->
+        [one] عنصر واحد محدد
+        [two] عنصران محددان
+        [few] { $count } عناصر محددة
+       *[other] { $count } عنصر محدد
+    }
+group-pin = تثبيت
+group-unpin = إلغاء التثبيت
+group-tag = إضافة وسم
+group-copy = نسخ معًا
+group-delete = حذف
+group-clear = إلغاء التحديد
 keys-sheet-title = المفاتيح
 keys-sheet-close = إغلاق
+checklist-title = ابدأ من هنا
+checklist-copy = انسخ أي شيء في أي برنامج
+checklist-paste = اضغط { $keys } في برنامج آخر، ثم الصق عنصرًا
+checklist-paste-no-key = افتح هذه النافذة فوق برنامج آخر، ثم الصق عنصرًا
+checklist-pin = ثبّت عنصرًا ليبقى في الأعلى
+checklist-meaning = فعّل البحث بالمعنى (اختياري)
+checklist-set-up = إعداد
+checklist-close = إغلاق قائمة البدء
+whats-new-title = ما الجديد في الإصدار { $version }
+whats-new-close = إغلاق
 hint-with-keys = { $action } ({ $keys })
 details-only-this-tag = إظهار العناصر ذات هذا الوسم فقط
 details-remove-tag = إزالة الوسم
@@ -627,7 +692,10 @@ settings-server-images = إرسال الصور
 settings-server-images-hint = أرسل الصور المنسوخة أيضًا، للنماذج التي تفهم الصور
 settings-server-images-help = مثل CLIP وSigLIP وBiUltraVBERT، أو EmbeddingGemma 2 مع ملف mmproj، على خادم يأخذ الصور. وإلا فتُوجد الصور بالنص الذي فيها.
 settings-server-launch = شغّل llama-server نيابةً عني
-settings-server-launch-hint = يشغّل التطبيق llama-server بملف ‎.gguf الخاص بك في الخلفية ويوقفه عند الخروج
+settings-server-launch-hint = يشغّل التطبيق llama-server بنموذجك، من ملف أو باسمه على Hugging Face، في الخلفية ويوقفه عند الخروج
+settings-server-hf = أو اسم النموذج على Hugging Face
+settings-server-hf-hint = مثل ggml-org/GLM-OCR-GGUF: ينزّله llama-server في أول مرة، ويُستخدم بدل الملف
+settings-server-one-model = يشغّل llama-server نموذجًا واحدًا فقط. لتشغيل نموذج للبحث ونموذج للقراءة، احفظهما خادمَي llama.cpp منفصلين، لكل منهما منفذه.
 settings-server-program = برنامج llama-server
 settings-server-program-hint = الملف llama-server.exe من إصدار llama.cpp
 settings-server-model-file = ملف النموذج (‎.gguf)
@@ -636,6 +704,7 @@ settings-server-projector-hint = ملف mmproj اختياري، للنماذج �
 settings-server-port = المنفذ
 settings-server-extra-args = وسائط إضافية
 settings-server-extra-args-hint = تُمرَّر إلى llama-server كما هي
+settings-server-extra-args-help = يحتاج نموذج البحث عادةً إلى ‎--pooling mean. ويحتاج نموذج القراءة إلى مساحة للصورة ونصها، مثل ‎-c 8192، ودون ‎--pooling.
 settings-shortcuts-global = في أي مكان في ويندوز
 settings-shortcut-popup = فتح النافذة السريعة
 settings-shortcut-popup-hint = نافذة صغيرة عند مؤشر الماوس: ابحث، ثم الصق في البرنامج الذي أنت فيه
@@ -688,6 +757,7 @@ error-model = تعذّر تحميل نموذج البحث: { $error }
 error-model-test = فشل الاختبار: { $error }
 error-models-dev = تعذّر البحث عن النموذج في models.dev: { $error }
 error-ocr-unavailable = تعذّرت قراءة النص في الصور: { $error }
+error-reader-server-stopped = توقف llama-server الخاص بقراءة النص أثناء بدئه ({ $status }). تحقق من ملف النموذج أو اسمه على Hugging Face، ومن الوسائط الإضافية.
 error-server-unreachable = تعذّر الوصول إلى الخادم على { $host }. تأكد من أنه يعمل ومن صحة عنوانه.
 error-server-needs-key = يحتاج الخادم إلى مفتاح API، أو أن المفتاح غير صحيح. راجع المفتاح في إعدادات الخادم.
 error-server-not-found = لا يعرف الخادم هذا العنوان أو هذا النموذج: «{ $said }»
@@ -701,12 +771,63 @@ error-settings-unreadable-no-copy = تعذّرت قراءة الإعدادات (
 error-history-moved-aside = تعذّر فتح سجلك، فبدأ سجل جديد فارغ. حُفظ السجل القديم باسم { $file }
 error-start-failed = تعذّر تشغيل مدير الحافظة.
 status-starting-llama = جارٍ تشغيل llama-server…
+status-reader-starting = جارٍ تشغيل llama-server لقراءة النص في الصور…
+status-reader-downloading = جارٍ تشغيل llama-server لقراءة النص في الصور؛ ينزّل النموذج في أول مرة…
 status-connecting = جارٍ الاتصال بـ { $host }…
 toast-copied = تم النسخ
 toast-copied-admin = تم النسخ. ذلك البرنامج يعمل كمسؤول، لذا لا يسمح Windows لهذا التطبيق باللصق فيه. اضغط Ctrl+V هناك.
 toast-copied-text = تم نسخ النص
 toast-saved = تم الحفظ
 toast-deleted = تم الحذف
+toast-updated = تم التحديث إلى الإصدار { $version }
+toast-pinned-group =
+    { $count ->
+        [one] تم تثبيت عنصر واحد
+        [two] تم تثبيت عنصرين
+        [few] تم تثبيت { $count } عناصر
+       *[other] تم تثبيت { $count } عنصر
+    }
+toast-unpinned-group =
+    { $count ->
+        [one] تم إلغاء تثبيت عنصر واحد
+        [two] تم إلغاء تثبيت عنصرين
+        [few] تم إلغاء تثبيت { $count } عناصر
+       *[other] تم إلغاء تثبيت { $count } عنصر
+    }
+toast-deleted-group =
+    { $count ->
+        [one] تم حذف عنصر واحد
+        [two] تم حذف عنصرين
+        [few] تم حذف { $count } عناصر
+       *[other] تم حذف { $count } عنصر
+    }
+toast-copied-group =
+    { $count ->
+        [one] تم نسخ عنصر واحد
+        [two] تم نسخ عنصرين معًا
+        [few] تم نسخ { $count } عناصر معًا
+       *[other] تم نسخ { $count } عنصر معًا
+    }
+toast-copied-group-pictures =
+    { $count ->
+        [one] تم نسخ عنصر واحد
+        [two] تم نسخ عنصرين معًا
+        [few] تم نسخ { $count } عناصر معًا
+       *[other] تم نسخ { $count } عنصر معًا
+    }، دون { $pictures ->
+        [one] صورة واحدة
+        [two] صورتين
+        [few] { $pictures } صور
+       *[other] { $pictures } صورة
+    }
+toast-pictures-not-together = لا يمكن نسخ الصور معًا
+toast-tag-added-group =
+    { $count ->
+        [one] تمت إضافة #{ $tag } إلى عنصر واحد
+        [two] تمت إضافة #{ $tag } إلى عنصرين
+        [few] تمت إضافة #{ $tag } إلى { $count } عناصر
+       *[other] تمت إضافة #{ $tag } إلى { $count } عنصر
+    }
 toast-deleted-key = تم الحذف. في المرة القادمة: { $keys }
 toast-copied-key = تم النسخ. في المرة القادمة: { $keys }
 toast-pinned-key = تم التثبيت. في المرة القادمة: { $keys }

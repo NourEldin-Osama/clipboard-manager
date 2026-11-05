@@ -15,6 +15,7 @@ use super::shortcut;
 use super::*;
 use crate::config::Density;
 
+mod checklist;
 mod chrome;
 mod details;
 mod grid;
@@ -27,6 +28,7 @@ mod popup;
 mod theme;
 mod time_format;
 mod top_bar;
+mod whats_new;
 mod widgets;
 
 // The helpers of every part, for this file and its parts.
@@ -181,7 +183,7 @@ impl eframe::App for App {
     fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
         self.finish_delete();
         self.install_on_exit();
-        crate::embed::server::stop_launched_server();
+        crate::llama::stop_all();
     }
 
     fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
@@ -260,6 +262,7 @@ impl eframe::App for App {
         }
         self.toasts(&ctx);
         self.keys_sheet(&ctx, false);
+        self.whats_new(&ctx);
         if ctx.input(|i| !i.raw.hovered_files.is_empty()) {
             let r = ctx.content_rect();
             let p = ctx.layer_painter(egui::LayerId::new(
