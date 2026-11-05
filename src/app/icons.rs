@@ -416,6 +416,14 @@ pub(super) fn chip(ui: &mut Ui, icon: Icon, text: &str, color: Color32) -> egui:
     resp
 }
 
+/// The room around a pill's icon and label.
+const PILL_PAD: Vec2 = Vec2::new(10.0, 5.0);
+
+/// The height of a pill whose label is `text_height` tall.
+pub(super) fn pill_height(text_height: f32) -> f32 {
+    text_height.max(14.0) + PILL_PAD.y * 2.0
+}
+
 /// A pill button with an icon and a label; tinted while `selected`.
 pub(super) fn pill(
     ui: &mut Ui,
@@ -425,8 +433,8 @@ pub(super) fn pill(
     selected: bool,
 ) -> egui::Response {
     let g = ui.fonts_mut(|f| f.layout_job(job));
-    let pad = Vec2::new(10.0, 5.0);
-    let size = Vec2::new(14.0 + 6.0 + g.size().x, g.size().y.max(14.0)) + pad * 2.0;
+    let width = 14.0 + 6.0 + g.size().x + PILL_PAD.x * 2.0;
+    let size = Vec2::new(width, pill_height(g.size().y));
     let (rect, resp) = ui.allocate_exact_size(size, Sense::click());
     let v = ui.visuals();
     if selected {
@@ -441,7 +449,14 @@ pub(super) fn pill(
     } else {
         v.text_color()
     };
-    paint_icon_text(ui.painter(), rect.shrink2(pad), icon, 14.0, g, icon_color);
+    paint_icon_text(
+        ui.painter(),
+        rect.shrink2(PILL_PAD),
+        icon,
+        14.0,
+        g,
+        icon_color,
+    );
     resp
 }
 

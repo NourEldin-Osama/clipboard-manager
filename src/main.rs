@@ -76,7 +76,7 @@ fn main() -> eframe::Result {
         paths.root.display()
     );
     // The window title is set before the app starts, so read the language now.
-    let (cfg, _, _) = config::Config::load(&paths.config);
+    let (cfg, _) = config::Config::load(&paths.config);
     i18n::set(cfg.language, cfg.time_format);
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()

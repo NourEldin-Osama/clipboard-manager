@@ -234,7 +234,16 @@ pub(crate) fn row_wrapped<R>(ui: &mut Ui, add: impl FnOnce(&mut Ui) -> R) -> R {
 
 /// Like `ui.horizontal`, in reading direction.
 pub(crate) fn row<R>(ui: &mut Ui, add: impl FnOnce(&mut Ui) -> R) -> R {
-    let size = Vec2::new(ui.available_width(), ui.spacing().interact_size.y);
+    let height = ui.spacing().interact_size.y;
+    row_of(ui, height, add)
+}
+
+/// A row `height` tall from the start. A row grows as it is filled and
+/// centers each item in the height it has so far, so an item shorter than
+/// the ones after it sits above their line unless the row starts as tall as
+/// they are.
+pub(crate) fn row_of<R>(ui: &mut Ui, height: f32, add: impl FnOnce(&mut Ui) -> R) -> R {
+    let size = Vec2::new(ui.available_width(), height);
     ui.allocate_ui_with_layout(size, row_layout(), add).inner
 }
 
