@@ -110,6 +110,11 @@ the notes here before a push that makes a release.
   status bar says what is happening. A search model and a reading model
   each need a llama.cpp server of their own, with its own port; the
   server's settings say so.
+- Settings from 0.4 or earlier are no longer updated. If you skipped 0.5,
+  search by meaning starts off and Windows reads the text in images: add
+  your servers again in Settings, Search & AI. The files of the old
+  built-in models stay in the `models` folder of the data folder, up to
+  1.5 GB; you can delete that folder.
 
 ## 0.5.1
 

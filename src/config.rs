@@ -3,7 +3,6 @@
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Map, Value};
 
 use crate::i18n::t;
 
@@ -244,29 +243,6 @@ impl ServerKind {
             Self::Other => "",
         }
     }
-
-    /// What a server saved before kinds existed most likely is, from its
-    /// address: OpenRouter's, or the usual port of each server.
-    fn from_address(url: &str) -> Self {
-        let host = crate::net::host(url).to_ascii_lowercase();
-        if host == "openrouter.ai" || host.ends_with(".openrouter.ai") {
-            return Self::OpenRouter;
-        }
-        match port(&host) {
-            Some(8080) => Self::LlamaCpp,
-            Some(11434) => Self::Ollama,
-            Some(1234) => Self::LmStudio,
-            Some(8000) => Self::Vllm,
-            Some(8888) => Self::Unsloth,
-            _ => Self::Other,
-        }
-    }
-}
-
-/// The port of a `host:port`, as `net::host` gives it.
-fn port(host: &str) -> Option<u16> {
-    host.rsplit_once(':')
-        .and_then(|(_, port)| port.parse().ok())
 }
 
 /// A saved server: where it is, its key, and the models used on it.
@@ -791,18 +767,15 @@ impl Config {
     /// Reads the settings; a missing file means defaults. A file that can't be
     /// read is copied to `config.json.bad` before the defaults are used, so
     /// the next save doesn't silently destroy it, and the problem is returned
-    /// for the app to show. Settings of an earlier version are updated, with
-    /// what the user should hear about.
-    pub fn load(path: &Path) -> (Self, Option<LoadProblem>, Option<Vec<UpdateNote>>) {
+    /// for the app to show.
+    pub fn load(path: &Path) -> (Self, Option<LoadProblem>) {
         let parsed = match std::fs::read_to_string(path) {
             Ok(text) => Self::parse(&text),
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-                return (Self::default(), None, None)
-            }
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return (Self::default(), None),
             Err(e) => Err(e.into()),
         };
         match parsed {
-            Ok((cfg, notes)) => (cfg, None, notes),
+            Ok(cfg) => (cfg, None),
             Err(e) => {
                 let bad = path.with_extension("json.bad");
                 let copy = std::fs::copy(path, &bad)
@@ -812,17 +785,15 @@ impl Config {
                     error: e.to_string(),
                     copy,
                 };
-                (Self::default(), Some(problem), None)
+                (Self::default(), Some(problem))
             }
         }
     }
 
-    /// Settings as saved by this version or an earlier one; for an earlier
-    /// one, also what its update changed that the user should hear about.
-    fn parse(text: &str) -> anyhow::Result<(Self, Option<Vec<UpdateNote>>)> {
-        let mut value: Value = serde_json::from_str(text)?;
-        let notes = update_from_0_4(&mut value);
-        Ok((serde_json::from_value(value)?, notes))
+    /// Settings as saved by this version or an earlier one: fields added
+    /// since are missing from older files and take their defaults.
+    fn parse(text: &str) -> anyhow::Result<Self> {
+        Ok(serde_json::from_str(text)?)
     }
 
     pub fn save(&self, path: &Path) -> anyhow::Result<()> {
@@ -830,209 +801,6 @@ impl Config {
         std::fs::write(&tmp, serde_json::to_string_pretty(self)?)?;
         std::fs::rename(tmp, path)?;
         Ok(())
-    }
-}
-
-/// What the update of earlier settings changed that the user should know.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum UpdateNote {
-    /// Meaning search used the built-in model, which is gone: it is off.
-    BuiltInSearchRemoved,
-    /// The built-in text reader is gone: Windows reads the text in images,
-    /// or reading is off where there is no Windows.
-    BuiltInReaderRemoved,
-}
-
-/// Settings from 0.4 and earlier keep meaning search in `backend` and
-/// `server_profiles`, and the text reader in `text_reader` and `ocr_images`.
-/// Each address becomes a saved server, with the models used on it as they
-/// were, so the vectors of the model in use stay valid. The built-in search
-/// model and text reader are gone: search turns off, and Windows reads the
-/// text (elsewhere reading turns off). None for settings that need no
-/// update. This update ships in 0.5 and goes in the version after it
-/// (migration rule D33).
-fn update_from_0_4(value: &mut Value) -> Option<Vec<UpdateNote>> {
-    let settings = value.as_object_mut()?;
-    const OLD: [&str; 5] = [
-        "backend",
-        "server_profiles",
-        "text_reader",
-        "ocr_images",
-        "builtin_repo",
-    ];
-    if !OLD.iter().any(|key| settings.contains_key(*key)) {
-        return None;
-    }
-    let mut notes = Vec::new();
-    let backend = settings.remove("backend").unwrap_or_default();
-    let profiles = settings.remove("server_profiles").unwrap_or_default();
-    let reader = settings.remove("text_reader");
-    let reading = settings
-        .remove("ocr_images")
-        .and_then(|v| v.as_bool())
-        .unwrap_or(true);
-    settings.remove("builtin_repo");
-
-    // Meaning search: the server in use first, then the remembered ones.
-    let mut saved = Saved::default();
-    let mut search_model = None;
-    if backend.get("SigLip").is_some() {
-        notes.push(UpdateNote::BuiltInSearchRemoved);
-    } else if let Some(server) = backend.get("Server") {
-        search_model = saved.add_search_model(server);
-    }
-    for profile in profiles.as_array().into_iter().flatten() {
-        saved.add_search_model(profile);
-    }
-
-    // The text reader. Settings without one read with the built-in reader
-    // where Windows' reader isn't there.
-    let built_in = match &reader {
-        Some(name) => name == "BuiltIn",
-        None => !cfg!(windows),
-    };
-    if built_in && reading {
-        notes.push(UpdateNote::BuiltInReaderRemoved);
-    }
-    let read_model = reader
-        .as_ref()
-        .and_then(|r| r.get("Server"))
-        .and_then(|server| saved.add_read_model(server));
-    let read_engine = match (reading, read_model) {
-        (false, _) => ReadEngine::Off,
-        (true, Some(_)) => ReadEngine::Server,
-        (true, None) => ReadEngine::default(),
-    };
-
-    let search_engine = match search_model {
-        Some(_) => SearchEngine::Server,
-        None => SearchEngine::Off,
-    };
-    settings.insert("servers".into(), Value::Array(saved.servers));
-    settings.insert("search_engine".into(), json!(search_engine));
-    settings.insert("search_model".into(), json!(search_model));
-    settings.insert("read_engine".into(), json!(read_engine));
-    settings.insert("read_model".into(), json!(read_model));
-    Some(notes)
-}
-
-/// The servers the update makes from settings of 0.4 and earlier, as JSON.
-#[derive(Default)]
-struct Saved {
-    servers: Vec<Value>,
-}
-
-impl Saved {
-    /// A search server's settings as 0.4 saved them, as a model on its server.
-    fn add_search_model(&mut self, old: &Value) -> Option<ModelRef> {
-        let launch = old.get("launch").filter(|l| !l.is_null());
-        let url = match launch {
-            // A server the app starts listens on this PC, at its port.
-            Some(l) => format!("http://127.0.0.1:{}/v1", l["port"].as_u64().unwrap_or(0)),
-            None => old["base_url"]
-                .as_str()
-                .unwrap_or_default()
-                .trim()
-                .to_string(),
-        };
-        if url.is_empty() {
-            return None;
-        }
-        let at = self.server(&url, old["api_key"].as_str().unwrap_or_default(), launch);
-        let mut settings = Map::new();
-        for (from, to) in [
-            ("query_prefix", "query_prefix"),
-            ("document_prefix", "document_prefix"),
-            ("images", "images"),
-            ("truncate_dims", "dimensions"),
-        ] {
-            if let Some(v) = old.get(from) {
-                settings.insert(to.into(), v.clone());
-            }
-        }
-        let model = old["model"].as_str().unwrap_or_default().trim();
-        Some(self.add_model(at, model, json!({ "Search": settings })))
-    }
-
-    /// A text reader server's settings as 0.4 saved them, as a model on its
-    /// server.
-    fn add_read_model(&mut self, old: &Value) -> Option<ModelRef> {
-        let url = old["base_url"].as_str().unwrap_or_default().trim();
-        if url.is_empty() {
-            return None;
-        }
-        let at = self.server(url, old["api_key"].as_str().unwrap_or_default(), None);
-        let mut settings = Map::new();
-        for field in ["kind", "prompt"] {
-            if let Some(v) = old.get(field) {
-                settings.insert(field.into(), v.clone());
-            }
-        }
-        let model = old["model"].as_str().unwrap_or_default().trim();
-        Some(self.add_model(at, model, json!({ "Read": settings })))
-    }
-
-    /// The index of the server at `url` with the key `stored` (as the settings
-    /// file keeps it), made if there is none yet. A server saved without a
-    /// key takes this one.
-    fn server(&mut self, url: &str, stored: &str, launch: Option<&Value>) -> usize {
-        let key = crate::secure::open(stored);
-        let found = self.servers.iter().position(|s| {
-            let other = crate::secure::open(s["api_key"].as_str().unwrap_or_default());
-            address_key(s["base_url"].as_str().unwrap_or_default()) == address_key(url)
-                && (other == key || other.is_empty() || key.is_empty())
-        });
-        if let Some(at) = found {
-            if self.servers[at]["api_key"] == "" && !stored.is_empty() {
-                self.servers[at]["api_key"] = json!(stored);
-            }
-            return at;
-        }
-        let kind = match launch {
-            Some(_) => ServerKind::LlamaCpp,
-            None => ServerKind::from_address(url),
-        };
-        let name = match kind {
-            // The port of the Sentence Transformers server in tools/.
-            ServerKind::Other if port(crate::net::host(url)) == Some(8001) => {
-                "Sentence Transformers".to_string()
-            }
-            ServerKind::Other => crate::net::host(url).to_string(),
-            kind => kind.name().to_string(),
-        };
-        self.servers.push(json!({
-            "id": self.servers.len() + 1,
-            "kind": kind,
-            "name": name,
-            "base_url": url,
-            "api_key": stored,
-            "models": [],
-            "launch": launch,
-        }));
-        self.servers.len() - 1
-    }
-
-    /// Adds a model to the server at `at`; the same model with the same
-    /// settings is kept once.
-    fn add_model(&mut self, at: usize, model: &str, job: Value) -> ModelRef {
-        let server = &mut self.servers[at];
-        let id = server["id"].as_u64().unwrap_or_default() as u32;
-        let models = server["models"].as_array_mut().expect("models is a list");
-        if let Some(same) = models
-            .iter()
-            .find(|m| m["model"] == model && m["job"] == job)
-        {
-            return ModelRef {
-                server: id,
-                model: same["id"].as_u64().unwrap_or_default() as u32,
-            };
-        }
-        let model_id = models.len() as u32 + 1;
-        models.push(json!({ "id": model_id, "model": model, "name": "", "job": job }));
-        ModelRef {
-            server: id,
-            model: model_id,
-        }
     }
 }
 
@@ -1072,26 +840,6 @@ impl Paths {
         };
         std::fs::create_dir_all(&p.images)?;
         Ok(p)
-    }
-
-    /// Deletes what the built-in search model and text reader downloaded in
-    /// versions before 0.5: their folders in `models`, and `models` itself
-    /// once it is empty. Anything else in it stays.
-    pub fn remove_built_in_models(&self) {
-        let models = self.root.join("models");
-        let Ok(entries) = std::fs::read_dir(&models) else {
-            return;
-        };
-        for entry in entries.flatten() {
-            let name = entry.file_name().to_string_lossy().into_owned();
-            if name == "ocrs" || name.starts_with("google--siglip") {
-                if let Err(e) = std::fs::remove_dir_all(entry.path()) {
-                    log::warn!("removing the old model folder {name}: {e}");
-                }
-            }
-        }
-        // Fails while something else is in the folder, which is meant.
-        let _ = std::fs::remove_dir(&models);
     }
 }
 
@@ -1250,160 +998,15 @@ mod tests {
     fn servers_survive_a_save() {
         let cfg = with_unsloth();
         let json = serde_json::to_string(&cfg).unwrap();
-        let (back, notes) = Config::parse(&json).unwrap();
+        let back = Config::parse(&json).unwrap();
         assert_eq!(back, cfg);
-        assert_eq!(notes, None, "settings of this version need no update");
         if cfg!(windows) {
             assert!(!json.contains("unsloth-key"), "the key is encrypted");
         }
         // Fields a later version adds are missing from older files.
-        let (cfg, _) = Config::parse(r#"{"servers":[{"id":4,"base_url":"http://x/v1"}]}"#).unwrap();
+        let cfg = Config::parse(r#"{"servers":[{"id":4,"base_url":"http://x/v1"}]}"#).unwrap();
         assert_eq!(cfg.servers[0].kind, ServerKind::Other);
         assert!(cfg.servers[0].models.is_empty());
-    }
-
-    /// Settings as 0.4.3 saved them, with the parts this update reads.
-    const SETTINGS_0_4: &str = r#"{
-        "max_items": 100,
-        "ocr_images": true,
-        "text_reader": {"Server": {"base_url": "http://127.0.0.1:8080/v1", "api_key": "",
-            "model": "minicpm-ocr", "kind": "MiniCpmOcr", "prompt": "Text Recognition:"}},
-        "backend": {"Server": {"base_url": "http://127.0.0.1:8888/v1", "api_key": "unsloth-key",
-            "model": "", "query_prefix": "task: search result | query: ",
-            "document_prefix": "title: none | text: ", "images": false, "truncate_dims": 0,
-            "launch": null}},
-        "server_profiles": [
-            {"base_url": "http://127.0.0.1:8888/v1", "api_key": "unsloth-key", "model": "",
-             "query_prefix": "task: search result | query: ",
-             "document_prefix": "title: none | text: ", "images": false, "truncate_dims": 0,
-             "launch": null},
-            {"base_url": "http://127.0.0.1:1234/v1", "api_key": "", "model": "nomic-embed",
-             "query_prefix": "", "document_prefix": "", "images": false, "truncate_dims": 512,
-             "launch": null},
-            {"base_url": "http://127.0.0.1:8001/v1", "api_key": "", "model": "",
-             "query_prefix": "", "document_prefix": "", "images": true, "truncate_dims": 0,
-             "launch": null}
-        ],
-        "builtin_repo": "google/siglip-base-patch16-224",
-        "allowed_servers": []
-    }"#;
-
-    #[test]
-    fn settings_from_0_4_become_saved_servers_with_their_models() {
-        let (cfg, notes) = Config::parse(SETTINGS_0_4).unwrap();
-        assert_eq!(notes, Some(Vec::new()), "nothing to tell");
-        assert_eq!(cfg.max_items, 100, "the other settings stay");
-        let names: Vec<(ServerKind, &str)> = cfg
-            .servers
-            .iter()
-            .map(|s| (s.kind, s.name.as_str()))
-            .collect();
-        assert_eq!(
-            names,
-            [
-                (ServerKind::Unsloth, "Unsloth"),
-                (ServerKind::LmStudio, "LM Studio"),
-                (ServerKind::Other, "Sentence Transformers"),
-                (ServerKind::LlamaCpp, "llama.cpp"),
-            ]
-        );
-        assert_eq!(
-            cfg.servers[0].models.len(),
-            1,
-            "the server in use and its remembered settings are one model"
-        );
-        // The model in use comes out as it was, so its vectors still count.
-        assert_eq!(
-            cfg.search_backend(),
-            EmbedBackend::Server(Box::new(ServerConfig {
-                server_kind: ServerKind::Unsloth,
-                api_key: "unsloth-key".into(),
-                query_prefix: SearchSettings::GEMMA_QUERY.into(),
-                document_prefix: SearchSettings::GEMMA_DOCUMENT.into(),
-                ..ServerConfig::plain("http://127.0.0.1:8888/v1")
-            }))
-        );
-        let lm_studio = &cfg.servers[1].models[0];
-        assert_eq!(lm_studio.model, "nomic-embed");
-        assert!(matches!(&lm_studio.job, ModelJob::Search(s) if s.dimensions == 512));
-        assert!(matches!(&cfg.servers[2].models[0].job, ModelJob::Search(s) if s.images));
-        assert_eq!(
-            cfg.text_reader(),
-            TextReader::Server(ReaderServer {
-                server_kind: ServerKind::LlamaCpp,
-                base_url: "http://127.0.0.1:8080/v1".into(),
-                api_key: String::new(),
-                model: "minicpm-ocr".into(),
-                kind: ReaderModel::MiniCpmOcr,
-                prompt: "Text Recognition:".into(),
-                launch: None,
-            })
-        );
-        // Saved again, it is settings of this version.
-        let saved = serde_json::to_string(&cfg).unwrap();
-        assert!(!saved.contains("server_profiles") && !saved.contains("builtin_repo"));
-        assert_eq!(Config::parse(&saved).unwrap(), (cfg, None));
-    }
-
-    #[test]
-    fn a_reader_on_the_search_server_is_one_more_model_there() {
-        let old = r#"{
-            "backend": {"Server": {"base_url": "http://127.0.0.1:8000/v1", "model": "embed"}},
-            "text_reader": {"Server": {"base_url": "http://127.0.0.1:8000/v1/", "model": "ocr"}}
-        }"#;
-        let (cfg, _) = Config::parse(old).unwrap();
-        assert_eq!(cfg.servers.len(), 1);
-        assert_eq!(cfg.servers[0].kind, ServerKind::Vllm);
-        assert_eq!(cfg.servers[0].models.len(), 2);
-        // A reader saved before model types gets the usual prompt.
-        assert!(matches!(&cfg.text_reader(), TextReader::Server(r)
-            if r.model == "ocr" && r.kind == ReaderModel::Other && r.prompt == ReaderServer::PROMPT));
-    }
-
-    #[test]
-    fn the_built_in_engines_become_off_and_windows() {
-        let old = r#"{"backend":{"SigLip":{"repo":"google/siglip-base-patch16-224"}},
-            "builtin_repo":"google/siglip-base-patch16-224","text_reader":"BuiltIn",
-            "ocr_images":true}"#;
-        let (cfg, notes) = Config::parse(old).unwrap();
-        assert_eq!(cfg.search_engine, SearchEngine::Off);
-        assert_eq!(cfg.read_engine, ReadEngine::default());
-        assert_eq!(
-            notes,
-            Some(vec![
-                UpdateNote::BuiltInSearchRemoved,
-                UpdateNote::BuiltInReaderRemoved
-            ])
-        );
-        // Reading was off: it stays off, and there is nothing to say.
-        let (cfg, notes) =
-            Config::parse(r#"{"text_reader":"BuiltIn","ocr_images":false}"#).unwrap();
-        assert_eq!(
-            (cfg.read_engine, notes),
-            (ReadEngine::Off, Some(Vec::new()))
-        );
-        let (cfg, _) = Config::parse(r#"{"text_reader":"Windows","ocr_images":true}"#).unwrap();
-        assert_eq!(cfg.read_engine, ReadEngine::default());
-    }
-
-    #[test]
-    fn kinds_come_from_the_usual_addresses() {
-        for (url, kind) in [
-            ("http://127.0.0.1:8080/v1", ServerKind::LlamaCpp),
-            ("http://localhost:11434/v1", ServerKind::Ollama),
-            ("http://127.0.0.1:1234/v1", ServerKind::LmStudio),
-            ("http://[::1]:8000/v1", ServerKind::Vllm),
-            ("http://127.0.0.1:8888/v1", ServerKind::Unsloth),
-            ("https://openrouter.ai/api/v1", ServerKind::OpenRouter),
-            ("http://127.0.0.1:3333/v1", ServerKind::Other),
-            ("http://192.168.1.5/v1", ServerKind::Other),
-        ] {
-            assert_eq!(ServerKind::from_address(url), kind, "{url}");
-        }
-        for kind in ServerKind::ALL {
-            let usual = kind.address();
-            assert!(usual.is_empty() || ServerKind::from_address(usual) == kind);
-        }
     }
 
     #[test]
@@ -1412,12 +1015,12 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         let path = dir.join("config.json");
 
-        let (cfg, problem, _) = Config::load(&path);
+        let (cfg, problem) = Config::load(&path);
         assert_eq!(cfg, Config::default());
         assert!(problem.is_none(), "a missing file is not a problem");
 
         std::fs::write(&path, r#"{"max_items": "not a number"}"#).unwrap();
-        let (cfg, problem, _) = Config::load(&path);
+        let (cfg, problem) = Config::load(&path);
         assert_eq!(cfg, Config::default());
         let problem = problem.expect("a damaged file is a problem");
         assert_eq!(problem.copy, Ok(dir.join("config.json.bad")));
@@ -1425,7 +1028,7 @@ mod tests {
         assert_eq!(kept, r#"{"max_items": "not a number"}"#);
 
         std::fs::write(&path, r#"{"max_items": 7}"#).unwrap();
-        let (cfg, problem, _) = Config::load(&path);
+        let (cfg, problem) = Config::load(&path);
         assert_eq!((cfg.max_items, problem), (7, None));
         std::fs::remove_dir_all(dir).ok();
     }

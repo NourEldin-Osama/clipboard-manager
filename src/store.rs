@@ -499,42 +499,6 @@ impl Store {
         }
         Ok(out)
     }
-
-    /// Deletes the vectors of every model whose key starts with `prefix`,
-    /// for a model the app no longer has. Returns how many models had some.
-    pub fn delete_vectors_of_models(&self, prefix: &str) -> Result<usize> {
-        let models: Vec<String> = {
-            let txn = self.db.begin_read()?;
-            let table = txn.open_table(MODELS)?;
-            table
-                .iter()?
-                .filter_map(|row| row.ok())
-                .map(|(k, _)| k.value().to_string())
-                .filter(|model| model.starts_with(prefix))
-                .collect()
-        };
-        if models.is_empty() {
-            return Ok(0);
-        }
-        let txn = self.db.begin_write()?;
-        {
-            let mut vectors = txn.open_table(EMBEDDINGS)?;
-            let mut keys = txn.open_table(MODELS)?;
-            for model in &models {
-                let ids: Vec<u64> = vectors
-                    .range((model.as_str(), 0u64)..=(model.as_str(), u64::MAX))?
-                    .filter_map(|row| row.ok())
-                    .map(|(k, _)| k.value().1)
-                    .collect();
-                for id in ids {
-                    vectors.remove((model.as_str(), id))?;
-                }
-                keys.remove(model.as_str())?;
-            }
-        }
-        txn.commit()?;
-        Ok(models.len())
-    }
 }
 
 /// The files of copied images, encrypted when the history has a key. Cheap
@@ -873,27 +837,6 @@ mod tests {
         store.delete(&it).unwrap();
         assert!(store.embeddings("m1").unwrap().is_empty());
         assert!(store.embeddings("m2").unwrap().is_empty());
-        drop(store);
-        std::fs::remove_dir_all(dir).ok();
-    }
-
-    #[test]
-    fn a_gone_models_vectors_are_deleted_and_the_others_stay() {
-        let dir = temp_dir("gone-model");
-        let store = Store::open(&dir.join("t.redb"), &dir).unwrap();
-        let v = Embedding::Dense(vec![1.0]);
-        for model in ["siglip:google/a", "siglip:google/b", "server:kept:1"] {
-            store.put_embeddings(model, &[(1, &v), (2, &v)]).unwrap();
-        }
-        assert_eq!(store.delete_vectors_of_models("siglip:").unwrap(), 2);
-        assert!(store.embeddings("siglip:google/a").unwrap().is_empty());
-        assert!(store.embeddings("siglip:google/b").unwrap().is_empty());
-        assert_eq!(store.embeddings("server:kept:1").unwrap().len(), 2);
-        assert_eq!(
-            store.delete_vectors_of_models("siglip:").unwrap(),
-            0,
-            "nothing is left to delete"
-        );
         drop(store);
         std::fs::remove_dir_all(dir).ok();
     }

@@ -16,8 +16,7 @@ use global_hotkey::{GlobalHotKeyEvent, GlobalHotKeyManager, HotKeyState};
 
 use crate::clipboard::{self, Capture, Captured, Flags, SkipReason};
 use crate::config::{
-    Config, EmbedBackend, LaunchConfig, Paths, SearchEngine, SearchMode, SortOrder, Theme,
-    UpdateNote, ViewMode,
+    Config, EmbedBackend, LaunchConfig, Paths, SearchEngine, SearchMode, SortOrder, Theme, ViewMode,
 };
 use crate::download::Progress;
 use crate::embed::Embedding;
@@ -607,7 +606,7 @@ impl App {
         let ctx = cc.egui_ctx.clone();
         // No settings yet means a new install, which has nothing new to hear.
         let had_settings = paths.config.exists();
-        let (cfg, settings_problem, updated) = Config::load(&paths.config);
+        let (cfg, settings_problem) = Config::load(&paths.config);
         i18n::set(cfg.language, cfg.time_format);
         add_fonts(&ctx);
         icons::register(&ctx);
@@ -616,12 +615,6 @@ impl App {
         apply_theme(&ctx, cfg.theme);
 
         let store = Arc::new(Store::open(&paths.db, &paths.images)?);
-        // The built-in search model of versions before 0.5 is gone: so are its
-        // vectors and the files it and the built-in text reader downloaded.
-        if let Err(e) = store.delete_vectors_of_models("siglip:") {
-            log::warn!("deleting the built-in search model's vectors: {e:#}");
-        }
-        paths.remove_built_in_models();
         let library = Library::open(store)?;
         let image_files = library.store().images.clone();
 
@@ -798,23 +791,6 @@ impl App {
                 ),
             };
             app.set_error(message);
-        }
-        if let Some(notes) = updated {
-            let notes: Vec<String> = notes
-                .iter()
-                .map(|note| match note {
-                    UpdateNote::BuiltInSearchRemoved => t!("toast-built-in-search-removed"),
-                    UpdateNote::BuiltInReaderRemoved if cfg!(windows) => {
-                        t!("toast-built-in-reader-removed")
-                    }
-                    UpdateNote::BuiltInReaderRemoved => t!("toast-built-in-reader-removed-off"),
-                })
-                .collect();
-            if !notes.is_empty() {
-                app.toast_for(notes.join("\n"), Duration::from_secs(15));
-            }
-            // Saved in the new form now, so the next start has nothing to update.
-            app.save_config();
         }
         // The first start of a newer version says what is new (D47); settings
         // without a version come from a version before 0.6.

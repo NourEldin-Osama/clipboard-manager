@@ -225,7 +225,7 @@ screenshots of the finished screens.
 - [x] 14.5 Smart search ranks meaning matches on the scale of D54, from the typical score up to the best, so a match that only shares a word no longer outranks close meaning matches with models such as EmbeddingGemma 2 (your choice)
 
 ### Phase 15. Version 0.6.0
-- [ ] 15.1 Remove the update from 0.4 settings, the old model folders' clean-up and the old vectors' deletion (D33)
+- [x] 15.1 Remove the update from 0.4 settings, the old model folders' clean-up and the old vectors' deletion (D33)
 - [ ] 15.2 New screenshots from a test copy with made-up items
 - [ ] 15.3 README, README_AR, the change log and version 0.6.0 (D48)
 
