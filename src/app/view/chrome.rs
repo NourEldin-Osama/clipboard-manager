@@ -388,9 +388,11 @@ impl App {
             .iter()
             .all(|&id| self.library.get(id).is_some_and(|it| it.pinned));
         let (mut command, mut tags, mut clear) = (None, None, false);
-        row(ui, |ui| {
-            let count = t!("group-selected", count = group.len());
-            ui.label(title_txt(&count, size::SMALL, Some(v.strong_text_color())));
+        let count = t!("group-selected", count = group.len());
+        let count = selected_count(ui, &count, v.strong_text_color());
+        // As tall as the pills from the start, so the count sits on their line.
+        row_of(ui, icons::pill_height(count.size().y), |ui| {
+            ui.label(count);
             ui.add_space(10.0);
             let button = |ui: &mut Ui, icon: Icon, text: &str, keys: &str, color: Color32| {
                 let job = pill_job(text, size::SMALL, color, None);
@@ -518,9 +520,62 @@ impl App {
     }
 }
 
+/// The count of selected items in SemiBold, set like the pills' labels so it
+/// sits on their line: a plain label's letters sit a point lower in its box.
+fn selected_count(ui: &Ui, text: &str, color: Color32) -> std::sync::Arc<egui::Galley> {
+    let mut job = pill_job(text, size::SMALL, color, None);
+    for section in &mut job.sections {
+        section.format.font_id = semibold(size::SMALL);
+    }
+    ui.fonts_mut(|f| f.layout_job(job))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Where each text that `add` paints has its baseline, in points from
+    /// the top, at `scale` pixels per point.
+    fn baselines(scale: f32, add: impl Fn(&mut Ui)) -> Vec<f32> {
+        let ctx = egui::Context::default();
+        ctx.set_pixels_per_point(scale);
+        add_fonts(&ctx);
+        // The bundled fonts apply from the second frame.
+        let mut output = ctx.run_ui(egui::RawInput::default(), |ui| add(ui));
+        output.textures_delta.clear();
+        let mut output = ctx.run_ui(egui::RawInput::default(), |ui| add(ui));
+        output.textures_delta.clear();
+        assert_eq!(ctx.pixels_per_point(), scale);
+        output
+            .shapes
+            .iter()
+            .filter_map(|clipped| match &clipped.shape {
+                egui::Shape::Text(text) => {
+                    let row = text.galley.rows.first()?;
+                    let glyph = row.row.glyphs.first()?;
+                    Some(text.pos.y + row.pos.y + glyph.pos.y)
+                }
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn the_selected_count_sits_on_the_line_of_the_buttons() {
+        for scale in [1.0, 1.25] {
+            let lines = baselines(scale, |ui| {
+                let color = ui.visuals().text_color();
+                let count = selected_count(ui, "2 selected", color);
+                row_of(ui, icons::pill_height(count.size().y), |ui| {
+                    ui.label(count);
+                    let job = pill_job("Pin", size::SMALL, color, None);
+                    icons::pill(ui, Icon::Pin, job, color, false);
+                });
+            });
+            assert_eq!(lines.len(), 2, "two texts at {scale} pixels per point");
+            assert_eq!(lines[0], lines[1], "at {scale} pixels per point");
+        }
+    }
 
     #[test]
     fn a_model_file_shows_by_its_name() {
