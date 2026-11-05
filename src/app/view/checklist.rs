@@ -97,9 +97,12 @@ impl App {
             return;
         }
         ui.horizontal(|ui| {
+            // No gap before the card, but the usual gaps inside it.
+            let gap = ui.spacing().item_spacing.x;
             ui.spacing_mut().item_spacing.x = 0.0;
             ui.add_space(offset);
             ui.vertical(|ui| {
+                ui.spacing_mut().item_spacing.x = gap;
                 ui.set_width(width);
                 self.checklist(ui);
             });
