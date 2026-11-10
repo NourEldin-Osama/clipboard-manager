@@ -87,7 +87,9 @@ fn main_button(ui: &mut Ui, ways: &[CopyWay]) -> Option<Paste> {
     let (main, others) = ways.split_first()?;
     let height = BUTTON_HEIGHT;
     let arrow_w = if others.is_empty() { 0.0 } else { 30.0 };
-    let key_color = theme::on_button(190);
+    // The key nearly white, so it reads on the accent; still a little
+    // quieter than the button's word.
+    let key_color = theme::on_button(225);
     let keys = ui.fonts_mut(|f| {
         f.layout_no_wrap(
             main.keys.clone(),
