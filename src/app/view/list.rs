@@ -211,6 +211,7 @@ pub(super) fn thumbs_to_drop(
 /// `hot` while the pointer is over the row: its hover buttons then take the
 /// right edge, so the time and badges are left out. `numbered` rows leave
 /// room at the start for the numbers of quick paste, and show `number`.
+/// `dated` rows sit under a day header, which gives their day.
 #[allow(clippy::too_many_arguments)]
 pub(super) fn paint_row(
     ui: &Ui,
@@ -225,6 +226,7 @@ pub(super) fn paint_row(
     terms: &[String],
     numbered: bool,
     number: Option<usize>,
+    dated: bool,
 ) {
     let v = ui.visuals();
     let p = ui.painter_at(rect);
@@ -444,7 +446,7 @@ pub(super) fn paint_row(
         &p,
         time_at,
         time_anchor,
-        &row_time(it.created),
+        &row_time(it.created, dated),
         FontId::proportional(size::SMALL),
         weak,
     );
@@ -547,8 +549,9 @@ impl App {
         // Rows, with date/pinned headers when browsing.
         let mut lines: Vec<Line> = Vec::with_capacity(self.results.len() + 8);
         // Day headers only make sense in date order.
-        if !searching && self.cfg.group_by_date && self.sort() == SortOrder::Recent {
-            let pinned_first = self.cfg.pinned_first;
+        let day_headers = !searching && self.cfg.group_by_date && self.sort() == SortOrder::Recent;
+        let pinned_first = self.cfg.pinned_first;
+        if day_headers {
             lines = with_headers(self.results.iter().map(|h| {
                 self.library
                     .get(h.id)
@@ -682,6 +685,7 @@ impl App {
                             &terms,
                             in_popup,
                             (in_popup && *r < 9).then_some(*r + 1),
+                            day_headers && Group::of(it, pinned_first) != Group::Pinned,
                         );
                         if resp.clicked() {
                             // Ctrl and Shift select several, but not in the popup.
