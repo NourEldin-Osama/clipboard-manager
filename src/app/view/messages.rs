@@ -38,6 +38,9 @@ pub(super) struct Laid {
     action: Option<Arc<Galley>>,
     /// "Show", for the text of a copy that wasn't saved.
     show: Option<Arc<Galley>>,
+    /// The buttons sit in a row under the text: beside them, the text
+    /// would be squeezed into short lines.
+    below: bool,
     pub(super) height: f32,
 }
 
@@ -211,9 +214,11 @@ fn paint_card(ui: &Ui, rect: Rect) {
     );
 }
 
-/// Lays out a message's text at `width`: the room left beside its icon and
-/// buttons. While `showing`, the second line is the copy's whole text. With
-/// `app_icon` it is the note on the screen: the app icon, and never Show.
+/// Lays out a message at `width`: its text beside its icon and buttons, or,
+/// when there it would take more than two lines and fewer across the whole
+/// width, above a row with the buttons. While `showing`, the second line is
+/// the copy's whole text. With `app_icon` it is the note on the screen: the
+/// app icon, and never Show.
 pub(super) fn lay_out(
     ui: &Ui,
     toast: &Toast,
@@ -251,39 +256,63 @@ pub(super) fn lay_out(
     } else {
         0.0
     };
-    let text_w = (width - 2.0 * PAD - icon - buttons).max(40.0);
-    let lines = |text: &str, size: f32, color: Color32| {
-        bidi::lines(
-            ui,
-            text,
-            &[],
-            FontId::proportional(size),
-            color,
-            Color32::TRANSPARENT,
-            text_w,
-            3,
-            None,
-        )
-    };
-    let title = lines(&toast.text, size::BODY, v.strong_text_color());
+    let room = width - 2.0 * PAD - icon;
     let second = match (&toast.secret, showing) {
         (Some(secret), true) => Some(secret.as_str()),
         _ => toast.detail.as_deref(),
     };
-    let detail = second.map_or_else(Vec::new, |d| lines(d, size::SMALL, v.weak_text_color()));
-    let text_h: f32 = title
-        .iter()
-        .chain(&detail)
-        .map(|(g, _)| g.size().y)
-        .sum::<f32>()
-        + if detail.is_empty() { 0.0 } else { 2.0 };
+    // The title and the second line in `text_w`, up to three lines each.
+    let text_in = |text_w: f32| {
+        let lines = |text: &str, size: f32, color: Color32| {
+            bidi::lines(
+                ui,
+                text,
+                &[],
+                FontId::proportional(size),
+                color,
+                Color32::TRANSPARENT,
+                text_w,
+                3,
+                None,
+            )
+        };
+        let title = lines(&toast.text, size::BODY, v.strong_text_color());
+        let detail = second.map_or_else(Vec::new, |d| lines(d, size::SMALL, v.weak_text_color()));
+        (title, detail)
+    };
+    let (mut title, mut detail) = text_in((room - buttons).max(40.0));
+    let mut below = false;
+    if buttons > 0.0 && title.len() + detail.len() > 2 {
+        let (wide_title, wide_detail) = text_in(room);
+        if wide_title.len() + wide_detail.len() < title.len() + detail.len() {
+            (title, detail, below) = (wide_title, wide_detail, true);
+        }
+    }
+    let text_h = text_height(&title, &detail);
+    let height = if below {
+        2.0 * PAD + text_h + SPACE + BUTTON_H
+    } else {
+        2.0 * PAD + text_h.max(BUTTON_H)
+    };
     Laid {
         title,
         detail,
         action,
         show,
-        height: 2.0 * PAD + text_h.max(BUTTON_H),
+        below,
+        height,
     }
+}
+
+/// The height of a message's lines, with a small gap before the second
+/// line.
+fn text_height(title: &[(Arc<Galley>, bool)], detail: &[(Arc<Galley>, bool)]) -> f32 {
+    title
+        .iter()
+        .chain(detail)
+        .map(|(g, _)| g.size().y)
+        .sum::<f32>()
+        + if detail.is_empty() { 0.0 } else { 2.0 }
 }
 
 /// Paints a message's icon (or `app_icon`), text and buttons in its card,
@@ -298,7 +327,14 @@ pub(super) fn paint_content(
 ) {
     let v = ui.visuals().clone();
     let inner = card.shrink(PAD);
-    let mid = inner.center().y;
+    let text_h = text_height(&laid.title, &laid.detail);
+    // The icon and the text sit in the middle beside the buttons, or at the
+    // top, above the row of buttons.
+    let (mid, buttons_mid) = if laid.below {
+        (inner.top() + text_h / 2.0, inner.bottom() - BUTTON_H / 2.0)
+    } else {
+        (inner.center().y, inner.center().y)
+    };
     // Laid out left to right, then mirrored for Arabic.
     let m = |r: Rect| flip(card, r);
     let mut left = inner.left();
@@ -319,7 +355,7 @@ pub(super) fn paint_content(
     if let Some(g) = &laid.action {
         let w = g.size().x + 2.0 * BUTTON_PAD;
         let at = m(Rect::from_min_size(
-            Pos2::new(right - w, mid - BUTTON_H / 2.0),
+            Pos2::new(right - w, buttons_mid - BUTTON_H / 2.0),
             Vec2::new(w, BUTTON_H),
         ));
         let label = toast.action.as_ref().map_or("", |(l, _)| l.as_str());
@@ -348,7 +384,7 @@ pub(super) fn paint_content(
     if let Some(g) = &laid.show {
         let w = ICON + 4.0 + g.size().x;
         let at = Rect::from_min_size(
-            Pos2::new(right - w, mid - BUTTON_H / 2.0),
+            Pos2::new(right - w, buttons_mid - BUTTON_H / 2.0),
             Vec2::new(w, BUTTON_H),
         );
         let r = ui.interact(
@@ -358,10 +394,13 @@ pub(super) fn paint_content(
         );
         let label = t!("toast-show");
         r.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, &label));
-        let eye = Rect::from_min_size(Pos2::new(at.left(), mid - ICON / 2.0), Vec2::splat(ICON));
+        let eye = Rect::from_min_size(
+            Pos2::new(at.left(), buttons_mid - ICON / 2.0),
+            Vec2::splat(ICON),
+        );
         icons::paint(ui.painter(), m(eye), icons::Icon::Eye, v.hyperlink_color);
         let text = m(Rect::from_min_size(
-            Pos2::new(at.left() + ICON + 4.0, mid - g.size().y / 2.0),
+            Pos2::new(at.left() + ICON + 4.0, buttons_mid - g.size().y / 2.0),
             g.size(),
         ));
         ui.painter()
@@ -370,14 +409,6 @@ pub(super) fn paint_content(
             asked.show = Some(toast.id);
         }
     }
-    // The text, centered beside the buttons when it is short.
-    let text_h: f32 = laid
-        .title
-        .iter()
-        .chain(&laid.detail)
-        .map(|(g, _)| g.size().y)
-        .sum::<f32>()
-        + if laid.detail.is_empty() { 0.0 } else { 2.0 };
     let mut y = mid - text_h / 2.0;
     let colors = [v.strong_text_color(), v.weak_text_color()];
     for (part, lines) in [&laid.title, &laid.detail].into_iter().enumerate() {
@@ -445,6 +476,29 @@ mod tests {
                 .map(|(g, _)| g.text().to_string())
                 .collect();
             assert!(shown.contains("abcdefgh"), "Show reveals it: {shown}");
+        });
+        // The font atlas upload no renderer takes here.
+        output.textures_delta.clear();
+    }
+
+    #[test]
+    fn buttons_go_under_text_they_would_squeeze() {
+        let ctx = egui::Context::default();
+        let mut output = ctx.run_ui(Default::default(), |ui| {
+            // Beside Show and Save anyway, this text would take short lines.
+            let squeezed = message(
+                "Not saved: a password",
+                Some("From Clipboard Manager · 28 characters"),
+                Some("Save anyway"),
+            );
+            let laid = lay_out(ui, &squeezed, WIDTH, false, None);
+            assert!(laid.below, "the buttons go under the text");
+            assert_eq!(laid.title.len(), 1, "the title then takes one line");
+            // A short text keeps its button beside it.
+            let mut undo = message("Deleted", None, Some("Undo"));
+            undo.secret = None;
+            undo.keys = Some("Ctrl+Z".into());
+            assert!(!lay_out(ui, &undo, WIDTH, false, None).below);
         });
         // The font atlas upload no renderer takes here.
         output.textures_delta.clear();
