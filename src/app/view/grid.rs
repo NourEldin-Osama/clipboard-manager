@@ -278,8 +278,9 @@ pub(super) fn paint_card(
             };
             // Short text shows larger, so the card is used.
             let short = !code && text.chars().count() <= 60 && text.lines().count() <= 2;
+            // Code a step smaller than text, not two, so it reads as easily.
             let (font, line_h) = if code {
-                (FontId::monospace(size::SMALL), 17.0)
+                (FontId::monospace(size::CONTROL), 18.0)
             } else if short {
                 (FontId::proportional(size::LARGE), 23.0)
             } else {
