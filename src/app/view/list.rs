@@ -27,16 +27,18 @@ pub(super) fn weaker_line(ui: &Ui, rect: Rect, count: usize) -> bool {
         .size()
         .x;
     let (icon, gap) = (16.0, 6.0);
-    // A row as wide as the results, so it reads as their continuation, with
-    // its words at their start.
+    // As wide as the results, so it reads as their continuation, but quiet:
+    // a link with its arrow at their start, a background only under the
+    // pointer.
     let row = rect.shrink2(Vec2::new(0.0, 6.0));
     let p = ui.painter();
-    let fill = if resp.hovered() {
-        ui.visuals().widgets.hovered.weak_bg_fill
-    } else {
-        ui.visuals().faint_bg_color
-    };
-    p.rect_filled(row, CornerRadius::same(radius::MEDIUM), fill);
+    if resp.hovered() {
+        p.rect_filled(
+            row,
+            CornerRadius::same(radius::MEDIUM),
+            ui.visuals().widgets.hovered.weak_bg_fill,
+        );
+    }
     let content = flip(
         row,
         Rect::from_min_size(
