@@ -23,7 +23,12 @@ impl App {
         setting_for(
             ui,
             &t!("settings-search-mode"),
-            &t!("settings-search-mode-hint"),
+            // What the chosen way does, in a few words.
+            &match d.search_mode {
+                SearchMode::Hybrid => t!("search-mode-smart-help"),
+                SearchMode::Semantic => t!("search-mode-meaning-help"),
+                SearchMode::Keyword => t!("search-mode-words-help"),
+            },
             &t!("settings-search-mode-help"),
             &mut d.search_mode,
             def.search_mode,

@@ -48,9 +48,8 @@ impl App {
         }
         match (&self.backend, self.search_model_names()) {
             (BackendState::Loading, _) => (AMBER, t!("status-model-loading")),
-            (BackendState::Ready { .. }, Some((model, _, _))) if on => {
-                (GREEN, t!("status-model-on", model = model))
-            }
+            // The model's name is in the tip: the words say what it does.
+            (BackendState::Ready { .. }, Some(_)) if on => (GREEN, t!("status-model-on")),
             (BackendState::Off, _) if !on => (Color32::GRAY, t!("status-model-off")),
             // On with no model picked yet: nothing is wrong, there is none.
             (BackendState::Off, None) => (Color32::GRAY, t!("status-model-none")),
