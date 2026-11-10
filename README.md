@@ -1,4 +1,4 @@
-# clipboard-manager
+# Clipboard Manager
 
 [![Build](https://github.com/NourEldin-Osama/clipboard-manager/actions/workflows/build-windows.yml/badge.svg)](https://github.com/NourEldin-Osama/clipboard-manager/actions/workflows/build-windows.yml)
 [![Latest release](https://img.shields.io/github/v/release/NourEldin-Osama/clipboard-manager?label=release)](https://github.com/NourEldin-Osama/clipboard-manager/releases/latest)
@@ -7,15 +7,18 @@
 
 **English** · [العربية](README_AR.md)
 
-An open-source, offline clipboard manager for Windows (also builds on Linux and macOS), written entirely in Rust.
-It keeps your clipboard history, reads the text inside screenshots and images with Windows' own reader or a vision model
-on your server, and lets you search everything **by meaning** with an embedding model on your own server (llama.cpp,
-Ollama, LM Studio, vLLM, Unsloth or OpenRouter). For example, type *"receipt from the hardware store"* and it finds the
-photo you copied last week.
+**Everything you copy, found again by what it means. Offline, on Windows.**
 
 [![Download for Windows](https://img.shields.io/badge/Download%20for%20Windows-clipboard--manager--windows--x64.exe-5865f2?style=for-the-badge&logo=windows)](https://github.com/NourEldin-Osama/clipboard-manager/releases/latest/download/clipboard-manager-windows-x64.exe)
 
 ![Clipboard Manager in Grid view](docs/screenshots/grid.png)
+
+- **Find it by meaning.** Type *"receipt from the hardware store"* and find the photo you copied last week, with an
+  embedding model on your own server (llama.cpp, Ollama, LM Studio, vLLM, Unsloth or OpenRouter).
+- **Reads the text in pictures.** Screenshots and photos turn up in searches by their words, read by Windows or by a
+  vision model on your server.
+- **Stays on your PC.** Your history is encrypted with your Windows account, passwords and keys you copy are left
+  out, and nothing leaves the PC unless you choose a server outside it.
 
 | List with details | Search |
 |---|---|
