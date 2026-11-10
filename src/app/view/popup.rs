@@ -284,20 +284,36 @@ fn paint_key_hints(ui: &mut Ui, hints: &[(String, String)]) {
     let pairs: Vec<_> = hints
         .iter()
         .map(|(keys, what)| {
-            let caps: Vec<_> = keys
-                .split('+')
-                .map(str::trim)
-                .filter(|k| !k.is_empty())
-                .map(|k| shortcut::keycap_label(ui, k, strong))
-                .collect();
+            let mut caps = Vec::new();
+            for part in keys.split('+').map(str::trim).filter(|k| !k.is_empty()) {
+                // A range such as "1 to 9" is two keys with the word between.
+                let words: Vec<&str> = part.split_whitespace().collect();
+                if words.len() >= 3 {
+                    let between = words[1..words.len() - 1].join(" ");
+                    caps.push(Piece::Cap(shortcut::keycap_label(ui, words[0], strong)));
+                    caps.push(Piece::Word(one_line(
+                        ui,
+                        &between,
+                        &[],
+                        font.clone(),
+                        weak,
+                        room,
+                    )));
+                    let last = words[words.len() - 1];
+                    caps.push(Piece::Cap(shortcut::keycap_label(ui, last, strong)));
+                } else {
+                    caps.push(Piece::Cap(shortcut::keycap_label(ui, part, strong)));
+                }
+            }
             (caps, one_line(ui, what, &[], font.clone(), weak, room))
         })
         .collect();
-    let caps_width = |caps: &[Arc<egui::Galley>]| {
-        caps.iter()
-            .map(|g| shortcut::keycap_size(g, HINT_CAP).x)
-            .sum::<f32>()
-            + cap_gap * caps.len().saturating_sub(1) as f32
+    let piece_width = |piece: &Piece| match piece {
+        Piece::Cap(g) => shortcut::keycap_size(g, HINT_CAP).x,
+        Piece::Word(g) => g.size().x,
+    };
+    let caps_width = |caps: &[Piece]| {
+        caps.iter().map(piece_width).sum::<f32>() + cap_gap * caps.len().saturating_sub(1) as f32
     };
     // Between the keys and their words, and between pairs.
     let (gap, spacing) = (6.0, 16.0);
@@ -336,11 +352,19 @@ fn paint_key_hints(ui: &mut Ui, hints: &[(String, String)]) {
                 ),
             );
             let mut cap_x = group.left();
-            for g in caps {
-                let size = shortcut::keycap_size(g, HINT_CAP);
-                let cap = Rect::from_min_size(Pos2::new(cap_x, group.top()), size);
-                shortcut::paint_keycap(p, cap, g.clone(), strong, dark);
-                cap_x += size.x + cap_gap;
+            for piece in caps {
+                match piece {
+                    Piece::Cap(g) => {
+                        let size = shortcut::keycap_size(g, HINT_CAP);
+                        let cap = Rect::from_min_size(Pos2::new(cap_x, group.top()), size);
+                        shortcut::paint_keycap(p, cap, g.clone(), strong, dark);
+                    }
+                    Piece::Word(g) => {
+                        let top = group.center().y - g.size().y / 2.0;
+                        p.galley(Pos2::new(cap_x, top), g.clone(), weak);
+                    }
+                }
+                cap_x += piece_width(piece) + cap_gap;
             }
             x += group.width() + gap;
             let size = what.size();
@@ -352,6 +376,13 @@ fn paint_key_hints(ui: &mut Ui, hints: &[(String, String)]) {
             x += size.x + spacing;
         }
     }
+}
+
+/// A part of a shortcut in the popup's hints: a key, or a word between two
+/// keys, such as "to" in "1 to 9".
+enum Piece {
+    Cap(Arc<egui::Galley>),
+    Word(Arc<egui::Galley>),
 }
 
 /// How tall the popup's key caps are: a little smaller than Settings', so
