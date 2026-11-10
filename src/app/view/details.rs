@@ -546,24 +546,21 @@ impl App {
                                 );
                             });
                     } else if bidi::has_rtl(&d.shown) {
-                        // Arabic: wrapped in reading order (not selectable; copy takes all of it).
+                        // Arabic: wrapped in reading order (not selectable; copy takes
+                        // all of it), on the side its first letter reads from.
                         let shown = d.shown.clone();
                         let c = ui.visuals().text_color();
-                        bidi::long_text(ui, &shown, FontId::proportional(size::BODY), c);
+                        bidi::content(ui, &shown, FontId::proportional(size::BODY), c);
                     } else {
-                        // Lines of about 70 characters, on the side reading starts.
+                        // Lines of about 70 characters on the left, as left-to-right
+                        // text reads, in Arabic too.
                         let room = ui.available_rect_before_wrap();
                         let width = room.width().min(size::BODY * READING_WIDTH);
-                        let x = if i18n::rtl() {
-                            room.right() - width
-                        } else {
-                            room.left()
-                        };
-                        let lines = Rect::from_min_size(
-                            Pos2::new(x, room.top()),
-                            Vec2::new(width, room.height()),
-                        );
-                        ui.scope_builder(egui::UiBuilder::new().max_rect(lines), |ui| {
+                        let lines = Rect::from_min_size(room.min, Vec2::new(width, room.height()));
+                        let builder = egui::UiBuilder::new()
+                            .max_rect(lines)
+                            .layout(Layout::top_down(Align::Min));
+                        ui.scope_builder(builder, |ui| {
                             ui.add(
                                 egui::Label::new(
                                     RichText::new(d.shown.as_str())
@@ -662,9 +659,12 @@ impl App {
             });
             if bidi::has_rtl(t) {
                 let c = ui.visuals().text_color();
-                bidi::paragraph(ui, t, FontId::proportional(size::BODY), c);
+                bidi::content(ui, t, FontId::proportional(size::BODY), c);
             } else {
-                ui.add(egui::Label::new(RichText::new(t).size(size::BODY)).selectable(true));
+                // On the left, as left-to-right text reads, in Arabic too.
+                ui.with_layout(Layout::top_down(Align::Min), |ui| {
+                    ui.add(egui::Label::new(RichText::new(t).size(size::BODY)).selectable(true));
+                });
             }
         }
     }

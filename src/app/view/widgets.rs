@@ -353,7 +353,13 @@ pub(crate) fn start_anchor(vertical: egui::Align) -> Align2 {
 
 /// Mirrors `r` inside `within` for right-to-left layout.
 pub(crate) fn flip(within: Rect, r: Rect) -> Rect {
-    if i18n::rtl() {
+    flip_if(i18n::rtl(), within, r)
+}
+
+/// Mirrors `r` inside `within` when `rtl`: for content that keeps the side
+/// of its own script whatever the window's language.
+pub(crate) fn flip_if(rtl: bool, within: Rect, r: Rect) -> Rect {
+    if rtl {
         Rect::from_min_max(
             Pos2::new(within.left() + within.right() - r.right(), r.top()),
             Pos2::new(within.left() + within.right() - r.left(), r.bottom()),

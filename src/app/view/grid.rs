@@ -133,7 +133,9 @@ pub(super) fn paint_card(
                     weak,
                 ),
             ];
-            paint_lines(ui, &bp, body, below, &lines);
+            // On the side of the color's value, which is written left to right.
+            let rtl = bidi::starts_rtl(&it.text, i18n::rtl());
+            paint_lines(ui, &bp, body, below, &lines, rtl);
         }
         _ if path.is_some() => {
             let path = path.expect("checked above");
@@ -142,7 +144,9 @@ pub(super) fn paint_card(
                 Some(_) => Icon::File,
                 None => Icon::Folder,
             };
-            let at = flip(body, Rect::from_min_size(body.min, Vec2::splat(28.0)));
+            // On the side the path is written from, like its name.
+            let rtl = bidi::starts_rtl(&it.text, i18n::rtl());
+            let at = flip_if(rtl, body, Rect::from_min_size(body.min, Vec2::splat(28.0)));
             icons::paint(&bp, at, icon, text_shade(c, v.dark_mode));
             let name = path
                 .file_name()
@@ -157,7 +161,7 @@ pub(super) fn paint_card(
                 (name, size::LARGE, v.strong_text_color()),
                 (folder, size::SMALL, weak),
             ];
-            paint_lines(ui, &bp, body, below, &lines);
+            paint_lines(ui, &bp, body, below, &lines, rtl);
         }
         _ => {
             let code = is_code(it);
@@ -248,11 +252,24 @@ pub(super) fn paint_card(
     }
 }
 
-/// Lines of text from `at` down, each on the side reading starts.
-fn paint_lines(ui: &Ui, p: &egui::Painter, body: Rect, at: Pos2, lines: &[(String, f32, Color32)]) {
+/// Lines of text from `at` down, on the right when `rtl`, else on the left.
+fn paint_lines(
+    ui: &Ui,
+    p: &egui::Painter,
+    body: Rect,
+    at: Pos2,
+    lines: &[(String, f32, Color32)],
+    rtl: bool,
+) {
     let mut y = at.y;
+    let anchor = if rtl {
+        Align2::RIGHT_TOP
+    } else {
+        Align2::LEFT_TOP
+    };
     for (text, text_size, color) in lines {
-        let start = flip(
+        let start = flip_if(
+            rtl,
             body,
             Rect::from_min_size(Pos2::new(body.left(), y), Vec2::ZERO),
         )
@@ -261,7 +278,7 @@ fn paint_lines(ui: &Ui, p: &egui::Painter, body: Rect, at: Pos2, lines: &[(Strin
             ui,
             p,
             start,
-            start_anchor(egui::Align::Min),
+            anchor,
             text,
             FontId::proportional(*text_size),
             *color,
@@ -413,9 +430,15 @@ fn paint_tags(ui: &Ui, rect: Rect, it: &Item, pad: f32, tags_top: f32, strip_top
         }
         shown -= 1;
     }
+    // The row starts on the side its first tag is written from.
+    let rtl = it
+        .tags
+        .first()
+        .is_some_and(|t| bidi::starts_rtl(t, i18n::rtl()));
     let mut x = row.left();
     let mut place = |g: Arc<egui::Galley>, c: Color32, fill: Color32| {
-        let r = flip(
+        let r = flip_if(
+            rtl,
             rect,
             Rect::from_min_size(
                 Pos2::new(x, row.center().y - (g.size().y + 6.0) / 2.0),

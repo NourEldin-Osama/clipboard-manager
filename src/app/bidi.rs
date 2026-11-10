@@ -338,12 +338,14 @@ pub(super) fn paragraph(ui: &mut Ui, text: &str, font: FontId, color: Color32) -
     block(ui, text, font, color, width, 0.0)
 }
 
-/// Long text to read, as a paragraph: lines at most about 70 characters
-/// wide on the side reading starts, with a little room between them.
-pub(super) fn long_text(ui: &mut Ui, text: &str, font: FontId, color: Color32) -> egui::Response {
+/// An item's own text to read, as a paragraph: lines at most about 70
+/// characters wide, with a little room between them, on the side its first
+/// letter reads from, so English content lines up on the left in Arabic too.
+pub(super) fn content(ui: &mut Ui, text: &str, font: FontId, color: Color32) -> egui::Response {
     let width = ui.available_width().min(font.size * READING_WIDTH);
     let gap = (font.size * 0.2).round();
-    block(ui, text, font, color, width, gap)
+    let rtl = starts_rtl(text, crate::i18n::rtl());
+    block_on(ui, text, font, color, width, gap, rtl)
 }
 
 fn block(
@@ -354,7 +356,19 @@ fn block(
     width: f32,
     gap: f32,
 ) -> egui::Response {
-    let rtl = crate::i18n::rtl();
+    block_on(ui, text, font, color, width, gap, crate::i18n::rtl())
+}
+
+/// A block of lines on the right side when `rtl`, else on the left.
+fn block_on(
+    ui: &mut Ui,
+    text: &str,
+    font: FontId,
+    color: Color32,
+    width: f32,
+    gap: f32,
+    rtl: bool,
+) -> egui::Response {
     let lines = lines(
         ui,
         text,
