@@ -21,6 +21,23 @@ pub fn host(url: &str) -> &str {
         .map_or(authority, |(_, host)| host)
 }
 
+/// `url` without the user name and password an address may carry
+/// (`http://me:secret@host/v1` becomes `http://host/v1`), for the log.
+pub fn without_login(url: &str) -> std::borrow::Cow<'_, str> {
+    let (scheme, rest) = match url.split_once("://") {
+        Some((scheme, rest)) => (Some(scheme), rest),
+        None => (None, url),
+    };
+    let end = rest.find(['/', '?', '#']).unwrap_or(rest.len());
+    match rest[..end].rfind('@') {
+        Some(at) => match scheme {
+            Some(scheme) => format!("{scheme}://{}", &rest[at + 1..]).into(),
+            None => rest[at + 1..].to_string().into(),
+        },
+        None => url.into(),
+    }
+}
+
 /// A web address as people read it: its letters in other scripts decoded,
 /// as in `wiki/الرياض` for `wiki/%D8%A7%D9%84...`. Only runs of escapes that
 /// make whole letters beyond ASCII are decoded, so `%20`, `%2F` and the
@@ -182,21 +199,31 @@ impl ServerError {
 }
 
 impl fmt::Display for ServerError {
+    /// In English, for the log: never with the user name and password an
+    /// address may carry.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let at = |url: &str| without_login(url).into_owned();
         match self {
-            Self::Unreachable { url, reason } => write!(f, "cannot reach {url}: {reason}"),
+            Self::Unreachable { url, reason } => write!(f, "cannot reach {}: {reason}", at(url)),
             Self::NeedsKey { url, status } => write!(
                 f,
-                "{url} answered {status}: the server needs an API key, or the key is wrong"
+                "{} answered {status}: the server needs an API key, or the key is wrong",
+                at(url)
             ),
-            Self::NotFound { url, said } => write!(f, "{url} answered 404 Not Found: {said}"),
-            Self::Refused { url, status, said } => {
-                write!(f, "{url} refused the request ({status}): {said}")
+            Self::NotFound { url, said } => {
+                write!(f, "{} answered 404 Not Found: {said}", at(url))
             }
-            Self::Failed { url, status, said } => write!(f, "{url} failed ({status}): {said}"),
-            Self::NoImages { url, said } => write!(f, "{url} doesn't take images: {said}"),
-            Self::NoModels { url } => write!(f, "{url} offers no models"),
-            Self::BadAnswer { url, reason } => write!(f, "unexpected answer from {url}: {reason}"),
+            Self::Refused { url, status, said } => {
+                write!(f, "{} refused the request ({status}): {said}", at(url))
+            }
+            Self::Failed { url, status, said } => {
+                write!(f, "{} failed ({status}): {said}", at(url))
+            }
+            Self::NoImages { url, said } => write!(f, "{} doesn't take images: {said}", at(url)),
+            Self::NoModels { url } => write!(f, "{} offers no models", at(url)),
+            Self::BadAnswer { url, reason } => {
+                write!(f, "unexpected answer from {}: {reason}", at(url))
+            }
         }
     }
 }
@@ -270,6 +297,33 @@ mod tests {
             readable_url("https://x.org/plain"),
             std::borrow::Cow::Borrowed(_)
         ));
+    }
+
+    #[test]
+    fn the_log_never_shows_a_login() {
+        assert_eq!(
+            without_login("http://me:secret@192.168.1.20:8080/v1"),
+            "http://192.168.1.20:8080/v1"
+        );
+        assert_eq!(without_login("me@host/v1"), "host/v1");
+        // An @ after the host is part of the path, not a login.
+        assert_eq!(
+            without_login("https://host/models/a@b"),
+            "https://host/models/a@b"
+        );
+        assert_eq!(
+            without_login("http://127.0.0.1:8080/v1"),
+            "http://127.0.0.1:8080/v1"
+        );
+        let error = ServerError::Unreachable {
+            url: "http://me:secret@192.0.2.1:8080/v1/embeddings".into(),
+            reason: "connection refused".into(),
+        };
+        let logged = error.to_string();
+        assert!(
+            !logged.contains("secret") && !logged.contains("me:"),
+            "{logged}"
+        );
     }
 
     #[test]

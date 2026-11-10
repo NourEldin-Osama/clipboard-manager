@@ -492,7 +492,8 @@ impl State {
                     self.emit(Event::Status(if cfg.launch.is_some() {
                         t!("status-starting-llama")
                     } else {
-                        t!("status-connecting", host = cfg.base_url.as_str())
+                        // The host alone: an address may carry a password.
+                        t!("status-connecting", host = crate::net::host(&cfg.base_url))
                     }));
                 }
                 ServerEmbedder::new(cfg.as_ref().clone()).and_then(|mut s| {
