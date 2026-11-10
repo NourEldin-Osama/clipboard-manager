@@ -259,14 +259,37 @@ const UPDATE_EVERY: Duration = Duration::from_secs(24 * 3600);
 /// After a failed background check (offline, say), try again sooner.
 const UPDATE_RETRY: Duration = Duration::from_secs(3600);
 
-/// A short message at the bottom of the window, with an optional button.
+/// A short message at the bottom of the window (D55), with an optional
+/// button. Up to three show at once, the newest in front.
 struct Toast {
     text: String,
-    shown: Instant,
+    /// A second, quieter line.
+    detail: Option<String>,
+    icon: Option<icons::Icon>,
+    /// How long it shows. Its time runs only while a window shows it and
+    /// the pointer is not on the messages.
     how_long: Duration,
+    shown_for: Duration,
     /// The button's text and what it does.
     action: Option<(String, Command)>,
+    /// The keys that do the same as the button, shown in it.
+    keys: Option<String>,
+    /// The whole text of a copy that wasn't saved, shown while Show is held.
+    secret: Option<String>,
+    /// Tells the messages apart, for egui.
+    id: u64,
 }
+
+impl Toast {
+    /// Its button brings back the items just deleted.
+    fn undoes(&self) -> bool {
+        matches!(self.action, Some((_, Command::UndoDelete)))
+    }
+}
+
+/// At most this many messages show at once; a newer one pushes out the
+/// oldest.
+const MAX_TOASTS: usize = 3;
 
 /// An item's menu, opened by a right-click or by Shift+F10.
 struct ItemMenu {
@@ -370,6 +393,8 @@ enum ShortcutField {
 
 /// How long a deleted item can still be brought back.
 const UNDO_FOR: Duration = Duration::from_secs(8);
+/// The key that undoes a delete while its message shows.
+const UNDO_KEYS: &str = "Ctrl+Z";
 /// How long a message that names a key stays.
 const KEY_HINT_FOR: Duration = Duration::from_secs(4);
 /// What Copy together puts on the clipboard: the texts, links and file
@@ -436,13 +461,12 @@ impl Retry {
     }
 }
 
-/// The last deleted item, kept for "Undo" until its toast ends; only then is
-/// it removed from the database, with its vectors and image file.
+/// The last deleted items, kept for "Undo" until its message is gone; only
+/// then are they removed from the database, with their vectors and images.
 struct PendingDelete {
     /// Taken from the last to the first, so each comes back in its place
     /// when they go back in the other order.
     removed: Vec<Removed>,
-    since: Instant,
 }
 
 /// Keeps the registrations alive; dropping the manager unregisters them.
@@ -484,7 +508,16 @@ pub struct App {
     queue_total: usize,
     status: String,
     error: Option<(String, Instant)>,
-    toast: Option<Toast>,
+    /// The messages showing, the oldest first.
+    toasts: Vec<Toast>,
+    /// The last message's id.
+    toast_seq: u64,
+    /// The pointer is on the messages: they open up and their time stops.
+    toasts_hovered: bool,
+    /// When the messages' time last ran.
+    toasts_tick: Option<Instant>,
+    /// The message whose Show is held down: its copy's whole text shows.
+    toast_showing: Option<u64>,
     pending_delete: Option<PendingDelete>,
     /// When deleting by age runs next; `None` runs it at the next frame.
     next_age_prune: Option<Instant>,
@@ -711,7 +744,11 @@ impl App {
             queue_total: 0,
             status: String::new(),
             error: None,
-            toast: None,
+            toasts: Vec::new(),
+            toast_seq: 0,
+            toasts_hovered: false,
+            toasts_tick: None,
+            toast_showing: None,
             pending_delete: None,
             next_age_prune: None,
             search_retry: None,
@@ -1261,12 +1298,60 @@ impl App {
     }
 
     fn toast_for(&mut self, s: impl Into<String>, how_long: Duration) {
-        self.toast = Some(Toast {
+        self.toast_with(s, how_long);
+    }
+
+    /// Adds a message in front of the others, to be given a button or a
+    /// second line. With three showing, the oldest goes; a delete it could
+    /// undo becomes final.
+    fn toast_with(&mut self, s: impl Into<String>, how_long: Duration) -> &mut Toast {
+        if self.toasts.len() >= MAX_TOASTS {
+            let oldest = self.toasts.remove(0);
+            if oldest.undoes() {
+                self.finish_delete();
+            }
+        }
+        self.toast_seq += 1;
+        self.toasts.push(Toast {
             text: s.into(),
-            shown: Instant::now(),
+            detail: None,
+            icon: None,
             how_long,
+            shown_for: Duration::ZERO,
             action: None,
+            keys: None,
+            secret: None,
+            id: self.toast_seq,
         });
+        self.toasts.last_mut().expect("a message was just added")
+    }
+
+    /// Runs the messages' time: only while a window shows them and the
+    /// pointer is not on them. A message whose time is up goes, and the
+    /// delete it could undo becomes final.
+    fn tick_toasts(&mut self, ctx: &egui::Context, shown: bool) {
+        let now = Instant::now();
+        let last = self.toasts_tick.replace(now);
+        if self.toasts.is_empty() {
+            return;
+        }
+        let step = last.map_or(Duration::ZERO, |last| now - last);
+        // A long gap means no window drew meanwhile: that time doesn't count.
+        if shown && !self.toasts_hovered && step < Duration::from_secs(1) {
+            for toast in &mut self.toasts {
+                toast.shown_for += step;
+            }
+        }
+        let (over, left): (Vec<Toast>, Vec<Toast>) = std::mem::take(&mut self.toasts)
+            .into_iter()
+            .partition(|t| t.shown_for >= t.how_long);
+        self.toasts = left;
+        if over.iter().any(Toast::undoes) {
+            self.finish_delete();
+        }
+        if shown {
+            ctx.request_repaint_after(Duration::from_millis(100));
+        }
     }
 
     /// Turns off Send images for the search model in use, unless another
@@ -1524,10 +1609,8 @@ impl App {
     fn skipped(&mut self, message: String, kept: Option<Capture>) {
         // Longer when there is a button to reach.
         let how_long = Duration::from_secs(if kept.is_some() { 8 } else { 4 });
-        self.toast_for(message, how_long);
-        if let Some(toast) = &mut self.toast {
-            toast.action = kept.map(|c| (t!("toast-save-anyway"), Command::SaveSkipped(c)));
-        }
+        self.toast_with(message, how_long).action =
+            kept.map(|c| (t!("toast-save-anyway"), Command::SaveSkipped(c)));
     }
 
     /// Adds a copy to the history, or moves its duplicate to the top.
@@ -1793,11 +1876,9 @@ impl App {
                         _ => false,
                     };
                     if current {
-                        self.toast_for(t!("toast-images-refused"), IMAGES_REFUSED_FOR);
-                        if let Some(toast) = &mut self.toast {
-                            toast.action =
-                                Some((t!("toast-images-off"), Command::StopSendingImages(key)));
-                        }
+                        self.toast_with(t!("toast-images-refused"), IMAGES_REFUSED_FOR)
+                            .action =
+                            Some((t!("toast-images-off"), Command::StopSendingImages(key)));
                     }
                 }
                 Event::BackendReady {
@@ -2118,21 +2199,27 @@ impl App {
         }
         self.pending_delete = Some(PendingDelete {
             removed: vec![removed],
-            since: Instant::now(),
         });
         let keys = self.cfg.keys.delete.clone();
         let text = match self.key_to_teach(&keys) {
             Some(keys) => t!("toast-deleted-key", keys = keys),
             None => t!("toast-deleted"),
         };
-        self.toast_for(text, UNDO_FOR);
-        if let Some(toast) = &mut self.toast {
-            toast.action = Some((t!("toast-undo"), Command::UndoDelete));
-        }
+        self.undo_toast(text);
+    }
+
+    /// The message after a delete, with Undo and its key.
+    fn undo_toast(&mut self, text: String) {
+        let toast = self.toast_with(text, UNDO_FOR);
+        toast.icon = Some(icons::Icon::Delete);
+        toast.action = Some((t!("toast-undo"), Command::UndoDelete));
+        toast.keys = Some(UNDO_KEYS.to_string());
     }
 
     /// Makes the pending delete final: database row, vectors and image file.
     pub(super) fn finish_delete(&mut self) {
+        // Its message can't undo it any more.
+        self.toasts.retain(|t| !t.undoes());
         if let Some(pending) = self.pending_delete.take() {
             for removed in pending.removed {
                 if let Err(e) = self.library.forget(removed) {
@@ -2143,6 +2230,7 @@ impl App {
     }
 
     fn undo_delete(&mut self) {
+        self.toasts.retain(|t| !t.undoes());
         let Some(pending) = self.pending_delete.take() else {
             return;
         };
@@ -2256,14 +2344,8 @@ impl App {
             self.selected = self.results.get(i.min(last)).map(|h| h.id);
         }
         let count = removed.len();
-        self.pending_delete = Some(PendingDelete {
-            removed,
-            since: Instant::now(),
-        });
-        self.toast_for(t!("toast-deleted-group", count = count), UNDO_FOR);
-        if let Some(toast) = &mut self.toast {
-            toast.action = Some((t!("toast-undo"), Command::UndoDelete));
-        }
+        self.pending_delete = Some(PendingDelete { removed });
+        self.undo_toast(t!("toast-deleted-group", count = count));
         self.dirty = true;
     }
 

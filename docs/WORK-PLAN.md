@@ -252,7 +252,7 @@ use; then the look, motion and smaller changes; and the README, bug reports and 
 - [x] 16.6 The change log and version 0.6.1
 
 ### Phase 17. Messages
-- [ ] 17.1 Messages in the Sonner style at the bottom right of the window (D55)
+- [x] 17.1 Messages in the Sonner style at the bottom right of the window (D55)
 - [ ] 17.2 The app's own note on the screen (D56)
 - [ ] 17.3 "Not saved" says what, with Show in the window (D57)
 - [ ] 17.4 Delete by age and the item limit say what they removed, with Undo (D60)
