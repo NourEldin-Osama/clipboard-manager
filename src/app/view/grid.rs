@@ -512,6 +512,8 @@ impl App {
         };
         // The hover buttons' tips name their keys.
         let keys = self.cfg.keys.clone();
+        // While an item's menu is open, the cards under it stay calm.
+        let menu_open = self.item_menu.as_ref().is_some_and(|m| !m.in_popup);
         let frame = ui.ctx().cumulative_pass_nr();
         let (library, results, thumbs, loader, selected, seen, programs, marked) = (
             &self.library,
@@ -558,7 +560,7 @@ impl App {
                 resp.widget_info(|| {
                     egui::WidgetInfo::selected(egui::Role::ListBoxOption, true, lit, item_name(it))
                 });
-                let hot = ui.rect_contains_pointer(rect);
+                let hot = !menu_open && ui.rect_contains_pointer(rect);
                 let program = it.program.as_deref().and_then(|p| programs.get(p));
                 let relevance = relevance_level(hit);
                 paint_card(ui, rect, hot, it, thumb, program, relevance, lit, &terms);

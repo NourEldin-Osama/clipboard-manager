@@ -630,6 +630,11 @@ impl App {
         };
         // The hover buttons' tips name their keys.
         let keys = self.cfg.keys.clone();
+        // While an item's menu is open, the rows under it stay calm.
+        let menu_open = self
+            .item_menu
+            .as_ref()
+            .is_some_and(|m| m.in_popup == in_popup);
         let frame = ui.ctx().cumulative_pass_nr();
         let (library, results, thumbs, loader, selected, seen, programs, marked) = (
             &self.library,
@@ -692,7 +697,7 @@ impl App {
                                 item_name(it),
                             )
                         });
-                        let hot = ui.rect_contains_pointer(rect);
+                        let hot = !menu_open && ui.rect_contains_pointer(rect);
                         paint_row(
                             ui,
                             rect,
