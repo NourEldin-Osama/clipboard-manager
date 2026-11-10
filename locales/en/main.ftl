@@ -79,7 +79,7 @@ item-image = Image
 search-mode-smart = Smart
 search-mode-meaning = Meaning
 search-mode-words = Exact words
-search-mode-smart-help = Exact words and meaning, merged (recommended)
+search-mode-smart-help = Exact words and similar meanings together (recommended)
 search-mode-meaning-help = Only by meaning: "trip" finds "flight to Jeddah"
 search-mode-words-help = Only items containing the words you type
 top-sort-by = Sort by
@@ -213,7 +213,7 @@ item-paste-plain = Paste as plain text
 item-copy-only = Copy only
 item-copy-plain = Copy as plain text
 item-copy-image-text = Copy the text in the image
-item-ignore-app = Don't record copies from { $app }
+item-ignore-app = Don't record from { $app }
 item-menu = Actions
 item-paste-group =
     { $count ->

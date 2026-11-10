@@ -81,7 +81,7 @@ item-image = صورة
 search-mode-smart = ذكي
 search-mode-meaning = بالمعنى
 search-mode-words = الكلمات نفسها
-search-mode-smart-help = الكلمات والمعنى معًا (موصى به)
+search-mode-smart-help = الكلمات نفسها والمعاني القريبة معًا (موصى به)
 search-mode-meaning-help = بالمعنى فقط: «رحلة» تجد «طيران إلى جدة»
 search-mode-words-help = العناصر التي تحتوي ما تكتبه فقط
 top-sort-by = ترتيب حسب
@@ -238,7 +238,7 @@ item-paste-plain = لصق كنص عادي
 item-copy-only = نسخ فقط
 item-copy-plain = نسخ كنص عادي
 item-copy-image-text = نسخ النص الموجود في الصورة
-item-ignore-app = عدم تسجيل النسخ من { $app }
+item-ignore-app = عدم التسجيل من { $app }
 item-menu = الإجراءات
 item-paste-group =
     { $count ->
