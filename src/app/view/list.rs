@@ -360,8 +360,9 @@ pub(super) fn paint_row(
         None => symbol(kind_color(it.kind), item_icon(it)),
     }
     // The program it came from as a small badge on the symbol's lower corner,
-    // ringed in the row's color; one line has no room for it.
-    if let (false, Some(icon)) = (compact, program_icon) {
+    // ringed in the row's color, the plain program icon when it has none of
+    // its own; one line has no room for it.
+    if !compact {
         let badge = m(Rect::from_center_size(
             Pos2::new(
                 rect.left() + ROW_PADDING + gutter + av - 4.0,
@@ -371,7 +372,12 @@ pub(super) fn paint_row(
         ));
         let under = fill.map_or(v.panel_fill, |fill| v.panel_fill.blend(fill));
         p.rect_filled(badge.expand(2.0), CornerRadius::same(radius::SMALL), under);
-        egui::Image::new((icon.id(), Vec2::splat(PROGRAM_BADGE))).paint_at(ui, badge);
+        match program_icon {
+            Some(icon) => {
+                egui::Image::new((icon.id(), Vec2::splat(PROGRAM_BADGE))).paint_at(ui, badge);
+            }
+            None => icons::paint(&p, badge, Icon::AppGeneric, v.weak_text_color()),
+        }
     }
 
     let x = rect.left() + ROW_PADDING + gutter + av + 12.0;

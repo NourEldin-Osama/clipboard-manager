@@ -429,20 +429,20 @@ fn paint_footer(
         paint_relevance(&p, row, row.right() - used, y + 5.0, level, accent(), weak);
         used += 26.0;
     }
-    // Then the program at the reading start: its own icon when it has one,
-    // and its name, or for older copies the program's file name. The card
-    // shows its kind itself.
-    let name_x = match program.and_then(|p| p.icon.as_ref()) {
+    // Then the program at the reading start: its own icon, or the plain one
+    // of a program without its own, and its name, or for older copies the
+    // program's file name. The card shows its kind itself.
+    let icon_rect = flip(
+        row,
+        Rect::from_center_size(Pos2::new(row.left() + 8.0, y), Vec2::splat(16.0)),
+    );
+    match program.and_then(|p| p.icon.as_ref()) {
         Some(texture) => {
-            let icon_rect = flip(
-                row,
-                Rect::from_center_size(Pos2::new(row.left() + 8.0, y), Vec2::splat(16.0)),
-            );
             egui::Image::new((texture.id(), Vec2::splat(16.0))).paint_at(ui, icon_rect);
-            22.0
         }
-        None => 0.0,
-    };
+        None => icons::paint(&p, icon_rect, Icon::AppGeneric, weak),
+    }
+    let name_x = 22.0;
     let room = row.width() - used - name_x;
     let name = match (program, &it.app) {
         (Some(program), _) => program.name.clone(),
