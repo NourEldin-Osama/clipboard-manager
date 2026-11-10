@@ -161,6 +161,17 @@ pub(crate) fn card_footer(dark: bool) -> Color32 {
     }
 }
 
+/// A menu's shadow: soft and all around, a little lower than the menu,
+/// `alpha` dark at its core.
+fn menu_shadow(alpha: u8) -> egui::Shadow {
+    egui::Shadow {
+        offset: [0, 6],
+        blur: 18,
+        spread: 0,
+        color: Color32::from_black_alpha(alpha),
+    }
+}
+
 /// The shadow under the day header that stays at the top.
 pub(crate) fn header_shadow() -> Color32 {
     Color32::from_black_alpha(36)
@@ -434,6 +445,8 @@ pub(crate) fn style(ctx: &egui::Context, panels: crate::config::DarkPanels) {
     ctx.style_mut_of(egui::Theme::Light, |s| {
         s.visuals.text_edit_bg_color = Some(Color32::from_gray(240));
         s.visuals.weak_text_color = Some(Color32::from_gray(100));
+        // Menus float clearly above the white cards under them.
+        s.visuals.popup_shadow = menu_shadow(46);
     });
     ctx.style_mut_of(egui::Theme::Dark, |s| {
         // Raised surfaces lighter (D58): the window darkest, panes and cards
@@ -448,6 +461,7 @@ pub(crate) fn style(ctx: &egui::Context, panels: crate::config::DarkPanels) {
             s.visuals.widgets.noninteractive.weak_bg_fill = Color32::from_gray(18);
         }
         s.visuals.text_edit_bg_color = Some(Color32::from_gray(38));
+        s.visuals.popup_shadow = menu_shadow(120);
         s.visuals.widgets.noninteractive.fg_stroke.color = Color32::from_gray(180);
         // Lighter menus need lighter gray text to stay readable on them.
         let weak = if panels == crate::config::DarkPanels::Lighter {
