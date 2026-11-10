@@ -860,8 +860,23 @@ toast-tag-removed =
         [few] أُزيل #{ $tag } من { $count } عناصر
        *[other] أُزيل #{ $tag } من { $count } عنصر
     }
-toast-skipped-private = لم يُحفظ: التطبيق الذي نسخت منه وسمه بأنه خاص
-toast-skipped-secret = لم يُحفظ: يبدو كلمة مرور أو مفتاح API (راجع الإعدادات)
+toast-skipped-private = لم يُحفظ: وُسم بأنه خاص
+toast-skipped-by = وسمه { $program }
+toast-skipped-from = من { $program }
+toast-skipped-password = لم يُحفظ: كلمة مرور
+toast-skipped-api-key = لم يُحفظ: مفتاح API
+toast-skipped-sign-in = لم يُحفظ: رمز تسجيل دخول
+toast-skipped-private-key = لم يُحفظ: مفتاح خاص
+toast-skipped-link = لم يُحفظ: رابط فيه كلمة مرور
+toast-skipped-key = لم يُحفظ: مفتاح
+toast-hint-characters =
+    { $count ->
+        [one] حرف واحد
+        [two] حرفان
+        [few] { $count } أحرف
+        [many] { $count } حرفًا
+       *[other] { $count } حرف
+    }
 toast-skipped-rule = لم يُحفظ: إحدى قواعدك تتخطاه
 toast-app-ignored = لن تُسجَّل النسخ من { $app }. يمكنك حذف القاعدة من الإعدادات، الخصوصية.
 tray-show = إظهار مدير الحافظة

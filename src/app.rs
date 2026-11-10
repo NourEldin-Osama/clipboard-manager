@@ -1,7 +1,7 @@
 //! The egui user interface.
 
 use std::collections::{HashMap, HashSet};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::sync::atomic::{AtomicBool, AtomicIsize, AtomicU64, Ordering};
 use std::sync::mpsc::{channel, Receiver, TryRecvError};
@@ -1513,17 +1513,32 @@ impl App {
             formats,
         } = capture;
         if let Captured::Skipped { reason, text } = content {
-            let message = match reason {
-                SkipReason::Private => t!("toast-skipped-private"),
-                SkipReason::Secret => t!("toast-skipped-secret"),
+            let from = self.program_name(app.as_deref(), program.as_deref());
+            let found = text.as_deref().and_then(crate::privacy::find_secret);
+            let (title, from) = match (reason, &found) {
+                // Its program asked for it not to be kept: only its name.
+                (SkipReason::Private, _) => (
+                    t!("toast-skipped-private"),
+                    from.map(|p| t!("toast-skipped-by", program = p)),
+                ),
+                (SkipReason::Secret, Some(secret)) => (
+                    secret_title(secret.kind),
+                    from.map(|p| t!("toast-skipped-from", program = p)),
+                ),
+                (SkipReason::Secret, None) => (
+                    secret_title(crate::privacy::SecretKind::Key),
+                    from.map(|p| t!("toast-skipped-from", program = p)),
+                ),
             };
+            let hint = found.map(|s| hint_text(&s.hint));
+            let detail = [from, hint].into_iter().flatten().collect::<Vec<_>>();
             let kept = text.map(|t| Capture {
                 content: Captured::Text(t),
                 app,
                 program,
                 formats,
             });
-            self.skipped(message, kept);
+            self.skipped(title, detail, kept);
             return;
         }
         let text = match &content {
@@ -1532,13 +1547,18 @@ impl App {
         };
         if self.rules.skips(app.as_deref(), text) {
             log::info!("copy not saved: a rule matched");
+            let from = self.program_name(app.as_deref(), program.as_deref());
+            let detail = from
+                .map(|p| t!("toast-skipped-from", program = p))
+                .into_iter()
+                .collect();
             let kept = Capture {
                 content,
                 app,
                 program,
                 formats,
             };
-            self.skipped(t!("toast-skipped-rule"), Some(kept));
+            self.skipped(t!("toast-skipped-rule"), detail, Some(kept));
             return;
         }
         self.record(Capture {
@@ -1606,11 +1626,31 @@ impl App {
     }
 
     /// Says a copy wasn't recorded. `kept` is offered back with "Save anyway".
-    fn skipped(&mut self, message: String, kept: Option<Capture>) {
+    /// Says a copy wasn't recorded (D57): what it was, where it came from
+    /// and a hint (`detail`). `kept` is offered back with "Save anyway"; a
+    /// text also shows whole while Show is held. Both leave memory with the
+    /// message.
+    fn skipped(&mut self, title: String, detail: Vec<String>, kept: Option<Capture>) {
         // Longer when there is a button to reach.
         let how_long = Duration::from_secs(if kept.is_some() { 8 } else { 4 });
-        self.toast_with(message, how_long).action =
-            kept.map(|c| (t!("toast-save-anyway"), Command::SaveSkipped(c)));
+        let secret = kept.as_ref().and_then(|c| match &c.content {
+            Captured::Text(t) => Some(t.clone()),
+            _ => None,
+        });
+        let toast = self.toast_with(title, how_long);
+        toast.icon = Some(icons::Icon::Lock);
+        toast.detail = (!detail.is_empty()).then(|| detail.join(" · "));
+        toast.secret = secret;
+        toast.action = kept.map(|c| (t!("toast-save-anyway"), Command::SaveSkipped(c)));
+    }
+
+    /// The program a copy came from: its own name once it is known, else
+    /// its file name.
+    fn program_name(&mut self, app: Option<&str>, program: Option<&Path>) -> Option<String> {
+        program
+            .and_then(|p| self.programs.get(p))
+            .map(|p| p.name.clone())
+            .or_else(|| app.map(str::to_string))
     }
 
     /// Adds a copy to the history, or moves its duplicate to the top.
@@ -2454,6 +2494,29 @@ fn run_total(total: usize, before: usize, left: usize) -> usize {
         0
     } else {
         total + left.saturating_sub(before)
+    }
+}
+
+/// "Not saved: an API key" and the like.
+fn secret_title(kind: crate::privacy::SecretKind) -> String {
+    use crate::privacy::SecretKind;
+    match kind {
+        SecretKind::Password => t!("toast-skipped-password"),
+        SecretKind::ApiKey => t!("toast-skipped-api-key"),
+        SecretKind::SignIn => t!("toast-skipped-sign-in"),
+        SecretKind::PrivateKey => t!("toast-skipped-private-key"),
+        SecretKind::Link => t!("toast-skipped-link"),
+        SecretKind::Key => t!("toast-skipped-key"),
+    }
+}
+
+/// A hint that tells one secret from another without showing it.
+fn hint_text(hint: &crate::privacy::Hint) -> String {
+    use crate::privacy::Hint;
+    match hint {
+        Hint::Ends(start, end) => format!("{start}…{end}"),
+        Hint::Host(host) => host.clone(),
+        Hint::Length(n) => t!("toast-hint-characters", count = *n),
     }
 }
 

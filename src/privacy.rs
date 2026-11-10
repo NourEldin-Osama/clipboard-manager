@@ -2,6 +2,40 @@
 //! keys" setting. Kept apart from the clipboard code so the rules can be read and
 //! tested on their own.
 
+/// What a copy that looks like a secret is, for the message that says it
+/// wasn't saved (D57).
+#[derive(Clone, Debug, PartialEq)]
+pub struct Secret {
+    pub kind: SecretKind,
+    pub hint: Hint,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum SecretKind {
+    Password,
+    /// A token with a known prefix, or a name about a key or token.
+    ApiKey,
+    /// A JWT or a `Bearer` token.
+    SignIn,
+    PrivateKey,
+    /// A web address that carries a password or a token.
+    Link,
+    /// A long random-looking key.
+    Key,
+}
+
+/// Tells one secret from another without showing it.
+#[derive(Clone, Debug, PartialEq)]
+pub enum Hint {
+    /// A key's public start and its last 4 characters, as websites show
+    /// keys: "sk-" and "9f2a".
+    Ends(String, String),
+    /// The host of a link that carries a password.
+    Host(String),
+    /// Only its length in characters.
+    Length(usize),
+}
+
 /// Text that looks like a credential: a private key block, a token with a
 /// known prefix (also inside longer text such as an `.env` file), a JWT, a
 /// `Bearer` token, a `password=...` pair, a URL that carries a password or a
@@ -9,47 +43,80 @@
 /// conservative, so file names, paths, ordinary URLs, e-mail addresses,
 /// hashes, IDs and code identifiers are still recorded.
 pub fn looks_like_secret(text: &str) -> bool {
+    find_secret(text).is_some()
+}
+
+/// The secret `text` looks like, with a hint that doesn't give it away; the
+/// rules are those of `looks_like_secret`.
+pub fn find_secret(text: &str) -> Option<Secret> {
     let t = text.trim();
+    let found = |kind, hint| Some(Secret { kind, hint });
+    let length = |s: &str| Hint::Length(s.chars().count());
     if t.contains("-----BEGIN") && t.contains("PRIVATE KEY") {
-        return true;
+        return found(SecretKind::PrivateKey, length(t));
     }
     if t.len() < 12 || t.len() > 8192 {
-        return false;
+        return None;
     }
     if t.contains(char::is_whitespace) {
         // In text with spaces, only unmistakable tokens count; the rest
         // could be prose or code.
         let lower = t.to_ascii_lowercase();
         if let Some(at) = lower.find("bearer ") {
-            if t[at + 7..]
+            if let Some(token) = t[at + 7..]
                 .split_whitespace()
                 .next()
-                .is_some_and(|token| is_token(token, 16))
+                .filter(|token| is_token(token, 16))
             {
-                return true;
+                return found(SecretKind::SignIn, length(token));
             }
         }
-        if !t.contains('\n') && is_secret_assignment(t) {
-            return true;
+        if !t.contains('\n') {
+            if let Some(kind) = assignment_kind(t) {
+                return found(kind, length(t));
+            }
         }
         return t
             .split(|c: char| c.is_whitespace() || "=:\"'`,;()[]{}<>".contains(c))
-            .any(|word| has_known_prefix(word) || is_jwt(word));
+            .find_map(|word| match known_prefix(word) {
+                Some(prefix) => found(SecretKind::ApiKey, ends(prefix, word)),
+                None if is_jwt(word) => found(SecretKind::SignIn, length(word)),
+                None => None,
+            });
     }
-    if is_secret_assignment(t) {
-        return true;
+    if let Some(kind) = assignment_kind(t) {
+        return found(kind, length(t));
     }
     if t.contains("://") {
-        return url_carries_secret(t);
+        let host = crate::net::host(t).to_string();
+        return url_carries_secret(t).then_some(Secret {
+            kind: SecretKind::Link,
+            hint: Hint::Host(host),
+        });
     }
-    if has_known_prefix(t) || is_jwt(t) {
-        return true;
+    if let Some(prefix) = known_prefix(t) {
+        return found(SecretKind::ApiKey, ends(prefix, t));
+    }
+    if is_jwt(t) {
+        return found(SecretKind::SignIn, length(t));
     }
     if t.len() > 512 || t.starts_with("www.") || t.contains('\\') || is_email(t) || is_file_name(t)
     {
-        return false;
+        return None;
     }
-    is_random_token(t) || is_base64_key(t) || is_generated_password(t)
+    if is_random_token(t) || is_base64_key(t) {
+        return found(SecretKind::Key, length(t));
+    }
+    if is_generated_password(t) {
+        return found(SecretKind::Password, length(t));
+    }
+    None
+}
+
+/// A key's public start and its last 4 characters.
+fn ends(prefix: &str, token: &str) -> Hint {
+    let last: Vec<char> = token.chars().rev().take(4).collect();
+    Hint::Ends(prefix.to_string(), last.into_iter().rev().collect())
 }
 
 /// Prefixes of well-known API keys and tokens, with the shortest rest.
@@ -86,11 +153,15 @@ const PREFIXES: [(&str, usize); 30] = [
     ("gsk_", 30),
 ];
 
-fn has_known_prefix(t: &str) -> bool {
-    PREFIXES.iter().any(|(prefix, min)| {
-        t.strip_prefix(prefix)
-            .is_some_and(|rest| is_token(rest, *min))
-    })
+/// The well-known prefix `t` starts with, followed by enough of a token.
+fn known_prefix(t: &str) -> Option<&'static str> {
+    PREFIXES
+        .iter()
+        .find(|(prefix, min)| {
+            t.strip_prefix(prefix)
+                .is_some_and(|rest| is_token(rest, *min))
+        })
+        .map(|(prefix, _)| *prefix)
 }
 
 /// At least `min` characters of a token alphabet, with a digit in them, so a
@@ -115,8 +186,9 @@ fn is_jwt(t: &str) -> bool {
 }
 
 /// One line like `password=...` or `API_KEY: ...`: a name about a password,
-/// token or key, and a value with no spaces and no code characters.
-fn is_secret_assignment(t: &str) -> bool {
+/// token or key, and a value with no spaces and no code characters. The kind
+/// follows the name.
+fn assignment_kind(t: &str) -> Option<SecretKind> {
     const NAMES: [&str; 10] = [
         "password",
         "passwd",
@@ -129,20 +201,31 @@ fn is_secret_assignment(t: &str) -> bool {
         "access_key",
         "private_key",
     ];
-    let Some(split) = t.find(['=', ':']) else {
-        return false;
-    };
+    let split = t.find(['=', ':'])?;
     let quotes = |c: char| c == '"' || c == '\'';
     let name = t[..split].trim().trim_matches(quotes).to_ascii_lowercase();
     let value = t[split + 1..].trim().trim_matches(quotes);
-    name.len() <= 40
+    let assignment = name.len() <= 40
         && name
             .chars()
             .all(|c| c.is_ascii_alphanumeric() || "_-. ".contains(c))
         && NAMES.iter().any(|n| name.ends_with(n))
         && (8..=256).contains(&value.len())
         && !value.contains(char::is_whitespace)
-        && !value.contains(['(', ')', ';', '{', '}', '$'])
+        && !value.contains(['(', ')', ';', '{', '}', '$']);
+    if !assignment {
+        return None;
+    }
+    Some(if name.ends_with("private_key") {
+        SecretKind::PrivateKey
+    } else if ["password", "passwd", "pwd"]
+        .iter()
+        .any(|n| name.ends_with(n))
+    {
+        SecretKind::Password
+    } else {
+        SecretKind::ApiKey
+    })
 }
 
 /// A URL with a password in it, a token-like query value, or a webhook path.
@@ -285,6 +368,40 @@ fn entropy(s: &str) -> f64 {
 #[cfg(test)]
 mod tests {
     use super::looks_like_secret as secret;
+    use super::{find_secret, Hint, Secret, SecretKind};
+
+    #[test]
+    fn a_secret_is_named_with_a_hint_that_hides_it() {
+        let found = |t: &str| find_secret(t).expect(t);
+        assert_eq!(
+            found("sk-proj-AbCdEf1234567890GhIjKlMnOp"),
+            Secret {
+                kind: SecretKind::ApiKey,
+                hint: Hint::Ends("sk-proj-".into(), "MnOp".into()),
+            }
+        );
+        // Inside longer text, the key's own ends.
+        assert_eq!(
+            found("OPENAI_KEY = sk-proj-AbCdEf1234567890GhIjKlMnOp # mine").hint,
+            Hint::Ends("sk-proj-".into(), "MnOp".into())
+        );
+        assert_eq!(
+            found("password=hunter2hunter2"),
+            Secret {
+                kind: SecretKind::Password,
+                hint: Hint::Length(23),
+            }
+        );
+        assert_eq!(found("API_KEY: abcd1234efgh5678").kind, SecretKind::ApiKey);
+        assert_eq!(
+            found("https://me:Hunter2Hunter2@db.example.com:5432/app").hint,
+            Hint::Host("db.example.com:5432".into())
+        );
+        assert_eq!(
+            found("Bearer abcdefghijklmnop1234").kind,
+            SecretKind::SignIn
+        );
+    }
 
     #[test]
     fn secrets_are_detected() {

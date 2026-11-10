@@ -793,8 +793,20 @@ toast-tag-removed =
         [one] Removed #{ $tag } from 1 item
        *[other] Removed #{ $tag } from { $count } items
     }
-toast-skipped-private = Not saved: the app you copied from marked it as private
-toast-skipped-secret = Not saved: looks like a password or API key (see Settings)
+toast-skipped-private = Not saved: marked private
+toast-skipped-by = By { $program }
+toast-skipped-from = From { $program }
+toast-skipped-password = Not saved: a password
+toast-skipped-api-key = Not saved: an API key
+toast-skipped-sign-in = Not saved: a sign-in token
+toast-skipped-private-key = Not saved: a private key
+toast-skipped-link = Not saved: a link with a password
+toast-skipped-key = Not saved: a key
+toast-hint-characters =
+    { $count ->
+        [one] 1 character
+       *[other] { $count } characters
+    }
 toast-skipped-rule = Not saved: one of your rules skips it
 toast-app-ignored = Copies from { $app } won't be recorded. You can remove the rule in Settings, Privacy.
 tray-show = Show Clipboard Manager
