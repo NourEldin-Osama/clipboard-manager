@@ -244,12 +244,17 @@ pub(super) fn paint_row(
     // Laid out left to right, then mirrored for Arabic.
     let m = |r: Rect| flip(rect, r);
     let rtl = i18n::rtl();
+    let fill = if selected {
+        Some(a.gamma_multiply(if v.dark_mode { 0.16 } else { 0.12 }))
+    } else if hot {
+        Some(v.widgets.hovered.weak_bg_fill.gamma_multiply(0.6))
+    } else {
+        None
+    };
+    if let Some(fill) = fill {
+        p.rect_filled(rect, CornerRadius::same(radius::MEDIUM), fill);
+    }
     if selected {
-        p.rect_filled(
-            rect,
-            CornerRadius::same(radius::MEDIUM),
-            a.gamma_multiply(if v.dark_mode { 0.16 } else { 0.12 }),
-        );
         p.rect_filled(
             m(Rect::from_min_size(
                 rect.min + Vec2::new(0.0, 8.0),
@@ -257,12 +262,6 @@ pub(super) fn paint_row(
             )),
             CornerRadius::same(radius::SMALL),
             a,
-        );
-    } else if hot {
-        p.rect_filled(
-            rect,
-            CornerRadius::same(radius::MEDIUM),
-            v.widgets.hovered.weak_bg_fill.gamma_multiply(0.6),
         );
     }
 
@@ -290,6 +289,21 @@ pub(super) fn paint_row(
         .then(|| color_in(&it.text))
         .flatten();
     let path = (it.kind == Kind::Text).then(|| path_in(&it.text)).flatten();
+    // The kind's symbol on a tile of its color, in its readable shade so it
+    // doesn't look faded.
+    let symbol = |c: Color32, icon: Icon| {
+        p.rect_filled(
+            av_rect,
+            CornerRadius::same(radius::MEDIUM),
+            c.gamma_multiply(if v.dark_mode { 0.3 } else { 0.13 }),
+        );
+        icons::paint(
+            &p,
+            Rect::from_center_size(av_rect.center(), Vec2::splat(av * 0.46)),
+            icon,
+            text_shade(c, v.dark_mode),
+        );
+    };
     match thumb {
         Some(t) => {
             let s = t.size_vec2();
@@ -322,47 +336,27 @@ pub(super) fn paint_row(
             );
         }
         None if path.is_some() => {
-            let c = kind_color(Kind::Files);
-            p.rect_filled(
-                av_rect,
-                CornerRadius::same(radius::MEDIUM),
-                c.gamma_multiply(if v.dark_mode { 0.3 } else { 0.13 }),
-            );
             let icon = match path.and_then(|p| p.extension()) {
                 Some(_) => Icon::File,
                 None => Icon::Folder,
             };
-            icons::paint(
-                &p,
-                Rect::from_center_size(av_rect.center(), Vec2::splat(av * 0.46)),
-                icon,
-                text_shade(c, v.dark_mode),
-            );
+            symbol(kind_color(Kind::Files), icon);
         }
-        // Text, links and files show the program they were copied from.
-        None if program_icon.is_some() => {
-            let icon = program_icon.expect("checked above");
-            let side = (av * 0.84).round();
-            egui::Image::new((icon.id(), Vec2::splat(side))).paint_at(
-                ui,
-                Rect::from_center_size(av_rect.center(), Vec2::splat(side)),
-            );
-        }
-        None => {
-            let c = kind_color(it.kind);
-            p.rect_filled(
-                av_rect,
-                CornerRadius::same(radius::MEDIUM),
-                c.gamma_multiply(if v.dark_mode { 0.3 } else { 0.13 }),
-            );
-            // In the kind's readable shade, so the symbol doesn't look faded.
-            icons::paint(
-                &p,
-                Rect::from_center_size(av_rect.center(), Vec2::splat(av * 0.46)),
-                item_icon(it),
-                text_shade(c, v.dark_mode),
-            );
-        }
+        None => symbol(kind_color(it.kind), item_icon(it)),
+    }
+    // The program it came from as a small badge on the symbol's lower corner,
+    // ringed in the row's color; one line has no room for it.
+    if let (false, Some(icon)) = (compact, program_icon) {
+        let badge = m(Rect::from_center_size(
+            Pos2::new(
+                rect.left() + ROW_PADDING + gutter + av - 2.0,
+                rect.center().y + av / 2.0 - 2.0,
+            ),
+            Vec2::splat(PROGRAM_BADGE),
+        ));
+        let under = fill.map_or(v.panel_fill, |fill| v.panel_fill.blend(fill));
+        p.rect_filled(badge.expand(2.0), CornerRadius::same(radius::SMALL), under);
+        egui::Image::new((icon.id(), Vec2::splat(PROGRAM_BADGE))).paint_at(ui, badge);
     }
 
     let x = rect.left() + ROW_PADDING + gutter + av + 12.0;
@@ -502,6 +496,9 @@ pub(super) fn paint_row(
         paint_relevance(&p, rect, ix, iy + 6.0, level, a, weak);
     }
 }
+
+/// How big the program's icon is on a row's symbol.
+const PROGRAM_BADGE: f32 = 16.0;
 
 /// How wide a row's time is at least, so the pins and the relevance bars
 /// before short times line up.
