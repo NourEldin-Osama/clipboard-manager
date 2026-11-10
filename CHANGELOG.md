@@ -4,6 +4,25 @@ What changed in each version, for the people who use the app. Each release
 starts its notes with the section of the version it was built from, so add
 the notes here before a push that makes a release.
 
+## 0.6.1
+
+- If watching the clipboard crashes on a copy, that copy is skipped and
+  recording goes on. If it crashes again and again, the status bar says
+  "Recording stopped" and offers to start it again. Thumbnails and
+  program icons also go on after a file that crashes them.
+- The right-click menu shows lines between its groups, and the quick
+  popup has an edge, so it stands apart from the window behind it.
+- In search results, other sort orders and the Pinned group, an item
+  from yesterday says "Yesterday" instead of only its time.
+- When the search server stops, the status bar turns red and says so,
+  with Try again. The app also asks the server again by itself and
+  indexes what waited once it answers. A search model whose server
+  wasn't running when the app started now loads once the server is up.
+- A picture whose text couldn't be read says so in the details pane,
+  with Try again, instead of "reading text…" forever.
+- The log leaves out the user name and password a server address can
+  carry, and starts a new file after 10 MB.
+
 ## 0.6.0
 
 - New type: Noto Sans for Latin, Greek and Cyrillic next to Noto Sans

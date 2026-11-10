@@ -245,8 +245,9 @@ impl App {
             self.win.show_full();
         }
         // Without a title bar, a thin edge sets the popup apart from what is
-        // behind it.
-        let edge = ui.visuals().widgets.noninteractive.bg_stroke.color;
+        // behind it: the edge menus have. (The theme leaves out the outline
+        // of things you can't click, which this used before and was empty.)
+        let edge = ui.visuals().window_stroke.color;
         ctx.layer_painter(egui::LayerId::new(
             egui::Order::Foreground,
             egui::Id::unique("popup-edge"),

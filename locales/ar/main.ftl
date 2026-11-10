@@ -178,6 +178,8 @@ common-cancel = إلغاء
 status-model-loading = جارٍ تحميل نموذج البحث…
 status-model-off = بالكلمات فقط · فعّل البحث بالمعنى
 status-model-unavailable = نموذج البحث غير متاح · أصلحه من الإعدادات
+status-model-failing = خادم البحث لا يعمل · حاول مجددًا
+status-model-failing-tip = البحث بالمعنى يفشل الآن. يحاول التطبيق مجددًا من تلقاء نفسه، وانقر لتحاول الآن.
 status-model-words-only = بالكلمات فقط
 status-model-tip = نموذج البحث: انقر للتغيير
 status-model-on = { $model } · { $server }
@@ -185,6 +187,8 @@ status-model-tip-named = نموذج البحث: { $model } على { $server }. �
 status-indexing = جارٍ الفهرسة · { $done } من { $total }
 status-adding-files = جارٍ إضافة الملفات · أُضيف { $count }
 status-recording-paused = التسجيل متوقف
+status-recording-stopped = توقف التسجيل بسبب خطأ · ابدأه من جديد
+status-recording-stopped-tip = توقف التسجيل بعد أخطاء متكررة. انقر لتبدأه من جديد.
 status-shortcut-taken = الاختصار { $keys } يستخدمه تطبيق آخر
 status-open-shortcut-settings = افتح إعدادات الاختصارات
 status-dismiss-error = انقر للإغلاق
@@ -338,6 +342,8 @@ details-image-size = { $width } × { $height } بكسل
 details-has-text = تحتوي نصًا
 details-no-text = لا نص فيها
 details-reading-text = جارٍ قراءة النص…
+details-read-failed = تعذرت قراءة النص
+details-read-again = حاول مجددًا
 details-files-count =
     { $count ->
         [one] عنصر واحد

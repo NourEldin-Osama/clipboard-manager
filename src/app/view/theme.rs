@@ -37,6 +37,12 @@ pub(crate) const AMBER: Color32 = Color32::from_rgb(214, 140, 20);
 
 pub(crate) const RED: Color32 = Color32::from_rgb(214, 60, 60);
 
+/// The soft line between groups of a menu. egui's own separator uses the
+/// outline of things you can't click, which this theme leaves out.
+pub(crate) fn line_color(dark_mode: bool) -> Color32 {
+    Color32::from_gray(if dark_mode { 60 } else { 222 })
+}
+
 /// `color` moved toward black on a light `background`, or toward white on a
 /// dark one, just enough for text to read on it: 4.5 to 1, the WCAG AA
 /// minimum for normal text.

@@ -202,7 +202,7 @@ impl App {
             ));
             for (g, group) in groups.iter().enumerate() {
                 if g > 0 {
-                    ui.separator();
+                    divider(ui);
                 }
                 for (i, e) in group.iter().enumerate() {
                     let red =

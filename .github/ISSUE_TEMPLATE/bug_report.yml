@@ -9,8 +9,8 @@ body:
     id: version
     attributes:
       label: Version
-      description: "Settings → General → Updates → Version, e.g. 0.2.1 (build 15)."
-      placeholder: 0.2.1 (build 15)
+      description: "Settings → About → Version, e.g. 0.6.1 (build 26)."
+      placeholder: 0.6.1 (build 26)
     validations:
       required: true
   - type: input
@@ -37,5 +37,5 @@ body:
     id: log
     attributes:
       label: Log
-      description: "Settings → Data & privacy → Log file → Show. Paste the relevant lines (remove anything private)."
+      description: "Settings → About → Log file → Show. Paste the relevant lines (remove anything private)."
       render: text

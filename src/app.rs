@@ -321,6 +321,12 @@ pub(super) enum Command {
     CopyTogether(Vec<u64>, Paste),
     /// Opens what is new in this version over the full window.
     ShowWhatsNew,
+    /// Starts the clipboard watcher again after it stopped on crashes.
+    StartRecordingAgain,
+    /// Asks the search server again now, instead of at the next retry.
+    TrySearchAgain,
+    /// Reads an image's text again after it failed.
+    ReadAgain(u64),
 }
 
 /// Whether putting an item back on the clipboard also pastes it into the
@@ -404,6 +410,32 @@ const IMAGES_REFUSED_FOR: Duration = Duration::from_secs(15);
 /// How often deleting by age runs while it is on.
 const AGE_PRUNE_EVERY: Duration = Duration::from_secs(60 * 60);
 
+/// A search server that stopped answering is asked again after this long,
+/// then twice as long each time, up to `RETRY_AT_MOST`.
+const RETRY_FIRST: Duration = Duration::from_secs(30);
+const RETRY_AT_MOST: Duration = Duration::from_secs(10 * 60);
+
+/// When to ask a search server that stopped answering again.
+struct Retry {
+    at: Instant,
+    wait: Duration,
+}
+
+impl Retry {
+    fn new(now: Instant) -> Self {
+        Retry {
+            at: now + RETRY_FIRST,
+            wait: RETRY_FIRST,
+        }
+    }
+
+    /// After a try at `now`: the next one comes twice as late.
+    fn again(&mut self, now: Instant) {
+        self.wait = (self.wait * 2).min(RETRY_AT_MOST);
+        self.at = now + self.wait;
+    }
+}
+
 /// The last deleted item, kept for "Undo" until its toast ends; only then is
 /// it removed from the database, with its vectors and image file.
 struct PendingDelete {
@@ -437,6 +469,9 @@ pub struct App {
     worker: Worker,
     events: Receiver<Event>,
     captures: Receiver<Capture>,
+    /// The clipboard watcher stopped after crashing again and again; the
+    /// status bar offers to start it again.
+    recording_stopped: bool,
     /// `cfg.rules`, ready to match copies.
     rules: crate::rules::Rules,
     flags: Arc<Flags>,
@@ -453,6 +488,10 @@ pub struct App {
     pending_delete: Option<PendingDelete>,
     /// When deleting by age runs next; `None` runs it at the next frame.
     next_age_prune: Option<Instant>,
+    /// The search server stopped answering: when the app asks it again.
+    search_retry: Option<Retry>,
+    /// Images whose text couldn't be read; they offer Try again.
+    ocr_failed: HashSet<u64>,
 
     query: String,
     query_changed: Option<Instant>,
@@ -630,9 +669,7 @@ impl App {
         let flags = Arc::new(Flags::default());
         flags.enabled.store(cfg.monitor_clipboard, Ordering::SeqCst);
         flags.skip_secrets.store(cfg.skip_secrets, Ordering::SeqCst);
-        let (cap_tx, captures) = channel();
-        let c = ctx.clone();
-        clipboard::spawn_watcher(flags.clone(), cap_tx, move || c.request_repaint());
+        let captures = watch_clipboard(&ctx, &flags);
 
         let focus_search = Arc::new(AtomicBool::new(true));
         let win = WindowCtl {
@@ -665,6 +702,7 @@ impl App {
             worker,
             events,
             captures,
+            recording_stopped: false,
             rules: crate::rules::Rules::new(&cfg.rules),
             flags,
             library,
@@ -676,6 +714,8 @@ impl App {
             toast: None,
             pending_delete: None,
             next_age_prune: None,
+            search_retry: None,
+            ocr_failed: HashSet::new(),
             query: String::new(),
             query_changed: None,
             query_seq: 0,
@@ -822,6 +862,8 @@ impl App {
     fn set_backend(&mut self, b: EmbedBackend) {
         self.library.clear_embeddings();
         self.query_vec = None;
+        // A new choice starts fresh; the worker says if this one fails too.
+        self.search_retry = None;
         self.backend = if b == EmbedBackend::None {
             BackendState::Off
         } else {
@@ -1319,6 +1361,21 @@ impl App {
                 self.win.show_full();
                 self.whats_new_open = true;
             }
+            Command::StartRecordingAgain => {
+                log::info!("starting the clipboard watcher again");
+                self.captures = watch_clipboard(&self.win.ctx, &self.flags);
+                self.recording_stopped = false;
+            }
+            Command::TrySearchAgain => {
+                // Asked now; if it still fails, the waits start over.
+                self.worker.send(Job::Probe);
+                self.search_retry = Some(Retry::new(Instant::now()));
+            }
+            Command::ReadAgain(id) => {
+                self.ocr_failed.remove(&id);
+                self.worker.send(Job::OcrAgain(id));
+                self.dirty = true;
+            }
             Command::CopyText(text) => {
                 let flags = self.flags.clone();
                 self.background.run(move || {
@@ -1698,8 +1755,16 @@ impl App {
 
     fn handle_events(&mut self, ctx: &egui::Context) {
         self.model_list.poll();
-        while let Ok(c) = self.captures.try_recv() {
-            self.on_capture(c);
+        loop {
+            match self.captures.try_recv() {
+                Ok(c) => self.on_capture(c),
+                Err(TryRecvError::Empty) => break,
+                // The watcher gave up after crashing again and again.
+                Err(TryRecvError::Disconnected) => {
+                    self.recording_stopped = true;
+                    break;
+                }
+            }
         }
         while let Ok(done) = self.background.done.try_recv() {
             self.finish(done);
@@ -1752,11 +1817,29 @@ impl App {
                     self.library.set_embeddings(stored);
                     self.status.clear();
                     self.backend = BackendState::Ready { key, images };
+                    // Loaded on a retry: this already sends what is missing.
+                    self.search_retry = None;
                     self.index_missing();
                     self.query_changed = Some(Instant::now() - QUERY_DEBOUNCE);
                     self.dirty = true;
                 }
+                Event::OcrFailed { id } => {
+                    self.ocr_failed.insert(id);
+                    self.dirty = true;
+                }
+                Event::SearchServer { answering: false } => {
+                    if self.search_retry.is_none() {
+                        self.search_retry = Some(Retry::new(Instant::now()));
+                    }
+                }
+                Event::SearchServer { answering: true } => {
+                    // Items that failed or waited meanwhile go again.
+                    if self.search_retry.take().is_some() {
+                        self.index_missing();
+                    }
+                }
                 Event::Ocr { id, text } => {
+                    self.ocr_failed.remove(&id);
                     let reembed = matches!(self.backend, BackendState::Ready { images: false, .. })
                         && !text.is_empty();
                     self.library.set_ocr(id, &text);
@@ -2290,6 +2373,15 @@ fn run_total(total: usize, before: usize, left: usize) -> usize {
     } else {
         total + left.saturating_sub(before)
     }
+}
+
+/// Starts the clipboard watcher; its copies arrive on the receiver, which
+/// closes if the watcher stops.
+fn watch_clipboard(ctx: &egui::Context, flags: &Arc<Flags>) -> Receiver<Capture> {
+    let (tx, captures) = channel();
+    let ctx = ctx.clone();
+    clipboard::spawn_watcher(flags.clone(), tx, move || ctx.request_repaint());
+    captures
 }
 
 /// Writes to the clipboard from the background thread. The watcher skips

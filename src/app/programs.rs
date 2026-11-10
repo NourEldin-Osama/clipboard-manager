@@ -38,7 +38,17 @@ impl Programs {
             .name("programs".into())
             .spawn(move || {
                 for path in questions {
-                    let description = describe(&path);
+                    // A program that crashes the reading gets its file name
+                    // and no icon; the thread goes on with the next one.
+                    let description =
+                        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| describe(&path)))
+                            .unwrap_or_else(|_| {
+                                log::warn!("reading {} crashed", path.display());
+                                Description {
+                                    name: file_name(&path),
+                                    icon: None,
+                                }
+                            });
                     if tell.send((path, description)).is_err() {
                         return;
                     }
@@ -76,15 +86,17 @@ impl Programs {
 /// The program's own name from its file description, or its file name; and
 /// its icon.
 fn describe(path: &Path) -> Description {
-    let file_name = || {
-        path.file_stem()
-            .map(|name| name.to_string_lossy().into_owned())
-            .unwrap_or_default()
-    };
     Description {
-        name: file_description(path).unwrap_or_else(file_name),
+        name: file_description(path).unwrap_or_else(|| file_name(path)),
         icon: icon(path),
     }
+}
+
+/// The program's file name without its extension.
+fn file_name(path: &Path) -> String {
+    path.file_stem()
+        .map(|name| name.to_string_lossy().into_owned())
+        .unwrap_or_default()
 }
 
 #[cfg(windows)]

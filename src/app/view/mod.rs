@@ -47,8 +47,9 @@ pub(crate) use theme::{
     text_shade, ACCENTS, AMBER, GREEN, READING_WIDTH, RED,
 };
 pub(crate) use widgets::{
-    chip, cut_line, far, flip, lbl, paint_text, primary_button, row, row_layout, row_wrapped,
-    section_title, set_choice_name, set_name, slow_spinner, start_anchor, tip, title_lbl, txt,
+    chip, cut_line, divider, far, flip, lbl, paint_text, primary_button, row, row_layout,
+    row_wrapped, section_title, set_choice_name, set_name, slow_spinner, start_anchor, tip,
+    title_lbl, txt,
 };
 
 impl App {
@@ -201,6 +202,16 @@ impl eframe::App for App {
             } else {
                 ctx.request_repaint_after(left);
             }
+        }
+        // A search server that stopped answering is asked again now and then,
+        // also while hidden.
+        if let Some(retry) = &mut self.search_retry {
+            let now = Instant::now();
+            if now >= retry.at {
+                retry.again(now);
+                self.worker.send(Job::Probe);
+            }
+            ctx.request_repaint_after(retry.at.saturating_duration_since(now));
         }
         // Deleting by age runs at start and then every hour, also while hidden.
         if self.cfg.delete_after_days > 0

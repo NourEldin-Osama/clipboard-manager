@@ -3,6 +3,8 @@
 The plan for the round of changes asked for on 2026-10-23: bug fixes, improvements and new features.
 Phases 9 to 15, planned on 2026-11-03, are the work after 0.5.0: the server fixes left from 0.5.0 and the 17 points of
 the design review.
+Phases 16 to 20, planned on 2026-11-10, come from a second review with 12 design videos: 7 faults and 11 improvements,
+drawn before and after on a page in the scratchpad.
 This file is updated with every change.
 
 Status: `[ ]` to do, `[~]` in progress, `[x]` done, `[!]` waiting for a decision or for you.
@@ -65,6 +67,15 @@ Status: `[ ]` to do, `[~]` in progress, `[x]` done, `[!]` waiting for a decision
 | D52 | Ctrl+1 to Ctrl+9 paste the first nine items in both windows; only the popup shows the numbers. A message after a mouse action names its key once per action in each run | Claude | Decided |
 | D53 | The getting-started checklist is for new installs only, and once closed it stays closed | Claude | Decided |
 | D54 | Search measures meaning from the typical item's score up to the best one, so it works the same with every model: a match is strong when it contains all the words or is at least half way to the best, and the relevance bars show the same measure (one bar below strong, two from there, three near the best) | You | Decided |
+| D55 | Messages look like shadcn's Sonner: a stack at the bottom right of the window (bottom left in Arabic), above the status bar. The newest is in front and up to two older ones peek out above it; pointing at the stack opens it and stops the timers, which also stop while the window is hidden. Undo keeps its 8 seconds, and Ctrl+Z undoes | You | Decided |
+| D56 | When the window is not in front, a message about a copy appears as the app's own note on the screen: the same look with the app icon, at the bottom right of the screen with the pointer (bottom left in Arabic). It never takes the keyboard, lasts 8 seconds (longer while the pointer is on it), stays quiet during full-screen apps and presentations, and can be turned off in Settings, Privacy. Clicking it opens the window with the same message | You | Decided |
+| D57 | "Not saved" for every copy the app skips: the kind (password, API key, sign-in token, private key, link with a password, your rule), the program and a hint: keys show their public start and last 4 characters, passwords only their length. In the window it also has Show (the whole text while held) and Save anyway; the note on the screen never shows the text. A copy marked private by its program names only the program. The text leaves memory when the message ends | You | Decided |
+| D58 | Dark theme: "Dark panels" in Appearance, Darker (the panes and cards below the window, as before 0.7.0) or Lighter (raised surfaces lighter, menus lightest, with steps twice as big as in the light theme). Lighter is the default | You | Decided |
+| D59 | While recording is paused the tray icon is gray and its tooltip says so. After Alt+C a note at the bottom right of the screen says the next copy won't be saved, for 2 seconds, and the tray icon has a badge until that copy | You | Decided |
+| D60 | Delete by age and the item limit say how many items they removed, with Undo; the items wait, hidden, until the message is gone or the app quits | You | Decided |
+| D61 | Esc or Back in a server's editor keeps the draft until Save, Discard or quitting the app; the server shows "Not saved" | You | Decided |
+| D62 | Named corner sizes (4, 8, 12 and round), gaps in steps of 4 and every color in the theme file; a test fails on a raw number or color in screen code | You | Decided |
+| D63 | Version 0.6.1 after Phase 16, then 0.7.0 after Phases 17 to 20 | You | Decided |
 
 ## Order of work, and why
 
@@ -228,6 +239,44 @@ screenshots of the finished screens.
 - [x] 15.1 Remove the update from 0.4 settings, the old model folders' clean-up and the old vectors' deletion (D33)
 - [x] 15.2 New screenshots from a test copy with made-up items
 - [x] 15.3 README, README_AR, the change log and version 0.6.0 (D48)
+
+Phases 16 to 20 come in this order: the faults first, as a small release (D63); then the messages, which later changes
+use; then the look, motion and smaller changes; and the README, bug reports and 0.7.0 last, with new screenshots.
+
+### Phase 16. Faults (version 0.6.1)
+- [x] 16.1 Recording, thumbnails and program icons start again after a crash; if recording can't, the status bar says "Recording stopped" with Start again
+- [x] 16.2 Dividers between the groups of the right-click menu and the model menu, in a soft line color; an edge around the quick popup like the menus have
+- [x] 16.3 Rows with no day header above them say "Yesterday" instead of only the time
+- [x] 16.4 The search server's real state: a red dot with Try again while requests fail, and the app tries again by itself; pictures whose text couldn't be read say so, with Try again
+- [x] 16.5 The log: no user name or password in server addresses, a new file after 10 MB; the bug form and CONTRIBUTING point to Settings, About
+- [x] 16.6 The change log and version 0.6.1
+
+### Phase 17. Messages
+- [ ] 17.1 Messages in the Sonner style at the bottom right of the window (D55)
+- [ ] 17.2 The app's own note on the screen (D56)
+- [ ] 17.3 "Not saved" says what, with Show in the window (D57)
+- [ ] 17.4 Delete by age and the item limit say what they removed, with Undo (D60)
+- [ ] 17.5 Alt+C: a note and a tray badge (D59)
+
+### Phase 18. Look
+- [ ] 18.1 Named sizes and colors, and a test against raw ones (D62)
+- [ ] 18.2 Dark panels: Darker or Lighter, Lighter by default (D58)
+- [ ] 18.3 Filter counts within the search results, filters with none dimmed, the result count in the popup
+- [ ] 18.4 Image rows: "Image" or the read text, then the size
+
+### Phase 19. Motion and smaller changes
+- [ ] 19.1 Deleted rows and cards fade out and the gap closes; messages slide in and out
+- [ ] 19.2 Filled buttons react to the pointer and to a press
+- [ ] 19.3 Nothing moves when Windows' "Animation effects" is off
+- [ ] 19.4 The tray icon turns gray while recording is paused, and its tooltip says so (D59)
+- [ ] 19.5 The hover buttons' tips name their keys
+- [ ] 19.6 A server's editor keeps your draft (D61)
+
+### Phase 20. README, bug reports and 0.7.0
+- [ ] 20.1 README and README_AR open with one line, the download, a screenshot and three benefits (texts shown to you first)
+- [ ] 20.2 The log's first line gives the version, the build and the Windows version, without your user name; item ids and times on reading and indexing lines
+- [ ] 20.3 About: Copy details for a bug report
+- [ ] 20.4 New screenshots, the change log and version 0.7.0
 
 ## Change log
 

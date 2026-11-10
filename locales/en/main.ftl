@@ -173,6 +173,8 @@ common-cancel = Cancel
 status-model-loading = Loading search model…
 status-model-off = Words only · set up meaning search
 status-model-unavailable = Search model unavailable · fix in Settings
+status-model-failing = Search server isn't working · Try again
+status-model-failing-tip = Searching by meaning fails now. The app tries again by itself; click to try now.
 status-model-words-only = Words only
 status-model-tip = Search model: click to change
 status-model-on = { $model } · { $server }
@@ -180,6 +182,8 @@ status-model-tip-named = Search model: { $model } on { $server }. Click to chang
 status-indexing = Indexing · { $done } of { $total }
 status-adding-files = Adding files · { $count } added
 status-recording-paused = Recording paused
+status-recording-stopped = Recording stopped · Start again
+status-recording-stopped-tip = Recording stopped after repeated errors. Click to start it again.
 status-shortcut-taken = Shortcut { $keys } is used by another app
 status-open-shortcut-settings = Open the shortcut settings
 status-dismiss-error = Click to dismiss
@@ -305,6 +309,8 @@ details-image-size = { $width } × { $height } px
 details-has-text = contains text
 details-no-text = no text found
 details-reading-text = reading text…
+details-read-failed = couldn't read the text
+details-read-again = Try again
 details-files-count =
     { $count ->
         [one] 1 item

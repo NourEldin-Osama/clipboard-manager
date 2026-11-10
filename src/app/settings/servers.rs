@@ -587,7 +587,7 @@ impl App {
                                 }
                             }
                         }
-                        ui.separator();
+                        divider(ui);
                         if ui
                             .selectable_label(
                                 false,

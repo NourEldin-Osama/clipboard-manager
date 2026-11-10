@@ -1,10 +1,11 @@
 //! Clipboard monitoring thread and helpers for writing back to the clipboard.
 
+use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::Sender;
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use crate::store::{fnv1a, Formats, ImageFiles, Item, Kind};
 
@@ -79,6 +80,35 @@ pub struct Flags {
 /// Browsers and Office can take well over arboard's built-in ~25 ms.
 const BUSY_RETRY_FOR: Duration = Duration::from_secs(2);
 
+/// A copy that crashes the watcher is skipped and the watcher goes on; this
+/// many crashes within `CRASH_WINDOW` stop it, so a clipboard that keeps
+/// crashing it is not read again and again. The window then offers to start
+/// it again.
+const CRASHES_BEFORE_STOP: usize = 3;
+const CRASH_WINDOW: Duration = Duration::from_secs(60);
+
+/// When the watcher crashed lately.
+#[derive(Default)]
+struct Crashes(Vec<Instant>);
+
+impl Crashes {
+    /// Notes a crash at `now`; true once too many came too close together.
+    fn too_many(&mut self, now: Instant) -> bool {
+        self.0.retain(|&at| now.duration_since(at) < CRASH_WINDOW);
+        self.0.push(now);
+        self.0.len() >= CRASHES_BEFORE_STOP
+    }
+}
+
+/// What the watcher remembers between clipboard changes.
+struct Seen {
+    seq: Option<u32>,
+    hash: Option<u64>,
+}
+
+/// Watches the clipboard and sends each new copy. The thread ends when the
+/// receiver is gone, or after repeated crashes; the receiver then sees the
+/// channel closed.
 pub fn spawn_watcher(flags: Arc<Flags>, tx: Sender<Capture>, wake: impl Fn() + Send + 'static) {
     std::thread::Builder::new()
         .name("clipboard".into())
@@ -92,93 +122,122 @@ pub fn spawn_watcher(flags: Arc<Flags>, tx: Sender<Capture>, wake: impl Fn() + S
                     }
                 }
             };
-            let mut last_seq = sequence_number();
-            // Whatever is on the clipboard at start-up is not a new copy.
-            let mut last_hash = read_with_retry(&mut cb).ok().flatten().map(|c| c.hash());
+            let mut seen = Seen {
+                seq: sequence_number(),
+                // Whatever is on the clipboard at start-up is not a new copy.
+                hash: read_with_retry(&mut cb).ok().flatten().map(|c| c.hash()),
+            };
+            let mut crashes = Crashes::default();
             loop {
                 std::thread::sleep(Duration::from_millis(250));
                 let seq = sequence_number();
-                if seq.is_some() && seq == last_seq {
+                if seq.is_some() && seq == seen.seq {
                     continue;
                 }
-                let c = match read_with_retry(&mut cb) {
-                    Ok(Some(c)) => c,
-                    // Empty, or a format we don't record (e.g. only HTML or a custom format).
-                    Ok(None) => {
-                        last_seq = seq;
-                        continue;
-                    }
-                    Err(e) => {
-                        log::warn!(
-                            "clipboard stayed busy for {BUSY_RETRY_FOR:?}, skipping this copy: {e}"
-                        );
-                        last_seq = seq;
-                        continue;
-                    }
-                };
-                // Only mark the change as handled once it was actually read.
-                last_seq = seq;
-                let h = c.hash();
-                // Without a change counter (Linux, macOS) the content hash is the only
-                // way to tell a new copy from the same one. With it (Windows) every copy
-                // counts, so copying the same text again still moves it to the top, and a
-                // copy that was skipped earlier is judged again with current settings.
-                if seq.is_none() && Some(h) == last_hash {
-                    continue;
-                }
-                last_hash = Some(h);
-                if flags.ignore_next.swap(false, Ordering::SeqCst) {
-                    log::debug!("skipped one copy (ignore-next or our own copy)");
-                    continue;
-                }
-                if !flags.enabled.load(Ordering::SeqCst) {
-                    continue;
-                }
-                let c = if is_sensitive() {
-                    Captured::Skipped {
-                        reason: SkipReason::Private,
-                        text: None,
-                    }
-                } else {
-                    match c {
-                        Captured::Text(t)
-                            if flags.skip_secrets.load(Ordering::SeqCst)
-                                && crate::privacy::looks_like_secret(&t) =>
-                        {
-                            Captured::Skipped {
-                                reason: SkipReason::Secret,
-                                text: Some(t),
-                            }
+                let step = catch_unwind(AssertUnwindSafe(|| next_copy(&mut cb, &flags, seq, &mut seen)));
+                match step {
+                    Ok(Some(capture)) => {
+                        if tx.send(capture).is_err() {
+                            return;
                         }
-                        other => other,
+                        wake();
                     }
-                };
-                if let Captured::Skipped { reason, .. } = &c {
-                    log::info!("copy not saved: {reason:?}");
+                    Ok(None) => {}
+                    Err(_) => {
+                        // The panic itself is in the log. This copy is skipped.
+                        seen.seq = seq;
+                        if crashes.too_many(Instant::now()) {
+                            log::error!(
+                                "clipboard watcher stopped: it crashed {CRASHES_BEFORE_STOP} times within {CRASH_WINDOW:?}"
+                            );
+                            wake();
+                            return;
+                        }
+                    }
                 }
-                let formats = match &c {
-                    // Only kept when the clipboard didn't change meanwhile.
-                    Captured::Text(_) => read_formats().filter(|_| sequence_number() == seq),
-                    _ => None,
-                };
-                let program = source_program();
-                let app = program
-                    .as_deref()
-                    .and_then(Path::file_name)
-                    .map(|name| name.to_string_lossy().into_owned());
-                let capture = Capture {
-                    content: c,
-                    app,
-                    program,
-                    formats,
-                };
-                if tx.send(capture).is_err() {
-                    return;
-                }
-                wake();
             }
         })
         .expect("spawn clipboard watcher");
+}
+
+/// Reads the clipboard after it changed to `seq` and judges the copy:
+/// `None` when there is nothing to send (nothing recordable, the same copy
+/// again, an ignored copy, recording off).
+fn next_copy(
+    cb: &mut arboard::Clipboard,
+    flags: &Flags,
+    seq: Option<u32>,
+    seen: &mut Seen,
+) -> Option<Capture> {
+    let c = match read_with_retry(cb) {
+        Ok(Some(c)) => c,
+        // Empty, or a format we don't record (e.g. only HTML or a custom format).
+        Ok(None) => {
+            seen.seq = seq;
+            return None;
+        }
+        Err(e) => {
+            log::warn!("clipboard stayed busy for {BUSY_RETRY_FOR:?}, skipping this copy: {e}");
+            seen.seq = seq;
+            return None;
+        }
+    };
+    // Only mark the change as handled once it was actually read.
+    seen.seq = seq;
+    let h = c.hash();
+    // Without a change counter (Linux, macOS) the content hash is the only
+    // way to tell a new copy from the same one. With it (Windows) every copy
+    // counts, so copying the same text again still moves it to the top, and a
+    // copy that was skipped earlier is judged again with current settings.
+    if seq.is_none() && Some(h) == seen.hash {
+        return None;
+    }
+    seen.hash = Some(h);
+    if flags.ignore_next.swap(false, Ordering::SeqCst) {
+        log::debug!("skipped one copy (ignore-next or our own copy)");
+        return None;
+    }
+    if !flags.enabled.load(Ordering::SeqCst) {
+        return None;
+    }
+    let c = if is_sensitive() {
+        Captured::Skipped {
+            reason: SkipReason::Private,
+            text: None,
+        }
+    } else {
+        match c {
+            Captured::Text(t)
+                if flags.skip_secrets.load(Ordering::SeqCst)
+                    && crate::privacy::looks_like_secret(&t) =>
+            {
+                Captured::Skipped {
+                    reason: SkipReason::Secret,
+                    text: Some(t),
+                }
+            }
+            other => other,
+        }
+    };
+    if let Captured::Skipped { reason, .. } = &c {
+        log::info!("copy not saved: {reason:?}");
+    }
+    let formats = match &c {
+        // Only kept when the clipboard didn't change meanwhile.
+        Captured::Text(_) => read_formats().filter(|_| sequence_number() == seq),
+        _ => None,
+    };
+    let program = source_program();
+    let app = program
+        .as_deref()
+        .and_then(Path::file_name)
+        .map(|name| name.to_string_lossy().into_owned());
+    Some(Capture {
+        content: c,
+        app,
+        program,
+        formats,
+    })
 }
 
 /// Reads the clipboard, backing off while another program holds it open.
@@ -457,4 +516,23 @@ fn copy_image(img: &image::RgbaImage) -> anyhow::Result<()> {
 
 fn copy_files(files: &[PathBuf]) -> anyhow::Result<()> {
     write(|cb| cb.set().file_list(files))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_watcher_stops_only_after_crashes_close_together() {
+        let start = Instant::now();
+        let mut crashes = Crashes::default();
+        // Crashes a minute or more apart never add up.
+        for minute in 0..5 {
+            assert!(!crashes.too_many(start + CRASH_WINDOW * minute));
+        }
+        let later = start + CRASH_WINDOW * 10;
+        assert!(!crashes.too_many(later));
+        assert!(!crashes.too_many(later + Duration::from_secs(1)));
+        assert!(crashes.too_many(later + Duration::from_secs(2)));
+    }
 }

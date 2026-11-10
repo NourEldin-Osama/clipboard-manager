@@ -2,6 +2,7 @@
 //! selection never wait for a large PNG or JPEG (or for decrypting one).
 
 use std::collections::HashSet;
+use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{channel, Receiver, Sender};
 
@@ -97,7 +98,13 @@ fn spawn(
                         path = p;
                     }
                 }
-                let image = decode(&files, id, &path, max);
+                // A file that crashes the decoder shows as missing; the
+                // thread goes on with the next one.
+                let image = catch_unwind(AssertUnwindSafe(|| decode(&files, id, &path, max)))
+                    .unwrap_or_else(|_| {
+                        log::warn!("decoding the image of item {id} crashed");
+                        None
+                    });
                 if done
                     .send(Loaded {
                         id,

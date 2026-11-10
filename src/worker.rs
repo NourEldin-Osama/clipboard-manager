@@ -24,9 +24,15 @@ const EMBED_BATCH: usize = 16;
 
 pub enum Job {
     Ocr(u64),
+    /// Reads an image's text again after it failed, also when the reader
+    /// itself couldn't start before.
+    OcrAgain(u64),
     Embed(u64),
     SetBackend(EmbedBackend),
     SetTextReader(TextReader),
+    /// Asks the search server whether it answers again (or loads its model
+    /// again, if that failed), without a message when it still doesn't.
+    Probe,
 }
 
 pub enum Event {
@@ -52,6 +58,15 @@ pub enum Event {
     Ocr {
         id: u64,
         text: String,
+    },
+    /// Reading the image's text failed; it can be tried again.
+    OcrFailed {
+        id: u64,
+    },
+    /// The search server stopped answering, or answers again. Sent only
+    /// when that changes.
+    SearchServer {
+        answering: bool,
     },
     Embedded {
         id: u64,
@@ -113,6 +128,7 @@ impl Worker {
                     images_refused: false,
                     image_worked: false,
                     index_error_shown: false,
+                    search_answering: true,
                     pending: p,
                     reader_start: None,
                     reader_checked: Instant::now(),
@@ -137,7 +153,7 @@ impl Worker {
     }
 
     fn push(&self, job: Job, priority: Priority) {
-        if !matches!(job, Job::SetBackend(_) | Job::SetTextReader(_)) {
+        if !matches!(job, Job::SetBackend(_) | Job::SetTextReader(_) | Job::Probe) {
             self.pending
                 .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         }
@@ -166,7 +182,9 @@ enum Next {
     Backend(EmbedBackend),
     Reader(TextReader),
     Ocr(u64),
+    OcrAgain(u64),
     Embed(Vec<u64>),
+    Probe,
 }
 
 impl Queues {
@@ -206,6 +224,8 @@ impl Queues {
         };
         match queue.pop_front()? {
             Job::Ocr(id) => Some(Next::Ocr(id)),
+            Job::OcrAgain(id) => Some(Next::OcrAgain(id)),
+            Job::Probe => Some(Next::Probe),
             Job::Embed(id) => {
                 // Many inputs per request are much faster, especially over HTTP.
                 let mut ids = vec![id];
@@ -230,9 +250,9 @@ impl Next {
     /// The item ids this step works on.
     fn ids(&self) -> Vec<u64> {
         match self {
-            Next::Ocr(id) => vec![*id],
+            Next::Ocr(id) | Next::OcrAgain(id) => vec![*id],
             Next::Embed(ids) => ids.clone(),
-            Next::Query(..) | Next::Backend(_) | Next::Reader(_) => Vec::new(),
+            Next::Query(..) | Next::Backend(_) | Next::Reader(_) | Next::Probe => Vec::new(),
         }
     }
 }
@@ -262,6 +282,9 @@ struct State {
     image_worked: bool,
     /// A failure to index an item was shown since the model loaded.
     index_error_shown: bool,
+    /// The search server answered its last request (or nothing was asked
+    /// yet). While it doesn't, indexing waits for a probe that works.
+    search_answering: bool,
     pending: Arc<std::sync::atomic::AtomicUsize>,
     /// When the reading model's llama-server was started, while it doesn't
     /// answer yet: images wait for it, and search goes on.
@@ -337,18 +360,61 @@ impl State {
                 self.ocr_error_shown = false;
                 self.start_reader_server();
             }
-            Next::Ocr(id) => {
-                if let Err(e) = self.do_ocr(id) {
-                    // A server can fail for every image: the first failure shows.
-                    if self.ocr_error_shown {
-                        log::warn!("reading text in an image failed: {e:#}");
-                    } else {
-                        self.ocr_error_shown = true;
-                        self.emit(Event::Error(log_server_error!("error-ocr-unavailable", &e)));
-                    }
+            Next::Ocr(id) => self.read_image(id),
+            Next::OcrAgain(id) => {
+                // The user asked: a reader that couldn't start gets another go.
+                if self.ocr_failed {
+                    self.ocr_failed = false;
+                    self.ocr_error_shown = false;
                 }
+                self.failed.remove(&id);
+                self.read_image(id);
             }
             Next::Embed(ids) => self.embed_batch(&ids),
+            Next::Probe => self.probe(),
+        }
+    }
+
+    fn read_image(&mut self, id: u64) {
+        if let Err(e) = self.do_ocr(id) {
+            // A server can fail for every image: the first failure shows.
+            if self.ocr_error_shown {
+                log::warn!("reading text in an image failed: {e:#}");
+            } else {
+                self.ocr_error_shown = true;
+                self.emit(Event::Error(log_server_error!("error-ocr-unavailable", &e)));
+            }
+            self.emit(Event::OcrFailed { id });
+        }
+    }
+
+    /// Notes whether the search server answered; the window hears only when
+    /// that changes.
+    fn search_answered(&mut self, answered: bool) {
+        if self.search_answering != answered {
+            self.search_answering = answered;
+            if answered {
+                log::info!("the search server answers again");
+            }
+            self.emit(Event::SearchServer {
+                answering: answered,
+            });
+        }
+    }
+
+    /// Asks the search server whether it answers again, quietly: a server
+    /// that still doesn't adds no message. A model that failed to load is
+    /// loaded again.
+    fn probe(&mut self) {
+        let Some(emb) = self.embedder.as_mut() else {
+            if let Some(b) = self.backend.clone() {
+                self.load_backend(b, true);
+            }
+            return;
+        };
+        match emb.embed_texts(&["ping".into()], TextRole::Query) {
+            Ok(_) => self.search_answered(true),
+            Err(e) => log::debug!("the search server still doesn't answer: {e:#}"),
         }
     }
 
@@ -386,27 +452,50 @@ impl State {
                     key,
                     embedding: v.remove(0),
                 });
+                self.search_answered(true);
             }
-            Ok(_) => {}
-            Err(e) => self.emit(Event::Error(log_server_error!("error-query-embedding", &e))),
+            Ok(_) => self.search_answered(true),
+            // While the server is known to be down, each search adds no
+            // message; the status bar already says so.
+            Err(e) if server_down(&e) && !self.search_answering => {
+                log::debug!("search by meaning failed: {e:#}");
+            }
+            Err(e) => {
+                self.emit(Event::Error(log_server_error!("error-query-embedding", &e)));
+                if server_down(&e) {
+                    self.search_answered(false);
+                }
+            }
         }
     }
 
     fn set_backend(&mut self, b: EmbedBackend) {
+        self.load_backend(b, false);
+    }
+
+    /// Loads the search model. `quiet` for a retry: no status line, and no
+    /// message when the server still doesn't answer.
+    fn load_backend(&mut self, b: EmbedBackend, quiet: bool) {
         self.embedder = None;
         self.have.clear();
         self.images_refused = false;
         self.image_worked = false;
         self.index_error_shown = false;
+        if !quiet {
+            self.search_answering = true;
+        }
         self.backend = Some(b.clone());
         let loaded: Result<Option<Box<dyn Embedder>>> = match &b {
             EmbedBackend::None => Ok(None),
             EmbedBackend::Server(cfg) => {
-                self.emit(Event::Status(if cfg.launch.is_some() {
-                    t!("status-starting-llama")
-                } else {
-                    t!("status-connecting", host = cfg.base_url.as_str())
-                }));
+                if !quiet {
+                    self.emit(Event::Status(if cfg.launch.is_some() {
+                        t!("status-starting-llama")
+                    } else {
+                        // The host alone: an address may carry a password.
+                        t!("status-connecting", host = crate::net::host(&cfg.base_url))
+                    }));
+                }
                 ServerEmbedder::new(cfg.as_ref().clone()).and_then(|mut s| {
                     // Probe once so misconfiguration shows up immediately.
                     s.embed_texts(&["ping".into()], TextRole::Query)?;
@@ -426,11 +515,18 @@ impl State {
                     images,
                     stored,
                 });
+                self.search_answered(true);
             }
             Ok(None) => self.emit(Event::BackendOff),
+            Err(e) if quiet => log::debug!("the search model still doesn't load: {e:#}"),
             Err(e) => {
                 self.emit(Event::Error(log_server_error!("error-model", &e)));
                 self.emit(Event::BackendOff);
+                // Only a server that doesn't answer may come back by itself;
+                // a wrong setting waits for the user.
+                if server_down(&e) {
+                    self.search_answered(false);
+                }
             }
         }
     }
@@ -559,10 +655,14 @@ impl State {
             return Ok(());
         }
         let img = self.store.images.open(id, &path)?;
-        let text = match self.ensure_ocr() {
-            Some(ocr) => ocr.recognize(&img)?,
-            None => return Ok(()),
+        let Some(ocr) = self.ensure_ocr() else {
+            // The reader couldn't start: the image says so, and can try again.
+            if self.ocr_failed {
+                self.emit(Event::OcrFailed { id });
+            }
+            return Ok(());
         };
+        let text = ocr.recognize(&img)?;
         // Only the OCR field: a pin or tag set while OCR ran stays, and an item
         // deleted meanwhile stays deleted.
         let saved = self
@@ -584,6 +684,11 @@ impl State {
             .filter(|id| !self.have.contains(id) && !self.failed.contains(id))
             .collect();
         if ids.is_empty() {
+            return;
+        }
+        // While the server doesn't answer, each request would fail too. These
+        // items are sent again when a probe finds the server back.
+        if !self.search_answering {
             return;
         }
         // Taken out so the store and event channel stay usable while it runs,
@@ -642,6 +747,10 @@ impl State {
                 // One bad input fails the whole request; retry individually to isolate it.
                 Err(_) if texts.len() > 1 => {
                     for (id, t) in &texts {
+                        // The server itself stopped: the rest would fail too.
+                        if !self.search_answering {
+                            break;
+                        }
                         let r = emb
                             .embed_texts(std::slice::from_ref(t), TextRole::Document)
                             .and_then(|mut v| {
@@ -682,6 +791,7 @@ impl State {
 
     /// Saves a whole batch's vectors in one transaction, then reports each one.
     fn finish_all(&mut self, key: &str, done: Vec<(u64, Embedding)>) {
+        self.search_answered(true);
         let rows: Vec<(u64, &Embedding)> = done.iter().map(|(id, e)| (*id, e)).collect();
         if let Err(err) = self.store.put_embeddings(key, &rows) {
             log::warn!("saving embeddings failed: {err:#}");
@@ -697,6 +807,11 @@ impl State {
     }
 
     fn finish(&mut self, key: &str, id: u64, r: Result<Embedding>) {
+        match &r {
+            Ok(_) => self.search_answered(true),
+            Err(e) if server_down(e) => self.search_answered(false),
+            Err(_) => {}
+        }
         let embedding = match r {
             Ok(e) => {
                 if let Err(err) = self.store.put_embedding(key, id, &e) {
@@ -725,6 +840,22 @@ impl State {
     }
 }
 
+/// Whether `e` says the server itself isn't working (no answer, a failure on
+/// its side, a missing key, an unknown model), not only that it refused this
+/// one request.
+fn server_down(e: &anyhow::Error) -> bool {
+    matches!(
+        e.downcast_ref::<ServerError>(),
+        Some(
+            ServerError::Unreachable { .. }
+                | ServerError::Failed { .. }
+                | ServerError::NeedsKey { .. }
+                | ServerError::NotFound { .. }
+                | ServerError::NoModels { .. }
+        )
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -740,7 +871,9 @@ mod tests {
                 Next::Backend(_) => "backend".into(),
                 Next::Reader(_) => "reader".into(),
                 Next::Ocr(id) => format!("ocr {id}"),
+                Next::OcrAgain(id) => format!("ocr again {id}"),
                 Next::Embed(ids) => format!("embed {ids:?}"),
+                Next::Probe => "probe".into(),
             })
             .collect()
     }
@@ -816,6 +949,7 @@ mod tests {
             images_refused: false,
             image_worked: false,
             index_error_shown: false,
+            search_answering: true,
             pending: Arc::default(),
             reader_start: None,
             reader_checked: Instant::now(),
@@ -869,6 +1003,47 @@ mod tests {
             .filter(|event| matches!(event, Event::Error(_)))
             .count();
         assert_eq!(errors, 1);
+        drop((st, store));
+        std::fs::remove_dir_all(dir).ok();
+    }
+
+    /// Whether each `SearchServer` event said the server answers.
+    fn answering(rx: &Receiver<Event>) -> Vec<bool> {
+        rx.try_iter()
+            .filter_map(|event| match event {
+                Event::SearchServer { answering } => Some(answering),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_server_that_stopped_is_asked_again_quietly() {
+        let dir = std::env::temp_dir().join(format!("cbm-worker-probe-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let store = Arc::new(Store::open(&dir.join("t.redb"), &dir).unwrap());
+        let (events, rx) = channel();
+        let mut st = state(store.clone(), events);
+        st.embedder = Some(Box::new(Stopped));
+        st.run_query(1, "trip");
+        // A second search and a probe that still fail add nothing.
+        st.run_query(2, "trip");
+        st.run_one(Next::Probe);
+        let errors = rx
+            .try_iter()
+            .inspect(|event| {
+                if let Event::SearchServer { answering } = event {
+                    assert!(!answering);
+                }
+            })
+            .filter(|event| matches!(event, Event::Error(_)))
+            .count();
+        assert_eq!(errors, 1);
+        // The server is back: the window hears it once.
+        st.embedder = Some(Box::new(Fragile));
+        st.run_one(Next::Probe);
+        st.run_one(Next::Probe);
+        assert_eq!(answering(&rx), [true]);
         drop((st, store));
         std::fs::remove_dir_all(dir).ok();
     }
@@ -952,10 +1127,12 @@ mod tests {
                 Event::Status(_) => "status",
                 Event::Error(_) => "error",
                 Event::BackendOff => "off",
+                // The window asks it again later.
+                Event::SearchServer { answering: false } => "not answering",
                 _ => "other",
             })
             .collect();
-        assert_eq!(seen, ["status", "error", "off"]);
+        assert_eq!(seen, ["status", "error", "off", "not answering"]);
         drop((st, store));
         std::fs::remove_dir_all(dir).ok();
     }

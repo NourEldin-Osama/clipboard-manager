@@ -414,7 +414,17 @@ impl App {
         ui.add_space(2.0);
         let meta = self.meta_line(&it);
         let weak = ui.visuals().weak_text_color();
-        row(ui, |ui| ui.label(txt(&meta, size::SMALL, Some(weak))));
+        let read_failed = it.ocr.is_none() && self.ocr_failed.contains(&it.id);
+        let read_again = row(ui, |ui| {
+            ui.label(txt(&meta, size::SMALL, Some(weak)));
+            read_failed
+                && ui
+                    .link(txt(&t!("details-read-again"), size::SMALL, None))
+                    .clicked()
+        });
+        if read_again {
+            self.run(Command::ReadAgain(it.id));
+        }
         if let Some(app) = &it.app {
             // The program's own name once it is known, else its file name.
             let name = it
@@ -586,6 +596,9 @@ impl App {
                 match it.ocr.as_deref() {
                     Some(o) if !o.trim().is_empty() => parts.push(t!("details-has-text")),
                     Some(_) => parts.push(t!("details-no-text")),
+                    None if self.ocr_failed.contains(&it.id) => {
+                        parts.push(t!("details-read-failed"))
+                    }
                     None if self.cfg.reads_images() => parts.push(t!("details-reading-text")),
                     None => {}
                 }

@@ -23,12 +23,17 @@ pub(super) fn day_month(dt: &chrono::DateTime<chrono::Local>, year: bool) -> Str
     }
 }
 
-/// Short time for the edge of a row; the group header already gives the day.
-pub(super) fn row_time(ts: i64) -> String {
+/// Short time for the edge of a row. Under a day header (`dated`) the header
+/// gives the day, so yesterday's rows show only the time; without one (search
+/// results, other sort orders, the Pinned group) they say "Yesterday", the
+/// header's own word.
+pub(super) fn row_time(ts: i64, dated: bool) -> String {
     use chrono::Datelike;
     let dt = i18n::local(ts);
     match days_ago(ts) {
-        0 | 1 => i18n::clock(&dt),
+        0 => i18n::clock(&dt),
+        1 if dated => i18n::clock(&dt),
+        1 => t!("group-yesterday"),
         2..=6 => i18n::weekday(&dt),
         _ => day_month(&dt, dt.year() != i18n::local(now()).year()),
     }
@@ -44,7 +49,7 @@ pub(super) fn ago(ts: i64) -> String {
         3_600..=86_399 => t!("time-hours-ago", count = secs / 3_600),
         _ => match days_ago(ts) {
             1 => t!("time-yesterday"),
-            _ => row_time(ts),
+            _ => row_time(ts, false),
         },
     }
 }
@@ -101,5 +106,22 @@ impl Group {
             Group::ThisMonth => t!("group-this-month"),
             Group::Older => t!("group-older"),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn rows_say_yesterday_where_no_header_does() {
+        let yesterday = now() - 24 * 60 * 60;
+        let clock = i18n::clock(&i18n::local(yesterday));
+        assert_eq!(row_time(yesterday, true), clock);
+        assert_eq!(row_time(yesterday, false), t!("group-yesterday"));
+        let today = now();
+        let clock = i18n::clock(&i18n::local(today));
+        assert_eq!(row_time(today, true), clock);
+        assert_eq!(row_time(today, false), clock);
     }
 }
