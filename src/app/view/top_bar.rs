@@ -30,7 +30,9 @@ impl App {
                         if icons::icon_button(ui, Icon::Settings, &t!("top-settings")).clicked() {
                             self.open_settings(SettingsPage::General);
                         }
-                        let import = icons::icon_button(ui, Icon::Add, &t!("top-add-files-tip"));
+                        // Add with its word, as Pause has, so neither is a bare icon.
+                        let import = word_button(ui, Icon::Add, &t!("top-add"));
+                        let import = tip(import, &t!("top-add-files-tip"));
                         egui::Popup::menu(&import).show(|ui| {
                             ui.set_width(MENU_W);
                             if icons::menu_item(ui, Icon::File, &t!("top-add-files")).clicked() {
@@ -124,13 +126,16 @@ impl App {
         }
     }
 
-    /// Pause, with its word; Resume, in amber, while recording is paused.
+    /// Pause recording, with its words; Resume recording, in amber, while
+    /// recording is paused.
     fn pause_button(&mut self, ui: &mut Ui) {
         let recording = self.flags.enabled.load(Ordering::SeqCst);
         let (icon, word, name) = if recording {
-            (Icon::Pause, t!("top-pause"), t!("top-pause-recording"))
+            let name = t!("top-pause-recording");
+            (Icon::Pause, name.clone(), name)
         } else {
-            (Icon::Play, t!("top-resume"), t!("top-resume-recording"))
+            let name = t!("top-resume-recording");
+            (Icon::Play, name.clone(), name)
         };
         let label = txt(&word, size::CONTROL, None);
         let (galley, inner) = icons::icon_text_size(ui, &label, size::CONTROL, 16.0);
@@ -507,4 +512,31 @@ impl App {
             self.run(Command::DeleteTag(t));
         }
     }
+}
+
+/// A flat button with an icon and its word, like Pause recording.
+fn word_button(ui: &mut Ui, icon: Icon, word: &str) -> egui::Response {
+    let label = txt(word, size::CONTROL, None);
+    let (galley, inner) = icons::icon_text_size(ui, &label, size::CONTROL, 16.0);
+    let pad = 10.0;
+    let (rect, resp) = ui.allocate_exact_size(Vec2::new(inner.x + 2.0 * pad, 34.0), Sense::click());
+    resp.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, word));
+    let v = ui.visuals();
+    let p = ui.painter();
+    if resp.hovered() {
+        p.rect_filled(
+            rect,
+            CornerRadius::same(radius::MEDIUM),
+            v.widgets.hovered.weak_bg_fill,
+        );
+    }
+    icons::paint_icon_text(
+        p,
+        rect.shrink2(Vec2::new(pad, 0.0)),
+        icon,
+        16.0,
+        galley,
+        v.text_color(),
+    );
+    resp
 }
