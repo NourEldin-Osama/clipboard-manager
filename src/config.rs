@@ -14,6 +14,15 @@ pub enum SearchMode {
     Semantic,
 }
 
+/// How the panes and cards sit in the dark theme (D58): darker than the
+/// window, as before 0.7.0, or lighter, as raised surfaces are.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum DarkPanels {
+    Darker,
+    #[default]
+    Lighter,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Theme {
     System,
@@ -571,6 +580,7 @@ pub struct Config {
     pub read_model: Option<ModelRef>,
     pub search_mode: SearchMode,
     pub theme: Theme,
+    pub dark_panels: DarkPanels,
     /// Opens the quick popup.
     pub popup_hotkey: String,
     /// Opens the full window.
@@ -650,6 +660,7 @@ impl Default for Config {
             read_model: None,
             search_mode: SearchMode::Hybrid,
             theme: Theme::System,
+            dark_panels: DarkPanels::default(),
             popup_hotkey: "Alt+V".into(),
             window_hotkey: "Alt+Shift+V".into(),
             ignore_next_hotkey: "Alt+C".into(),

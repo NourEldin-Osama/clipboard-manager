@@ -12,7 +12,7 @@ use super::view::{
     text_shade, tip, title_lbl, txt, ACCENTS, AMBER, GREEN, RED,
 };
 use super::*;
-use crate::config::{Density, Language, ReaderModel, TextReader, TimeFormat};
+use crate::config::{DarkPanels, Density, Language, ReaderModel, TextReader, TimeFormat};
 
 mod about;
 mod appearance;
@@ -116,7 +116,9 @@ impl App {
         }
         let tray_changed = d.tray != self.cfg.tray;
         let login_changed = d.start_at_login != self.cfg.start_at_login;
-        let look_changed = d.accent != self.cfg.accent || d.theme != self.cfg.theme;
+        let look_changed = d.accent != self.cfg.accent
+            || d.theme != self.cfg.theme
+            || d.dark_panels != self.cfg.dark_panels;
         let language_changed = d.language != self.cfg.language;
         i18n::set(d.language, d.time_format);
         let search_changed =
@@ -133,7 +135,7 @@ impl App {
             .store(self.cfg.skip_secrets, Ordering::SeqCst);
         if look_changed {
             set_accent(self.cfg.accent);
-            style(ctx);
+            style(ctx, self.cfg.dark_panels);
             apply_theme(ctx, self.cfg.theme);
         }
         self.save_config();

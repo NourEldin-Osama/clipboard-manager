@@ -697,7 +697,7 @@ impl App {
         add_fonts(&ctx);
         icons::register(&ctx);
         set_accent(cfg.accent);
-        style(&ctx);
+        style(&ctx, cfg.dark_panels);
         apply_theme(&ctx, cfg.theme);
 
         let store = Arc::new(Store::open(&paths.db, &paths.images)?);

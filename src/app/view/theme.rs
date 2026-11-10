@@ -64,7 +64,7 @@ pub(crate) fn readable(color: Color32, background: Color32) -> Color32 {
 /// as hard to read on as the hardest of them (the tests check each place).
 /// Fills, outlines and icons on their own keep the plain colour.
 pub(crate) fn text_shade(color: Color32, dark_mode: bool) -> Color32 {
-    readable(color, Color32::from_gray(if dark_mode { 56 } else { 220 }))
+    readable(color, Color32::from_gray(if dark_mode { 62 } else { 220 }))
 }
 
 /// `color` as the fill behind white text, darkened just enough to read.
@@ -240,7 +240,7 @@ pub(crate) fn add_fonts(ctx: &egui::Context) {
     ctx.set_fonts(fonts);
 }
 
-pub(crate) fn style(ctx: &egui::Context) {
+pub(crate) fn style(ctx: &egui::Context, panels: crate::config::DarkPanels) {
     let a = accent();
     ctx.all_styles_mut(|s| {
         use egui::TextStyle;
@@ -281,9 +281,26 @@ pub(crate) fn style(ctx: &egui::Context) {
         s.visuals.weak_text_color = Some(Color32::from_gray(100));
     });
     ctx.style_mut_of(egui::Theme::Dark, |s| {
+        // Raised surfaces lighter (D58): the window darkest, panes and cards
+        // a step up, menus and tooltips another, each step about twice the
+        // light theme's.
+        if panels == crate::config::DarkPanels::Lighter {
+            s.visuals.panel_fill = Color32::from_gray(18);
+            s.visuals.extreme_bg_color = Color32::from_gray(30);
+            s.visuals.window_fill = Color32::from_gray(38);
+            s.visuals.window_stroke.color = Color32::from_gray(58);
+            s.visuals.widgets.noninteractive.bg_fill = Color32::from_gray(18);
+            s.visuals.widgets.noninteractive.weak_bg_fill = Color32::from_gray(18);
+        }
         s.visuals.text_edit_bg_color = Some(Color32::from_gray(38));
         s.visuals.widgets.noninteractive.fg_stroke.color = Color32::from_gray(180);
-        s.visuals.weak_text_color = Some(Color32::from_gray(150));
+        // Lighter menus need lighter gray text to stay readable on them.
+        let weak = if panels == crate::config::DarkPanels::Lighter {
+            160
+        } else {
+            150
+        };
+        s.visuals.weak_text_color = Some(Color32::from_gray(weak));
     });
     for theme in [egui::Theme::Light, egui::Theme::Dark] {
         ctx.style_mut_of(theme, |s| accent_visuals(&mut s.visuals, a));
@@ -315,14 +332,25 @@ pub(crate) fn apply_theme(ctx: &egui::Context, t: Theme) {
 mod tests {
     use super::*;
 
+    /// A context styled with each dark-panels choice, in each theme.
+    fn styled() -> Vec<(egui::Context, egui::Theme)> {
+        use crate::config::DarkPanels;
+        [DarkPanels::Darker, DarkPanels::Lighter]
+            .into_iter()
+            .flat_map(|panels| {
+                let ctx = egui::Context::default();
+                style(&ctx, panels);
+                [egui::Theme::Light, egui::Theme::Dark].map(|theme| (ctx.clone(), theme))
+            })
+            .collect()
+    }
+
     /// Every place gray text sits on, per accent: the plain backgrounds, the
     /// tints of a selected row (`list`), a chosen search mode (`mode_option`)
     /// and a changed setting (`setting_row`), a gray chip, and search hits.
     #[test]
     fn gray_text_is_readable_on_every_background() {
-        let ctx = egui::Context::default();
-        style(&ctx);
-        for theme in [egui::Theme::Light, egui::Theme::Dark] {
+        for (ctx, theme) in styled() {
             let v = ctx.style_of(theme).visuals.clone();
             let dark = v.dark_mode;
             let (panel, content, weak) = (v.panel_fill, v.extreme_bg_color, v.weak_text_color());
@@ -386,9 +414,7 @@ mod tests {
     /// main and delete buttons; egui's selected text. For every accent.
     #[test]
     fn colored_text_is_readable_on_every_background() {
-        let ctx = egui::Context::default();
-        style(&ctx);
-        for theme in [egui::Theme::Light, egui::Theme::Dark] {
+        for (ctx, theme) in styled() {
             let base = ctx.style_of(theme).visuals.clone();
             let dark = base.dark_mode;
             let (panel, content) = (base.panel_fill, base.extreme_bg_color);
