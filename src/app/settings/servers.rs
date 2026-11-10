@@ -1105,6 +1105,7 @@ impl App {
                         .fill(super::view::button_fill(accent()))
                         .min_size(Vec2::new(0.0, 32.0)),
                     )
+                    .react(ui)
                     .clicked()
                 {
                     save = true;

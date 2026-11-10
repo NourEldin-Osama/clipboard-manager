@@ -9,7 +9,7 @@ use super::shortcut;
 use super::view::{
     accent, accent_name, button_fill, chip, cut_line, divider, far, flip, lbl, paint_text,
     primary_button, radius, reveal, row, section_title, set_choice_name, set_name, size, space,
-    start_anchor, text_shade, tip, title_lbl, txt, ACCENTS, AMBER, GREEN, RED,
+    start_anchor, text_shade, tip, title_lbl, txt, Reacts, ACCENTS, AMBER, GREEN, RED,
 };
 use super::*;
 use crate::config::{DarkPanels, Density, Language, ReaderModel, TextReader, TimeFormat};

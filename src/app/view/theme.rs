@@ -60,10 +60,14 @@ pub(crate) mod space {
     pub(crate) const EMPTY_PAGE: f32 = 64.0;
 }
 
-/// A light laid over a filled button under the pointer; a little less
-/// while it is pressed.
+/// Laid over a filled button: lighter under the pointer, darker while it
+/// is pressed.
 pub(crate) fn lit(pressed: bool) -> Color32 {
-    Color32::from_white_alpha(if pressed { 10 } else { 28 })
+    if pressed {
+        Color32::from_black_alpha(26)
+    } else {
+        Color32::from_white_alpha(28)
+    }
 }
 
 /// Keys, arrows and dividers drawn on a filled button.

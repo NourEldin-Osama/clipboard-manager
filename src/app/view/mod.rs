@@ -51,7 +51,7 @@ pub(crate) use theme::{
 pub(crate) use widgets::{
     chip, cut_line, divider, far, flip, lbl, paint_text, primary_button, row, row_layout,
     row_wrapped, section_title, set_choice_name, set_name, slow_spinner, start_anchor, tip,
-    title_lbl, txt,
+    title_lbl, txt, Reacts,
 };
 
 impl App {

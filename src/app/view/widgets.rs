@@ -657,11 +657,35 @@ pub(super) fn mode_option(ui: &mut Ui, m: SearchMode, active: bool) -> egui::Res
 pub(crate) fn primary_button(ui: &mut Ui, text: &str) -> egui::Response {
     ui.scope(|ui| {
         ui.spacing_mut().button_padding.x = 16.0;
-        ui.add(
+        let r = ui.add(
             egui::Button::new(txt(text, size::BODY, Some(Color32::WHITE)))
                 .fill(button_fill(accent()))
                 .min_size(Vec2::new(0.0, 32.0)),
-        )
+        );
+        react(ui, &r);
+        r
     })
     .inner
+}
+
+/// `react` as a step in a chain of a button's response.
+pub(crate) trait Reacts {
+    fn react(self, ui: &Ui) -> Self;
+}
+
+impl Reacts for egui::Response {
+    fn react(self, ui: &Ui) -> Self {
+        react(ui, &self);
+        self
+    }
+}
+
+/// A filled button's answer to the pointer: lighter under it, darker while
+/// pressed. egui leaves a button with a fill of its own as it is.
+pub(crate) fn react(ui: &Ui, r: &egui::Response) {
+    if r.hovered() && r.enabled() {
+        let shade = super::theme::lit(r.is_pointer_button_down_on());
+        ui.painter()
+            .rect_filled(r.rect, CornerRadius::same(radius::MEDIUM), shade);
+    }
 }
