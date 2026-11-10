@@ -289,17 +289,20 @@ pub(super) fn paint_row(
         .then(|| color_in(&it.text))
         .flatten();
     let path = (it.kind == Kind::Text).then(|| path_in(&it.text)).flatten();
-    // The kind's symbol on a tile of its color, in its readable shade so it
-    // doesn't look faded.
+    // The kind's symbol in its readable shade, so it doesn't look faded: on a
+    // tile of the kind's color, or on its own in a one-line row.
     let symbol = |c: Color32, icon: Icon| {
-        p.rect_filled(
-            av_rect,
-            CornerRadius::same(radius::MEDIUM),
-            c.gamma_multiply(if v.dark_mode { 0.3 } else { 0.13 }),
-        );
+        if !compact {
+            p.rect_filled(
+                av_rect,
+                CornerRadius::same(radius::MEDIUM),
+                c.gamma_multiply(if v.dark_mode { 0.3 } else { 0.13 }),
+            );
+        }
+        let side = if compact { 16.0 } else { av * 0.46 };
         icons::paint(
             &p,
-            Rect::from_center_size(av_rect.center(), Vec2::splat(av * 0.46)),
+            Rect::from_center_size(av_rect.center(), Vec2::splat(side)),
             icon,
             text_shade(c, v.dark_mode),
         );
