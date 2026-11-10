@@ -491,6 +491,19 @@ const NUMBER_CAP: f32 = 20.0;
 /// How tall the fade at the end of the popup's list is.
 const FADE_HEIGHT: f32 = 28.0;
 
+/// A fade at the bottom of a scrolled list or grid while it goes on below,
+/// into the panel's color behind it.
+pub(super) fn fade_below<R>(ui: &Ui, out: &egui::scroll_area::ScrollAreaOutput<R>) {
+    let (offset, view) = (out.state.clamped_offset().y, out.inner_rect.height());
+    if offset + view < out.content_size.y - 1.0 {
+        let rect = Rect::from_min_max(
+            Pos2::new(out.inner_rect.left(), out.inner_rect.bottom() - FADE_HEIGHT),
+            out.inner_rect.max,
+        );
+        paint_fade(ui.painter(), rect, ui.visuals().panel_fill);
+    }
+}
+
 /// A fade over `rect`, from clear at its top to `color` at its bottom.
 fn paint_fade(p: &egui::Painter, rect: Rect, color: Color32) {
     let mut mesh = egui::Mesh::default();
@@ -850,15 +863,8 @@ impl App {
             }
         });
         let view = (out.state.clamped_offset().y, out.inner_rect.height());
-        // In the popup, a fade where the list goes on below.
-        let more_below = view.0 + view.1 < out.content_size.y - 1.0;
-        if in_popup && more_below {
-            let rect = Rect::from_min_max(
-                Pos2::new(out.inner_rect.left(), out.inner_rect.bottom() - FADE_HEIGHT),
-                out.inner_rect.max,
-            );
-            paint_fade(ui.painter(), rect, ui.visuals().panel_fill);
-        }
+        // A fade where the list goes on below.
+        fade_below(ui, &out);
         if in_popup {
             self.popup_list_view = view;
         } else {

@@ -793,6 +793,8 @@ impl App {
             }
         });
         self.list_view = (out.state.clamped_offset().y, out.inner_rect.height());
+        // A fade where the grid goes on below.
+        fade_below(ui, &out);
         self.apply_actions(actions);
         self.after_rows(open_menu, false);
         self.item_menu(ui, false);
