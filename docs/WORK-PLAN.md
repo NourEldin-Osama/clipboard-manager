@@ -5,6 +5,8 @@ Phases 9 to 15, planned on 2026-11-03, are the work after 0.5.0: the server fixe
 the design review.
 Phases 16 to 20, planned on 2026-11-10, come from a second review with 12 design videos: 7 faults and 11 improvements,
 drawn before and after on a page in the scratchpad.
+Phase 21, planned on 2026-11-10, comes from rounds of reviews of the look and the flows: three reviewers score
+the app against five other clipboard managers and a design concept, and each round fixes what they find.
 This file is updated with every change.
 
 Status: `[ ]` to do, `[~]` in progress, `[x]` done, `[!]` waiting for a decision or for you.
@@ -78,6 +80,12 @@ Status: `[ ]` to do, `[~]` in progress, `[x]` done, `[!]` waiting for a decision
 | D63 | Version 0.6.1 after Phase 16, then 0.7.0 after Phases 17 to 20 | You | Decided |
 | D64 | When the items the history limit counts reach 90% of it, one message says so, with a button to change the limit; it comes again only after the history drops below 90% | You | Decided |
 | D65 | Updates show in one message at the bottom right of the window (bottom left in Arabic) instead of a bar under the search box: found, the download with a thin progress line, checking it, ready, or failed with Try again. It lasts until the update is done, its close button hides it until the next step, and it stays out of the quick popup and the note on the screen. Settings, About's Version row shows the same step with the same buttons. A newer release found while an update waits takes its place | You | Decided |
+| D66 | Model servers on this PC are found by themselves: when Settings, Search & AI or Servers, or the getting-started checklist shows, the app asks the usual addresses on 127.0.0.1 only (llama.cpp 8080, Ollama 11434, LM Studio 1234, vLLM 8000, Unsloth 8888) which models they have. Use next to a search model saves the server with that model and its known prompts, and uses it; the editor stays for the details. Nothing goes outside this PC | You | Decided |
+| D67 | The model menus list every model each saved server reports, below the ones added in its editor; picking one adds it to the server with its known prompts and uses it | You | Decided |
+| D68 | Settings in eight pages: the saved servers and the ones found on this PC have their own page, Servers, after Search & AI (D50 had seven) | You | Decided |
+| D69 | Grid cards are all the same height (the default) or as tall as their content, a choice in Settings, Appearance; cards as tall as their content stack in columns, and the up and down keys move within a column | You | Decided |
+| D70 | In Arabic, a text, link, path or tag written in a left-to-right script aligns left, as in English | You | Decided |
+| D71 | The review rounds stop when each of the three reviewers gives the app at least 9.5 in each of the six categories and a higher total than each of the five other apps (the design concept is scored, but counts for the look only), or after 10 rounds | You | Decided |
 
 ## Order of work, and why
 
@@ -280,6 +288,23 @@ use; then the look, motion and smaller changes; and the README, bug reports and 
 - [x] 20.3 About: Copy details for a bug report
 - [x] 20.5 A warning when the history is 90% full, with Change the limit (D64)
 - [x] 20.4 New screenshots, the change log and version 0.7.0
+
+### Phase 21. Review rounds of the look and the flows
+- [ ] 21.1 Programs by their own names, never their file names; a copy whose program is unknown shows the file name without .exe
+- [ ] 21.2 Search: the filters count what is shown, and the best match is selected
+- [ ] 21.3 The popup's keys drawn as key caps like the Shortcuts page's, the numbers as keys, and a fade where the list goes on
+- [ ] 21.4 Grid cards as tall as their content, a choice in Appearance (D69)
+- [ ] 21.5 Dark theme: a faint edge on the cards, pictures a little dimmer
+- [ ] 21.6 Details: the copied text first, then one line of facts
+- [ ] 21.7 Settings: controls closer to their names, one right edge, choices on a track, thin menu arrows
+- [ ] 21.8 States said in words: the status bar and Search & AI
+- [ ] 21.9 Arabic: the plural forms for 11 to 99 and for two; left-to-right content aligns left (D70)
+- [ ] 21.10 The item menu: the card under it stays calm
+- [ ] 21.11 A Servers page (D68)
+- [ ] 21.12 Servers found on this PC, with Use (D66)
+- [ ] 21.13 Every model a saved server has, in the model menus (D67)
+- [ ] 21.14 The checklist turns on search by meaning with a server found on this PC
+- [ ] 21.15 Rules per app: Add a rule offers the programs in the history
 
 ## Change log
 
