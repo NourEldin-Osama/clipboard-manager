@@ -367,7 +367,7 @@ pub(super) fn paint_row(
     // On one line the pin and the relevance bars sit before the time, so
     // the text ends before them.
     let badges = if compact || sub.is_empty() {
-        let pin = if show_pin { 18.0 } else { 0.0 };
+        let pin = if show_pin { PIN_SIZE + 5.0 } else { 0.0 };
         let bars = if relevance_level(hit).is_some() {
             22.0
         } else {
@@ -487,18 +487,22 @@ pub(super) fn paint_row(
         icons::paint(
             &p,
             m(Rect::from_center_size(
-                Pos2::new(ix - 6.5, iy),
-                Vec2::splat(13.0),
+                Pos2::new(ix - PIN_SIZE / 2.0, iy),
+                Vec2::splat(PIN_SIZE),
             )),
             Icon::PinFilled,
             a,
         );
-        ix -= 18.0;
+        ix -= PIN_SIZE + 5.0;
     }
     if let Some(level) = relevance_level(hit) {
         paint_relevance(&p, rect, ix, iy + 6.0, level, a, weak);
     }
 }
+
+/// How big the pin of a pinned item is on rows and cards, big enough to
+/// read as a pin.
+pub(super) const PIN_SIZE: f32 = 15.0;
 
 /// How big the program's icon is on a row's symbol.
 const PROGRAM_BADGE: f32 = 16.0;

@@ -404,18 +404,19 @@ fn paint_footer(
     );
     let mut used = age.width() + 8.0;
     if it.pinned {
+        // Big enough to read as a pin beside the time.
         let x = if i18n::rtl() {
-            age.right() + 14.0
+            age.right() + 15.0
         } else {
-            age.left() - 14.0
+            age.left() - 15.0
         };
         icons::paint(
             &p,
-            Rect::from_center_size(Pos2::new(x, y), Vec2::splat(12.0)),
+            Rect::from_center_size(Pos2::new(x, y), Vec2::splat(PIN_SIZE)),
             Icon::PinFilled,
             accent(),
         );
-        used += 20.0;
+        used += 22.0;
     }
     if let Some(level) = relevance {
         paint_relevance(&p, row, row.right() - used, y + 5.0, level, accent(), weak);
