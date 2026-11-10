@@ -274,6 +274,9 @@ pub(super) fn setting_row(
                 super::bidi::paragraph(ui, line, FontId::proportional(size::SMALL), weak);
             }
         });
+    // More room before the next setting than between a name and its line,
+    // so each line reads as its setting's.
+    ui.add_space(space::SMALL);
     reset
 }
 
