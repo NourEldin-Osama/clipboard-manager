@@ -162,6 +162,10 @@ pub(super) fn info(ui: &mut Ui, text: &str) {
         });
 }
 
+/// How wide a setting's menu is, the same on every page, so the menus'
+/// edges line up.
+pub(super) const MENU_WIDTH: f32 = 280.0;
+
 /// The reset button beside a changed setting.
 pub(super) const RESET_BUTTON_SIZE: f32 = 28.0;
 

@@ -67,7 +67,7 @@ impl App {
                 let menu = egui::ComboBox::from_id_salt("strict")
                     .icon(menu_arrow)
                     .selected_text(txt(&current, size::BODY, None))
-                    .width(150.0)
+                    .width(MENU_WIDTH)
                     .show_ui(ui, |ui| {
                         for (v, l) in choices {
                             ui.selectable_value(min_similarity, v, txt(&l, size::BODY, None));

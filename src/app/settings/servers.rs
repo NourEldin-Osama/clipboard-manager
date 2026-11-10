@@ -897,7 +897,7 @@ impl App {
                 }
                 None => menu.selected_text(shown),
             };
-            let menu = menu.width(280.0).show_ui(ui, |ui| {
+            let menu = menu.width(MENU_WIDTH).show_ui(ui, |ui| {
                 for server in &d.servers {
                     let models: Vec<&Model> = server
                         .models
