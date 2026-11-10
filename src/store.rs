@@ -179,8 +179,9 @@ impl Item {
                             .file_name()
                             .map(|f| f.to_string_lossy().into_owned())
                             .unwrap_or_default(),
-                        None => t!("item-image-size", width = self.width, height = self.height),
-                    }
+                        // Its size is on the line under the title.
+                        None => t!("item-image"),
+                    };
                 }
             },
             _ => &self.text,

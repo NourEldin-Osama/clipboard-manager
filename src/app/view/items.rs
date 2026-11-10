@@ -105,18 +105,15 @@ pub(super) fn color_in(text: &str) -> Option<Color32> {
         let digit = |i: usize| u8::from_str_radix(hex.get(i..i + 1)?, 16).ok();
         let pair = |i: usize| u8::from_str_radix(hex.get(i..i + 2)?, 16).ok();
         return match hex.len() {
-            3 => Some(Color32::from_rgb(
-                digit(0)? * 17,
-                digit(1)? * 17,
-                digit(2)? * 17,
-            )),
-            6 => Some(Color32::from_rgb(pair(0)?, pair(2)?, pair(4)?)),
-            8 => Some(Color32::from_rgba_unmultiplied(
-                pair(0)?,
-                pair(2)?,
-                pair(4)?,
-                pair(6)?,
-            )),
+            3 => {
+                let (r, g, b) = (digit(0)? * 17, digit(1)? * 17, digit(2)? * 17);
+                Some(Color32::from_rgb(r, g, b)) // copied color
+            }
+            6 => Some(Color32::from_rgb(pair(0)?, pair(2)?, pair(4)?)), // copied color
+            8 => {
+                let (r, g, b, a) = (pair(0)?, pair(2)?, pair(4)?, pair(6)?);
+                Some(Color32::from_rgba_unmultiplied(r, g, b, a)) // copied color
+            }
             _ => None,
         };
     }
@@ -134,11 +131,11 @@ pub(super) fn color_in(text: &str) -> Option<Color32> {
     let (a, b, c) = (number(parts[0])?, number(parts[1])?, number(parts[2])?);
     match name.trim() {
         "rgb" | "rgba" if [a, b, c].iter().all(|v| (0.0..=255.0).contains(v)) => {
-            Some(Color32::from_rgb(a as u8, b as u8, c as u8))
+            Some(Color32::from_rgb(a as u8, b as u8, c as u8)) // copied color
         }
         "hsl" | "hsla" if (0.0..=100.0).contains(&b) && (0.0..=100.0).contains(&c) => {
             let (r, g, bl) = hsl_to_rgb(a, b / 100.0, c / 100.0);
-            Some(Color32::from_rgb(r, g, bl))
+            Some(Color32::from_rgb(r, g, bl)) // copied color
         }
         _ => None,
     }
@@ -215,14 +212,9 @@ pub(super) fn subtitle(it: &Item) -> String {
 pub(super) fn subtitle_detail(it: &Item) -> String {
     match it.kind {
         Kind::Link => domain(&it.text).to_string(),
-        Kind::Image => {
-            let mut s = format!("{} × {}", it.width, it.height);
-            if let Some(o) = it.ocr.as_deref().filter(|o| !o.trim().is_empty()) {
-                let first: String = o.split_whitespace().take(8).collect::<Vec<_>>().join(" ");
-                s = format!("{s}  ·  {first}");
-            }
-            s
-        }
+        // The title is the read text, the file name or "Image": the size
+        // is what the second line adds, without repeating the text.
+        Kind::Image => format!("{} × {}", it.width, it.height),
         Kind::Files => {
             let n = it.text.lines().count();
             if n == 1 {
@@ -263,16 +255,16 @@ pub(super) fn subtitle_detail(it: &Item) -> String {
 /// What a screen reader says for an item's row or card: its kind, title,
 /// details, whether it is pinned, and when it was copied.
 pub(super) fn item_name(it: &Item) -> String {
-    let mut parts = vec![format!("{}: {}", it.kind.label(), row_title(it))];
-    let detail = match it.kind {
-        // An image's details repeat its title (its read text, or its size
-        // when it has none); its size is the one thing they add.
-        Kind::Image if it.ocr.as_deref().is_some_and(|o| !o.trim().is_empty()) => {
-            format!("{} × {}", it.width, it.height)
-        }
-        Kind::Image => String::new(),
-        _ => subtitle_detail(it),
+    let title = row_title(it);
+    // An image with no read text and no file name has the plain title
+    // "Image", which its kind already says.
+    let first = if it.kind == Kind::Image && title == t!("item-image") {
+        it.kind.label()
+    } else {
+        format!("{}: {}", it.kind.label(), title)
     };
+    let mut parts = vec![first];
+    let detail = subtitle_detail(it);
     if !detail.trim().is_empty() {
         parts.push(detail);
     }

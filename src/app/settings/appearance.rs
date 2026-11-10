@@ -26,6 +26,24 @@ pub(super) fn appearance_page(ui: &mut Ui, d: &mut Config) {
     );
     setting_for(
         ui,
+        &t!("settings-dark-panels"),
+        &t!("settings-dark-panels-hint"),
+        "",
+        &mut d.dark_panels,
+        def.dark_panels,
+        |ui, panels| {
+            segmented(
+                ui,
+                panels,
+                &[
+                    (DarkPanels::Darker, t!("settings-dark-panels-darker")),
+                    (DarkPanels::Lighter, t!("settings-dark-panels-lighter")),
+                ],
+            )
+        },
+    );
+    setting_for(
+        ui,
         &t!("settings-accent"),
         &t!("settings-accent-hint"),
         "",

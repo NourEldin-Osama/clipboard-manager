@@ -411,7 +411,7 @@ impl App {
         // As tall as the pills from the start, so the count sits on their line.
         row_of(ui, icons::pill_height(count.size().y), |ui| {
             ui.label(count);
-            ui.add_space(10.0);
+            ui.add_space(space::MEDIUM);
             let button = |ui: &mut Ui, icon: Icon, text: &str, keys: &str, color: Color32| {
                 let job = pill_job(text, size::SMALL, color, None);
                 tip(icons::pill(ui, icon, job, color, false), &hint(text, keys)).clicked()

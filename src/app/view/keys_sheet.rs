@@ -82,7 +82,7 @@ impl App {
                     ui.set_max_width(ui.available_width() - 12.0);
                     let weak = ui.visuals().weak_text_color();
                     for (title, rows) in groups.iter().filter(|(_, rows)| !rows.is_empty()) {
-                        ui.add_space(10.0);
+                        ui.add_space(space::MEDIUM);
                         row(ui, |ui| ui.label(section_title(title, weak)));
                         for (what, keys) in rows {
                             key_row(ui, what, keys);
@@ -126,5 +126,5 @@ fn key_row(ui: &mut Ui, what: &str, keys: &str) {
             shortcut::keycaps(ui, &keys, false);
         });
     });
-    ui.add_space(2.0);
+    ui.add_space(space::TINY);
 }

@@ -50,18 +50,18 @@ impl App {
         let (mut close, mut set_up) = (false, false);
         Frame::new()
             .fill(v.extreme_bg_color)
-            .corner_radius(CornerRadius::same(12))
+            .corner_radius(CornerRadius::same(radius::LARGE))
             .inner_margin(Margin::symmetric(16, 12))
             .show(ui, |ui| {
                 ui.set_width(ui.available_width());
                 row(ui, |ui| {
                     ui.label(title_txt(&t!("checklist-title"), size::BODY, None));
                 });
-                ui.add_space(2.0);
+                ui.add_space(space::TINY);
                 for (i, (done, text)) in steps.iter().enumerate() {
                     row(ui, |ui| {
                         step_mark(ui, *done);
-                        ui.add_space(4.0);
+                        ui.add_space(space::TINY);
                         let color = if *done {
                             v.weak_text_color()
                         } else {
@@ -107,7 +107,7 @@ impl App {
                 self.checklist(ui);
             });
         });
-        ui.add_space(8.0);
+        ui.add_space(space::SMALL);
     }
 }
 

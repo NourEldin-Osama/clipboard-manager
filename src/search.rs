@@ -91,6 +91,7 @@ pub struct Snapshot {
     pub embeddings: HashMap<u64, Arc<Embedding>>,
 }
 
+#[derive(Clone)]
 pub struct Query {
     pub text: String,
     pub vector: Option<Arc<Embedding>>,
@@ -166,6 +167,55 @@ impl Scale {
             0.0
         }
     }
+}
+
+/// How many results each kind filter and each tag would show for a search,
+/// whatever filter and tag it has (18.3).
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Counts {
+    /// One for each of `Filter::ALL`, in its order.
+    pub kinds: [usize; 6],
+    /// By tag, lower-cased.
+    pub tags: HashMap<String, usize>,
+}
+
+impl Counts {
+    pub fn kind(&self, f: Filter) -> usize {
+        Filter::ALL
+            .iter()
+            .position(|k| *k == f)
+            .map_or(0, |i| self.kinds[i])
+    }
+
+    pub fn tag(&self, tag: &str) -> usize {
+        self.tags.get(&tag.to_lowercase()).copied().unwrap_or(0)
+    }
+}
+
+/// The counts behind the filters while searching: from the same search over
+/// every kind and tag. None without search text.
+pub fn counts(s: &Snapshot, q: &Query) -> Option<Counts> {
+    if q.text.trim().is_empty() {
+        return None;
+    }
+    let every = Query {
+        filter: Filter::All,
+        tag: None,
+        ..q.clone()
+    };
+    let mut counts = Counts::default();
+    for r in rank(s, &every) {
+        let it = &s.items[r.idx];
+        for (n, f) in counts.kinds.iter_mut().zip(Filter::ALL) {
+            if f.accepts(it) {
+                *n += 1;
+            }
+        }
+        for tag in &it.tags {
+            *counts.tags.entry(tag.to_lowercase()).or_default() += 1;
+        }
+    }
+    Some(counts)
 }
 
 /// The items matching `q`, in the order to show them.
@@ -367,8 +417,11 @@ fn order(items: &[Arc<Item>], hits: &mut [Ranked], sort: SortOrder, pinned_first
 /// counts; requests still waiting when a newer one comes are skipped.
 pub struct Searcher {
     requests: Sender<(u64, Snapshot, Query)>,
-    results: Receiver<(u64, Vec<Hit>)>,
+    results: Receiver<(u64, Found)>,
 }
+
+/// A search's results, with the counts behind the filters.
+pub type Found = (Vec<Hit>, Option<Counts>);
 
 impl Searcher {
     pub fn spawn(wake: impl Fn() + Send + 'static) -> Self {
@@ -382,9 +435,10 @@ impl Searcher {
                         request = newer;
                     }
                     let (seq, snapshot, query) = request;
-                    match catch_unwind(AssertUnwindSafe(|| search(&snapshot, &query))) {
-                        Ok(hits) => {
-                            if outbox.send((seq, hits)).is_err() {
+                    let run = || (search(&snapshot, &query), counts(&snapshot, &query));
+                    match catch_unwind(AssertUnwindSafe(run)) {
+                        Ok(found) => {
+                            if outbox.send((seq, found)).is_err() {
                                 return;
                             }
                             wake();
@@ -404,7 +458,7 @@ impl Searcher {
 
     /// The results of search `seq` once they are ready. Results of older
     /// searches are dropped: they may show items deleted since.
-    pub fn results_for(&self, seq: u64) -> Option<Vec<Hit>> {
+    pub fn results_for(&self, seq: u64) -> Option<Found> {
         let mut found = None;
         while let Ok((done, hits)) = self.results.try_recv() {
             if done == seq {
@@ -415,7 +469,7 @@ impl Searcher {
     }
 
     /// Like `results_for`, but waits up to `timeout` for them.
-    pub fn wait_for(&self, seq: u64, timeout: Duration) -> Option<Vec<Hit>> {
+    pub fn wait_for(&self, seq: u64, timeout: Duration) -> Option<Found> {
         let deadline = Instant::now() + timeout;
         loop {
             let left = deadline.saturating_duration_since(Instant::now());
@@ -763,15 +817,37 @@ mod tests {
     }
 
     #[test]
+    fn filters_count_the_results_they_would_show() {
+        let mut link = item(3, "total on rust-lang.org/learn", 3);
+        link.kind = Kind::Link;
+        let mut tagged = item(2, "invoice total 1,240", 2);
+        tagged.tags = vec!["Work".into()];
+        let s = snapshot(vec![item(1, "lunch menu", 1), tagged, link], vec![]);
+        let mut q = query("total", None, SearchMode::Keyword);
+        // The current filter and tag don't change what each would show.
+        q.filter = Filter::Images;
+        q.tag = Some("work".into());
+        let counts = counts(&s, &q).expect("counts while searching");
+        assert_eq!(counts.kind(Filter::All), 2);
+        assert_eq!(counts.kind(Filter::Text), 1);
+        assert_eq!(counts.kind(Filter::Links), 1);
+        assert_eq!(counts.kind(Filter::Images), 0);
+        assert_eq!(counts.tag("WORK"), 1);
+        assert_eq!(counts.tag("home"), 0);
+        assert!(super::counts(&s, &query("  ", None, SearchMode::Keyword)).is_none());
+    }
+
+    #[test]
     fn the_searcher_answers_the_newest_request() {
         let searcher = Searcher::spawn(|| {});
         let s = snapshot(vec![item(1, "alpha", 1), item(2, "beta", 2)], vec![]);
         searcher.search(1, s.clone(), query("alpha", None, SearchMode::Keyword));
         searcher.search(2, s, query("beta", None, SearchMode::Keyword));
-        let hits = searcher
+        let (hits, counts) = searcher
             .wait_for(2, Duration::from_secs(10))
             .expect("results within 10 s");
         assert_eq!(ids(&hits), vec![2]);
+        assert_eq!(counts.map(|c| c.kind(Filter::All)), Some(1));
         assert!(
             searcher.results_for(1).is_none(),
             "older results never come back"

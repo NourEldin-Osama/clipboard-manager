@@ -75,7 +75,7 @@ impl App {
         section(ui, &t!("settings-meaning-section"));
         let (dot, text) = self.model_status();
         row(ui, |ui| {
-            ui.add_space(10.0);
+            ui.add_space(space::MEDIUM);
             let color = if dot == Color32::GRAY {
                 ui.visuals().weak_text_color()
             } else {
@@ -84,7 +84,7 @@ impl App {
             icons::glyph(ui, Icon::Dot, 12.0, color);
             ui.label(txt(&text, size::CONTROL, Some(color)));
         });
-        ui.add_space(4.0);
+        ui.add_space(space::TINY);
         let engine = d.search_engine;
         plain_setting(
             ui,
@@ -149,7 +149,7 @@ impl App {
     fn no_models(&mut self, ui: &mut Ui, d: &Config, text: &str) {
         note(ui, text);
         row(ui, |ui| {
-            ui.add_space(10.0);
+            ui.add_space(space::MEDIUM);
             if ui
                 .button(txt(&t!("settings-server-add"), size::CONTROL, None))
                 .clicked()

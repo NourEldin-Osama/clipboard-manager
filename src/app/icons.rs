@@ -7,7 +7,7 @@
 use eframe::egui::load::{SizeHint, TexturePoll};
 use eframe::egui::{Painter, Pos2, Rect, TextureOptions, Ui};
 
-use super::view::{self, size};
+use super::view::{self, radius, size};
 use crate::config::ServerKind;
 use crate::store::Kind;
 
@@ -322,20 +322,24 @@ fn paint_button(
     let pressed = resp.is_pointer_button_down_on();
     match fill {
         Some(f) => {
-            p.rect_filled(rect, CornerRadius::same(8), f);
+            p.rect_filled(rect, CornerRadius::same(radius::MEDIUM), f);
             if resp.hovered() {
-                p.rect_filled(
-                    rect,
-                    CornerRadius::same(8),
-                    Color32::from_white_alpha(if pressed { 10 } else { 28 }),
-                );
+                p.rect_filled(rect, CornerRadius::same(radius::MEDIUM), view::lit(pressed));
             }
         }
         None if pressed => {
-            p.rect_filled(rect, CornerRadius::same(8), v.widgets.active.weak_bg_fill);
+            p.rect_filled(
+                rect,
+                CornerRadius::same(radius::MEDIUM),
+                v.widgets.active.weak_bg_fill,
+            );
         }
         None if resp.hovered() => {
-            p.rect_filled(rect, CornerRadius::same(8), v.widgets.hovered.weak_bg_fill);
+            p.rect_filled(
+                rect,
+                CornerRadius::same(radius::MEDIUM),
+                v.widgets.hovered.weak_bg_fill,
+            );
         }
         None => {}
     }
@@ -410,8 +414,11 @@ pub(super) fn chip(ui: &mut Ui, icon: Icon, text: &str, color: Color32) -> egui:
     let pad = Vec2::new(8.0, 3.0);
     let (rect, resp) =
         ui.allocate_exact_size(size + pad * 2.0 + Vec2::new(0.0, 2.0), Sense::hover());
-    ui.painter()
-        .rect_filled(rect, CornerRadius::same(10), color.gamma_multiply(0.14));
+    ui.painter().rect_filled(
+        rect,
+        CornerRadius::same(radius::ROUND),
+        color.gamma_multiply(0.14),
+    );
     paint_icon_text(ui.painter(), rect.shrink2(pad), icon, 12.0, g, shade);
     resp
 }
@@ -438,11 +445,17 @@ pub(super) fn pill(
     let (rect, resp) = ui.allocate_exact_size(size, Sense::click());
     let v = ui.visuals();
     if selected {
-        ui.painter()
-            .rect_filled(rect, CornerRadius::same(14), color.gamma_multiply(0.13));
+        ui.painter().rect_filled(
+            rect,
+            CornerRadius::same(radius::ROUND),
+            color.gamma_multiply(0.13),
+        );
     } else if resp.hovered() {
-        ui.painter()
-            .rect_filled(rect, CornerRadius::same(14), v.widgets.hovered.weak_bg_fill);
+        ui.painter().rect_filled(
+            rect,
+            CornerRadius::same(radius::ROUND),
+            v.widgets.hovered.weak_bg_fill,
+        );
     }
     let icon_color = if selected {
         view::text_shade(color, v.dark_mode)
@@ -473,8 +486,11 @@ pub(super) fn menu_item(ui: &mut Ui, icon: Icon, text: &str) -> egui::Response {
     let (rect, resp) = ui.allocate_exact_size(Vec2::new(w, 30.0), Sense::click());
     let v = ui.visuals();
     if resp.hovered() {
-        ui.painter()
-            .rect_filled(rect, CornerRadius::same(6), v.widgets.hovered.weak_bg_fill);
+        ui.painter().rect_filled(
+            rect,
+            CornerRadius::same(radius::MEDIUM),
+            v.widgets.hovered.weak_bg_fill,
+        );
     }
     let color = if resp.hovered() {
         v.strong_text_color()

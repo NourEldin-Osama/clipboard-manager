@@ -8,11 +8,11 @@ use super::icons::{self, Icon};
 use super::shortcut;
 use super::view::{
     accent, accent_name, button_fill, chip, cut_line, divider, far, flip, lbl, paint_text,
-    primary_button, reveal, row, section_title, set_choice_name, set_name, size, start_anchor,
-    text_shade, tip, title_lbl, txt, ACCENTS, AMBER, GREEN, RED,
+    primary_button, radius, reveal, row, section_title, set_choice_name, set_name, size, space,
+    start_anchor, text_shade, tip, title_lbl, txt, ACCENTS, AMBER, GREEN, RED,
 };
 use super::*;
-use crate::config::{Density, Language, ReaderModel, TextReader, TimeFormat};
+use crate::config::{DarkPanels, Density, Language, ReaderModel, TextReader, TimeFormat};
 
 mod about;
 mod appearance;
@@ -116,7 +116,9 @@ impl App {
         }
         let tray_changed = d.tray != self.cfg.tray;
         let login_changed = d.start_at_login != self.cfg.start_at_login;
-        let look_changed = d.accent != self.cfg.accent || d.theme != self.cfg.theme;
+        let look_changed = d.accent != self.cfg.accent
+            || d.theme != self.cfg.theme
+            || d.dark_panels != self.cfg.dark_panels;
         let language_changed = d.language != self.cfg.language;
         i18n::set(d.language, d.time_format);
         let search_changed =
@@ -133,7 +135,7 @@ impl App {
             .store(self.cfg.skip_secrets, Ordering::SeqCst);
         if look_changed {
             set_accent(self.cfg.accent);
-            style(ctx);
+            style(ctx, self.cfg.dark_panels);
             apply_theme(ctx, self.cfg.theme);
         }
         self.save_config();
@@ -206,7 +208,7 @@ impl App {
                     {
                         close = true;
                     }
-                    ui.add_space(8.0);
+                    ui.add_space(space::SMALL);
                     let strong = ui.visuals().strong_text_color();
                     title_lbl(ui, &t!("settings-title"), size::TITLE, strong);
                     // A server's settings wait for its Save.
@@ -252,13 +254,13 @@ impl App {
                     if sel {
                         ui.painter().rect_filled(
                             rect,
-                            CornerRadius::same(8),
+                            CornerRadius::same(radius::MEDIUM),
                             accent().gamma_multiply(0.13),
                         );
                     } else if r.hovered() {
                         ui.painter().rect_filled(
                             rect,
-                            CornerRadius::same(8),
+                            CornerRadius::same(radius::MEDIUM),
                             v.widgets.hovered.weak_bg_fill,
                         );
                     }
@@ -339,7 +341,7 @@ impl App {
                             }
                             SettingsPage::About => self.about_page(ui, &mut d),
                         });
-                        ui.add_space(24.0);
+                        ui.add_space(space::HUGE);
                     });
             });
 

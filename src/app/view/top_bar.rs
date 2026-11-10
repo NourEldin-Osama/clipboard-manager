@@ -47,7 +47,7 @@ impl App {
                             }
                         });
                         self.view_switch(ui);
-                        ui.add_space(8.0);
+                        ui.add_space(space::SMALL);
                         self.pause_button(ui);
                         ui.min_rect().width()
                     });
@@ -57,7 +57,7 @@ impl App {
                             .request_discard("the top bar's buttons changed width");
                     }
                 });
-                ui.add_space(4.0);
+                ui.add_space(space::TINY);
                 self.filter_chips(ui);
             });
     }
@@ -75,7 +75,7 @@ impl App {
         let v = ui.visuals();
         ui.painter().rect_filled(
             track,
-            CornerRadius::same(10),
+            CornerRadius::same(radius::MEDIUM),
             v.widgets.inactive.weak_bg_fill,
         );
         let tint = accent();
@@ -99,9 +99,13 @@ impl App {
             });
             let p = ui.painter();
             if current {
-                p.rect_filled(rect, CornerRadius::same(8), tint.gamma_multiply(0.18));
+                p.rect_filled(
+                    rect,
+                    CornerRadius::same(radius::MEDIUM),
+                    tint.gamma_multiply(0.18),
+                );
             } else if resp.hovered() {
-                p.rect_filled(rect, CornerRadius::same(8), hovered);
+                p.rect_filled(rect, CornerRadius::same(radius::MEDIUM), hovered);
             }
             let color = match (current, resp.hovered()) {
                 (true, _) => shade,
@@ -138,13 +142,17 @@ impl App {
         let p = ui.painter();
         let color = if recording {
             if resp.hovered() {
-                p.rect_filled(rect, CornerRadius::same(8), v.widgets.hovered.weak_bg_fill);
+                p.rect_filled(
+                    rect,
+                    CornerRadius::same(radius::MEDIUM),
+                    v.widgets.hovered.weak_bg_fill,
+                );
             }
             v.text_color()
         } else {
-            p.rect_filled(rect, CornerRadius::same(8), button_fill(AMBER));
+            p.rect_filled(rect, CornerRadius::same(radius::MEDIUM), button_fill(AMBER));
             if resp.hovered() {
-                p.rect_filled(rect, CornerRadius::same(8), Color32::from_white_alpha(28));
+                p.rect_filled(rect, CornerRadius::same(radius::MEDIUM), theme::lit(false));
             }
             Color32::WHITE
         };
@@ -165,14 +173,10 @@ impl App {
         let focused_before = ui
             .memory(|m| m.focused())
             .is_some_and(|id| id == search_id());
-        let bg = if ui.visuals().dark_mode {
-            Color32::from_gray(22)
-        } else {
-            Color32::WHITE
-        };
+        let bg = theme::search_fill(ui.visuals().dark_mode);
         let out = Frame::new()
             .fill(bg)
-            .corner_radius(CornerRadius::same(10))
+            .corner_radius(CornerRadius::same(radius::MEDIUM))
             .stroke(if focused_before {
                 Stroke::new(1.5, accent())
             } else {
@@ -307,15 +311,20 @@ impl App {
     }
 
     pub(super) fn filter_chips(&mut self, ui: &mut Ui) {
+        const DIMMED: f32 = 0.45;
         row(ui, |ui| {
             ui.spacing_mut().item_spacing.x = 4.0;
             for f in Filter::ALL {
-                let n = self.library.items().iter().filter(|i| f.accepts(i)).count();
+                let total = self.library.items().iter().filter(|i| f.accepts(i)).count();
                 let selected = self.filter == f;
                 // Empty categories add noise; keep them out unless selected.
-                if n == 0 && f != Filter::All && !selected {
+                if total == 0 && f != Filter::All && !selected {
                     continue;
                 }
+                // While searching, a filter counts the results it would show,
+                // and one with none is dimmed (18.3).
+                let n = self.search_counts.as_ref().map_or(total, |c| c.kind(f));
+                let dim = self.search_counts.is_some() && n == 0 && !selected;
                 let (fg, weak) = if selected {
                     let shade = text_shade(accent(), ui.visuals().dark_mode);
                     (shade, shade)
@@ -323,14 +332,22 @@ impl App {
                     (ui.visuals().text_color(), ui.visuals().weak_text_color())
                 };
                 let job = pill_job(&f.label(), size::CONTROL, fg, Some((n.to_string(), weak)));
-                if icons::pill(ui, filter_icon(f), job, accent(), selected).clicked() {
+                let pill = ui
+                    .scope(|ui| {
+                        if dim {
+                            ui.multiply_opacity(DIMMED);
+                        }
+                        icons::pill(ui, filter_icon(f), job, accent(), selected)
+                    })
+                    .inner;
+                if pill.clicked() {
                     self.filter = f;
                     self.dirty = true;
                 }
             }
             self.tag_chips(ui);
             far(ui, |ui| {
-                ui.add_space(4.0);
+                ui.add_space(space::TINY);
                 self.sort_menu(ui);
                 if !self.query.trim().is_empty() {
                     let text = t!("top-results", count = self.results.len());
@@ -354,7 +371,7 @@ impl App {
             ui.set_width(MENU_W);
             let weak = ui.visuals().weak_text_color();
             row(ui, |ui| {
-                ui.add_space(10.0);
+                ui.add_space(space::MEDIUM);
                 lbl(ui, &t!("top-sort-by-heading"), size::SMALL, weak);
             });
             for s in SortOrder::ALL {
@@ -373,18 +390,19 @@ impl App {
 
     /// The most used tags as filters after the kind chips; the rest in a menu.
     pub(super) fn tag_chips(&mut self, ui: &mut Ui) {
+        const DIMMED: f32 = 0.45;
         let tags = self.library.all_tags();
         if tags.is_empty() {
             return;
         }
-        ui.add_space(6.0);
+        ui.add_space(space::SMALL);
         let (sep_rect, _) = ui.allocate_exact_size(Vec2::new(1.0, 18.0), Sense::hover());
         ui.painter().rect_filled(
             sep_rect,
             0.0,
             ui.visuals().weak_text_color().gamma_multiply(0.3),
         );
-        ui.add_space(6.0);
+        ui.add_space(space::SMALL);
         const SHOWN: usize = 6;
         let mut clicked: Option<String> = None;
         let mut delete: Option<String> = None;
@@ -395,8 +413,11 @@ impl App {
         if let Some(a) = tags.iter().skip(SHOWN).find(|(t, _)| is_active(t)) {
             shown.push(a);
         }
-        for (t, n) in &shown {
+        for (t, all) in &shown {
             let sel = is_active(t);
+            // While searching, the tag counts the results it would show.
+            let n = self.search_counts.as_ref().map_or(*all, |c| c.tag(t));
+            let dim = self.search_counts.is_some() && n == 0 && !sel;
             let c = tag_color(t);
             let shade = text_shade(c, ui.visuals().dark_mode);
             let job = pill_job(
@@ -416,8 +437,16 @@ impl App {
                     },
                 )),
             );
+            let pill = ui
+                .scope(|ui| {
+                    if dim {
+                        ui.multiply_opacity(DIMMED);
+                    }
+                    icons::pill(ui, Icon::Tag, job, c, sel)
+                })
+                .inner;
             let r = tip(
-                icons::pill(ui, Icon::Tag, job, c, sel),
+                pill,
                 &if sel {
                     t!("tags-show-all")
                 } else {
@@ -430,7 +459,7 @@ impl App {
             r.context_menu(|ui| {
                 if ui
                     .button(txt(
-                        &t!("tags-remove-everywhere", tag = t.as_str(), count = *n),
+                        &t!("tags-remove-everywhere", tag = t.as_str(), count = *all),
                         size::BODY,
                         None,
                     ))

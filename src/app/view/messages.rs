@@ -151,7 +151,7 @@ impl App {
 /// The card behind a message: its shadow, fill and edge.
 fn paint_card(ui: &Ui, rect: Rect) {
     let v = ui.visuals();
-    let round = CornerRadius::same(8);
+    let round = CornerRadius::same(radius::MEDIUM);
     let p = ui.painter();
     p.add(v.popup_shadow.as_shape(rect, round));
     let fill = if v.dark_mode {
@@ -168,16 +168,6 @@ fn paint_card(ui: &Ui, rect: Rect) {
     );
 }
 
-/// The button's colors: near black in the light theme, near white in the
-/// dark one, as Sonner's.
-fn button_colors(dark: bool) -> (Color32, Color32) {
-    if dark {
-        (Color32::from_gray(235), Color32::from_gray(20))
-    } else {
-        (Color32::from_gray(28), Color32::WHITE)
-    }
-}
-
 /// Lays out a message's text at `width`: the room left beside its icon and
 /// buttons. While `showing`, the second line is the copy's whole text. With
 /// `app_icon` it is the note on the screen: the app icon, and never Show.
@@ -189,7 +179,7 @@ pub(super) fn lay_out(
     app_icon: Option<&egui::TextureHandle>,
 ) -> Laid {
     let v = ui.visuals();
-    let (_, label_color) = button_colors(v.dark_mode);
+    let (_, label_color) = theme::message_button(v.dark_mode);
     let action = toast.action.as_ref().map(|(label, _)| {
         let mut job = pill_job(label, size::SMALL, label_color, None);
         if let Some(keys) = &toast.keys {
@@ -302,13 +292,14 @@ pub(super) fn paint_content(
             Sense::click(),
         );
         r.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, label));
-        let (fill, _) = button_colors(v.dark_mode);
+        let (fill, _) = theme::message_button(v.dark_mode);
         let fill = if r.hovered() {
             fill.gamma_multiply(0.85)
         } else {
             fill
         };
-        ui.painter().rect_filled(at, CornerRadius::same(4), fill);
+        ui.painter()
+            .rect_filled(at, CornerRadius::same(radius::SMALL), fill);
         let text_at = at.center() - g.size() / 2.0;
         ui.painter()
             .galley(text_at, g.clone(), Color32::PLACEHOLDER);

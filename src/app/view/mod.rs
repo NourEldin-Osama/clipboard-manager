@@ -45,8 +45,8 @@ use widgets::*;
 pub(crate) use details::reveal;
 pub(crate) use items::looks_like_code;
 pub(crate) use theme::{
-    accent, accent_name, add_fonts, apply_theme, button_fill, semibold, set_accent, size, style,
-    text_shade, ACCENTS, AMBER, GREEN, READING_WIDTH, RED,
+    accent, accent_name, add_fonts, apply_theme, button_fill, key_cap, lit, radius, semibold,
+    set_accent, size, space, style, text_shade, ACCENTS, AMBER, GREEN, READING_WIDTH, RED,
 };
 pub(crate) use widgets::{
     chip, cut_line, divider, far, flip, lbl, paint_text, primary_button, row, row_layout,
@@ -285,7 +285,7 @@ impl eframe::App for App {
                 egui::Order::Foreground,
                 egui::Id::unique("drop"),
             ));
-            p.rect_filled(r, 0.0, Color32::from_black_alpha(160));
+            p.rect_filled(r, 0.0, theme::drop_shade());
             let g = ctx.fonts_mut(|f| {
                 f.layout_job(bidi::job(
                     &t!("list-drop-files"),

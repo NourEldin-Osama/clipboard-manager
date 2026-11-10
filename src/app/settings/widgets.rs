@@ -28,14 +28,9 @@ pub(super) fn toggle(ui: &mut Ui, on: &mut bool) -> egui::Response {
     });
     let t = ui.ctx().animate_bool(resp.id, *on);
     let off = ui.visuals().widgets.inactive.bg_fill;
-    let bg = Color32::from_rgba_premultiplied(
-        (off.r() as f32 + (accent().r() as f32 - off.r() as f32) * t) as u8,
-        (off.g() as f32 + (accent().g() as f32 - off.g() as f32) * t) as u8,
-        (off.b() as f32 + (accent().b() as f32 - off.b() as f32) * t) as u8,
-        255,
-    );
+    let bg = off.lerp_to_gamma(accent(), t);
     let p = ui.painter();
-    p.rect_filled(rect, CornerRadius::same(11), bg);
+    p.rect_filled(rect, CornerRadius::same(radius::ROUND), bg);
     // Right to left, "on" is to the left.
     let travel = t * (rect.width() - 22.0);
     let x = if i18n::rtl() {
@@ -89,8 +84,11 @@ pub(super) fn info(ui: &mut Ui, text: &str) {
     resp.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, text));
     let v = ui.visuals();
     if resp.hovered() || resp.has_focus() {
-        ui.painter()
-            .rect_filled(rect, CornerRadius::same(6), v.widgets.hovered.weak_bg_fill);
+        ui.painter().rect_filled(
+            rect,
+            CornerRadius::same(radius::MEDIUM),
+            v.widgets.hovered.weak_bg_fill,
+        );
     }
     let color = if resp.hovered() {
         v.strong_text_color()
@@ -111,13 +109,16 @@ pub(super) fn info(ui: &mut Ui, text: &str) {
         });
 }
 
+/// The reset button beside a changed setting.
+const RESET_BUTTON_SIZE: f32 = 28.0;
+
 pub(super) fn section(ui: &mut Ui, title: &str) {
-    ui.add_space(18.0);
+    ui.add_space(space::LARGE);
     let weak = ui.visuals().weak_text_color();
     row(ui, |ui| {
         ui.label(section_title(&title.to_uppercase(), weak))
     });
-    ui.add_space(4.0);
+    ui.add_space(space::TINY);
 }
 
 /// One setting: its name, a short gray line under it and an info button
@@ -182,7 +183,7 @@ pub(super) fn setting_row(
     };
     Frame::new()
         .fill(fill)
-        .corner_radius(CornerRadius::same(8))
+        .corner_radius(CornerRadius::same(radius::MEDIUM))
         .inner_margin(Margin::symmetric(10, 6))
         .show(ui, |ui| {
             ui.set_width(ui.available_width());
@@ -204,7 +205,7 @@ pub(super) fn setting_row(
                             ui,
                             Icon::Reset,
                             &t!("settings-back-to-default"),
-                            Vec2::splat(28.0),
+                            Vec2::splat(RESET_BUTTON_SIZE),
                             14.0,
                             None,
                             None,
@@ -214,7 +215,8 @@ pub(super) fn setting_row(
                             reset = true;
                         }
                     } else {
-                        ui.add_space(28.0 + ui.spacing().item_spacing.x);
+                        // Keeps the row's control where it is when there is no reset.
+                        ui.add_space(RESET_BUTTON_SIZE + ui.spacing().item_spacing.x);
                     }
                     ui.ctx()
                         .data_mut(|d| d.insert_temp(row_title_id(), label.to_string()));

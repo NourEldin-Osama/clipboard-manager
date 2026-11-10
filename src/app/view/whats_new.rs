@@ -24,7 +24,7 @@ impl App {
                     close = icon_button_ex(ui, Icon::Close, &tip, size, 13.0, None, None).clicked();
                 });
             });
-            ui.add_space(6.0);
+            ui.add_space(space::SMALL);
             // As tall as the window allows: the sheet first opens with its
             // top at the middle of the window, where little room is left.
             let tallest = (room.y - 140.0).max(120.0);
@@ -67,5 +67,5 @@ fn note_row(ui: &mut Ui, note: &str) {
             ui.add(egui::Label::new(text).wrap());
         });
     });
-    ui.add_space(8.0);
+    ui.add_space(space::SMALL);
 }

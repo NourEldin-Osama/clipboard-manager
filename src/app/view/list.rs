@@ -33,7 +33,7 @@ pub(super) fn weaker_line(ui: &Ui, rect: Rect, count: usize) -> bool {
         let fill = ui.visuals().widgets.hovered.weak_bg_fill;
         p.rect_filled(
             content.expand2(Vec2::new(12.0, 6.0)),
-            CornerRadius::same(8),
+            CornerRadius::same(radius::MEDIUM),
             fill,
         );
     }
@@ -96,7 +96,7 @@ pub(super) fn paint_relevance(
         } else {
             unlit.gamma_multiply(0.35)
         };
-        p.rect_filled(r, CornerRadius::same(1), color);
+        p.rect_filled(r, CornerRadius::same(radius::SMALL), color);
     }
 }
 
@@ -237,7 +237,7 @@ pub(super) fn paint_row(
     if selected {
         p.rect_filled(
             rect,
-            CornerRadius::same(8),
+            CornerRadius::same(radius::MEDIUM),
             a.gamma_multiply(if v.dark_mode { 0.16 } else { 0.12 }),
         );
         p.rect_filled(
@@ -245,13 +245,13 @@ pub(super) fn paint_row(
                 rect.min + Vec2::new(0.0, 8.0),
                 Vec2::new(3.0, rect.height() - 16.0),
             )),
-            CornerRadius::same(2),
+            CornerRadius::same(radius::SMALL),
             a,
         );
     } else if hot {
         p.rect_filled(
             rect,
-            CornerRadius::same(8),
+            CornerRadius::same(radius::MEDIUM),
             v.widgets.hovered.weak_bg_fill.gamma_multiply(0.6),
         );
     }
@@ -305,10 +305,14 @@ pub(super) fn paint_row(
         }
         None if color.is_some() => {
             let swatch = av_rect.shrink(3.0);
-            p.rect_filled(swatch, CornerRadius::same(8), color.expect("checked above"));
+            p.rect_filled(
+                swatch,
+                CornerRadius::same(radius::MEDIUM),
+                color.expect("checked above"),
+            );
             p.rect_stroke(
                 swatch,
-                CornerRadius::same(8),
+                CornerRadius::same(radius::MEDIUM),
                 Stroke::new(1.0, v.weak_text_color().gamma_multiply(0.3)),
                 egui::StrokeKind::Inside,
             );
@@ -317,7 +321,7 @@ pub(super) fn paint_row(
             let c = kind_color(Kind::Files);
             p.rect_filled(
                 av_rect,
-                CornerRadius::same(8),
+                CornerRadius::same(radius::MEDIUM),
                 c.gamma_multiply(if v.dark_mode { 0.25 } else { 0.13 }),
             );
             let icon = match path.and_then(|p| p.extension()) {
@@ -344,7 +348,7 @@ pub(super) fn paint_row(
             let c = kind_color(it.kind);
             p.rect_filled(
                 av_rect,
-                CornerRadius::same(8),
+                CornerRadius::same(radius::MEDIUM),
                 c.gamma_multiply(if v.dark_mode { 0.25 } else { 0.13 }),
             );
             icons::paint(
@@ -780,7 +784,7 @@ impl App {
                     offset: [0, 1],
                     blur: 8,
                     spread: 0,
-                    color: Color32::from_black_alpha(36),
+                    color: theme::header_shadow(),
                 };
                 ui.painter()
                     .with_clip_rect(below)
@@ -804,20 +808,20 @@ impl App {
     }
 
     pub(super) fn empty_list(&mut self, ui: &mut Ui) {
-        ui.add_space(60.0);
+        ui.add_space(space::EMPTY_PAGE);
         ui.vertical_centered(|ui| {
             let weak = ui.visuals().weak_text_color();
             let strong = ui.visuals().strong_text_color();
             if self.library.items().is_empty() {
                 icons::glyph(ui, Icon::Clipboard, 40.0, weak);
-                ui.add_space(8.0);
+                ui.add_space(space::SMALL);
                 title_lbl(ui, &t!("list-empty-title"), size::LARGE, strong);
-                ui.add_space(4.0);
+                ui.add_space(space::TINY);
                 if self.cfg.checklist.closed {
                     let help = t!("list-empty-help", key = self.cfg.popup_hotkey.as_str());
                     ui.label(txt(&help, size::BODY, Some(weak)));
                 } else {
-                    ui.add_space(12.0);
+                    ui.add_space(space::MEDIUM);
                     ui.scope(|ui| {
                         ui.set_max_width(ui.available_width().min(460.0));
                         self.checklist(ui);
@@ -825,10 +829,10 @@ impl App {
                 }
             } else if !self.query.trim().is_empty() {
                 icons::glyph(ui, Icon::Search, 36.0, weak);
-                ui.add_space(8.0);
+                ui.add_space(space::SMALL);
                 let none = t!("list-no-matches", query = self.query.trim());
                 ui.label(txt(&none, size::BODY, Some(strong)));
-                ui.add_space(4.0);
+                ui.add_space(space::TINY);
                 match (&self.backend, self.cfg.search_mode) {
                     (BackendState::Off, _) => {
                         lbl(ui, &t!("list-meaning-finds-more"), size::BODY, weak);
