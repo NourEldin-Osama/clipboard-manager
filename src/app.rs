@@ -321,6 +321,8 @@ pub(super) enum Command {
     CopyTogether(Vec<u64>, Paste),
     /// Opens what is new in this version over the full window.
     ShowWhatsNew,
+    /// Starts the clipboard watcher again after it stopped on crashes.
+    StartRecordingAgain,
 }
 
 /// Whether putting an item back on the clipboard also pastes it into the
@@ -437,6 +439,9 @@ pub struct App {
     worker: Worker,
     events: Receiver<Event>,
     captures: Receiver<Capture>,
+    /// The clipboard watcher stopped after crashing again and again; the
+    /// status bar offers to start it again.
+    recording_stopped: bool,
     /// `cfg.rules`, ready to match copies.
     rules: crate::rules::Rules,
     flags: Arc<Flags>,
@@ -630,9 +635,7 @@ impl App {
         let flags = Arc::new(Flags::default());
         flags.enabled.store(cfg.monitor_clipboard, Ordering::SeqCst);
         flags.skip_secrets.store(cfg.skip_secrets, Ordering::SeqCst);
-        let (cap_tx, captures) = channel();
-        let c = ctx.clone();
-        clipboard::spawn_watcher(flags.clone(), cap_tx, move || c.request_repaint());
+        let captures = watch_clipboard(&ctx, &flags);
 
         let focus_search = Arc::new(AtomicBool::new(true));
         let win = WindowCtl {
@@ -665,6 +668,7 @@ impl App {
             worker,
             events,
             captures,
+            recording_stopped: false,
             rules: crate::rules::Rules::new(&cfg.rules),
             flags,
             library,
@@ -1319,6 +1323,11 @@ impl App {
                 self.win.show_full();
                 self.whats_new_open = true;
             }
+            Command::StartRecordingAgain => {
+                log::info!("starting the clipboard watcher again");
+                self.captures = watch_clipboard(&self.win.ctx, &self.flags);
+                self.recording_stopped = false;
+            }
             Command::CopyText(text) => {
                 let flags = self.flags.clone();
                 self.background.run(move || {
@@ -1698,8 +1707,16 @@ impl App {
 
     fn handle_events(&mut self, ctx: &egui::Context) {
         self.model_list.poll();
-        while let Ok(c) = self.captures.try_recv() {
-            self.on_capture(c);
+        loop {
+            match self.captures.try_recv() {
+                Ok(c) => self.on_capture(c),
+                Err(TryRecvError::Empty) => break,
+                // The watcher gave up after crashing again and again.
+                Err(TryRecvError::Disconnected) => {
+                    self.recording_stopped = true;
+                    break;
+                }
+            }
         }
         while let Ok(done) = self.background.done.try_recv() {
             self.finish(done);
@@ -2290,6 +2307,15 @@ fn run_total(total: usize, before: usize, left: usize) -> usize {
     } else {
         total + left.saturating_sub(before)
     }
+}
+
+/// Starts the clipboard watcher; its copies arrive on the receiver, which
+/// closes if the watcher stops.
+fn watch_clipboard(ctx: &egui::Context, flags: &Arc<Flags>) -> Receiver<Capture> {
+    let (tx, captures) = channel();
+    let ctx = ctx.clone();
+    clipboard::spawn_watcher(flags.clone(), tx, move || ctx.request_repaint());
+    captures
 }
 
 /// Writes to the clipboard from the background thread. The watcher skips

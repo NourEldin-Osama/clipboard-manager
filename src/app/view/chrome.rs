@@ -349,6 +349,14 @@ impl App {
                     if !self.flags.enabled.load(Ordering::SeqCst) {
                         icons::chip(ui, Icon::Pause, &t!("status-recording-paused"), AMBER);
                     }
+                    if self.recording_stopped {
+                        let text = t!("status-recording-stopped");
+                        let r = icons::chip(ui, Icon::Warning, &text, RED).interact(Sense::click());
+                        set_name(&r, &text);
+                        if tip(r, &t!("status-recording-stopped-tip")).clicked() {
+                            self.run(Command::StartRecordingAgain);
+                        }
+                    }
                     // A global shortcut that doesn't work must be visible here
                     // too, not only in Settings.
                     if let Some(keys) = self.hotkey_conflicts.first().cloned() {
