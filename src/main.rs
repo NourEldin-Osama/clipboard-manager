@@ -113,15 +113,79 @@ fn main() -> eframe::Result {
 /// Windows have no console). The previous run's log is kept as `.old.log`.
 fn init_logging(paths: &config::Paths) {
     let log_path = paths.root.join("clipboard-manager.log");
-    let _ = std::fs::rename(&log_path, paths.root.join("clipboard-manager.old.log"));
+    let old_path = paths.root.join("clipboard-manager.old.log");
+    let _ = std::fs::rename(&log_path, &old_path);
     let mut builder = env_logger::Builder::from_env(
         env_logger::Env::default().default_filter_or("info,winit=warn,wgpu=warn,eframe=warn"),
     );
-    if let Ok(file) = std::fs::File::create(&log_path) {
-        builder.target(env_logger::Target::Pipe(Box::new(file)));
+    if let Ok(log) = LogFile::create(log_path, old_path, LOG_LIMIT) {
+        builder.target(env_logger::Target::Pipe(Box::new(log)));
     }
     builder.init();
     std::panic::set_hook(Box::new(|info| log::error!("panic: {info}")));
+}
+
+/// How big the log grows before it starts again, so a copy that runs in the
+/// tray for weeks keeps at most two files of this size.
+const LOG_LIMIT: u64 = 10 * 1024 * 1024;
+
+/// The log file. Past `limit` it becomes the `.old.log`, replacing the one
+/// there, and a new log starts.
+struct LogFile {
+    path: std::path::PathBuf,
+    old: std::path::PathBuf,
+    file: std::fs::File,
+    written: u64,
+    limit: u64,
+}
+
+impl LogFile {
+    fn create(
+        path: std::path::PathBuf,
+        old: std::path::PathBuf,
+        limit: u64,
+    ) -> std::io::Result<Self> {
+        Ok(Self {
+            file: std::fs::File::create(&path)?,
+            path,
+            old,
+            written: 0,
+            limit,
+        })
+    }
+
+    fn start_again(&mut self) {
+        use std::io::{Seek, Write};
+        let _ = self.file.flush();
+        // Windows renames a file this process has open: std opens files
+        // letting others rename and delete them.
+        if std::fs::rename(&self.path, &self.old).is_ok() {
+            // If no new file can be made, the log goes on in the moved one.
+            if let Ok(file) = std::fs::File::create(&self.path) {
+                self.file = file;
+            }
+        } else {
+            // The old log is held open elsewhere: this one starts over.
+            let _ = self.file.set_len(0);
+            let _ = self.file.rewind();
+        }
+        self.written = 0;
+    }
+}
+
+impl std::io::Write for LogFile {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        if self.written > 0 && self.written + buf.len() as u64 > self.limit {
+            self.start_again();
+        }
+        let n = self.file.write(buf)?;
+        self.written += n as u64;
+        Ok(n)
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        self.file.flush()
+    }
 }
 
 fn icon() -> egui::IconData {
@@ -159,6 +223,28 @@ pub fn icon_rgba() -> (Vec<u8>, u32) {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn the_log_starts_again_past_its_limit() {
+        use std::io::Write;
+        let dir = std::env::temp_dir().join(format!("cbm-log-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let (path, old) = (dir.join("a.log"), dir.join("a.old.log"));
+        let mut log = super::LogFile::create(path.clone(), old.clone(), 100).unwrap();
+        // One write per record, as env_logger does, 20 bytes each.
+        for line in 0..12 {
+            log.write_all(format!("line {line:02} of the log!\n").as_bytes())
+                .unwrap();
+        }
+        log.flush().unwrap();
+        let size = |p: &std::path::Path| std::fs::metadata(p).unwrap().len();
+        assert!(size(&path) <= 100, "the log stays within its limit");
+        assert_eq!(size(&old), 100, "the full part moved to the old log");
+        let now = std::fs::read_to_string(&path).unwrap();
+        assert!(now.ends_with("line 11 of the log!\n"), "{now}");
+        drop(log);
+        std::fs::remove_dir_all(dir).ok();
+    }
+
     #[test]
     fn the_app_icon_draws_on_a_transparent_background() {
         let (rgba, size) = super::icon_rgba();
