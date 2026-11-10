@@ -584,14 +584,17 @@ impl App {
             });
         });
         ui.add_space(space::SMALL);
-        // One line of facts: when, how long, and where it came from.
-        let mut facts = vec![self.meta_line(&it)];
+        // One line of facts: when and where it came from first, then how
+        // long it is.
+        let mut parts = self.meta_parts(&it);
+        let mut facts = vec![parts.remove(0)];
         if let Some(app) = &it.app {
             // The program's own name once it is known, else its file name.
             let program = it.program.as_deref().and_then(|p| self.programs.get(p));
             let name = crate::app::programs::shown_name(app, program);
             facts.push(t!("details-copied-from", app = name.as_str()));
         }
+        facts.extend(parts);
         if it.origin == Origin::Imported {
             facts.push(t!("details-from-files"));
         }
@@ -614,7 +617,8 @@ impl App {
         self.tag_editor(ui, &it);
     }
 
-    pub(super) fn meta_line(&mut self, it: &Item) -> String {
+    /// The facts about an item, its time first.
+    pub(super) fn meta_parts(&mut self, it: &Item) -> Vec<String> {
         let mut parts = vec![when(it.created)];
         match it.kind {
             Kind::Text => {
@@ -648,7 +652,7 @@ impl App {
         if let Some(src) = &it.source {
             parts.push(src.display().to_string());
         }
-        parts.join(FACTS_GAP)
+        parts
     }
 
     pub(super) fn image_details(&mut self, ui: &mut Ui, it: &Item) {
