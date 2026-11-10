@@ -380,7 +380,21 @@ pub(super) fn paint_row(
     } else {
         0.0
     };
-    let right_w = if hot { 150.0 } else { 64.0 + badges };
+    // The time's column: as wide as a clock time, wider for a long weekday
+    // or a date with its year.
+    let time = row_time(it.created, dated);
+    let time_w = ui
+        .fonts_mut(|f| {
+            f.layout_no_wrap(
+                time.clone(),
+                FontId::proportional(size::SMALL),
+                v.weak_text_color(),
+            )
+        })
+        .size()
+        .x
+        .max(TIME_COLUMN);
+    let right_w = if hot { 150.0 } else { time_w + 8.0 + badges };
     let text_w = (rect.right() - x - right_w - 8.0).max(40.0);
     // The text column, mirrored with the rest; lines start at its reading edge.
     let column = m(Rect::from_min_size(
@@ -458,7 +472,7 @@ pub(super) fn paint_row(
         &p,
         time_at,
         time_anchor,
-        &row_time(it.created, dated),
+        &time,
         FontId::proportional(size::SMALL),
         weak,
     );
@@ -470,7 +484,7 @@ pub(super) fn paint_row(
         rect.top() + 40.0
     };
     if one_line_row {
-        ix -= 56.0;
+        ix -= time_w;
     }
     if show_pin {
         icons::paint(
@@ -488,6 +502,10 @@ pub(super) fn paint_row(
         paint_relevance(&p, rect, ix, iy + 6.0, level, a, weak);
     }
 }
+
+/// How wide a row's time is at least, so the pins and the relevance bars
+/// before short times line up.
+const TIME_COLUMN: f32 = 56.0;
 
 /// How big the numbers of quick paste are, drawn as keys.
 const NUMBER_CAP: f32 = 20.0;

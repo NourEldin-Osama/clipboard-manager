@@ -8,7 +8,7 @@
 # A 12-hour clock time, such as "2:05 PM".
 time-clock-am = { $time } AM
 time-clock-pm = { $time } PM
-time-just-now = just now
+time-just-now = Just now
 time-minutes-ago =
     { $count ->
         [one] 1 minute ago
@@ -19,21 +19,20 @@ time-hours-ago =
         [one] 1 hour ago
        *[other] { $count } hours ago
     }
-time-yesterday = yesterday
 time-today-at = Today at { $time }
 time-yesterday-at = Yesterday at { $time }
-# $date is a whole date, such as "Mon 14 Oct 2026".
+# $date is a whole date, such as "Monday 14 Oct 2026".
 time-date-at = { $date } at { $time }
 date-day-month = { $day } { $month }
 date-day-month-year = { $day } { $month } { $year }
 date-weekday-date = { $weekday } { $date }
-weekday-mon = Mon
-weekday-tue = Tue
-weekday-wed = Wed
-weekday-thu = Thu
-weekday-fri = Fri
-weekday-sat = Sat
-weekday-sun = Sun
+weekday-mon = Monday
+weekday-tue = Tuesday
+weekday-wed = Wednesday
+weekday-thu = Thursday
+weekday-fri = Friday
+weekday-sat = Saturday
+weekday-sun = Sunday
 month-jan = Jan
 month-feb = Feb
 month-mar = Mar

@@ -22,7 +22,6 @@ time-hours-ago =
         [many] منذ { $count } ساعة
        *[other] منذ { $count } ساعة
     }
-time-yesterday = أمس
 time-today-at = اليوم { $time }
 time-yesterday-at = أمس { $time }
 time-date-at = { $date } { $time }
