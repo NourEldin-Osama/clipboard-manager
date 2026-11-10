@@ -336,7 +336,7 @@ pub(super) fn paint_row(
                 &p,
                 Rect::from_center_size(av_rect.center(), Vec2::splat(av * 0.46)),
                 icon,
-                c,
+                text_shade(c, v.dark_mode),
             );
         }
         // Text, links and files show the program they were copied from.
@@ -355,11 +355,12 @@ pub(super) fn paint_row(
                 CornerRadius::same(radius::MEDIUM),
                 c.gamma_multiply(if v.dark_mode { 0.3 } else { 0.13 }),
             );
+            // In the kind's readable shade, so the symbol doesn't look faded.
             icons::paint(
                 &p,
                 Rect::from_center_size(av_rect.center(), Vec2::splat(av * 0.46)),
                 item_icon(it),
-                c,
+                text_shade(c, v.dark_mode),
             );
         }
     }
