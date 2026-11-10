@@ -1508,8 +1508,10 @@ impl App {
             Command::ClearHistory => self.clear_history(),
             Command::UndoDelete => self.undo_delete(),
             Command::SaveSkipped(capture) => {
-                self.record(capture);
+                // Said first, so a warning the copy brings (the history 90%
+                // full) comes in front of it.
                 self.toast(t!("toast-saved"));
+                self.record(capture);
             }
             Command::StopSendingImages(key) => self.stop_sending_images(&key),
             Command::ShowWeaker => self.show_weaker(),
