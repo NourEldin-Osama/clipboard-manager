@@ -177,8 +177,8 @@ pub struct Counts {
     pub kinds: [usize; 6],
     /// By tag, lower-cased.
     pub tags: HashMap<String, usize>,
-    /// The same without the weaker matches, which each one folds away
-    /// below its strong ones until they are shown.
+    /// The same among the matches shown while the weaker ones are folded
+    /// away: a breakdown of the results on screen.
     pub kinds_folded: [usize; 6],
     pub tags_folded: HashMap<String, usize>,
 }
@@ -240,37 +240,19 @@ pub fn counts(s: &Snapshot, q: &Query) -> Option<Counts> {
         counts.tags_folded = counts.tags.clone();
         return Some(counts);
     }
-    // Each filter and tag ranks its own items, so each one's strong matches
-    // are measured against its own best, as `search` folds them.
-    let above_fold = |ranked: &[Ranked]| {
-        let strong = ranked.iter().filter(|r| r.strong).count();
-        if strong > 0 {
-            strong
-        } else {
-            ranked.len()
+    // While the weaker matches are folded, the filters and tags break down
+    // the strong ones on screen: what each would show of them.
+    let any_strong = ranked.iter().any(|r| r.strong);
+    for r in ranked.iter().filter(|r| r.strong || !any_strong) {
+        let it = &s.items[r.idx];
+        for (n, f) in counts.kinds_folded.iter_mut().zip(Filter::ALL) {
+            if f.accepts(it) {
+                *n += 1;
+            }
         }
-    };
-    for (n, f) in counts.kinds_folded.iter_mut().zip(Filter::ALL) {
-        *n = if f == Filter::All {
-            above_fold(&ranked)
-        } else {
-            above_fold(&rank(
-                s,
-                &Query {
-                    filter: f,
-                    ..every.clone()
-                },
-            ))
-        };
-    }
-    for tag in counts.tags.keys() {
-        let only_tag = Query {
-            tag: Some(tag.clone()),
-            ..every.clone()
-        };
-        counts
-            .tags_folded
-            .insert(tag.clone(), above_fold(&rank(s, &only_tag)));
+        for tag in &it.tags {
+            *counts.tags_folded.entry(tag.to_lowercase()).or_default() += 1;
+        }
     }
     Some(counts)
 }
@@ -914,8 +896,9 @@ mod tests {
         assert_eq!(counts.kind(Filter::All, false), 4);
         let shown = search(&s, &q).iter().filter(|h| !h.weak).count();
         assert_eq!(counts.kind(Filter::All, true), shown);
-        // The link alone has no strong match, so nothing folds there.
-        assert_eq!(counts.kind(Filter::Links, true), 1);
+        // Folded, the filters count what is on screen: the link is not.
+        assert_eq!(counts.kind(Filter::Links, true), 0);
+        assert_eq!(counts.kind(Filter::Text, true), 1);
         let recent = Query {
             sort: SortOrder::Recent,
             ..q
