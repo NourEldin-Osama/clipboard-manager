@@ -165,13 +165,17 @@ pub(super) fn info(ui: &mut Ui, text: &str) {
 /// The reset button beside a changed setting.
 pub(super) const RESET_BUTTON_SIZE: f32 = 28.0;
 
+/// How far a setting's name sits from the column's edge; section titles
+/// and notes line up with it.
+const NAME_INSET: i8 = 10;
+
 /// A part of a page: its title in SemiBold, a step larger than the
 /// settings' gray lines and above their names, with room above it.
 pub(super) fn section(ui: &mut Ui, title: &str) {
     ui.add_space(space::HUGE);
     let strong = ui.visuals().strong_text_color();
     row(ui, |ui| {
-        ui.add_space(space::MEDIUM);
+        ui.add_space(f32::from(NAME_INSET));
         title_lbl(ui, title, size::LARGE, strong)
     });
     ui.add_space(space::TINY);
@@ -240,7 +244,7 @@ pub(super) fn setting_row(
     Frame::new()
         .fill(fill)
         .corner_radius(CornerRadius::same(radius::MEDIUM))
-        .inner_margin(Margin::symmetric(10, 6))
+        .inner_margin(Margin::symmetric(NAME_INSET, 6))
         .show(ui, |ui| {
             ui.set_width(ui.available_width());
             row(ui, |ui| {
@@ -301,8 +305,8 @@ pub(super) fn note(ui: &mut Ui, text: &str) {
     let weak = ui.visuals().weak_text_color();
     // From the rows' text to their controls' right edge.
     let (start, end) = (
-        10,
-        (10.0 + RESET_BUTTON_SIZE + ui.spacing().item_spacing.x) as i8,
+        NAME_INSET,
+        (f32::from(NAME_INSET) + RESET_BUTTON_SIZE + ui.spacing().item_spacing.x) as i8,
     );
     let (left, right) = if rtl { (end, start) } else { (start, end) };
     // The text a little apart from the bar, which lines up with the rows'
