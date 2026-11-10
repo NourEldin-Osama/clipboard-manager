@@ -275,7 +275,7 @@ use; then the look, motion and smaller changes; and the README, bug reports and 
 ### Phase 20. README, bug reports and 0.7.0
 - [ ] 20.1 README and README_AR open with one line, the download, a screenshot and three benefits (texts shown to you first)
 - [x] 20.2 The log's first line gives the version, the build and the Windows version, without your user name; item ids and times on reading and indexing lines
-- [ ] 20.3 About: Copy details for a bug report
+- [x] 20.3 About: Copy details for a bug report
 - [ ] 20.4 New screenshots, the change log and version 0.7.0
 
 ## Change log

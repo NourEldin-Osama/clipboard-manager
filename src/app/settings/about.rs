@@ -96,6 +96,50 @@ impl App {
         }
     }
 
+    /// What a bug report needs, without addresses, keys or copies: the
+    /// version, Windows' version, the main settings and the log's last
+    /// lines. In English, like the log.
+    fn bug_report_details(&self) -> String {
+        use std::fmt::Write;
+        let c = &self.cfg;
+        let mut out = String::new();
+        let build = crate::update::build().map_or_else(String::new, |b| format!(" (build {b})"));
+        let _ = writeln!(out, "Clipboard Manager {}{build}", crate::update::VERSION);
+        let _ = writeln!(out, "{}", crate::system::windows_version());
+        let _ = writeln!(
+            out,
+            "Language {:?}, theme {:?}, dark panels {:?}, view {:?}",
+            c.language, c.theme, c.dark_panels, c.view
+        );
+        // Each engine with the kind of server it uses, never its address.
+        let kind = |at: Option<crate::config::ModelRef>| {
+            at.and_then(|at| c.servers.iter().find(|s| s.id == at.server))
+                .map_or_else(String::new, |s| format!(" on {:?}", s.kind))
+        };
+        let _ = writeln!(
+            out,
+            "Search {:?}{}, reading {:?}{}",
+            c.search_engine,
+            kind(c.search_model),
+            c.read_engine,
+            kind(c.read_model)
+        );
+        let _ = writeln!(
+            out,
+            "Recording {}, skip secrets {}, notes on the screen {}, tray {}",
+            c.monitor_clipboard, c.skip_secrets, c.screen_notes, c.tray
+        );
+        let log = std::fs::read_to_string(self.paths.root.join("clipboard-manager.log"))
+            .unwrap_or_default();
+        let lines: Vec<&str> = log.lines().collect();
+        let from = lines.len().saturating_sub(100);
+        let _ = writeln!(out, "\nThe log's last {} lines:", lines.len() - from);
+        for line in &lines[from..] {
+            let _ = writeln!(out, "{line}");
+        }
+        out
+    }
+
     fn storage_section(&mut self, ui: &mut Ui) {
         section(ui, &t!("settings-storage"));
         let root = self.paths.root.clone();
@@ -140,6 +184,22 @@ impl App {
                 }
             },
         );
+        let mut copy = false;
+        plain_setting(
+            ui,
+            &t!("settings-bug-report"),
+            &t!("settings-bug-report-hint"),
+            "",
+            |ui| {
+                copy = ui
+                    .button(txt(&t!("settings-bug-report-copy"), size::BODY, None))
+                    .clicked();
+            },
+        );
+        if copy {
+            let details = self.bug_report_details();
+            self.run(Command::CopyText(details));
+        }
         let items = self.library.items();
         let images = items.iter().filter(|i| i.kind == Kind::Image).count();
         let pinned = items.iter().filter(|i| i.pinned).count();
