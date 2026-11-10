@@ -364,8 +364,8 @@ pub(super) fn paint_row(
     if let (false, Some(icon)) = (compact, program_icon) {
         let badge = m(Rect::from_center_size(
             Pos2::new(
-                rect.left() + ROW_PADDING + gutter + av - 2.0,
-                rect.center().y + av / 2.0 - 2.0,
+                rect.left() + ROW_PADDING + gutter + av - 4.0,
+                rect.center().y + av / 2.0 - 4.0,
             ),
             Vec2::splat(PROGRAM_BADGE),
         ));
