@@ -184,22 +184,6 @@ status-recording-stopped-tip = Recording stopped after repeated errors. Click to
 status-shortcut-taken = Shortcut { $keys } is used by another app
 status-open-shortcut-settings = Open the shortcut settings
 status-dismiss-error = Click to dismiss
-status-items =
-    { $count ->
-        [one] 1 item
-       *[other] { $count } items
-    }
-# While searching: how many items the results show, of all of them.
-status-results =
-    { $count ->
-        [one] { $shown } of 1 item
-       *[other] { $shown } of { $count } items
-    }
-status-items-pinned =
-    { $count ->
-        [one] 1 item
-       *[other] { $count } items
-    } · { $pinned } pinned
 list-drop-files = Drop to add to your searchable library
 item-files-count =
     { $count ->

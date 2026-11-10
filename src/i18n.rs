@@ -41,7 +41,7 @@ pub fn rtl() -> bool {
 }
 
 /// The text for `key` in the interface language: `t!("toast-copied")`, or
-/// with values by name: `t!("status-items", count = n)`.
+/// with values by name: `t!("top-results", count = n)`.
 macro_rules! t {
     ($key:literal) => {
         $crate::i18n::text($key, None)
@@ -391,14 +391,13 @@ mod tests {
             })
             .collect();
         assert!(missing.is_empty(), "no form for 11 to 99: {missing:?}");
-        let items = |count: i64| {
+        let results = |count: i64| {
             let mut args = FluentArgs::new();
             args.set("count", count);
-            args.set("pinned", 2);
-            text_in(Language::Arabic, "status-items-pinned", Some(&args))
+            text_in(Language::Arabic, "top-results", Some(&args))
         };
-        assert_eq!(items(18), "18 عنصرًا · عنصران مثبتان");
-        assert_eq!(items(100), "100 عنصر · عنصران مثبتان");
+        assert_eq!(results(18), "18 نتيجة");
+        assert_eq!(results(5), "5 نتائج");
     }
 
     #[test]

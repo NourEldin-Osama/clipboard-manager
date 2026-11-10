@@ -194,36 +194,6 @@ status-recording-stopped-tip = توقف التسجيل بعد أخطاء متك�
 status-shortcut-taken = الاختصار { $keys } يستخدمه تطبيق آخر
 status-open-shortcut-settings = افتح إعدادات الاختصارات
 status-dismiss-error = انقر للإغلاق
-status-items =
-    { $count ->
-        [one] عنصر واحد
-        [two] عنصران
-        [few] { $count } عناصر
-        [many] { $count } عنصرًا
-       *[other] { $count } عنصر
-    }
-status-results =
-    { $count ->
-        [one] { $shown } من عنصر واحد
-        [two] { $shown } من عنصرين
-        [few] { $shown } من { $count } عناصر
-        [many] { $shown } من { $count } عنصرًا
-       *[other] { $shown } من { $count } عنصر
-    }
-status-items-pinned =
-    { $count ->
-        [one] عنصر واحد
-        [two] عنصران
-        [few] { $count } عناصر
-        [many] { $count } عنصرًا
-       *[other] { $count } عنصر
-    } · { $pinned ->
-        [one] عنصر مثبت
-        [two] عنصران مثبتان
-        [few] { $pinned } عناصر مثبتة
-        [many] { $pinned } عنصرًا مثبتًا
-       *[other] { $pinned } عنصر مثبت
-    }
 list-drop-files = أفلت لإضافتها إلى مكتبتك القابلة للبحث
 item-files-count =
     { $count ->
