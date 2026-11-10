@@ -249,6 +249,9 @@ impl App {
 
     pub(crate) fn model_status(&self) -> (Color32, String) {
         let on = self.cfg.search_engine == SearchEngine::Server;
+        if on && self.search_retry.is_some() {
+            return (RED, t!("status-model-failing"));
+        }
         match (&self.backend, self.search_model_names()) {
             (BackendState::Loading, _) => (AMBER, t!("status-model-loading")),
             (BackendState::Ready { .. }, Some((model, server, _))) if on => {
@@ -262,6 +265,9 @@ impl App {
 
     /// The status bar's hint: the search model's full name, when there is one.
     fn model_tip(&self) -> String {
+        if self.search_retry.is_some() {
+            return t!("status-model-failing-tip");
+        }
         match self.search_model_names() {
             Some((_, server, id)) if matches!(self.backend, BackendState::Ready { .. }) => {
                 t!("status-model-tip-named", model = id, server = server)
@@ -314,7 +320,11 @@ impl App {
                         &self.model_tip(),
                     );
                     if r.clicked() {
-                        self.open_settings(SettingsPage::Search);
+                        if self.search_retry.is_some() {
+                            self.run(Command::TrySearchAgain);
+                        } else {
+                            self.open_settings(SettingsPage::Search);
+                        }
                     }
                     if self.queue > 0 {
                         let total = self.queue_total.max(self.queue);

@@ -203,6 +203,16 @@ impl eframe::App for App {
                 ctx.request_repaint_after(left);
             }
         }
+        // A search server that stopped answering is asked again now and then,
+        // also while hidden.
+        if let Some(retry) = &mut self.search_retry {
+            let now = Instant::now();
+            if now >= retry.at {
+                retry.again(now);
+                self.worker.send(Job::Probe);
+            }
+            ctx.request_repaint_after(retry.at.saturating_duration_since(now));
+        }
         // Deleting by age runs at start and then every hour, also while hidden.
         if self.cfg.delete_after_days > 0
             && self.next_age_prune.is_none_or(|at| Instant::now() >= at)
