@@ -329,15 +329,11 @@ impl App {
                     .id_salt(("settings", self.settings_page))
                     .auto_shrink([false, false])
                     .show(ui, |ui| {
-                        // A readable column, next to the page list (on the right in Arabic),
-                        // narrow enough that each control stays near its name.
+                        // A readable column in the middle of the page, narrow enough
+                        // that each control stays near its name.
                         let area = ui.available_rect_before_wrap();
                         let w = area.width().min(COLUMN_WIDTH);
-                        let x = if i18n::rtl() {
-                            area.right() - w
-                        } else {
-                            area.left()
-                        };
+                        let x = area.left() + (area.width() - w) / 2.0;
                         let column = Rect::from_min_size(
                             Pos2::new(x, area.top()),
                             Vec2::new(w, area.height()),
