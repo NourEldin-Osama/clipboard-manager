@@ -189,6 +189,12 @@ status-items =
         [one] 1 item
        *[other] { $count } items
     }
+# While searching: how many items the results show, of all of them.
+status-results =
+    { $count ->
+        [one] { $shown } of 1 item
+       *[other] { $shown } of { $count } items
+    }
 status-items-pinned =
     { $count ->
         [one] 1 item

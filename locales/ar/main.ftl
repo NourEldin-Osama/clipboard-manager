@@ -202,6 +202,14 @@ status-items =
         [many] { $count } عنصرًا
        *[other] { $count } عنصر
     }
+status-results =
+    { $count ->
+        [one] { $shown } من عنصر واحد
+        [two] { $shown } من عنصرين
+        [few] { $shown } من { $count } عناصر
+        [many] { $shown } من { $count } عنصرًا
+       *[other] { $shown } من { $count } عنصر
+    }
 status-items-pinned =
     { $count ->
         [one] عنصر واحد

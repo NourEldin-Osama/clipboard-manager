@@ -109,7 +109,11 @@ impl App {
                     // so a long error before it can be cut to the room left.
                     let pinned = self.library.items().iter().filter(|i| i.pinned).count();
                     let n = self.library.items().len();
-                    let count = if pinned > 0 {
+                    // While searching, the count says how many the results show,
+                    // as the results above say.
+                    let count = if !self.query.trim().is_empty() {
+                        t!("status-results", shown = self.results.len(), count = n)
+                    } else if pinned > 0 {
                         t!("status-items-pinned", count = n, pinned = pinned)
                     } else {
                         t!("status-items", count = n)
