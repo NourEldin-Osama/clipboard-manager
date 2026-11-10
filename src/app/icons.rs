@@ -477,7 +477,7 @@ fn pill_with(
         ui.painter().rect_filled(
             rect,
             CornerRadius::same(radius::ROUND),
-            color.gamma_multiply(0.13),
+            view::chosen_pill(color, v.dark_mode),
         );
     } else if resp.hovered() {
         ui.painter().rect_filled(

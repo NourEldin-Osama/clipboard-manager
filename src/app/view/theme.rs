@@ -112,6 +112,12 @@ pub(crate) fn choice_track(dark: bool) -> (Color32, Color32) {
     }
 }
 
+/// The tint of a chosen chip, such as a filter: stronger in dark, where a
+/// faint tint is lost on the dark panel.
+pub(crate) fn chosen_pill(color: Color32, dark: bool) -> Color32 {
+    color.gamma_multiply(if dark { 0.26 } else { 0.13 })
+}
+
 /// The face of a choice's chosen option, tinted with the accent so the
 /// chosen one is the colored one: on the light face in the light theme, on
 /// the darker track in dark, where the accent's light shade stays readable.
@@ -638,7 +644,7 @@ mod tests {
                 for (place, background) in [
                     ("chip", over(c.gamma_multiply(0.14), content)),
                     ("card chip or tag", over(c.gamma_multiply(tint), content)),
-                    ("chosen tag filter", over(c.gamma_multiply(0.13), panel)),
+                    ("chosen tag filter", over(chosen_pill(c, dark), panel)),
                     ("tag suggestion", content),
                 ] {
                     cases.push((format!("{c:?} on {place}"), text, background));
@@ -663,6 +669,7 @@ mod tests {
                     ("changed setting", changed),
                     ("chosen option", over(a.gamma_multiply(0.14), changed)),
                     ("chosen part of a choice", chosen_face(a, dark)),
+                    ("chosen filter", over(chosen_pill(a, dark), panel)),
                     ("search mode button", over(a.gamma_multiply(0.12), panel)),
                     (
                         "chosen search mode",
