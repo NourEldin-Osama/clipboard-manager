@@ -131,14 +131,13 @@ impl App {
         });
     }
 
-    /// The quiet lines at the bottom: each key, then what it does. Keys
-    /// turned off in Settings are left out.
+    /// The quiet line at the bottom: each key, then what it does. Pasting,
+    /// the numbers and F1 for the rest, so it stays one line; keys turned
+    /// off in Settings are left out.
     fn key_hints(&self, ui: &mut Ui) {
         let k = &self.cfg.keys;
         let hints: Vec<(String, String)> = [
             (k.paste.clone(), t!("popup-key-paste")),
-            (k.paste_plain.clone(), t!("popup-key-plain")),
-            (k.copy_only.clone(), t!("popup-key-copy")),
             (t!("quick-paste-keys"), t!("popup-key-quick")),
             ("F1".to_string(), t!("popup-key-all")),
         ]
