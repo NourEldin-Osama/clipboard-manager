@@ -112,6 +112,18 @@ pub(crate) fn choice_track(dark: bool) -> (Color32, Color32) {
     }
 }
 
+/// The face of a choice's chosen option, tinted with the accent so the
+/// chosen one is the colored one: on the light face in the light theme, on
+/// the darker track in dark, where the accent's light shade stays readable.
+pub(crate) fn chosen_face(accent: Color32, dark: bool) -> Color32 {
+    let (track, face) = choice_track(dark);
+    if dark {
+        track.blend(accent.gamma_multiply(0.22))
+    } else {
+        face.blend(accent.gamma_multiply(0.12))
+    }
+}
+
 /// The background of the words a search found: a warm tint, apart from the
 /// accent of the selection it can sit on.
 pub(crate) fn search_hit(dark: bool) -> Color32 {
@@ -636,6 +648,7 @@ mod tests {
                     ("pinned chip", over(a.gamma_multiply(0.14), content)),
                     ("changed setting", changed),
                     ("chosen option", over(a.gamma_multiply(0.14), changed)),
+                    ("chosen part of a choice", chosen_face(a, dark)),
                     ("search mode button", over(a.gamma_multiply(0.12), panel)),
                     (
                         "chosen search mode",

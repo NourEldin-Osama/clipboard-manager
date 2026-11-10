@@ -62,7 +62,7 @@ pub(super) fn segmented<T: PartialEq + Copy, L: AsRef<str>>(
     options: &[(T, L)],
 ) -> bool {
     let mut changed = false;
-    let (track, face) = choice_track(ui.visuals().dark_mode);
+    let (track, _) = choice_track(ui.visuals().dark_mode);
     Frame::new()
         .fill(track)
         .corner_radius(CornerRadius::same(radius::MEDIUM))
@@ -87,10 +87,15 @@ pub(super) fn segmented<T: PartialEq + Copy, L: AsRef<str>>(
                 } else {
                     Stroke::NONE
                 };
+                let fill = if sel {
+                    chosen_face(accent(), ui.visuals().dark_mode)
+                } else {
+                    Color32::TRANSPARENT
+                };
                 let b = egui::Button::new(text)
                     .frame_when_inactive(sel)
                     .corner_radius(CornerRadius::same(radius::SMALL))
-                    .fill(if sel { face } else { Color32::TRANSPARENT })
+                    .fill(fill)
                     .stroke(edge);
                 if ui.add(b).clicked() && !sel {
                     *value = *v;
