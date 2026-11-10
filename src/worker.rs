@@ -379,7 +379,7 @@ impl State {
         if let Err(e) = self.do_ocr(id) {
             // A server can fail for every image: the first failure shows.
             if self.ocr_error_shown {
-                log::warn!("reading text in an image failed: {e:#}");
+                log::warn!("reading the text in item {id} failed: {e:#}");
             } else {
                 self.ocr_error_shown = true;
                 self.emit(Event::Error(log_server_error!("error-ocr-unavailable", &e)));
@@ -662,7 +662,12 @@ impl State {
             }
             return Ok(());
         };
+        let started = Instant::now();
         let text = ocr.recognize(&img)?;
+        log::info!(
+            "read the text in item {id} in {:.1} s",
+            started.elapsed().as_secs_f32()
+        );
         // Only the OCR field: a pin or tag set while OCR ran stays, and an item
         // deleted meanwhile stays deleted.
         let saved = self
@@ -696,6 +701,7 @@ impl State {
         let Some(mut emb) = self.embedder.take() else {
             return;
         };
+        let started = Instant::now();
         let run = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             self.embed_with(&mut emb, &ids)
         }));
@@ -703,6 +709,10 @@ impl State {
         if let Err(panic) = run {
             std::panic::resume_unwind(panic);
         }
+        log::debug!(
+            "indexed items {ids:?} in {:.2} s",
+            started.elapsed().as_secs_f32()
+        );
     }
 
     fn embed_with(&mut self, emb: &mut Box<dyn Embedder>, ids: &[u64]) {

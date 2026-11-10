@@ -27,6 +27,7 @@ mod search;
 mod secure;
 mod single_instance;
 mod store;
+mod system;
 mod tray;
 mod update;
 mod vault;
@@ -70,10 +71,14 @@ fn main() -> eframe::Result {
         }
     }
     update::clean_up();
+    // What a bug report needs first: the version, the build and Windows'
+    // version; the data folder without the user name in it.
+    let build = update::build().map_or_else(String::new, |b| format!(" build {b}"));
     log::info!(
-        "clipboard-manager {} starting, data in {}",
+        "clipboard-manager {}{build} starting on {}, data in {}",
         env!("CARGO_PKG_VERSION"),
-        paths.root.display()
+        system::windows_version(),
+        system::without_user(&paths.root)
     );
     // The window title is set before the app starts, so read the language now.
     let (cfg, _) = config::Config::load(&paths.config);

@@ -4,6 +4,46 @@ What changed in each version, for the people who use the app. Each release
 starts its notes with the section of the version it was built from, so add
 the notes here before a push that makes a release.
 
+## 0.7.0
+
+- Messages look new: cards at the bottom right of the window (bottom
+  left in Arabic), the newest in front and older ones peeking out above
+  it. Point at them to see them all; their time stops meanwhile, and
+  while the window is hidden. A later message no longer takes Undo away,
+  and Ctrl+Z undoes a delete while its message shows.
+- "Not saved" says what the copy looked like (a password, an API key, a
+  sign-in token, a private key, a link with a password or a key) and the
+  program it came from, with a hint that doesn't give it away. Hold Show
+  to see the whole copy.
+- When the window isn't in front, such a message shows as the app's own
+  note at the corner of the screen. It never takes the keyboard, stays
+  quiet during full-screen programs and presentations, and opens the
+  window when clicked. Settings, Privacy can turn notes off.
+- Alt+C shows a short note, and a badge on the tray icon until the copy
+  it skips. While recording is paused, the tray icon is gray and its
+  tooltip says so.
+- Delete by age and a lower history limit say how many items they
+  removed, with Undo.
+- New in Settings, Appearance: Dark panels. Lighter, the new default,
+  makes the details pane, cards and menus lighter than the window in the
+  dark theme. Darker brings back the look of 0.6.
+- While searching, the filters and tags count the search results, and
+  those with none are dimmed. The quick popup says how many results
+  there are.
+- Image rows show the read text, the file name or "Image" over the size,
+  without repeating it.
+- Corners, gaps and colors follow one set of sizes, so the window looks
+  more even.
+- Filled buttons react to the pointer, rows and cards glide into place
+  after a delete or Undo, and messages slide in. With Windows' Animation
+  effects off, nothing moves.
+- The buttons on a row or card under the pointer name their keys.
+- A server's editor keeps your changes when you leave it: the server
+  shows "Not saved" until you save or discard them.
+- Settings, About copies the details a bug report needs. The log starts
+  with the build and Windows' version, and leaves your user name out of
+  paths.
+
 ## 0.6.1
 
 - If watching the clipboard crashes on a copy, that copy is skipped and
