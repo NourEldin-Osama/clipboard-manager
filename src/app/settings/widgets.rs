@@ -289,10 +289,12 @@ pub(super) fn note(ui: &mut Ui, text: &str) {
         (10.0 + RESET_BUTTON_SIZE + ui.spacing().item_spacing.x) as i8,
     );
     let (left, right) = if rtl { (end, start) } else { (start, end) };
-    // The text a little apart from the bar.
-    let (inner_left, inner_right) = if rtl { (0, 12) } else { (12, 0) };
+    // The text a little apart from the bar, which lines up with the rows'
+    // names.
+    let gap = 12;
+    let (inner_left, inner_right) = if rtl { (0, gap) } else { (gap, 0) };
     ui.add_space(space::TINY);
-    let framed = Frame::new()
+    let content = Frame::new()
         .inner_margin(Margin {
             left: inner_left,
             right: inner_right,
@@ -308,11 +310,18 @@ pub(super) fn note(ui: &mut Ui, text: &str) {
         .show(ui, |ui| {
             ui.set_width(ui.available_width());
             super::bidi::paragraph(ui, text, FontId::proportional(size::SMALL), weak);
-        });
-    let rect = framed.response.rect;
-    let bar = flip(
-        rect,
-        Rect::from_min_size(rect.min, Vec2::new(NOTE_BAR, rect.height())),
+            ui.min_rect()
+        })
+        .inner
+        .expand2(Vec2::new(0.0, 2.0));
+    let x = if rtl {
+        content.right() + f32::from(gap) - NOTE_BAR
+    } else {
+        content.left() - f32::from(gap)
+    };
+    let bar = Rect::from_min_size(
+        Pos2::new(x, content.top()),
+        Vec2::new(NOTE_BAR, content.height()),
     );
     ui.painter().rect_filled(
         bar,
