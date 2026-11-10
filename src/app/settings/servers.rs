@@ -882,64 +882,69 @@ impl App {
         plain_setting(ui, &t!("settings-model"), &line, &details, |ui| {
             let weak = ui.visuals().weak_text_color();
             let strong = ui.visuals().strong_text_color();
+            // The server's logo inside the menu, before the model's name.
+            let shown = txt(&current, size::BODY, None);
             let menu =
                 egui::ComboBox::from_id_salt(if search { "search-model" } else { "read-model" })
-                    .icon(menu_arrow)
-                    .selected_text(txt(&current, size::BODY, None))
-                    .width(280.0)
-                    .show_ui(ui, |ui| {
-                        for server in &d.servers {
-                            let models: Vec<&Model> = server
-                                .models
-                                .iter()
-                                .filter(|m| is_search(m) == search)
-                                .collect();
-                            let more = others
-                                .iter()
-                                .find(|(id, _)| *id == server.id)
-                                .map_or(&[][..], |(_, more)| more.as_slice());
-                            if models.is_empty() && more.is_empty() {
-                                continue;
-                            }
-                            row(ui, |ui| {
-                                icons::logo(ui, server.kind, 14.0, weak);
-                                lbl(ui, &server.label().to_uppercase(), size::SMALL, weak);
-                            });
-                            for m in models {
-                                let at = ModelRef {
-                                    server: server.id,
-                                    model: m.id,
-                                };
-                                let label = txt(&model_label(m), size::BODY, None);
-                                if ui.selectable_label(chosen == Some(at), label).clicked() {
-                                    picked = Some(at);
-                                }
-                            }
-                            // The ones it has that aren't added yet, marked so.
-                            for id in more {
-                                let note = (t!("settings-model-on-server-only"), weak);
-                                let label = pill_job(id, size::BODY, strong, Some(note));
-                                if ui.selectable_label(false, label).clicked() {
-                                    added = Some((server.id, id.clone()));
-                                }
-                            }
-                        }
-                        divider(ui);
-                        if ui
-                            .selectable_label(
-                                false,
-                                txt(&t!("settings-model-add-server"), size::BODY, None),
-                            )
-                            .clicked()
-                        {
-                            add = true;
-                        }
+                    .icon(menu_arrow);
+            let menu = match in_use {
+                Some(kind) => {
+                    let logo = egui::Atom::paint(Vec2::splat(18.0), move |ui, args| {
+                        icons::paint_logo(ui.painter(), args.rect, kind, strong)
                     });
+                    menu.selected_text((logo, shown))
+                }
+                None => menu.selected_text(shown),
+            };
+            let menu = menu.width(280.0).show_ui(ui, |ui| {
+                for server in &d.servers {
+                    let models: Vec<&Model> = server
+                        .models
+                        .iter()
+                        .filter(|m| is_search(m) == search)
+                        .collect();
+                    let more = others
+                        .iter()
+                        .find(|(id, _)| *id == server.id)
+                        .map_or(&[][..], |(_, more)| more.as_slice());
+                    if models.is_empty() && more.is_empty() {
+                        continue;
+                    }
+                    row(ui, |ui| {
+                        icons::logo(ui, server.kind, 14.0, weak);
+                        lbl(ui, &server.label().to_uppercase(), size::SMALL, weak);
+                    });
+                    for m in models {
+                        let at = ModelRef {
+                            server: server.id,
+                            model: m.id,
+                        };
+                        let label = txt(&model_label(m), size::BODY, None);
+                        if ui.selectable_label(chosen == Some(at), label).clicked() {
+                            picked = Some(at);
+                        }
+                    }
+                    // The ones it has that aren't added yet, marked so.
+                    for id in more {
+                        let note = (t!("settings-model-on-server-only"), weak);
+                        let label = pill_job(id, size::BODY, strong, Some(note));
+                        if ui.selectable_label(false, label).clicked() {
+                            added = Some((server.id, id.clone()));
+                        }
+                    }
+                }
+                divider(ui);
+                if ui
+                    .selectable_label(
+                        false,
+                        txt(&t!("settings-model-add-server"), size::BODY, None),
+                    )
+                    .clicked()
+                {
+                    add = true;
+                }
+            });
             set_choice_name(&menu.response, &row_title(ui), &current);
-            // The control area fills from its far end: this goes before the menu.
-            if let Some(kind) = in_use {
-                icons::logo(ui, kind, 18.0, strong);
-            }
         });
         if let Some((server, id)) = added {
             picked = add_model(d, server, &id, search);
