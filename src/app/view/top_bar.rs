@@ -183,18 +183,11 @@ impl App {
         let out = Frame::new()
             .fill(bg)
             .corner_radius(CornerRadius::same(radius::MEDIUM))
+            // A thin edge while it is not in use, so it still reads as a field.
             .stroke(if focused_before {
                 Stroke::new(1.5, accent())
             } else {
-                Stroke::new(
-                    1.0,
-                    ui.visuals()
-                        .widgets
-                        .noninteractive
-                        .bg_stroke
-                        .color
-                        .gamma_multiply(0.0),
-                )
+                Stroke::new(1.0, line_color(ui.visuals().dark_mode))
             })
             .inner_margin(if i18n::rtl() {
                 Margin {
