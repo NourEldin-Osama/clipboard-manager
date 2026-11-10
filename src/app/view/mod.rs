@@ -24,6 +24,8 @@ mod keyboard;
 mod keys_sheet;
 mod list;
 mod menu;
+mod messages;
+mod note;
 mod popup;
 mod theme;
 mod time_format;
@@ -194,14 +196,15 @@ impl eframe::App for App {
         if self.hotkeys_paused && self.recording.is_none() {
             self.register_hotkeys(ctx);
         }
-        // A delete becomes final when its undo time is over, also while hidden.
-        if let Some(pending) = &self.pending_delete {
-            let left = UNDO_FOR.saturating_sub(pending.since.elapsed());
-            if left.is_zero() {
-                self.finish_delete();
-            } else {
-                ctx.request_repaint_after(left);
-            }
+        // The messages' time runs while a window shows them (D55). A delete
+        // becomes final when its message is gone, so its Undo waits while
+        // the window is hidden.
+        let main_shown = !self.win.hidden.load(Ordering::SeqCst)
+            && ctx.input(|i| i.viewport().minimized != Some(true));
+        let shown = main_shown || self.win.popup.load(Ordering::SeqCst);
+        self.tick_toasts(ctx, shown);
+        if self.pending_delete.is_some() && !self.toasts.iter().any(Toast::undoes) {
+            self.finish_delete();
         }
         // A search server that stopped answering is asked again now and then,
         // also while hidden.
@@ -218,11 +221,12 @@ impl eframe::App for App {
             && self.next_age_prune.is_none_or(|at| Instant::now() >= at)
         {
             self.next_age_prune = Some(Instant::now() + AGE_PRUNE_EVERY);
-            self.prune();
+            self.prune(true);
             ctx.request_repaint_after(AGE_PRUNE_EVERY);
         }
         self.window_logic(ctx);
         self.popup_logic(ctx);
+        self.note_logic(ctx);
         self.handle_events(ctx);
         let focused = ctx.input(|i| i.viewport().focused.unwrap_or(false));
         if self.focused.swap(focused, Ordering::SeqCst) && !focused {
@@ -256,6 +260,7 @@ impl eframe::App for App {
         // Before the main window, so the popup's search field takes the
         // keyboard when it opens.
         self.popup_window(&ctx);
+        self.note_window(&ctx);
         // Hidden or minimised, the main window draws nothing; the popup may
         // be open meanwhile.
         if self.win.hidden.load(Ordering::SeqCst)

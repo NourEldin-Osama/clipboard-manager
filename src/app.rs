@@ -1,7 +1,7 @@
 //! The egui user interface.
 
 use std::collections::{HashMap, HashSet};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::sync::atomic::{AtomicBool, AtomicIsize, AtomicU64, Ordering};
 use std::sync::mpsc::{channel, Receiver, TryRecvError};
@@ -26,7 +26,7 @@ use crate::library::{Library, Removed};
 use crate::paste;
 use crate::search::{self, Filter, Hit, Searcher};
 use crate::store::{looks_like_link, Item, Kind, Origin, Store};
-use crate::tray::{Tray, TrayCmd};
+use crate::tray::{Tray, TrayCmd, TrayLook};
 use crate::update::{self, Release};
 use crate::worker::{Event, Job, Worker};
 
@@ -259,14 +259,39 @@ const UPDATE_EVERY: Duration = Duration::from_secs(24 * 3600);
 /// After a failed background check (offline, say), try again sooner.
 const UPDATE_RETRY: Duration = Duration::from_secs(3600);
 
-/// A short message at the bottom of the window, with an optional button.
+/// A short message at the bottom of the window (D55), with an optional
+/// button. Up to three show at once, the newest in front.
 struct Toast {
     text: String,
-    shown: Instant,
+    /// A second, quieter line.
+    detail: Option<String>,
+    icon: Option<icons::Icon>,
+    /// How long it shows. Its time runs only while a window shows it and
+    /// the pointer is not on the messages.
     how_long: Duration,
+    shown_for: Duration,
     /// The button's text and what it does.
     action: Option<(String, Command)>,
+    /// The keys that do the same as the button, shown in it.
+    keys: Option<String>,
+    /// The whole text of a copy that wasn't saved, shown while Show is held.
+    secret: Option<String>,
+    /// Shown in the note at the screen's corner, not in the window (D56).
+    on_screen: bool,
+    /// Tells the messages apart, for egui.
+    id: u64,
 }
+
+impl Toast {
+    /// Its button brings back the items just deleted.
+    fn undoes(&self) -> bool {
+        matches!(self.action, Some((_, Command::UndoDelete)))
+    }
+}
+
+/// At most this many messages show at once; a newer one pushes out the
+/// oldest.
+const MAX_TOASTS: usize = 3;
 
 /// An item's menu, opened by a right-click or by Shift+F10.
 struct ItemMenu {
@@ -370,6 +395,8 @@ enum ShortcutField {
 
 /// How long a deleted item can still be brought back.
 const UNDO_FOR: Duration = Duration::from_secs(8);
+/// The key that undoes a delete while its message shows.
+const UNDO_KEYS: &str = "Ctrl+Z";
 /// How long a message that names a key stays.
 const KEY_HINT_FOR: Duration = Duration::from_secs(4);
 /// What Copy together puts on the clipboard: the texts, links and file
@@ -436,13 +463,12 @@ impl Retry {
     }
 }
 
-/// The last deleted item, kept for "Undo" until its toast ends; only then is
-/// it removed from the database, with its vectors and image file.
+/// The last deleted items, kept for "Undo" until its message is gone; only
+/// then are they removed from the database, with their vectors and images.
 struct PendingDelete {
     /// Taken from the last to the first, so each comes back in its place
     /// when they go back in the other order.
     removed: Vec<Removed>,
-    since: Instant,
 }
 
 /// Keeps the registrations alive; dropping the manager unregisters them.
@@ -484,7 +510,28 @@ pub struct App {
     queue_total: usize,
     status: String,
     error: Option<(String, Instant)>,
-    toast: Option<Toast>,
+    /// The messages showing, the oldest first.
+    toasts: Vec<Toast>,
+    /// The last message's id.
+    toast_seq: u64,
+    /// The pointer is on the messages: they open up and their time stops.
+    toasts_hovered: bool,
+    /// When the messages' time last ran.
+    toasts_tick: Option<Instant>,
+    /// The message whose Show is held down: its copy's whole text shows.
+    toast_showing: Option<u64>,
+    /// The pointer is on the note at the screen's corner: its time stops.
+    note_hovered: bool,
+    /// The note's height for its message, learned as it draws.
+    note_height: f32,
+    /// Where the note's window is, from when it appeared.
+    note_at: Option<egui::Pos2>,
+    /// The note's window no longer takes the keyboard when clicked.
+    note_quiet: bool,
+    /// The app icon, for the note.
+    app_icon: Option<egui::TextureHandle>,
+    /// Alt+C was pressed and its copy hasn't come yet.
+    skip_next_armed: bool,
     pending_delete: Option<PendingDelete>,
     /// When deleting by age runs next; `None` runs it at the next frame.
     next_age_prune: Option<Instant>,
@@ -711,7 +758,17 @@ impl App {
             queue_total: 0,
             status: String::new(),
             error: None,
-            toast: None,
+            toasts: Vec::new(),
+            toast_seq: 0,
+            toasts_hovered: false,
+            toasts_tick: None,
+            toast_showing: None,
+            note_hovered: false,
+            note_height: 64.0,
+            note_at: None,
+            note_quiet: false,
+            app_icon: None,
+            skip_next_armed: false,
             pending_delete: None,
             next_age_prune: None,
             search_retry: None,
@@ -956,6 +1013,7 @@ impl App {
                 }
             } else if pressed == ids.ignore.load(Ordering::SeqCst) {
                 flags.ignore_next.store(true, Ordering::SeqCst);
+                flags.skip_asked.store(true, Ordering::SeqCst);
             }
             c.request_repaint();
         }));
@@ -1024,8 +1082,27 @@ impl App {
                 }
             }
         }
+        // Alt+C: a short note, and a badge on the tray icon until the copy
+        // it skips (D59).
+        if self.flags.skip_asked.swap(false, Ordering::SeqCst) {
+            self.skip_next_armed = true;
+            let on_screen = self.note_wanted();
+            let toast = self.toast_with(t!("toast-skip-next"), Duration::from_secs(2));
+            toast.icon = Some(icons::Icon::EyeOff);
+            toast.on_screen = on_screen;
+        }
+        if self.skip_next_armed && !self.flags.ignore_next.load(Ordering::SeqCst) {
+            self.skip_next_armed = false;
+        }
+        let paused = !self.flags.enabled.load(Ordering::SeqCst);
+        let look = if self.skip_next_armed {
+            TrayLook::SkipNext
+        } else {
+            TrayLook::Recording
+        };
         if let Some(t) = &mut self.tray {
-            t.set_paused(!self.flags.enabled.load(Ordering::SeqCst));
+            t.set_paused(paused);
+            t.set_look(look);
         }
         // Opening the window starts at the top: the newest item, or the best
         // match for the search. The next results select it.
@@ -1261,12 +1338,68 @@ impl App {
     }
 
     fn toast_for(&mut self, s: impl Into<String>, how_long: Duration) {
-        self.toast = Some(Toast {
+        self.toast_with(s, how_long);
+    }
+
+    /// Adds a message in front of the others, to be given a button or a
+    /// second line. With three showing, the oldest goes; a delete it could
+    /// undo becomes final.
+    fn toast_with(&mut self, s: impl Into<String>, how_long: Duration) -> &mut Toast {
+        if self.toasts.len() >= MAX_TOASTS {
+            let oldest = self.toasts.remove(0);
+            if oldest.undoes() {
+                self.finish_delete();
+            }
+        }
+        self.toast_seq += 1;
+        self.toasts.push(Toast {
             text: s.into(),
-            shown: Instant::now(),
+            detail: None,
+            icon: None,
             how_long,
+            shown_for: Duration::ZERO,
             action: None,
+            keys: None,
+            secret: None,
+            on_screen: false,
+            id: self.toast_seq,
         });
+        self.toasts.last_mut().expect("a message was just added")
+    }
+
+    /// Runs the messages' time: only while a window shows them and the
+    /// pointer is not on them. A message whose time is up goes, and the
+    /// delete it could undo becomes final.
+    fn tick_toasts(&mut self, ctx: &egui::Context, shown: bool) {
+        let now = Instant::now();
+        let last = self.toasts_tick.replace(now);
+        if self.toasts.is_empty() {
+            return;
+        }
+        let step = last.map_or(Duration::ZERO, |last| now - last);
+        // A long gap means no window drew meanwhile: that time doesn't count.
+        if step < Duration::from_secs(1) {
+            for toast in &mut self.toasts {
+                let runs = if toast.on_screen {
+                    !self.note_hovered
+                } else {
+                    shown && !self.toasts_hovered
+                };
+                if runs {
+                    toast.shown_for += step;
+                }
+            }
+        }
+        let (over, left): (Vec<Toast>, Vec<Toast>) = std::mem::take(&mut self.toasts)
+            .into_iter()
+            .partition(|t| t.shown_for >= t.how_long);
+        self.toasts = left;
+        if over.iter().any(Toast::undoes) {
+            self.finish_delete();
+        }
+        if shown || self.toasts.iter().any(|t| t.on_screen) {
+            ctx.request_repaint_after(Duration::from_millis(100));
+        }
     }
 
     /// Turns off Send images for the search model in use, unless another
@@ -1428,17 +1561,32 @@ impl App {
             formats,
         } = capture;
         if let Captured::Skipped { reason, text } = content {
-            let message = match reason {
-                SkipReason::Private => t!("toast-skipped-private"),
-                SkipReason::Secret => t!("toast-skipped-secret"),
+            let from = self.program_name(app.as_deref(), program.as_deref());
+            let found = text.as_deref().and_then(crate::privacy::find_secret);
+            let (title, from) = match (reason, &found) {
+                // Its program asked for it not to be kept: only its name.
+                (SkipReason::Private, _) => (
+                    t!("toast-skipped-private"),
+                    from.map(|p| t!("toast-skipped-by", program = p)),
+                ),
+                (SkipReason::Secret, Some(secret)) => (
+                    secret_title(secret.kind),
+                    from.map(|p| t!("toast-skipped-from", program = p)),
+                ),
+                (SkipReason::Secret, None) => (
+                    secret_title(crate::privacy::SecretKind::Key),
+                    from.map(|p| t!("toast-skipped-from", program = p)),
+                ),
             };
+            let hint = found.map(|s| hint_text(&s.hint));
+            let detail = [from, hint].into_iter().flatten().collect::<Vec<_>>();
             let kept = text.map(|t| Capture {
                 content: Captured::Text(t),
                 app,
                 program,
                 formats,
             });
-            self.skipped(message, kept);
+            self.skipped(title, detail, kept);
             return;
         }
         let text = match &content {
@@ -1447,13 +1595,18 @@ impl App {
         };
         if self.rules.skips(app.as_deref(), text) {
             log::info!("copy not saved: a rule matched");
+            let from = self.program_name(app.as_deref(), program.as_deref());
+            let detail = from
+                .map(|p| t!("toast-skipped-from", program = p))
+                .into_iter()
+                .collect();
             let kept = Capture {
                 content,
                 app,
                 program,
                 formats,
             };
-            self.skipped(t!("toast-skipped-rule"), Some(kept));
+            self.skipped(t!("toast-skipped-rule"), detail, Some(kept));
             return;
         }
         self.record(Capture {
@@ -1521,13 +1674,35 @@ impl App {
     }
 
     /// Says a copy wasn't recorded. `kept` is offered back with "Save anyway".
-    fn skipped(&mut self, message: String, kept: Option<Capture>) {
+    /// Says a copy wasn't recorded (D57): what it was, where it came from
+    /// and a hint (`detail`). `kept` is offered back with "Save anyway"; a
+    /// text also shows whole while Show is held. Both leave memory with the
+    /// message.
+    fn skipped(&mut self, title: String, detail: Vec<String>, kept: Option<Capture>) {
         // Longer when there is a button to reach.
         let how_long = Duration::from_secs(if kept.is_some() { 8 } else { 4 });
-        self.toast_for(message, how_long);
-        if let Some(toast) = &mut self.toast {
-            toast.action = kept.map(|c| (t!("toast-save-anyway"), Command::SaveSkipped(c)));
+        let secret = kept.as_ref().and_then(|c| match &c.content {
+            Captured::Text(t) => Some(t.clone()),
+            _ => None,
+        });
+        let toast = self.toast_with(title, how_long);
+        toast.icon = Some(icons::Icon::Lock);
+        toast.detail = (!detail.is_empty()).then(|| detail.join(" · "));
+        toast.secret = secret;
+        toast.action = kept.map(|c| (t!("toast-save-anyway"), Command::SaveSkipped(c)));
+        let on_screen = self.note_wanted();
+        if let Some(toast) = self.toasts.last_mut() {
+            toast.on_screen = on_screen;
         }
+    }
+
+    /// The program a copy came from: its own name once it is known, else
+    /// its file name.
+    fn program_name(&mut self, app: Option<&str>, program: Option<&Path>) -> Option<String> {
+        program
+            .and_then(|p| self.programs.get(p))
+            .map(|p| p.name.clone())
+            .or_else(|| app.map(str::to_string))
     }
 
     /// Adds a copy to the history, or moves its duplicate to the top.
@@ -1598,24 +1773,61 @@ impl App {
             }
         }
         self.add_item(item);
-        self.prune();
+        self.prune(false);
     }
 
     /// Deletes what is over the history size and, when it is on, what is
     /// older than the chosen number of days.
-    fn prune(&mut self) {
+    /// Deletes what the history limit and delete by age remove. With
+    /// `report`, it says so, with Undo, and the items wait until the message
+    /// is gone (D60). A new copy pushing the oldest item out of a full
+    /// history is not reported.
+    fn prune(&mut self, report: bool) {
         let days = i64::from(self.cfg.delete_after_days);
-        let pruned = self.library.prune(self.cfg.max_items).and_then(|mut ids| {
-            if days > 0 {
-                let cutoff = crate::store::now() - days * 24 * 60 * 60;
-                ids.extend(self.library.prune_older_than(cutoff)?);
+        let cutoff = crate::store::now() - days * 24 * 60 * 60;
+        if !report {
+            let pruned = self.library.prune(self.cfg.max_items).and_then(|mut ids| {
+                if days > 0 {
+                    ids.extend(self.library.prune_older_than(cutoff)?);
+                }
+                Ok(ids)
+            });
+            match pruned {
+                Ok(removed) => self.drop_removed(&removed),
+                Err(e) => self.set_error(log_error!("error-deleting", error = e.to_string())),
             }
-            Ok(ids)
-        });
-        match pruned {
-            Ok(removed) => self.drop_removed(&removed),
-            Err(e) => self.set_error(log_error!("error-deleting", error = e.to_string())),
+            return;
         }
+        let mut ids = self.library.over_limit(self.cfg.max_items);
+        let over_limit = ids.len();
+        if days > 0 {
+            let more: Vec<u64> = self
+                .library
+                .older_than(cutoff)
+                .into_iter()
+                .filter(|id| !ids.contains(id))
+                .collect();
+            ids.extend(more);
+        }
+        if ids.is_empty() {
+            return;
+        }
+        // One undo at a time: an earlier delete becomes final now.
+        self.finish_delete();
+        let removed = self.take_items(&ids);
+        self.drop_stale_tag_filter();
+        self.drop_removed(&ids);
+        let count = removed.len();
+        log::info!("deleted {count} items by age or the history limit");
+        self.pending_delete = Some(PendingDelete { removed });
+        let text = if count == over_limit {
+            t!("toast-pruned-limit", count = count)
+        } else {
+            let age = t!("settings-age-days", count = days);
+            t!("toast-pruned-age", count = count, age = age)
+        };
+        self.undo_toast(text);
+        self.dirty = true;
     }
 
     /// Reads the files in the background; `finish` saves them as they come.
@@ -1633,7 +1845,7 @@ impl App {
             } => {
                 item.image = Some(path);
                 self.add_item(*item);
-                self.prune();
+                self.prune(false);
             }
             Done::ImageSaved { saved: Err(e), .. } => {
                 self.set_error(log_error!("error-saving-image", error = e.to_string()))
@@ -1793,11 +2005,9 @@ impl App {
                         _ => false,
                     };
                     if current {
-                        self.toast_for(t!("toast-images-refused"), IMAGES_REFUSED_FOR);
-                        if let Some(toast) = &mut self.toast {
-                            toast.action =
-                                Some((t!("toast-images-off"), Command::StopSendingImages(key)));
-                        }
+                        self.toast_with(t!("toast-images-refused"), IMAGES_REFUSED_FOR)
+                            .action =
+                            Some((t!("toast-images-off"), Command::StopSendingImages(key)));
                     }
                 }
                 Event::BackendReady {
@@ -2118,31 +2328,36 @@ impl App {
         }
         self.pending_delete = Some(PendingDelete {
             removed: vec![removed],
-            since: Instant::now(),
         });
         let keys = self.cfg.keys.delete.clone();
         let text = match self.key_to_teach(&keys) {
             Some(keys) => t!("toast-deleted-key", keys = keys),
             None => t!("toast-deleted"),
         };
-        self.toast_for(text, UNDO_FOR);
-        if let Some(toast) = &mut self.toast {
-            toast.action = Some((t!("toast-undo"), Command::UndoDelete));
-        }
+        self.undo_toast(text);
+    }
+
+    /// The message after a delete, with Undo and its key.
+    fn undo_toast(&mut self, text: String) {
+        let toast = self.toast_with(text, UNDO_FOR);
+        toast.icon = Some(icons::Icon::Delete);
+        toast.action = Some((t!("toast-undo"), Command::UndoDelete));
+        toast.keys = Some(UNDO_KEYS.to_string());
     }
 
     /// Makes the pending delete final: database row, vectors and image file.
     pub(super) fn finish_delete(&mut self) {
+        // Its message can't undo it any more.
+        self.toasts.retain(|t| !t.undoes());
         if let Some(pending) = self.pending_delete.take() {
-            for removed in pending.removed {
-                if let Err(e) = self.library.forget(removed) {
-                    self.set_error(log_error!("error-deleting", error = e.to_string()));
-                }
+            if let Err(e) = self.library.forget_many(pending.removed) {
+                self.set_error(log_error!("error-deleting", error = e.to_string()));
             }
         }
     }
 
     fn undo_delete(&mut self) {
+        self.toasts.retain(|t| !t.undoes());
         let Some(pending) = self.pending_delete.take() else {
             return;
         };
@@ -2222,9 +2437,9 @@ impl App {
     }
 
     /// Deletes every item of `ids`; one Undo brings them all back.
-    fn delete_group(&mut self, ids: &[u64]) {
-        // One undo at a time: an earlier delete becomes final now.
-        self.finish_delete();
+    /// Takes `ids` out of the history in memory, the last first, so each
+    /// comes back in its place on Undo.
+    fn take_items(&mut self, ids: &[u64]) -> Vec<Removed> {
         let place: HashMap<u64, usize> = self
             .library
             .items()
@@ -2237,18 +2452,24 @@ impl App {
             .copied()
             .filter(|id| place.contains_key(id))
             .collect();
-        // Taken from the last to the first, each keeps its place.
         ids.sort_by_key(|id| std::cmp::Reverse(place[id]));
-        let row = self.results.iter().position(|h| ids.contains(&h.id));
         let mut removed = Vec::with_capacity(ids.len());
-        for &id in &ids {
+        for id in ids {
             if let Some(r) = self.library.take(id) {
                 self.loader.forget(id, false);
                 removed.push(r);
             }
         }
+        removed
+    }
+
+    fn delete_group(&mut self, ids: &[u64]) {
+        // One undo at a time: an earlier delete becomes final now.
+        self.finish_delete();
+        let row = self.results.iter().position(|h| ids.contains(&h.id));
+        let removed = self.take_items(ids);
         self.drop_stale_tag_filter();
-        self.drop_removed(&ids);
+        self.drop_removed(ids);
         self.clear_marks();
         // Keep the selection on the row that takes the first one's place.
         if let Some(i) = row {
@@ -2256,14 +2477,8 @@ impl App {
             self.selected = self.results.get(i.min(last)).map(|h| h.id);
         }
         let count = removed.len();
-        self.pending_delete = Some(PendingDelete {
-            removed,
-            since: Instant::now(),
-        });
-        self.toast_for(t!("toast-deleted-group", count = count), UNDO_FOR);
-        if let Some(toast) = &mut self.toast {
-            toast.action = Some((t!("toast-undo"), Command::UndoDelete));
-        }
+        self.pending_delete = Some(PendingDelete { removed });
+        self.undo_toast(t!("toast-deleted-group", count = count));
         self.dirty = true;
     }
 
@@ -2372,6 +2587,29 @@ fn run_total(total: usize, before: usize, left: usize) -> usize {
         0
     } else {
         total + left.saturating_sub(before)
+    }
+}
+
+/// "Not saved: an API key" and the like.
+fn secret_title(kind: crate::privacy::SecretKind) -> String {
+    use crate::privacy::SecretKind;
+    match kind {
+        SecretKind::Password => t!("toast-skipped-password"),
+        SecretKind::ApiKey => t!("toast-skipped-api-key"),
+        SecretKind::SignIn => t!("toast-skipped-sign-in"),
+        SecretKind::PrivateKey => t!("toast-skipped-private-key"),
+        SecretKind::Link => t!("toast-skipped-link"),
+        SecretKind::Key => t!("toast-skipped-key"),
+    }
+}
+
+/// A hint that tells one secret from another without showing it.
+fn hint_text(hint: &crate::privacy::Hint) -> String {
+    use crate::privacy::Hint;
+    match hint {
+        Hint::Ends(start, end) => format!("{start}…{end}"),
+        Hint::Host(host) => host.clone(),
+        Hint::Length(n) => t!("toast-hint-characters", count = *n),
     }
 }
 

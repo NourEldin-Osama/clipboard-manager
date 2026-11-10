@@ -1,0 +1,423 @@
+//! Messages at the bottom of the window, in the style of shadcn's Sonner
+//! (D55): a stack at the bottom right (bottom left in Arabic), above the
+//! status bar. The newest is in front and up to two older ones peek out
+//! above it; pointing at the stack opens it, and their time stops meanwhile.
+
+use std::sync::Arc;
+
+use eframe::egui::Galley;
+
+use super::*;
+
+/// The messages' width, as Sonner's.
+const WIDTH: f32 = 356.0;
+/// From the window's side, and from its bottom: above the status bar.
+const EDGE: f32 = 16.0;
+const ABOVE: f32 = 44.0;
+/// How far each older message peeks out above the one in front of it, and
+/// the gap between them while the stack is open.
+const PEEK: f32 = 12.0;
+const GAP: f32 = 12.0;
+const PAD: f32 = 14.0;
+const ICON: f32 = 16.0;
+const BUTTON_H: f32 = 24.0;
+const BUTTON_PAD: f32 = 8.0;
+/// Between the icon, the text and the buttons.
+const SPACE: f32 = 10.0;
+
+/// A message laid out at its width.
+pub(super) struct Laid {
+    title: Vec<(Arc<Galley>, bool)>,
+    detail: Vec<(Arc<Galley>, bool)>,
+    /// The button's label, with its keys in a fainter color.
+    action: Option<Arc<Galley>>,
+    /// "Show", for the text of a copy that wasn't saved.
+    show: Option<Arc<Galley>>,
+    pub(super) height: f32,
+}
+
+/// What a click or a press on the messages asks for.
+#[derive(Default)]
+pub(super) struct Asked {
+    /// The id of the message whose button was clicked.
+    pub(super) action: Option<u64>,
+    /// The id of the message whose Show is held down.
+    show: Option<u64>,
+}
+
+impl App {
+    pub(super) fn toasts(&mut self, ctx: &egui::Context) {
+        // Said when a window first draws, so a start hidden at sign-in
+        // doesn't use the message up unseen.
+        if std::mem::take(&mut self.whats_new_pending) {
+            let version = crate::update::VERSION;
+            let has_notes = !crate::update::notes(version).is_empty();
+            let toast = self.toast_with(
+                t!("toast-updated", version = version),
+                Duration::from_secs(15),
+            );
+            if has_notes {
+                toast.action = Some((t!("update-whats-new"), Command::ShowWhatsNew));
+            }
+        }
+        if let Some((_, at)) = &self.error {
+            if at.elapsed() > Duration::from_secs(20) {
+                self.error = None;
+            }
+        }
+        // Messages on the screen's corner show in the note instead.
+        let shown: Vec<&Toast> = self.toasts.iter().filter(|t| !t.on_screen).collect();
+        if shown.is_empty() {
+            self.toasts_hovered = false;
+            return;
+        }
+        let content = ctx.content_rect();
+        let width = WIDTH.min(content.width() - 2.0 * EDGE).max(120.0);
+        let (anchor, x) = if i18n::rtl() {
+            (Align2::LEFT_BOTTOM, EDGE)
+        } else {
+            (Align2::RIGHT_BOTTOM, -EDGE)
+        };
+        let open = self.toasts_hovered;
+        let showing = self.toast_showing;
+        let mut asked = Asked::default();
+        let area = egui::Area::new(egui::Id::unique("toasts"))
+            .order(egui::Order::Foreground)
+            .anchor(anchor, Vec2::new(x, -ABOVE))
+            .show(ctx, |ui| {
+                let laid: Vec<Laid> = shown
+                    .iter()
+                    .map(|t| lay_out(ui, t, width, showing == Some(t.id), None))
+                    .collect();
+                if open {
+                    // All of them, the newest at the bottom.
+                    let total =
+                        laid.iter().map(|l| l.height).sum::<f32>() + GAP * (laid.len() - 1) as f32;
+                    let (rect, _) = ui.allocate_exact_size(Vec2::new(width, total), Sense::hover());
+                    let mut top = rect.top();
+                    for (toast, l) in shown.iter().zip(&laid) {
+                        let card = Rect::from_min_size(
+                            Pos2::new(rect.left(), top),
+                            Vec2::new(width, l.height),
+                        );
+                        paint_card(ui, card);
+                        paint_content(ui, card, toast, l, &mut asked, None);
+                        top += l.height + GAP;
+                    }
+                } else {
+                    // The newest in front; up to two older ones peek out.
+                    let behind = (laid.len() - 1).min(2);
+                    let front = laid.last().expect("there is a message");
+                    let (rect, _) = ui.allocate_exact_size(
+                        Vec2::new(width, front.height + PEEK * behind as f32),
+                        Sense::hover(),
+                    );
+                    let card = Rect::from_min_size(
+                        Pos2::new(rect.left(), rect.bottom() - front.height),
+                        Vec2::new(width, front.height),
+                    );
+                    // The farthest first, so the nearer ones cover it.
+                    for step in (1..=behind).rev() {
+                        let narrower = width * (1.0 - 0.05 * step as f32);
+                        paint_card(
+                            ui,
+                            Rect::from_center_size(
+                                card.center() - Vec2::new(0.0, PEEK * step as f32),
+                                Vec2::new(narrower, front.height),
+                            ),
+                        );
+                    }
+                    paint_card(ui, card);
+                    let toast = shown.last().expect("there is a message");
+                    paint_content(ui, card, toast, front, &mut asked, None);
+                }
+            });
+        self.toasts_hovered = ctx
+            .pointer_hover_pos()
+            .is_some_and(|p| area.response.rect.contains(p));
+        self.toast_showing = asked.show;
+        if let Some(id) = asked.action {
+            if let Some(at) = self.toasts.iter().position(|t| t.id == id) {
+                let toast = self.toasts.remove(at);
+                if let Some((_, command)) = toast.action {
+                    self.run(command);
+                }
+            }
+        }
+        ctx.request_repaint_after(Duration::from_millis(100));
+    }
+}
+
+/// The card behind a message: its shadow, fill and edge.
+fn paint_card(ui: &Ui, rect: Rect) {
+    let v = ui.visuals();
+    let round = CornerRadius::same(8);
+    let p = ui.painter();
+    p.add(v.popup_shadow.as_shape(rect, round));
+    let fill = if v.dark_mode {
+        v.window_fill
+    } else {
+        Color32::WHITE
+    };
+    p.rect(
+        rect,
+        round,
+        fill,
+        Stroke::new(1.0, theme::line_color(v.dark_mode)),
+        egui::StrokeKind::Inside,
+    );
+}
+
+/// The button's colors: near black in the light theme, near white in the
+/// dark one, as Sonner's.
+fn button_colors(dark: bool) -> (Color32, Color32) {
+    if dark {
+        (Color32::from_gray(235), Color32::from_gray(20))
+    } else {
+        (Color32::from_gray(28), Color32::WHITE)
+    }
+}
+
+/// Lays out a message's text at `width`: the room left beside its icon and
+/// buttons. While `showing`, the second line is the copy's whole text. With
+/// `app_icon` it is the note on the screen: the app icon, and never Show.
+pub(super) fn lay_out(
+    ui: &Ui,
+    toast: &Toast,
+    width: f32,
+    showing: bool,
+    app_icon: Option<&egui::TextureHandle>,
+) -> Laid {
+    let v = ui.visuals();
+    let (_, label_color) = button_colors(v.dark_mode);
+    let action = toast.action.as_ref().map(|(label, _)| {
+        let mut job = pill_job(label, size::SMALL, label_color, None);
+        if let Some(keys) = &toast.keys {
+            job.append(
+                &format!("  {keys}"),
+                0.0,
+                egui::TextFormat {
+                    font_id: FontId::proportional(size::SMALL),
+                    color: label_color.gamma_multiply(0.65),
+                    ..Default::default()
+                },
+            );
+        }
+        ui.fonts_mut(|f| f.layout_job(job))
+    });
+    let show = toast
+        .secret
+        .as_ref()
+        .filter(|_| app_icon.is_none())
+        .map(|_| {
+            let job = pill_job(&t!("toast-show"), size::SMALL, v.hyperlink_color, None);
+            ui.fonts_mut(|f| f.layout_job(job))
+        });
+    let buttons = action
+        .as_ref()
+        .map_or(0.0, |g| g.size().x + 2.0 * BUTTON_PAD + SPACE)
+        + show
+            .as_ref()
+            .map_or(0.0, |g| ICON + 4.0 + g.size().x + SPACE);
+    let icon = if toast.icon.is_some() || app_icon.is_some() {
+        ICON + SPACE
+    } else {
+        0.0
+    };
+    let text_w = (width - 2.0 * PAD - icon - buttons).max(40.0);
+    let lines = |text: &str, size: f32, color: Color32| {
+        bidi::lines(
+            ui,
+            text,
+            &[],
+            FontId::proportional(size),
+            color,
+            Color32::TRANSPARENT,
+            text_w,
+            3,
+            None,
+        )
+    };
+    let title = lines(&toast.text, size::BODY, v.strong_text_color());
+    let second = match (&toast.secret, showing) {
+        (Some(secret), true) => Some(secret.as_str()),
+        _ => toast.detail.as_deref(),
+    };
+    let detail = second.map_or_else(Vec::new, |d| lines(d, size::SMALL, v.weak_text_color()));
+    let text_h: f32 = title
+        .iter()
+        .chain(&detail)
+        .map(|(g, _)| g.size().y)
+        .sum::<f32>()
+        + if detail.is_empty() { 0.0 } else { 2.0 };
+    Laid {
+        title,
+        detail,
+        action,
+        show,
+        height: 2.0 * PAD + text_h.max(BUTTON_H),
+    }
+}
+
+/// Paints a message's icon (or `app_icon`), text and buttons in its card,
+/// mirrored in Arabic, and notes a click on its button or a press on Show.
+pub(super) fn paint_content(
+    ui: &mut Ui,
+    card: Rect,
+    toast: &Toast,
+    laid: &Laid,
+    asked: &mut Asked,
+    app_icon: Option<&egui::TextureHandle>,
+) {
+    let v = ui.visuals().clone();
+    let inner = card.shrink(PAD);
+    let mid = inner.center().y;
+    // Laid out left to right, then mirrored for Arabic.
+    let m = |r: Rect| flip(card, r);
+    let mut left = inner.left();
+    let icon_at = m(Rect::from_min_size(
+        Pos2::new(left, mid - ICON / 2.0),
+        Vec2::splat(ICON),
+    ));
+    if let Some(texture) = app_icon {
+        let whole = Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0));
+        ui.painter()
+            .image(texture.id(), icon_at, whole, Color32::WHITE);
+        left += ICON + SPACE;
+    } else if let Some(icon) = toast.icon {
+        icons::paint(ui.painter(), icon_at, icon, v.text_color());
+        left += ICON + SPACE;
+    }
+    let mut right = inner.right();
+    if let Some(g) = &laid.action {
+        let w = g.size().x + 2.0 * BUTTON_PAD;
+        let at = m(Rect::from_min_size(
+            Pos2::new(right - w, mid - BUTTON_H / 2.0),
+            Vec2::new(w, BUTTON_H),
+        ));
+        let label = toast.action.as_ref().map_or("", |(l, _)| l.as_str());
+        let r = ui.interact(
+            at,
+            egui::Id::unique(("toast-action", toast.id)),
+            Sense::click(),
+        );
+        r.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, label));
+        let (fill, _) = button_colors(v.dark_mode);
+        let fill = if r.hovered() {
+            fill.gamma_multiply(0.85)
+        } else {
+            fill
+        };
+        ui.painter().rect_filled(at, CornerRadius::same(4), fill);
+        let text_at = at.center() - g.size() / 2.0;
+        ui.painter()
+            .galley(text_at, g.clone(), Color32::PLACEHOLDER);
+        if r.clicked() {
+            asked.action = Some(toast.id);
+        }
+        right -= w + SPACE;
+    }
+    if let Some(g) = &laid.show {
+        let w = ICON + 4.0 + g.size().x;
+        let at = Rect::from_min_size(
+            Pos2::new(right - w, mid - BUTTON_H / 2.0),
+            Vec2::new(w, BUTTON_H),
+        );
+        let r = ui.interact(
+            m(at),
+            egui::Id::unique(("toast-show", toast.id)),
+            Sense::click_and_drag(),
+        );
+        let label = t!("toast-show");
+        r.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, &label));
+        let eye = Rect::from_min_size(Pos2::new(at.left(), mid - ICON / 2.0), Vec2::splat(ICON));
+        icons::paint(ui.painter(), m(eye), icons::Icon::Eye, v.hyperlink_color);
+        let text = m(Rect::from_min_size(
+            Pos2::new(at.left() + ICON + 4.0, mid - g.size().y / 2.0),
+            g.size(),
+        ));
+        ui.painter()
+            .galley(text.min, g.clone(), Color32::PLACEHOLDER);
+        if r.is_pointer_button_down_on() {
+            asked.show = Some(toast.id);
+        }
+    }
+    // The text, centered beside the buttons when it is short.
+    let text_h: f32 = laid
+        .title
+        .iter()
+        .chain(&laid.detail)
+        .map(|(g, _)| g.size().y)
+        .sum::<f32>()
+        + if laid.detail.is_empty() { 0.0 } else { 2.0 };
+    let mut y = mid - text_h / 2.0;
+    let colors = [v.strong_text_color(), v.weak_text_color()];
+    for (part, lines) in [&laid.title, &laid.detail].into_iter().enumerate() {
+        if part == 1 && !lines.is_empty() {
+            y += 2.0;
+        }
+        for (g, _) in lines {
+            let at = m(Rect::from_min_size(Pos2::new(left, y), g.size()));
+            ui.painter().galley(at.min, g.clone(), colors[part]);
+            y += g.size().y;
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn message(text: &str, detail: Option<&str>, button: Option<&str>) -> Toast {
+        Toast {
+            text: text.into(),
+            detail: detail.map(Into::into),
+            icon: Some(icons::Icon::Lock),
+            how_long: Duration::from_secs(8),
+            shown_for: Duration::ZERO,
+            action: button.map(|b| (b.to_string(), Command::ShowWeaker)),
+            keys: None,
+            secret: Some("sk-proj-abcdefghijklmnopqrstuvwxyz0123456789".into()),
+            on_screen: false,
+            id: 1,
+        }
+    }
+
+    #[test]
+    fn a_message_grows_with_its_text_and_shows_the_copy_only_while_held() {
+        let ctx = egui::Context::default();
+        let mut output = ctx.run_ui(Default::default(), |ui| {
+            let short = lay_out(ui, &message("Copied", None, None), WIDTH, false, None);
+            let long = message(
+                "Not saved: looks like a password or API key, from a program with a long name",
+                Some("From Visual Studio Code · sk-…6789"),
+                Some("Save anyway"),
+            );
+            let laid = lay_out(ui, &long, WIDTH, false, None);
+            assert!(
+                laid.height > short.height,
+                "a longer text wraps onto more lines"
+            );
+            assert!(laid.title.len() > 1);
+            assert!(laid.action.is_some() && laid.show.is_some());
+            let hint: String = laid
+                .detail
+                .iter()
+                .map(|(g, _)| g.text().to_string())
+                .collect();
+            assert!(
+                !hint.contains("abcdefgh"),
+                "the copy's text stays hidden: {hint}"
+            );
+            let held = lay_out(ui, &long, WIDTH, true, None);
+            let shown: String = held
+                .detail
+                .iter()
+                .map(|(g, _)| g.text().to_string())
+                .collect();
+            assert!(shown.contains("abcdefgh"), "Show reveals it: {shown}");
+        });
+        // The font atlas upload no renderer takes here.
+        output.textures_delta.clear();
+    }
+}

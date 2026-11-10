@@ -72,6 +72,8 @@ pub struct Flags {
     pub enabled: AtomicBool,
     /// Skip exactly one upcoming change (the "ignore next copy" hotkey).
     pub ignore_next: AtomicBool,
+    /// The "ignore next copy" hotkey was pressed: the window says so.
+    pub skip_asked: AtomicBool,
     /// Don't record text that looks like a password, API key or token.
     pub skip_secrets: AtomicBool,
 }
@@ -134,7 +136,12 @@ pub fn spawn_watcher(flags: Arc<Flags>, tx: Sender<Capture>, wake: impl Fn() + S
                 if seq.is_some() && seq == seen.seq {
                     continue;
                 }
+                let ignoring = flags.ignore_next.load(Ordering::SeqCst);
                 let step = catch_unwind(AssertUnwindSafe(|| next_copy(&mut cb, &flags, seq, &mut seen)));
+                // The skipped copy ends the window's sign that one would be.
+                if ignoring && !flags.ignore_next.load(Ordering::SeqCst) {
+                    wake();
+                }
                 match step {
                     Ok(Some(capture)) => {
                         if tx.send(capture).is_err() {

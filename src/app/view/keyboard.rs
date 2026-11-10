@@ -202,6 +202,14 @@ impl App {
         };
         // Ctrl+1 to Ctrl+9 paste one of the first nine items shown.
         let quick = if typing { None } else { quick_paste(ctx) };
+        // Ctrl+Z undoes a delete while its message is up, also from the
+        // search field (D55); otherwise it stays the field's own undo.
+        if !typing
+            && self.pending_delete.is_some()
+            && ctx.input_mut(|i| i.consume_key(egui::Modifiers::COMMAND, Key::Z))
+        {
+            self.run(Command::UndoDelete);
+        }
         // Ctrl+A selects every item shown; the popup keeps one at a time.
         if !in_popup
             && !typing

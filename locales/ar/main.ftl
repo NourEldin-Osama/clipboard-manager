@@ -373,6 +373,8 @@ shortcut-off = معطّل · انقر للتعيين
 shortcut-recording-tip = اضغط المفاتيح الجديدة · Backspace للتعطيل · Esc للإلغاء
 shortcut-click-to-set = انقر ثم اضغط المفاتيح الجديدة
 toast-save-anyway = احفظه على أي حال
+toast-show = إظهار
+toast-skip-next = لن تُحفظ النسخة التالية
 toast-undo = تراجع
 toast-images-refused = خادم البحث لا يقبل الصور، فيُبحث عنها بالنص الذي فيها.
 toast-images-off = أوقف إرسال الصور
@@ -461,6 +463,10 @@ settings-record-help = عطّله للإيقاف المؤقت، وزر الإي�
 settings-skip-secrets = تجاهل كلمات المرور ومفاتيح API
 settings-skip-secrets-hint = لا تحفظ النسخ التي تبدو كلمة مرور أو مفتاح API أو رمزًا أو مفتاحًا خاصًا
 settings-skip-secrets-help = ما زال بإمكانك لصقها كالمعتاد.
+note-title = ملاحظة مدير الحافظة
+settings-screen-notes = ملاحظات على الشاشة
+settings-screen-notes-hint = ملاحظة في زاوية الشاشة حين لا تُحفظ نسخة، أو حين لن تُحفظ النسخة التالية
+settings-screen-notes-help = لا تأخذ لوحة المفاتيح أبدًا، وتبقى صامتة أثناء برنامج بملء الشاشة أو عرض تقديمي. انقرها لفتح النافذة.
 settings-never-kept = ما لا يُحفظ أبدًا
 settings-skip-next = عدم تسجيل النسخة التالية
 settings-skip-next-hint = اضغط هذا المفتاح قبل أن تنسخ شيئًا لا تريد حفظه، مثل كلمة مرور
@@ -845,6 +851,22 @@ toast-imported =
         [few] تم استيراد { $count } ملفات
        *[other] تم استيراد { $count } ملف
     }
+toast-pruned-age =
+    { $count ->
+        [one] حُذف عنصر واحد أقدم من { $age }
+        [two] حُذف عنصران أقدم من { $age }
+        [few] حُذف { $count } عناصر أقدم من { $age }
+        [many] حُذف { $count } عنصرًا أقدم من { $age }
+       *[other] حُذف { $count } عنصر أقدم من { $age }
+    }
+toast-pruned-limit =
+    { $count ->
+        [one] حُذف عنصر واحد تجاوز حد السجل
+        [two] حُذف عنصران تجاوزا حد السجل
+        [few] حُذف { $count } عناصر تجاوزت حد السجل
+        [many] حُذف { $count } عنصرًا تجاوز حد السجل
+       *[other] حُذف { $count } عنصر تجاوز حد السجل
+    }
 toast-cleared =
     { $count ->
         [one] تم مسح عنصر واحد
@@ -859,8 +881,23 @@ toast-tag-removed =
         [few] أُزيل #{ $tag } من { $count } عناصر
        *[other] أُزيل #{ $tag } من { $count } عنصر
     }
-toast-skipped-private = لم يُحفظ: التطبيق الذي نسخت منه وسمه بأنه خاص
-toast-skipped-secret = لم يُحفظ: يبدو كلمة مرور أو مفتاح API (راجع الإعدادات)
+toast-skipped-private = لم يُحفظ: وُسم بأنه خاص
+toast-skipped-by = وسمه { $program }
+toast-skipped-from = من { $program }
+toast-skipped-password = لم يُحفظ: كلمة مرور
+toast-skipped-api-key = لم يُحفظ: مفتاح API
+toast-skipped-sign-in = لم يُحفظ: رمز تسجيل دخول
+toast-skipped-private-key = لم يُحفظ: مفتاح خاص
+toast-skipped-link = لم يُحفظ: رابط فيه كلمة مرور
+toast-skipped-key = لم يُحفظ: مفتاح
+toast-hint-characters =
+    { $count ->
+        [one] حرف واحد
+        [two] حرفان
+        [few] { $count } أحرف
+        [many] { $count } حرفًا
+       *[other] { $count } حرف
+    }
 toast-skipped-rule = لم يُحفظ: إحدى قواعدك تتخطاه
 toast-app-ignored = لن تُسجَّل النسخ من { $app }. يمكنك حذف القاعدة من الإعدادات، الخصوصية.
 tray-show = إظهار مدير الحافظة

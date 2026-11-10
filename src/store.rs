@@ -424,6 +424,7 @@ impl Store {
         Formats::decode(&bytes).map(Some)
     }
 
+    #[cfg(test)]
     pub fn delete(&self, item: &Item) -> Result<()> {
         self.delete_many(std::slice::from_ref(item))
     }

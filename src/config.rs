@@ -579,6 +579,9 @@ pub struct Config {
     pub minimize_after_copy: bool,
     /// Don't record text that looks like a password, API key or token.
     pub skip_secrets: bool,
+    /// A note at the screen's corner when a copy isn't saved, or the next
+    /// one won't be (D56).
+    pub screen_notes: bool,
     /// Where meaning search runs.
     pub search_engine: SearchEngine,
     /// The model meaning search uses; kept while search is off, so turning
@@ -652,6 +655,7 @@ impl Default for Config {
             ignore_next_hotkey: "Alt+C".into(),
             minimize_after_copy: true,
             skip_secrets: true,
+            screen_notes: true,
             search_engine: SearchEngine::Off,
             search_model: None,
             min_similarity: 0.0,

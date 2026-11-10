@@ -15,6 +15,15 @@ impl App {
             def.skip_secrets,
             toggle,
         );
+        setting_for(
+            ui,
+            &t!("settings-screen-notes"),
+            &t!("settings-screen-notes-hint"),
+            &t!("settings-screen-notes-help"),
+            &mut d.screen_notes,
+            def.screen_notes,
+            toggle,
+        );
         let mut change = false;
         plain_setting(
             ui,

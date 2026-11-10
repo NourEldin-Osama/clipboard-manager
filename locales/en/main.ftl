@@ -338,6 +338,8 @@ shortcut-off = Off · click to set
 shortcut-recording-tip = Press the new keys · Backspace turns it off · Esc cancels
 shortcut-click-to-set = Click, then press the new keys
 toast-save-anyway = Save anyway
+toast-show = Show
+toast-skip-next = Next copy won't be saved
 toast-undo = Undo
 toast-images-refused = The search server doesn't take images, so they are found by their text.
 toast-images-off = Turn off Send images
@@ -426,6 +428,10 @@ settings-record-help = Turn off to pause; the pause button in the main window do
 settings-skip-secrets = Skip passwords and API keys
 settings-skip-secrets-hint = Don't save copies that look like a password, API key, token or private key
 settings-skip-secrets-help = You still can paste them normally.
+note-title = Clipboard Manager note
+settings-screen-notes = Notes on the screen
+settings-screen-notes-hint = A note at the corner of the screen when a copy isn't saved, or the next one won't be
+settings-screen-notes-help = It never takes the keyboard, and stays quiet while a full-screen program or a presentation runs. Click it to open the window.
 settings-never-kept = Never kept
 settings-skip-next = Don't record the next copy
 settings-skip-next-hint = Press this key before you copy something you don't want kept, such as a password
@@ -782,6 +788,16 @@ toast-imported =
         [one] Imported 1 file
        *[other] Imported { $count } files
     }
+toast-pruned-age =
+    { $count ->
+        [one] Deleted 1 item older than { $age }
+       *[other] Deleted { $count } items older than { $age }
+    }
+toast-pruned-limit =
+    { $count ->
+        [one] Deleted 1 item over your history limit
+       *[other] Deleted { $count } items over your history limit
+    }
 toast-cleared =
     { $count ->
         [one] Cleared 1 item
@@ -792,8 +808,20 @@ toast-tag-removed =
         [one] Removed #{ $tag } from 1 item
        *[other] Removed #{ $tag } from { $count } items
     }
-toast-skipped-private = Not saved: the app you copied from marked it as private
-toast-skipped-secret = Not saved: looks like a password or API key (see Settings)
+toast-skipped-private = Not saved: marked private
+toast-skipped-by = By { $program }
+toast-skipped-from = From { $program }
+toast-skipped-password = Not saved: a password
+toast-skipped-api-key = Not saved: an API key
+toast-skipped-sign-in = Not saved: a sign-in token
+toast-skipped-private-key = Not saved: a private key
+toast-skipped-link = Not saved: a link with a password
+toast-skipped-key = Not saved: a key
+toast-hint-characters =
+    { $count ->
+        [one] 1 character
+       *[other] { $count } characters
+    }
 toast-skipped-rule = Not saved: one of your rules skips it
 toast-app-ignored = Copies from { $app } won't be recorded. You can remove the rule in Settings, Privacy.
 tray-show = Show Clipboard Manager

@@ -221,8 +221,76 @@ pub fn icon_rgba() -> (Vec<u8>, u32) {
     (rgba, SIZE)
 }
 
+/// The app icon with a badge at its corner: the "eye off" icon on the
+/// accent color, for the tray after Alt+C (D59).
+pub fn badged_icon_rgba() -> (Vec<u8>, u32) {
+    let (mut rgba, size) = icon_rgba();
+    const BADGE: f32 = 34.0;
+    let n = size as usize;
+    let center = size as f32 - BADGE / 2.0;
+    let glyph = egui_extras::image::load_svg_bytes_with_size(
+        include_bytes!("../assets/icons/eye_off.svg"),
+        egui::SizeHint::Size {
+            width: 22,
+            height: 22,
+            maintain_aspect_ratio: true,
+        },
+        &Default::default(),
+    )
+    .expect("the eye-off icon is a valid drawing");
+    let glyph_at = (center - 11.0) as usize;
+    let accent = [88.0, 101.0, 242.0];
+    for y in 0..n {
+        for x in 0..n {
+            let dx = x as f32 + 0.5 - center;
+            let dy = y as f32 + 0.5 - center;
+            // Covered part of the pixel at the badge's edge, for a smooth rim.
+            let cover = (BADGE / 2.0 - (dx * dx + dy * dy).sqrt() + 0.5).clamp(0.0, 1.0);
+            if cover == 0.0 {
+                continue;
+            }
+            let mut color = accent;
+            let (gx, gy) = (x.wrapping_sub(glyph_at), y.wrapping_sub(glyph_at));
+            if gx < 22 && gy < 22 {
+                let g = glyph.pixels[gy * glyph.size[0] + gx].to_srgba_unmultiplied();
+                let a = g[3] as f32 / 255.0;
+                for (c, white) in color.iter_mut().zip([255.0; 3]) {
+                    *c = *c * (1.0 - a) + white * a;
+                }
+            }
+            let at = (y * n + x) * 4;
+            let under = rgba[at + 3] as f32 / 255.0;
+            let alpha = cover + under * (1.0 - cover);
+            for (i, c) in color.iter().enumerate() {
+                let below = rgba[at + i] as f32;
+                rgba[at + i] =
+                    ((c * cover + below * under * (1.0 - cover)) / alpha.max(1e-6)) as u8;
+            }
+            rgba[at + 3] = (alpha * 255.0) as u8;
+        }
+    }
+    (rgba, size)
+}
+
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn the_badge_sits_in_the_corner_of_the_app_icon() {
+        let (plain, size) = super::icon_rgba();
+        let (badged, _) = super::badged_icon_rgba();
+        let pixel = |rgba: &[u8], x: u32, y: u32| {
+            let at = ((y * size + x) * 4) as usize;
+            [rgba[at], rgba[at + 1], rgba[at + 2], rgba[at + 3]]
+        };
+        assert_eq!(pixel(&plain, 2, 2), pixel(&badged, 2, 2), "the rest stays");
+        assert_ne!(
+            pixel(&plain, size - 4, size - 17),
+            pixel(&badged, size - 4, size - 17),
+            "the corner has the badge"
+        );
+        assert_eq!(pixel(&badged, size - 4, size - 17)[3], 255);
+    }
+
     #[test]
     fn the_log_starts_again_past_its_limit() {
         use std::io::Write;
