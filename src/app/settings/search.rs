@@ -79,7 +79,8 @@ impl App {
         self.send_question(ui, d);
 
         section(ui, &t!("settings-meaning-section"));
-        // The state as a badge tinted with its color.
+        // The state in words after a dot of its color, without a box that
+        // could read as a button.
         let (dot, text) = self.meaning_state();
         row(ui, |ui| {
             ui.add_space(space::MEDIUM);
@@ -88,16 +89,8 @@ impl App {
             } else {
                 text_shade(dot, ui.visuals().dark_mode)
             };
-            Frame::new()
-                .fill(color.gamma_multiply(0.12))
-                .corner_radius(CornerRadius::same(radius::ROUND))
-                .inner_margin(Margin::symmetric(10, 4))
-                .show(ui, |ui| {
-                    row(ui, |ui| {
-                        icons::glyph(ui, Icon::Dot, 10.0, color);
-                        ui.label(txt(&text, size::CONTROL, Some(color)));
-                    });
-                });
+            icons::glyph(ui, Icon::Dot, 10.0, color);
+            ui.label(txt(&text, size::CONTROL, Some(color)));
         });
         ui.add_space(space::TINY);
         // Without a search model in use, the ones found on this PC come first.
