@@ -121,7 +121,7 @@ pub(crate) fn selected_card(accent: Color32, dark: bool) -> Color32 {
 /// The faint edge around a grid card in the dark theme, where its shadow
 /// doesn't show; none in the light theme.
 pub(crate) fn card_edge(dark: bool) -> Option<Color32> {
-    dark.then(|| Color32::from_gray(46))
+    dark.then(|| Color32::from_gray(58))
 }
 
 /// How pictures are tinted: a little dimmer in the dark theme, so a bright
@@ -537,6 +537,7 @@ mod tests {
                 let backgrounds = [
                     ("panel", panel),
                     ("content", content),
+                    ("selected card", over(selected_card(a, dark), content)),
                     ("menu", v.window_fill),
                     ("field", v.text_edit_bg_color()),
                     ("selected row", selected_row),
@@ -601,7 +602,7 @@ mod tests {
             let kinds = [Kind::Text, Kind::Link, Kind::Image, Kind::Files].map(kind_color);
             for c in kinds.into_iter().chain(TAG_COLORS) {
                 let text = text_shade(c, dark);
-                let tint = if dark { 0.25 } else { 0.13 };
+                let tint = if dark { 0.3 } else { 0.13 };
                 for (place, background) in [
                     ("chip", over(c.gamma_multiply(0.14), content)),
                     ("card chip or tag", over(c.gamma_multiply(tint), content)),

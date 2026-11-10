@@ -223,7 +223,7 @@ impl App {
                 let c = tag_color(t);
                 let shade = text_shade(c, ui.visuals().dark_mode);
                 Frame::new()
-                    .fill(c.gamma_multiply(if ui.visuals().dark_mode { 0.25 } else { 0.13 }))
+                    .fill(c.gamma_multiply(if ui.visuals().dark_mode { 0.3 } else { 0.13 }))
                     .corner_radius(CornerRadius::same(radius::LARGE))
                     .inner_margin(Margin {
                         left: 10,

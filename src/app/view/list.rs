@@ -323,7 +323,7 @@ pub(super) fn paint_row(
             p.rect_filled(
                 av_rect,
                 CornerRadius::same(radius::MEDIUM),
-                c.gamma_multiply(if v.dark_mode { 0.25 } else { 0.13 }),
+                c.gamma_multiply(if v.dark_mode { 0.3 } else { 0.13 }),
             );
             let icon = match path.and_then(|p| p.extension()) {
                 Some(_) => Icon::File,
@@ -350,7 +350,7 @@ pub(super) fn paint_row(
             p.rect_filled(
                 av_rect,
                 CornerRadius::same(radius::MEDIUM),
-                c.gamma_multiply(if v.dark_mode { 0.25 } else { 0.13 }),
+                c.gamma_multiply(if v.dark_mode { 0.3 } else { 0.13 }),
             );
             icons::paint(
                 &p,

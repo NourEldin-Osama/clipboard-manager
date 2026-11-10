@@ -535,7 +535,7 @@ fn paint_tags(ui: &Ui, rect: Rect, it: &Item, pad: f32, tags_top: f32, strip_top
         place(
             g.clone(),
             *c,
-            c.gamma_multiply(if v.dark_mode { 0.25 } else { 0.13 }),
+            c.gamma_multiply(if v.dark_mode { 0.3 } else { 0.13 }),
         );
     }
     if shown < galleys.len() {
