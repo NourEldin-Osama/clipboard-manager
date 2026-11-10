@@ -489,7 +489,7 @@ pub(super) fn paint_row(
 const NUMBER_CAP: f32 = 20.0;
 
 /// How tall the fade at the end of the popup's list is.
-const FADE_HEIGHT: f32 = 28.0;
+const FADE_HEIGHT: f32 = 16.0;
 
 /// A fade at the bottom of a scrolled list or grid while it goes on below,
 /// into the panel's color behind it.
