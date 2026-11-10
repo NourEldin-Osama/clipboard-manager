@@ -80,10 +80,18 @@ pub(super) fn segmented<T: PartialEq + Copy, L: AsRef<str>>(
                         ui.visuals().text_color()
                     }),
                 );
+                // The chosen one has the accent's edge as well as its text, so
+                // it stands out from the track at a glance.
+                let edge = if sel {
+                    Stroke::new(1.0, accent().gamma_multiply(0.55))
+                } else {
+                    Stroke::NONE
+                };
                 let b = egui::Button::new(text)
                     .frame_when_inactive(sel)
                     .corner_radius(CornerRadius::same(radius::SMALL))
-                    .fill(if sel { face } else { Color32::TRANSPARENT });
+                    .fill(if sel { face } else { Color32::TRANSPARENT })
+                    .stroke(edge);
                 if ui.add(b).clicked() && !sel {
                     *value = *v;
                     changed = true;
