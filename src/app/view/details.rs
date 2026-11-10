@@ -77,12 +77,15 @@ fn reading_text(ui: &mut Ui, text: &str) {
     });
 }
 
+/// How tall the actions under the content are.
+const BUTTON_HEIGHT: f32 = 34.0;
+
 /// The details' main button: the main way to put the item back, with its
 /// key, and an arrow to the other ways when there are any. A long program
 /// name is cut short when the header has no room for it.
 fn main_button(ui: &mut Ui, ways: &[CopyWay]) -> Option<Paste> {
     let (main, others) = ways.split_first()?;
-    let height = 34.0;
+    let height = BUTTON_HEIGHT;
     let arrow_w = if others.is_empty() { 0.0 } else { 30.0 };
     let key_color = theme::on_button(190);
     let keys = ui.fonts_mut(|f| {
@@ -543,11 +546,12 @@ impl App {
             let pin = if it.pinned {
                 let shade = text_shade(accent(), ui.visuals().dark_mode);
                 let job = pill_job(&t!("details-unpin"), size::CONTROL, shade, None);
-                let r = icons::pill(ui, Icon::PinFilled, job, accent(), true);
+                let r = icons::tinted_button(ui, Icon::PinFilled, job, accent(), BUTTON_HEIGHT);
                 tip(r, &hint(&t!("details-unpin"), &keys.pin))
             } else {
                 let tip = hint(&t!("details-pin-keep"), &keys.pin);
-                icon_button_ex(ui, Icon::Pin, &tip, Vec2::splat(34.0), 16.0, None, None)
+                let size = Vec2::splat(BUTTON_HEIGHT);
+                icon_button_ex(ui, Icon::Pin, &tip, size, 16.0, None, None)
             };
             if pin.clicked() {
                 self.run(Command::Pin(it.id));

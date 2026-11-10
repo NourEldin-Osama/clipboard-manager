@@ -498,6 +498,37 @@ fn pill_with(
     resp
 }
 
+/// A button tinted with `color`, `height` tall with the corners of a
+/// button: the quieter partner of a filled button beside it.
+pub(super) fn tinted_button(
+    ui: &mut Ui,
+    icon: Icon,
+    job: egui::text::LayoutJob,
+    color: Color32,
+    height: f32,
+) -> egui::Response {
+    let g = ui.fonts_mut(|f| f.layout_job(job));
+    let pad = 14.0;
+    let size = Vec2::new(pad + 14.0 + 6.0 + g.size().x + pad, height);
+    let (rect, resp) = ui.allocate_exact_size(size, Sense::click());
+    let tint = if resp.hovered() { 0.2 } else { 0.13 };
+    ui.painter().rect_filled(
+        rect,
+        CornerRadius::same(radius::MEDIUM),
+        color.gamma_multiply(tint),
+    );
+    let shade = view::text_shade(color, ui.visuals().dark_mode);
+    paint_icon_text(
+        ui.painter(),
+        rect.shrink2(Vec2::new(pad, 0.0)),
+        icon,
+        14.0,
+        g,
+        shade,
+    );
+    resp
+}
+
 /// An icon as an inline widget; in a centred row it sits on the midline.
 pub(super) fn glyph(ui: &mut Ui, icon: Icon, size: f32, color: Color32) -> egui::Response {
     let (rect, resp) = ui.allocate_exact_size(Vec2::splat(size), Sense::hover());
