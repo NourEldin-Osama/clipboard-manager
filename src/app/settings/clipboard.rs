@@ -116,6 +116,7 @@ impl App {
                             ))
                             .fill(button_fill(RED)),
                         )
+                        .react(ui)
                         .clicked()
                     {
                         clear = true;

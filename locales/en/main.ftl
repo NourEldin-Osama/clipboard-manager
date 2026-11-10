@@ -566,6 +566,8 @@ settings-read-windows-note = Uses the languages installed in Windows.
 settings-servers-none = No servers yet. Add the server your models run on: llama.cpp, Ollama, LM Studio, vLLM, Unsloth, OpenRouter or another one.
 settings-server-add = Add server
 settings-server-edit = Edit
+settings-server-not-saved = Not saved
+settings-server-discard = Discard
 settings-server-models-count =
     { $count ->
         [one] 1 model
@@ -832,3 +834,4 @@ tray-show = Show Clipboard Manager
 tray-pause-recording = Pause recording
 tray-resume-recording = Resume recording
 tray-quit = Quit
+tray-tooltip-paused = Clipboard Manager · Recording paused

@@ -278,6 +278,8 @@ struct Toast {
     secret: Option<String>,
     /// Shown in the note at the screen's corner, not in the window (D56).
     on_screen: bool,
+    /// Drawn in the window at least once: it has slid in.
+    drawn: bool,
     /// Tells the messages apart, for egui.
     id: u64,
 }
@@ -395,6 +397,10 @@ enum ShortcutField {
 
 /// How long a deleted item can still be brought back.
 const UNDO_FOR: Duration = Duration::from_secs(8);
+/// How long rows and cards glide after a delete, and the time each glide
+/// takes.
+const GLIDE_FOR: Duration = Duration::from_millis(400);
+const GLIDE_TIME: f32 = 0.2;
 /// The key that undoes a delete while its message shows.
 const UNDO_KEYS: &str = "Ctrl+Z";
 /// How long a message that names a key stays.
@@ -532,6 +538,9 @@ pub struct App {
     app_icon: Option<egui::TextureHandle>,
     /// Alt+C was pressed and its copy hasn't come yet.
     skip_next_armed: bool,
+    /// Until when rows and cards glide to their new places: after a delete
+    /// or its Undo, so the gap closes instead of jumping.
+    glide_until: Option<Instant>,
     pending_delete: Option<PendingDelete>,
     /// When deleting by age runs next; `None` runs it at the next frame.
     next_age_prune: Option<Instant>,
@@ -608,6 +617,9 @@ pub struct App {
     confirm: Option<Confirm>,
     /// The server being added or edited in Settings.
     server_editor: Option<ServerEditor>,
+    /// Servers' editors left with changes not saved, by server id (D61):
+    /// kept until Save, Discard or quitting the app.
+    server_drafts: HashMap<u32, ServerEditor>,
     /// A choice that would send to a server outside this PC, waiting for
     /// the user's yes.
     pending_send: Option<PendingSend>,
@@ -771,6 +783,7 @@ impl App {
             note_quiet: false,
             app_icon: None,
             skip_next_armed: false,
+            glide_until: None,
             pending_delete: None,
             next_age_prune: None,
             search_retry: None,
@@ -823,6 +836,7 @@ impl App {
             settings_page: SettingsPage::Search,
             confirm: None,
             server_editor: None,
+            server_drafts: HashMap::new(),
             pending_send: None,
             list_view: (0.0, 0.0),
             popup_list_view: (0.0, 0.0),
@@ -1100,6 +1114,8 @@ impl App {
         let paused = !self.flags.enabled.load(Ordering::SeqCst);
         let look = if self.skip_next_armed {
             TrayLook::SkipNext
+        } else if paused {
+            TrayLook::Paused
         } else {
             TrayLook::Recording
         };
@@ -1365,6 +1381,7 @@ impl App {
             keys: None,
             secret: None,
             on_screen: false,
+            drawn: false,
             id: self.toast_seq,
         });
         self.toasts.last_mut().expect("a message was just added")
@@ -2319,6 +2336,7 @@ impl App {
         let Some(removed) = self.library.take(id) else {
             return;
         };
+        self.glide();
         self.loader.forget(id, false);
         self.drop_stale_tag_filter();
         // Keep the selection on a neighbour: the row that takes its place.
@@ -2361,6 +2379,7 @@ impl App {
     }
 
     fn undo_delete(&mut self) {
+        self.glide();
         self.toasts.retain(|t| !t.undoes());
         let Some(pending) = self.pending_delete.take() else {
             return;
@@ -2443,7 +2462,13 @@ impl App {
     /// Deletes every item of `ids`; one Undo brings them all back.
     /// Takes `ids` out of the history in memory, the last first, so each
     /// comes back in its place on Undo.
+    /// Rows and cards glide to their new places for a moment.
+    fn glide(&mut self) {
+        self.glide_until = Some(Instant::now() + GLIDE_FOR);
+    }
+
     fn take_items(&mut self, ids: &[u64]) -> Vec<Removed> {
+        self.glide();
         let place: HashMap<u64, usize> = self
             .library
             .items()

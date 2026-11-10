@@ -107,10 +107,7 @@ impl App {
             let typing = focused.is_some_and(|id| TextEditState::load(ctx, id).is_some());
             let was_typing = std::mem::replace(&mut self.settings_typing, typing);
             let busy = self.recording.is_some() || egui::Popup::is_any_open(ctx) || was_typing;
-            if !busy
-                && ctx.input(|i| i.key_pressed(Key::Escape))
-                && self.server_editor.take().is_none()
-            {
+            if !busy && ctx.input(|i| i.key_pressed(Key::Escape)) && !self.stash_server_editor() {
                 self.close_settings(ctx);
             }
             return;

@@ -621,6 +621,15 @@ impl App {
         // A right-click, or Shift+F10 on the selected row, opens a menu.
         let mut open_menu = None;
         let menu_key = self.menu_by_key;
+        // After a delete the rows below glide up into the gap.
+        let moving = ui.ctx().style_of(ui.ctx().theme()).animation_time > 0.0;
+        let glide = if moving && self.glide_until.is_some_and(|t| Instant::now() < t) {
+            GLIDE_TIME
+        } else {
+            0.0
+        };
+        // The hover buttons' tips name their keys.
+        let keys = self.cfg.keys.clone();
         let frame = ui.ctx().cumulative_pass_nr();
         let (library, results, thumbs, loader, selected, seen, programs, marked) = (
             &self.library,
@@ -651,8 +660,16 @@ impl App {
                 if ys[i] + h < viewport.min.y || ys[i] > viewport.max.y {
                     continue;
                 }
+                let top = match l {
+                    Line::Row(r) => ui.ctx().animate_value_with_time(
+                        egui::Id::unique(("row-y", results[*r].id)),
+                        ys[i],
+                        glide,
+                    ),
+                    Line::Header(..) => ys[i],
+                };
                 let rect =
-                    Rect::from_min_size(Pos2::new(left, origin.y + ys[i]), Vec2::new(width, h));
+                    Rect::from_min_size(Pos2::new(left, origin.y + top), Vec2::new(width, h));
                 match l {
                     Line::Header(label, n) => paint_header(ui, rect, *label, *n),
                     Line::Row(r) => {
@@ -715,14 +732,22 @@ impl App {
                             // Hover actions replace the time at the right edge;
                             // Delete keeps apart from the others.
                             let pin = if it.pinned {
-                                (Icon::PinFilled, t!("item-unpin"))
+                                (Icon::PinFilled, hint(&t!("item-unpin"), &keys.pin))
                             } else {
-                                (Icon::Pin, t!("item-pin"))
+                                (Icon::Pin, hint(&t!("item-pin"), &keys.pin))
                             };
                             let mut buttons = vec![
-                                (Icon::Delete, t!("item-delete"), Command::Delete(it.id)),
+                                (
+                                    Icon::Delete,
+                                    hint(&t!("item-delete"), &keys.delete),
+                                    Command::Delete(it.id),
+                                ),
                                 (pin.0, pin.1, Command::Pin(it.id)),
-                                (Icon::Copy, t!("item-copy"), Command::Copy(it.id, Paste::No)),
+                                (
+                                    Icon::Copy,
+                                    hint(&t!("item-copy"), &keys.copy_only),
+                                    Command::Copy(it.id, Paste::No),
+                                ),
                             ];
                             if can_open {
                                 buttons.push((

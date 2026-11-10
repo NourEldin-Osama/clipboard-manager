@@ -265,12 +265,12 @@ use; then the look, motion and smaller changes; and the README, bug reports and 
 - [x] 18.4 Image rows: "Image" or the read text, then the size
 
 ### Phase 19. Motion and smaller changes
-- [ ] 19.1 Deleted rows and cards fade out and the gap closes; messages slide in and out
-- [ ] 19.2 Filled buttons react to the pointer and to a press
-- [ ] 19.3 Nothing moves when Windows' "Animation effects" is off
-- [ ] 19.4 The tray icon turns gray while recording is paused, and its tooltip says so (D59)
-- [ ] 19.5 The hover buttons' tips name their keys
-- [ ] 19.6 A server's editor keeps your draft (D61)
+- [x] 19.1 Deleted rows and cards fade out and the gap closes; messages slide in and out
+- [x] 19.2 Filled buttons react to the pointer and to a press
+- [x] 19.3 Nothing moves when Windows' "Animation effects" is off
+- [x] 19.4 The tray icon turns gray while recording is paused, and its tooltip says so (D59)
+- [x] 19.5 The hover buttons' tips name their keys
+- [x] 19.6 A server's editor keeps your draft (D61)
 
 ### Phase 20. README, bug reports and 0.7.0
 - [ ] 20.1 README and README_AR open with one line, the download, a screenshot and three benefits (texts shown to you first)

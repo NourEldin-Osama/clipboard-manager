@@ -469,9 +469,18 @@ impl App {
             note(ui, &t!("settings-servers-none"));
         }
         let mut edit = None;
+        let mut discard = None;
         let weak = ui.visuals().weak_text_color();
         let strong = ui.visuals().strong_text_color();
-        for server in &d.servers {
+        // A server added and left before its first Save shows too.
+        let new: Vec<Server> = self
+            .server_drafts
+            .values()
+            .filter(|e| !d.servers.iter().any(|s| s.id == e.server.id))
+            .map(|e| e.server.clone())
+            .collect();
+        for server in d.servers.iter().chain(&new) {
+            let drafted = self.server_drafts.contains_key(&server.id);
             ui.push_id(server.id, |ui| {
                 Frame::new()
                     .inner_margin(Margin::symmetric(10, 6))
@@ -481,13 +490,32 @@ impl App {
                             ui.set_min_height(30.0);
                             icons::logo(ui, server.kind, 20.0, strong);
                             ui.add_space(space::TINY);
-                            lbl(ui, server.label(), size::BODY, strong);
+                            let name = if server.label().trim().is_empty() {
+                                t!("settings-server-add-title")
+                            } else {
+                                server.label().to_string()
+                            };
+                            lbl(ui, &name, size::BODY, strong);
                             far(ui, |ui| {
                                 if ui
                                     .button(txt(&t!("settings-server-edit"), size::CONTROL, None))
                                     .clicked()
                                 {
                                     edit = Some(server.clone());
+                                }
+                                // Left with changes: they wait here (D61).
+                                if drafted {
+                                    if ui
+                                        .button(txt(
+                                            &t!("settings-server-discard"),
+                                            size::CONTROL,
+                                            None,
+                                        ))
+                                        .clicked()
+                                    {
+                                        discard = Some(server.id);
+                                    }
+                                    chip(ui, t!("settings-server-not-saved"), AMBER);
                                 }
                                 let count = server.models.len();
                                 lbl(
@@ -511,9 +539,40 @@ impl App {
                 self.add_server(d);
             }
         });
-        if let Some(server) = edit {
-            self.server_editor = Some(ServerEditor::new(server, false));
+        if let Some(id) = discard {
+            self.server_drafts.remove(&id);
         }
+        if let Some(server) = edit {
+            let editor = self
+                .server_drafts
+                .remove(&server.id)
+                .unwrap_or_else(|| ServerEditor::new(server, false));
+            self.server_editor = Some(editor);
+        }
+    }
+
+    /// Puts the open server editor away. Changes not saved stay as a draft,
+    /// shown on the server's row until Save or Discard (D61). True if an
+    /// editor was open.
+    pub(in crate::app) fn stash_server_editor(&mut self) -> bool {
+        let Some(editor) = self.server_editor.take() else {
+            return false;
+        };
+        let config = self.draft.as_ref().unwrap_or(&self.cfg);
+        let changed = match config.servers.iter().find(|s| s.id == editor.server.id) {
+            Some(saved) => *saved != editor.server,
+            None => {
+                editor.server
+                    != Server {
+                        id: editor.server.id,
+                        ..Default::default()
+                    }
+            }
+        };
+        if changed {
+            self.server_drafts.insert(editor.server.id, editor);
+        }
+        true
     }
 
     pub(super) fn add_server(&mut self, d: &Config) {
@@ -1105,6 +1164,7 @@ impl App {
                         .fill(super::view::button_fill(accent()))
                         .min_size(Vec2::new(0.0, 32.0)),
                     )
+                    .react(ui)
                     .clicked()
                 {
                     save = true;
@@ -1186,8 +1246,9 @@ impl App {
             *d = candidate;
             return;
         }
-        if !close {
-            self.server_editor = Some(editor);
+        self.server_editor = Some(editor);
+        if close {
+            self.stash_server_editor();
         }
     }
 }

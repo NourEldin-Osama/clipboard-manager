@@ -609,6 +609,8 @@ settings-read-windows-note = يستخدم اللغات المثبتة في Windo
 settings-servers-none = لا توجد خوادم بعد. أضف الخادم الذي تعمل عليه نماذجك: llama.cpp أو Ollama أو LM Studio أو vLLM أو Unsloth أو OpenRouter أو غيرها.
 settings-server-add = إضافة خادم
 settings-server-edit = تعديل
+settings-server-not-saved = لم يُحفظ
+settings-server-discard = تجاهل التغييرات
 settings-server-models-count =
     { $count ->
         [one] نموذج واحد
@@ -908,3 +910,4 @@ tray-show = إظهار مدير الحافظة
 tray-pause-recording = إيقاف التسجيل مؤقتًا
 tray-resume-recording = استئناف التسجيل
 tray-quit = خروج
+tray-tooltip-paused = مدير الحافظة · التسجيل متوقف
