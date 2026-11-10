@@ -81,11 +81,8 @@ impl App {
         if let Some(app) = it.app.as_deref() {
             if !self.cfg.rules.iter().any(|r| r.skips_app(app)) {
                 // The program's own name once it is known, else its file name.
-                let name = it
-                    .program
-                    .as_deref()
-                    .and_then(|p| self.programs.get(p))
-                    .map_or_else(|| app.to_string(), |p| p.name.clone());
+                let program = it.program.as_deref().and_then(|p| self.programs.get(p));
+                let name = crate::app::programs::shown_name(app, program);
                 let text = t!("item-ignore-app", app = name.as_str());
                 rule.push(entry(text, "", Action::IgnoreApp(app.to_string())));
             }

@@ -92,11 +92,43 @@ fn describe(path: &Path) -> Description {
     }
 }
 
-/// The program's file name without its extension.
+/// The program's file name as a name, as `tidy` gives it.
 fn file_name(path: &Path) -> String {
     path.file_stem()
-        .map(|name| name.to_string_lossy().into_owned())
+        .map(|name| tidy(&name.to_string_lossy()))
         .unwrap_or_default()
+}
+
+/// The name a copy's program shows: its own name once it has been read,
+/// else its file name (`app`) as `tidy` gives it.
+pub(super) fn shown_name(app: &str, program: Option<&Program>) -> String {
+    program.map_or_else(|| tidy(app), |p| p.name.clone())
+}
+
+/// A program's file name as a name: without `.exe`, starting with a
+/// capital, and in small letters after it when the whole name is in
+/// capitals. "OUTLOOK.EXE" becomes "Outlook" and "chrome.exe" "Chrome".
+pub(super) fn tidy(file: &str) -> String {
+    let stem = match file.len().checked_sub(4) {
+        Some(cut) if file.is_char_boundary(cut) && file[cut..].eq_ignore_ascii_case(".exe") => {
+            &file[..cut]
+        }
+        _ => file,
+    };
+    // Short names in capitals are usually letters said one by one.
+    let letters = stem.chars().filter(|c| c.is_alphabetic()).count();
+    let in_capitals = letters > 3 && !stem.chars().any(char::is_lowercase);
+    let mut chars = stem.chars();
+    let Some(first) = chars.next() else {
+        return String::new();
+    };
+    let rest: String = chars.collect();
+    let rest = if in_capitals {
+        rest.to_lowercase()
+    } else {
+        rest
+    };
+    first.to_uppercase().chain(rest.chars()).collect()
 }
 
 #[cfg(windows)]
@@ -250,6 +282,24 @@ unsafe fn bitmap_pixels(
         );
         DeleteDC(dc);
         (rows == height).then_some((width as usize, height as usize, pixels))
+    }
+}
+
+#[cfg(test)]
+mod name_tests {
+    use super::*;
+
+    #[test]
+    fn file_names_read_as_names() {
+        assert_eq!(tidy("OUTLOOK.EXE"), "Outlook");
+        assert_eq!(tidy("chrome.exe"), "Chrome");
+        assert_eq!(tidy("SnippingTool.exe"), "SnippingTool");
+        assert_eq!(tidy("Teams.exe"), "Teams");
+        // Letters said one by one keep their capitals.
+        assert_eq!(tidy("CMD.EXE"), "CMD");
+        // Only a last `.exe` goes.
+        assert_eq!(tidy("app.exe.config"), "App.exe.config");
+        assert_eq!(tidy(""), "");
     }
 }
 

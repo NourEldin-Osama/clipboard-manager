@@ -1829,7 +1829,7 @@ impl App {
         program
             .and_then(|p| self.programs.get(p))
             .map(|p| p.name.clone())
-            .or_else(|| app.map(str::to_string))
+            .or_else(|| app.map(programs::tidy))
     }
 
     /// Adds a copy to the history, or moves its duplicate to the top.

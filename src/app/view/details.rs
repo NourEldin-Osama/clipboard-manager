@@ -431,11 +431,8 @@ impl App {
         }
         if let Some(app) = &it.app {
             // The program's own name once it is known, else its file name.
-            let name = it
-                .program
-                .as_deref()
-                .and_then(|p| self.programs.get(p))
-                .map_or_else(|| app.clone(), |p| p.name.clone());
+            let program = it.program.as_deref().and_then(|p| self.programs.get(p));
+            let name = crate::app::programs::shown_name(app, program);
             row(ui, |ui| {
                 ui.label(txt(
                     &t!("details-copied-from", app = name.as_str()),

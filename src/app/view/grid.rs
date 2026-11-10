@@ -337,7 +337,7 @@ fn paint_footer(
     }
     let name = match (program, &it.app) {
         (Some(program), _) => program.name.clone(),
-        (None, Some(app)) => app.clone(),
+        (None, Some(app)) => crate::app::programs::tidy(app),
         (None, None) => it.kind.label(),
     };
     let start = flip(
