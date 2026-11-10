@@ -218,7 +218,8 @@ pub(super) fn thumbs_to_drop(
 /// `hot` while the pointer is over the row: its hover buttons then take the
 /// right edge, so the time and badges are left out. `numbered` rows leave
 /// room at the start for the numbers of quick paste, and show `number`.
-/// `dated` rows sit under a day header, which gives their day.
+/// `dated` rows sit under a day header, which gives their day; rows
+/// `under_pinned` sit under the Pinned header, which says they are pinned.
 #[allow(clippy::too_many_arguments)]
 pub(super) fn paint_row(
     ui: &Ui,
@@ -234,7 +235,9 @@ pub(super) fn paint_row(
     numbered: bool,
     number: Option<usize>,
     dated: bool,
+    under_pinned: bool,
 ) {
+    let show_pin = it.pinned && !under_pinned;
     let v = ui.visuals();
     let p = ui.painter_at(rect);
     let a = accent();
@@ -366,7 +369,7 @@ pub(super) fn paint_row(
     // On one line the pin and the relevance bars sit before the time, so
     // the text ends before them.
     let badges = if compact || sub.is_empty() {
-        let pin = if it.pinned { 18.0 } else { 0.0 };
+        let pin = if show_pin { 18.0 } else { 0.0 };
         let bars = if relevance_level(hit).is_some() {
             22.0
         } else {
@@ -465,7 +468,7 @@ pub(super) fn paint_row(
     if one_line_row {
         ix -= 56.0;
     }
-    if it.pinned {
+    if show_pin {
         icons::paint(
             &p,
             m(Rect::from_center_size(
@@ -731,6 +734,7 @@ impl App {
                             in_popup,
                             (in_popup && *r < 9).then_some(*r + 1),
                             day_headers && Group::of(it, pinned_first) != Group::Pinned,
+                            day_headers && Group::of(it, pinned_first) == Group::Pinned,
                         );
                         if resp.clicked() {
                             // Ctrl and Shift select several, but not in the popup.
