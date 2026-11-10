@@ -248,7 +248,7 @@ use; then the look, motion and smaller changes; and the README, bug reports and 
 - [x] 16.2 Dividers between the groups of the right-click menu and the model menu, in a soft line color; an edge around the quick popup like the menus have
 - [x] 16.3 Rows with no day header above them say "Yesterday" instead of only the time
 - [x] 16.4 The search server's real state: a red dot with Try again while requests fail, and the app tries again by itself; pictures whose text couldn't be read say so, with Try again
-- [ ] 16.5 The log: no user name or password in server addresses, a new file after 10 MB; the bug form and CONTRIBUTING point to Settings, About
+- [x] 16.5 The log: no user name or password in server addresses, a new file after 10 MB; the bug form and CONTRIBUTING point to Settings, About
 - [ ] 16.6 The change log and version 0.6.1
 
 ### Phase 17. Messages

@@ -4,7 +4,7 @@ Thanks for helping! Bug reports, ideas and pull requests are all welcome.
 
 ## Reporting
 
-- **Bugs and ideas:** open an [issue](https://github.com/NourEldin-Osama/clipboard-manager/issues/new/choose). For bugs, include the version (*Settings → General → Updates*) and the relevant lines of the log (*Settings → Data & privacy → Log file*).
+- **Bugs and ideas:** open an [issue](https://github.com/NourEldin-Osama/clipboard-manager/issues/new/choose). For bugs, include the version (*Settings → About → Version*) and the relevant lines of the log (*Settings → About → Log file*).
 - **Security problems:** report them privately; see [SECURITY.md](SECURITY.md).
 
 ## Building
