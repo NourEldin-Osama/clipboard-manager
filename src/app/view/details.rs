@@ -26,9 +26,9 @@ pub(crate) fn reveal(p: &std::path::Path) -> std::io::Result<()> {
     started.map(|_| ())
 }
 
-/// What the facts and the tags below the content take, about: the content
-/// scrolls above them.
-const FACTS_HEIGHT: f32 = 84.0;
+/// What the actions, the facts and the tags below the content take, about:
+/// the content scrolls above them.
+const FACTS_HEIGHT: f32 = 130.0;
 
 /// Between the facts of the details.
 const FACTS_GAP: &str = "  ·  ";
@@ -393,11 +393,11 @@ impl App {
             self.empty_details(ui);
             return;
         };
-        // Header: what you can do, at the far end. The copied content comes
-        // first below it, then one line of facts and the tags.
-        row(ui, |ui| {
-            if closeable
-                && icons::icon_button_ex(
+        // Back, while the details cover the list. The copied content comes
+        // first, then what you can do with it, one line of facts and the tags.
+        if closeable {
+            row(ui, |ui| {
+                if icons::icon_button_ex(
                     ui,
                     Icon::Back,
                     &t!("details-close"),
@@ -407,62 +407,11 @@ impl App {
                     None,
                 )
                 .clicked()
-            {
-                self.details_open = false;
-            }
-            far(ui, |ui| {
-                let keys = self.cfg.keys.clone();
-                if icons::icon_button(ui, Icon::Delete, &hint(&t!("details-delete"), &keys.delete))
-                    .clicked()
                 {
-                    self.run(Command::Delete(it.id));
-                }
-                // A pinned item says so on its pin button; under the pointer
-                // the button says what a click does. It keeps the width of
-                // the longer word, so it stays in place.
-                let pin = if it.pinned {
-                    let id = egui::Id::unique("details-pin");
-                    let pointed = ui
-                        .data(|d| d.get_temp::<Rect>(id))
-                        .is_some_and(|r| ui.rect_contains_pointer(r));
-                    let (pinned, unpin) = (t!("details-pinned"), t!("details-unpin"));
-                    let width = icons::pill_width(ui, &[&pinned, &unpin], size::CONTROL);
-                    let shade = text_shade(accent(), ui.visuals().dark_mode);
-                    let label = if pointed { &unpin } else { &pinned };
-                    let job = pill_job(label, size::CONTROL, shade, None);
-                    let r = icons::pill_at_least(ui, Icon::PinFilled, job, accent(), true, width);
-                    ui.data_mut(|d| d.insert_temp(id, r.rect));
-                    tip(r, &hint(&t!("details-unpin"), &keys.pin))
-                } else {
-                    let tip = hint(&t!("details-pin-keep"), &keys.pin);
-                    icon_button_ex(ui, Icon::Pin, &tip, Vec2::splat(34.0), 16.0, None, None)
-                };
-                if pin.clicked() {
-                    self.run(Command::Pin(it.id));
-                }
-                if it.kind == Kind::Image
-                    && icons::icon_button(ui, Icon::Save, &t!("details-save-image")).clicked()
-                {
-                    self.save_image_as(&it);
-                }
-                if let Some(p) = place_of(&it) {
-                    if icons::icon_button(ui, Icon::Folder, &t!("details-show-in-folder")).clicked()
-                    {
-                        self.show_in_folder(p);
-                    }
-                }
-                if it.kind == Kind::Link
-                    && icons::icon_button(ui, Icon::Browser, &t!("details-open-in-browser"))
-                        .clicked()
-                {
-                    ctx.open_url(egui::OpenUrl::new_tab(it.text.trim()));
-                }
-                let ways = self.ways_to_copy(&it);
-                if let Some(paste) = main_button(ui, &ways) {
-                    self.run(Command::Copy(it.id, paste));
+                    self.details_open = false;
                 }
             });
-        });
+        }
         ui.add_space(space::SMALL);
         // Long content scrolls above the facts and tags, which stay in view.
         let room = (ui.available_height() - FACTS_HEIGHT).max(FACTS_HEIGHT);
@@ -581,6 +530,52 @@ impl App {
                 }
             });
         ui.add_space(space::MEDIUM);
+        // The actions right under the content, the main one first and Delete
+        // at the far end, apart from the rest.
+        row(ui, |ui| {
+            let keys = self.cfg.keys.clone();
+            let ways = self.ways_to_copy(&it);
+            if let Some(paste) = main_button(ui, &ways) {
+                self.run(Command::Copy(it.id, paste));
+            }
+            // A pinned item's pin button says what a click does, with the
+            // filled pin of the pinned state.
+            let pin = if it.pinned {
+                let shade = text_shade(accent(), ui.visuals().dark_mode);
+                let job = pill_job(&t!("details-unpin"), size::CONTROL, shade, None);
+                let r = icons::pill(ui, Icon::PinFilled, job, accent(), true);
+                tip(r, &hint(&t!("details-unpin"), &keys.pin))
+            } else {
+                let tip = hint(&t!("details-pin-keep"), &keys.pin);
+                icon_button_ex(ui, Icon::Pin, &tip, Vec2::splat(34.0), 16.0, None, None)
+            };
+            if pin.clicked() {
+                self.run(Command::Pin(it.id));
+            }
+            if it.kind == Kind::Image
+                && icons::icon_button(ui, Icon::Save, &t!("details-save-image")).clicked()
+            {
+                self.save_image_as(&it);
+            }
+            if let Some(p) = place_of(&it) {
+                if icons::icon_button(ui, Icon::Folder, &t!("details-show-in-folder")).clicked() {
+                    self.show_in_folder(p);
+                }
+            }
+            if it.kind == Kind::Link
+                && icons::icon_button(ui, Icon::Browser, &t!("details-open-in-browser")).clicked()
+            {
+                ctx.open_url(egui::OpenUrl::new_tab(it.text.trim()));
+            }
+            far(ui, |ui| {
+                if icons::icon_button(ui, Icon::Delete, &hint(&t!("details-delete"), &keys.delete))
+                    .clicked()
+                {
+                    self.run(Command::Delete(it.id));
+                }
+            });
+        });
+        ui.add_space(space::SMALL);
         // One line of facts: when, how long, and where it came from.
         let mut facts = vec![self.meta_line(&it)];
         if let Some(app) = &it.app {
