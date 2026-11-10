@@ -246,7 +246,11 @@ impl App {
                     self.run(Command::CopyText(text.to_string()));
                 }
             }
-            Action::IgnoreApp(app) => self.ignore_app(&app),
+            Action::IgnoreApp(app) => {
+                let program = it.program.as_deref().and_then(|p| self.programs.get(p));
+                let name = crate::app::programs::shown_name(&app, program);
+                self.ignore_app(&app, &name);
+            }
             Action::Delete => self.run(Command::Delete(it.id)),
             Action::CopyGroup(paste) => self.run(Command::CopyTogether(self.group(), paste)),
             Action::PinGroup => self.run(Command::PinGroup(self.group())),

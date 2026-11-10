@@ -494,6 +494,8 @@ pub(super) enum Command {
     ReadAgain(u64),
     /// Opens Settings at a page.
     OpenSettings(settings::SettingsPage),
+    /// Records copies from a program again: Undo after its rule was added.
+    RecordAppAgain(String),
 }
 
 /// Whether putting an item back on the clipboard also pastes it into the
@@ -1729,6 +1731,12 @@ impl App {
             Command::Import(paths) => self.import(paths),
             Command::ClearHistory => self.clear_history(),
             Command::UndoDelete => self.undo_delete(),
+            Command::RecordAppAgain(app) => {
+                let mut d = self.cfg.clone();
+                d.rules.retain(|r| !r.skips_app(&app));
+                let ctx = self.win.ctx.clone();
+                self.apply_settings(d, &ctx, false);
+            }
             Command::SaveSkipped(capture) => {
                 // Said first, so a warning the copy brings (the history 90%
                 // full) comes in front of it.
@@ -1868,9 +1876,9 @@ impl App {
         });
     }
 
-    /// Stops recording copies from `app`, with a rule the user can remove
-    /// in Settings.
-    fn ignore_app(&mut self, app: &str) {
+    /// Stops recording copies from `app`, shown as `name`, with a rule; the
+    /// message offers Undo, and the rule stays in Settings, Privacy.
+    fn ignore_app(&mut self, app: &str, name: &str) {
         let mut d = self.cfg.clone();
         d.rules.push(crate::rules::Rule {
             app: app.to_string(),
@@ -1878,7 +1886,8 @@ impl App {
         });
         let ctx = self.win.ctx.clone();
         self.apply_settings(d, &ctx, false);
-        self.toast_for(t!("toast-app-ignored", app = app), Duration::from_secs(6));
+        let toast = self.toast_with(t!("toast-app-ignored", app = name), Duration::from_secs(8));
+        toast.action = Some((t!("toast-undo"), Command::RecordAppAgain(app.to_string())));
     }
 
     /// The ways to put an item back, the main one first: paste into the
