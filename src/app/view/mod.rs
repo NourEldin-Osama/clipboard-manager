@@ -72,7 +72,8 @@ impl App {
                 .resizable(true)
                 .show_separator_line(false)
                 .default_size(ui.available_width() * 0.42)
-                .size_range(300.0..=900.0)
+                // Wide enough for a row's words, beside the details.
+                .size_range(400.0..=900.0)
                 .frame(
                     Frame::new()
                         .inner_margin(Margin {
