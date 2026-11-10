@@ -262,7 +262,7 @@ use; then the look, motion and smaller changes; and the README, bug reports and 
 - [ ] 18.1 Named sizes and colors, and a test against raw ones (D62)
 - [x] 18.2 Dark panels: Darker or Lighter, Lighter by default (D58)
 - [x] 18.3 Filter counts within the search results, filters with none dimmed, the result count in the popup
-- [ ] 18.4 Image rows: "Image" or the read text, then the size
+- [x] 18.4 Image rows: "Image" or the read text, then the size
 
 ### Phase 19. Motion and smaller changes
 - [ ] 19.1 Deleted rows and cards fade out and the gap closes; messages slide in and out

@@ -215,14 +215,9 @@ pub(super) fn subtitle(it: &Item) -> String {
 pub(super) fn subtitle_detail(it: &Item) -> String {
     match it.kind {
         Kind::Link => domain(&it.text).to_string(),
-        Kind::Image => {
-            let mut s = format!("{} × {}", it.width, it.height);
-            if let Some(o) = it.ocr.as_deref().filter(|o| !o.trim().is_empty()) {
-                let first: String = o.split_whitespace().take(8).collect::<Vec<_>>().join(" ");
-                s = format!("{s}  ·  {first}");
-            }
-            s
-        }
+        // The title is the read text, the file name or "Image": the size
+        // is what the second line adds, without repeating the text.
+        Kind::Image => format!("{} × {}", it.width, it.height),
         Kind::Files => {
             let n = it.text.lines().count();
             if n == 1 {
@@ -263,16 +258,16 @@ pub(super) fn subtitle_detail(it: &Item) -> String {
 /// What a screen reader says for an item's row or card: its kind, title,
 /// details, whether it is pinned, and when it was copied.
 pub(super) fn item_name(it: &Item) -> String {
-    let mut parts = vec![format!("{}: {}", it.kind.label(), row_title(it))];
-    let detail = match it.kind {
-        // An image's details repeat its title (its read text, or its size
-        // when it has none); its size is the one thing they add.
-        Kind::Image if it.ocr.as_deref().is_some_and(|o| !o.trim().is_empty()) => {
-            format!("{} × {}", it.width, it.height)
-        }
-        Kind::Image => String::new(),
-        _ => subtitle_detail(it),
+    let title = row_title(it);
+    // An image with no read text and no file name has the plain title
+    // "Image", which its kind already says.
+    let first = if it.kind == Kind::Image && title == t!("item-image") {
+        it.kind.label()
+    } else {
+        format!("{}: {}", it.kind.label(), title)
     };
+    let mut parts = vec![first];
+    let detail = subtitle_detail(it);
     if !detail.trim().is_empty() {
         parts.push(detail);
     }
