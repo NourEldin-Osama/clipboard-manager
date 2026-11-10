@@ -37,7 +37,8 @@ pub(super) fn highlighted(
     terms: &[String],
     font: FontId,
     color: Color32,
-    hit: Color32,
+    // The found words' color and background.
+    hit: (Color32, Color32),
     max_width: f32,
     max_rows: usize,
 ) -> LayoutJob {
@@ -49,8 +50,8 @@ pub(super) fn highlighted(
     };
     let hl = TextFormat {
         font_id: font,
-        color: hit,
-        background: accent().gamma_multiply(0.28),
+        color: hit.0,
+        background: hit.1,
         ..Default::default()
     };
     let lower = text.to_lowercase();

@@ -537,7 +537,7 @@ pub(super) fn one_line(
             terms,
             font,
             color,
-            accent().gamma_multiply(0.28),
+            theme::search_hit(ui.visuals().dark_mode),
             width,
             1,
             base,
@@ -551,7 +551,8 @@ pub(super) fn one_line(
             })
         })
     } else {
-        let hit = ui.visuals().strong_text_color();
+        let v = ui.visuals();
+        let hit = (v.strong_text_color(), theme::search_hit(v.dark_mode));
         ui.fonts_mut(|f| f.layout_job(highlighted(text, terms, font, color, hit, width, 1)))
     }
 }

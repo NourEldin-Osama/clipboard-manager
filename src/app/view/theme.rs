@@ -112,6 +112,12 @@ pub(crate) fn choice_track(dark: bool) -> (Color32, Color32) {
     }
 }
 
+/// The background of the words a search found: a warm tint, apart from the
+/// accent of the selection it can sit on.
+pub(crate) fn search_hit(dark: bool) -> Color32 {
+    AMBER.gamma_multiply(if dark { 0.40 } else { 0.30 })
+}
+
 /// The tint of a selected grid card: lighter than a selected row's, so the
 /// card's gray text stays readable on it.
 pub(crate) fn selected_card(accent: Color32, dark: bool) -> Color32 {
@@ -567,14 +573,14 @@ mod tests {
                         );
                     }
                 }
-                // A search hit: the strong text colour on the accent tint.
+                // A search hit: the strong text colour on its warm tint.
                 for (place, under) in [
                     ("list", panel),
                     ("card", content),
                     ("selected row", selected_row),
+                    ("selected card", over(selected_card(a, dark), content)),
                 ] {
-                    let ratio =
-                        contrast(v.strong_text_color(), over(a.gamma_multiply(0.28), under));
+                    let ratio = contrast(v.strong_text_color(), over(search_hit(dark), under));
                     assert!(
                         ratio >= 4.5,
                         "{theme:?}, {a:?}: a search hit in a {place} is {ratio:.2} to 1"

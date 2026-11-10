@@ -299,7 +299,7 @@ pub(super) fn paint_card(
                     terms,
                     font,
                     color,
-                    a.gamma_multiply(0.28),
+                    theme::search_hit(v.dark_mode),
                     body.width(),
                     rows,
                     None,
@@ -312,7 +312,7 @@ pub(super) fn paint_card(
                         terms,
                         font,
                         color,
-                        v.strong_text_color(),
+                        (v.strong_text_color(), theme::search_hit(v.dark_mode)),
                         body.width(),
                         rows,
                     ))
