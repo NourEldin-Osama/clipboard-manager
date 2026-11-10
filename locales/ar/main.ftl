@@ -11,6 +11,7 @@ time-minutes-ago =
         [one] منذ دقيقة
         [two] منذ دقيقتين
         [few] منذ { $count } دقائق
+        [many] منذ { $count } دقيقة
        *[other] منذ { $count } دقيقة
     }
 time-hours-ago =
@@ -18,6 +19,7 @@ time-hours-ago =
         [one] منذ ساعة
         [two] منذ ساعتين
         [few] منذ { $count } ساعات
+        [many] منذ { $count } ساعة
        *[other] منذ { $count } ساعة
     }
 time-yesterday = أمس
@@ -90,6 +92,7 @@ top-results =
         [one] نتيجة واحدة
         [two] نتيجتان
         [few] { $count } نتائج
+        [many] { $count } نتيجة
        *[other] { $count } نتيجة
     }
 list-show-weaker =
@@ -97,6 +100,7 @@ list-show-weaker =
         [one] إظهار نتيجة أضعف واحدة
         [two] إظهار نتيجتين أضعف
         [few] إظهار { $count } نتائج أضعف
+        [many] إظهار { $count } نتيجة أضعف
        *[other] إظهار { $count } نتيجة أضعف
     }
 list-empty-title = سيظهر سجل الحافظة هنا
@@ -166,6 +170,7 @@ download-retrying =
         [one] انقطع الاتصال. إعادة المحاولة بعد ثانية واحدة…
         [two] انقطع الاتصال. إعادة المحاولة بعد ثانيتين…
         [few] انقطع الاتصال. إعادة المحاولة بعد { $seconds } ثوانٍ…
+        [many] انقطع الاتصال. إعادة المحاولة بعد { $seconds } ثانية…
        *[other] انقطع الاتصال. إعادة المحاولة بعد { $seconds } ثانية…
     }
 update-skip = تخطَّ هذا الإصدار
@@ -197,6 +202,7 @@ status-items =
         [one] عنصر واحد
         [two] عنصران
         [few] { $count } عناصر
+        [many] { $count } عنصرًا
        *[other] { $count } عنصر
     }
 status-items-pinned =
@@ -204,14 +210,22 @@ status-items-pinned =
         [one] عنصر واحد
         [two] عنصران
         [few] { $count } عناصر
+        [many] { $count } عنصرًا
        *[other] { $count } عنصر
-    } · { $pinned } مثبت
+    } · { $pinned ->
+        [one] عنصر مثبت
+        [two] عنصران مثبتان
+        [few] { $pinned } عناصر مثبتة
+        [many] { $pinned } عنصرًا مثبتًا
+       *[other] { $pinned } عنصر مثبت
+    }
 list-drop-files = أفلت لإضافتها إلى مكتبتك القابلة للبحث
 item-files-count =
     { $count ->
         [one] ملف واحد
         [two] ملفان
         [few] { $count } ملفات
+        [many] { $count } ملفًا
        *[other] { $count } ملف
     }
 item-empty = (فارغ)
@@ -234,6 +248,7 @@ item-paste-group =
         [one] لصق عنصر واحد
         [two] لصق العنصرين معًا
         [few] لصق { $count } عناصر معًا
+        [many] لصق { $count } عنصرًا معًا
        *[other] لصق { $count } عنصر معًا
     }
 item-copy-group =
@@ -241,6 +256,7 @@ item-copy-group =
         [one] نسخ عنصر واحد
         [two] نسخ العنصرين معًا
         [few] نسخ { $count } عناصر معًا
+        [many] نسخ { $count } عنصرًا معًا
        *[other] نسخ { $count } عنصر معًا
     }
 item-pin-group =
@@ -248,6 +264,7 @@ item-pin-group =
         [one] تثبيت عنصر واحد
         [two] تثبيت العنصرين
         [few] تثبيت { $count } عناصر
+        [many] تثبيت { $count } عنصرًا
        *[other] تثبيت { $count } عنصر
     }
 item-unpin-group =
@@ -255,6 +272,7 @@ item-unpin-group =
         [one] إلغاء تثبيت عنصر واحد
         [two] إلغاء تثبيت العنصرين
         [few] إلغاء تثبيت { $count } عناصر
+        [many] إلغاء تثبيت { $count } عنصرًا
        *[other] إلغاء تثبيت { $count } عنصر
     }
 item-tag-group =
@@ -262,6 +280,7 @@ item-tag-group =
         [one] إضافة وسم إلى عنصر واحد
         [two] إضافة وسم إلى العنصرين
         [few] إضافة وسم إلى { $count } عناصر
+        [many] إضافة وسم إلى { $count } عنصرًا
        *[other] إضافة وسم إلى { $count } عنصر
     }
 item-delete-group =
@@ -269,6 +288,7 @@ item-delete-group =
         [one] حذف عنصر واحد
         [two] حذف العنصرين
         [few] حذف { $count } عناصر
+        [many] حذف { $count } عنصرًا
        *[other] حذف { $count } عنصر
     }
 group-selected =
@@ -276,6 +296,7 @@ group-selected =
         [one] عنصر واحد محدد
         [two] عنصران محددان
         [few] { $count } عناصر محددة
+        [many] { $count } عنصرًا محددًا
        *[other] { $count } عنصر محدد
     }
 group-pin = تثبيت
@@ -336,6 +357,7 @@ details-words =
         [one] كلمة واحدة
         [two] كلمتان
         [few] { $count } كلمات
+        [many] { $count } كلمة
        *[other] { $count } كلمة
     }
 details-image-size = { $width } × { $height } بكسل
@@ -349,6 +371,7 @@ details-files-count =
         [one] عنصر واحد
         [two] عنصران
         [few] { $count } عناصر
+        [many] { $count } عنصرًا
        *[other] { $count } عنصر
     }
 details-image-missing = ملف الصورة مفقود.
@@ -523,7 +546,8 @@ settings-age-days =
         [one] يوم واحد
         [two] يومان
         [few] { $count } أيام
-       *[other] { $count } يومًا
+        [many] { $count } يومًا
+       *[other] { $count } يوم
     }
 settings-rules = القواعد
 settings-rules-help = لا تُسجَّل النسخ التي تطابقها قاعدة. البرنامج هو اسم ملفه، مثل chrome.exe؛ اتركه فارغًا لكل البرامج. اترك النمط فارغًا لتخطي كل ما يُنسخ من البرنامج.
@@ -552,13 +576,21 @@ settings-stored-counts =
         [one] عنصر واحد
         [two] عنصران
         [few] { $count } عناصر
+        [many] { $count } عنصرًا
        *[other] { $count } عنصر
     } · { $images ->
         [one] صورة واحدة
         [two] صورتان
         [few] { $images } صور
+        [many] { $images } صورة
        *[other] { $images } صورة
-    } · { $pinned } مثبت
+    } · { $pinned ->
+        [one] عنصر مثبت
+        [two] عنصران مثبتان
+        [few] { $pinned } عناصر مثبتة
+        [many] { $pinned } عنصرًا مثبتًا
+       *[other] { $pinned } عنصر مثبت
+    }
 settings-clear-history = مسح سجل الحافظة
 settings-clear-history-hint = يحذف العناصر المنسوخة
 settings-clear-history-help = تبقى العناصر المثبتة والموسومة والملفات التي أضفتها.
@@ -567,6 +599,7 @@ settings-delete-items =
         [one] حذف عنصر واحد
         [two] حذف عنصرين
         [few] حذف { $count } عناصر
+        [many] حذف { $count } عنصرًا
        *[other] حذف { $count } عنصر
     }
 settings-clear = مسح…
@@ -622,6 +655,7 @@ settings-server-models-count =
         [one] نموذج واحد
         [two] نموذجان
         [few] { $count } نماذج
+        [many] { $count } نموذجًا
        *[other] { $count } نموذج
     }
 settings-server-back = العودة إلى البحث والذكاء الاصطناعي
@@ -637,6 +671,7 @@ settings-server-found =
         [one] متصل · وُجد نموذج واحد
         [two] متصل · وُجد نموذجان
         [few] متصل · وُجدت { $count } نماذج
+        [many] متصل · وُجد { $count } نموذجًا
        *[other] متصل · وُجد { $count } نموذج
     }
 settings-server-needed = مطلوب
@@ -809,6 +844,7 @@ toast-pinned-group =
         [one] تم تثبيت عنصر واحد
         [two] تم تثبيت عنصرين
         [few] تم تثبيت { $count } عناصر
+        [many] تم تثبيت { $count } عنصرًا
        *[other] تم تثبيت { $count } عنصر
     }
 toast-unpinned-group =
@@ -816,6 +852,7 @@ toast-unpinned-group =
         [one] تم إلغاء تثبيت عنصر واحد
         [two] تم إلغاء تثبيت عنصرين
         [few] تم إلغاء تثبيت { $count } عناصر
+        [many] تم إلغاء تثبيت { $count } عنصرًا
        *[other] تم إلغاء تثبيت { $count } عنصر
     }
 toast-deleted-group =
@@ -823,6 +860,7 @@ toast-deleted-group =
         [one] تم حذف عنصر واحد
         [two] تم حذف عنصرين
         [few] تم حذف { $count } عناصر
+        [many] تم حذف { $count } عنصرًا
        *[other] تم حذف { $count } عنصر
     }
 toast-copied-group =
@@ -830,6 +868,7 @@ toast-copied-group =
         [one] تم نسخ عنصر واحد
         [two] تم نسخ عنصرين معًا
         [few] تم نسخ { $count } عناصر معًا
+        [many] تم نسخ { $count } عنصرًا معًا
        *[other] تم نسخ { $count } عنصر معًا
     }
 toast-copied-group-pictures =
@@ -837,11 +876,13 @@ toast-copied-group-pictures =
         [one] تم نسخ عنصر واحد
         [two] تم نسخ عنصرين معًا
         [few] تم نسخ { $count } عناصر معًا
+        [many] تم نسخ { $count } عنصرًا معًا
        *[other] تم نسخ { $count } عنصر معًا
     }، دون { $pictures ->
         [one] صورة واحدة
         [two] صورتين
         [few] { $pictures } صور
+        [many] { $pictures } صورة
        *[other] { $pictures } صورة
     }
 toast-pictures-not-together = لا يمكن نسخ الصور معًا
@@ -850,6 +891,7 @@ toast-tag-added-group =
         [one] تمت إضافة #{ $tag } إلى عنصر واحد
         [two] تمت إضافة #{ $tag } إلى عنصرين
         [few] تمت إضافة #{ $tag } إلى { $count } عناصر
+        [many] تمت إضافة #{ $tag } إلى { $count } عنصرًا
        *[other] تمت إضافة #{ $tag } إلى { $count } عنصر
     }
 toast-deleted-key = تم الحذف. في المرة القادمة: { $keys }
@@ -861,6 +903,7 @@ toast-imported =
         [one] تم استيراد ملف واحد
         [two] تم استيراد ملفين
         [few] تم استيراد { $count } ملفات
+        [many] تم استيراد { $count } ملفًا
        *[other] تم استيراد { $count } ملف
     }
 toast-pruned-age =
@@ -884,6 +927,7 @@ toast-cleared =
         [one] تم مسح عنصر واحد
         [two] تم مسح عنصرين
         [few] تم مسح { $count } عناصر
+        [many] تم مسح { $count } عنصرًا
        *[other] تم مسح { $count } عنصر
     }
 toast-tag-removed =
@@ -891,6 +935,7 @@ toast-tag-removed =
         [one] أُزيل #{ $tag } من عنصر واحد
         [two] أُزيل #{ $tag } من عنصرين
         [few] أُزيل #{ $tag } من { $count } عناصر
+        [many] أُزيل #{ $tag } من { $count } عنصرًا
        *[other] أُزيل #{ $tag } من { $count } عنصر
     }
 toast-skipped-private = لم يُحفظ: وُسم بأنه خاص

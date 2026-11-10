@@ -358,6 +358,49 @@ mod tests {
         assert_eq!(ago(Language::Arabic, 11), "منذ 11 دقيقة");
     }
 
+    /// Arabic counts from 11 to 99 take their own form ("11 عنصرًا"), so
+    /// every Arabic choice with a form for 3 to 10 has one for them too.
+    #[test]
+    fn arabic_counts_have_a_form_for_11_to_99() {
+        fn without_many(pattern: &ast::Pattern<&str>) -> bool {
+            pattern.elements.iter().any(|element| match element {
+                ast::PatternElement::Placeable {
+                    expression: ast::Expression::Select { variants, .. },
+                } => {
+                    let has = |form: &str| {
+                        variants.iter().any(|v| {
+                            matches!(&v.key, ast::VariantKey::Identifier { name } if *name == form)
+                        })
+                    };
+                    (has("few") && !has("many")) || variants.iter().any(|v| without_many(&v.value))
+                }
+                _ => false,
+            })
+        }
+        let resource = fluent_syntax::parser::parse(ARABIC_TEXTS).expect("the file parses");
+        let missing: Vec<_> = resource
+            .body
+            .iter()
+            .filter_map(|entry| match entry {
+                ast::Entry::Message(message) => message
+                    .value
+                    .as_ref()
+                    .filter(|pattern| without_many(pattern))
+                    .map(|_| message.id.name),
+                _ => None,
+            })
+            .collect();
+        assert!(missing.is_empty(), "no form for 11 to 99: {missing:?}");
+        let items = |count: i64| {
+            let mut args = FluentArgs::new();
+            args.set("count", count);
+            args.set("pinned", 2);
+            text_in(Language::Arabic, "status-items-pinned", Some(&args))
+        };
+        assert_eq!(items(18), "18 عنصرًا · عنصران مثبتان");
+        assert_eq!(items(100), "100 عنصر · عنصران مثبتان");
+    }
+
     #[test]
     fn a_missing_text_falls_back_to_english_then_to_its_key() {
         assert_eq!(
