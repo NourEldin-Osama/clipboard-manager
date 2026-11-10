@@ -14,8 +14,8 @@ const LIST_MAX_WIDTH: f32 = 900.0;
 /// Height of the line under the results that shows the weaker matches.
 pub(super) const WEAKER_LINE: f32 = 48.0;
 
-/// The line under the results that shows the weaker matches folded there,
-/// in the middle of `rect`. Returns whether it was clicked.
+/// The row under the results that shows the weaker matches folded there,
+/// across `rect`. Returns whether it was clicked.
 pub(super) fn weaker_line(ui: &Ui, rect: Rect, count: usize) -> bool {
     let text = t!("list-show-weaker", count = count);
     let resp = ui.interact(rect, egui::Id::unique("show-weaker"), Sense::click());
@@ -27,16 +27,23 @@ pub(super) fn weaker_line(ui: &Ui, rect: Rect, count: usize) -> bool {
         .size()
         .x;
     let (icon, gap) = (16.0, 6.0);
-    let content = Rect::from_center_size(rect.center(), Vec2::new(icon + gap + text_w, 24.0));
+    // A row as wide as the results, so it reads as their continuation, with
+    // its words at their start.
+    let row = rect.shrink2(Vec2::new(0.0, 6.0));
     let p = ui.painter();
-    if resp.hovered() {
-        let fill = ui.visuals().widgets.hovered.weak_bg_fill;
-        p.rect_filled(
-            content.expand2(Vec2::new(12.0, 6.0)),
-            CornerRadius::same(radius::MEDIUM),
-            fill,
-        );
-    }
+    let fill = if resp.hovered() {
+        ui.visuals().widgets.hovered.weak_bg_fill
+    } else {
+        ui.visuals().faint_bg_color
+    };
+    p.rect_filled(row, CornerRadius::same(radius::MEDIUM), fill);
+    let content = flip(
+        row,
+        Rect::from_min_size(
+            Pos2::new(row.left() + 16.0, row.center().y - 12.0),
+            Vec2::new(icon + gap + text_w, 24.0),
+        ),
+    );
     let icon_rect = Rect::from_min_size(
         Pos2::new(content.left(), content.center().y - icon / 2.0),
         Vec2::splat(icon),
