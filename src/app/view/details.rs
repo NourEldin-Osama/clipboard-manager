@@ -26,6 +26,22 @@ pub(crate) fn reveal(p: &std::path::Path) -> std::io::Result<()> {
     started.map(|_| ())
 }
 
+/// What the facts and the tags below the content take, about: the content
+/// scrolls above them.
+const FACTS_HEIGHT: f32 = 84.0;
+
+/// Between the facts of the details.
+const FACTS_GAP: &str = "  ·  ";
+
+/// How big the details show a text: short ones larger, so they read first.
+fn content_size(text: &str) -> f32 {
+    if text.chars().count() <= 160 && text.lines().count() <= 4 {
+        size::LARGE
+    } else {
+        size::BODY
+    }
+}
+
 /// The details' main button: the main way to put the item back, with its
 /// key, and an arrow to the other ways when there are any. A long program
 /// name is cut short when the header has no room for it.
@@ -342,7 +358,8 @@ impl App {
             self.empty_details(ui);
             return;
         };
-        // Header: what it is at the reading start, what you can do at the far end.
+        // Header: what you can do, at the far end. The copied content comes
+        // first below it, then one line of facts and the tags.
         row(ui, |ui| {
             if closeable
                 && icons::icon_button_ex(
@@ -358,23 +375,6 @@ impl App {
             {
                 self.details_open = false;
             }
-            icons::chip(
-                ui,
-                icons::kind(it.kind),
-                &it.kind.label(),
-                kind_color(it.kind),
-            );
-            if it.pinned {
-                icons::chip(ui, Icon::PinFilled, &t!("details-pinned"), accent());
-            }
-            if it.origin == Origin::Imported {
-                let weak = ui.visuals().weak_text_color();
-                icons::chip(ui, Icon::Folder, &t!("details-from-files"), weak);
-            }
-            if it.formatted {
-                let weak = ui.visuals().weak_text_color();
-                icons::chip(ui, Icon::Text, &t!("details-formatted"), weak);
-            }
             far(ui, |ui| {
                 let keys = self.cfg.keys.clone();
                 if icons::icon_button(ui, Icon::Delete, &hint(&t!("details-delete"), &keys.delete))
@@ -382,14 +382,17 @@ impl App {
                 {
                     self.run(Command::Delete(it.id));
                 }
-                let (pin, tip) = if it.pinned {
-                    (Icon::PinFilled, hint(&t!("details-unpin"), &keys.pin))
+                // A pinned item says so on its pin button, which unpins it.
+                let pin = if it.pinned {
+                    let shade = text_shade(accent(), ui.visuals().dark_mode);
+                    let job = pill_job(&t!("details-pinned"), size::CONTROL, shade, None);
+                    let r = icons::pill(ui, Icon::PinFilled, job, accent(), true);
+                    tip(r, &hint(&t!("details-unpin"), &keys.pin))
                 } else {
-                    (Icon::Pin, hint(&t!("details-pin-keep"), &keys.pin))
+                    let tip = hint(&t!("details-pin-keep"), &keys.pin);
+                    icon_button_ex(ui, Icon::Pin, &tip, Vec2::splat(34.0), 16.0, None, None)
                 };
-                let pin_color = it.pinned.then(accent);
-                if icon_button_ex(ui, pin, &tip, Vec2::splat(34.0), 16.0, None, pin_color).clicked()
-                {
+                if pin.clicked() {
                     self.run(Command::Pin(it.id));
                 }
                 if it.kind == Kind::Image
@@ -415,38 +418,12 @@ impl App {
                 }
             });
         });
-        ui.add_space(space::TINY);
-        let meta = self.meta_line(&it);
-        let weak = ui.visuals().weak_text_color();
-        let read_failed = it.ocr.is_none() && self.ocr_failed.contains(&it.id);
-        let read_again = row(ui, |ui| {
-            ui.label(txt(&meta, size::SMALL, Some(weak)));
-            read_failed
-                && ui
-                    .link(txt(&t!("details-read-again"), size::SMALL, None))
-                    .clicked()
-        });
-        if read_again {
-            self.run(Command::ReadAgain(it.id));
-        }
-        if let Some(app) = &it.app {
-            // The program's own name once it is known, else its file name.
-            let program = it.program.as_deref().and_then(|p| self.programs.get(p));
-            let name = crate::app::programs::shown_name(app, program);
-            row(ui, |ui| {
-                ui.label(txt(
-                    &t!("details-copied-from", app = name.as_str()),
-                    size::SMALL,
-                    Some(weak),
-                ));
-            });
-        }
         ui.add_space(space::SMALL);
-        self.tag_editor(ui, &it);
-        ui.add_space(space::MEDIUM);
-
+        // Long content scrolls above the facts and tags, which stay in view.
+        let room = (ui.available_height() - FACTS_HEIGHT).max(FACTS_HEIGHT);
         egui::ScrollArea::vertical()
-            .auto_shrink([false, false])
+            .auto_shrink([false, true])
+            .max_height(room)
             .show(ui, |ui| match it.kind {
                 Kind::Image => self.image_details(ui, &it),
                 Kind::Files => {
@@ -550,7 +527,8 @@ impl App {
                         // all of it), on the side its first letter reads from.
                         let shown = d.shown.clone();
                         let c = ui.visuals().text_color();
-                        bidi::content(ui, &shown, FontId::proportional(size::BODY), c);
+                        let font = FontId::proportional(content_size(&shown));
+                        bidi::content(ui, &shown, font, c);
                     } else {
                         // Lines of about 70 characters on the left, as left-to-right
                         // text reads, in Arabic too.
@@ -560,12 +538,13 @@ impl App {
                         let builder = egui::UiBuilder::new()
                             .max_rect(lines)
                             .layout(Layout::top_down(Align::Min));
+                        let text_size = content_size(&d.shown);
                         ui.scope_builder(builder, |ui| {
                             ui.add(
                                 egui::Label::new(
                                     RichText::new(d.shown.as_str())
-                                        .size(size::BODY)
-                                        .line_height(Some(size::BODY * 1.6)),
+                                        .size(text_size)
+                                        .line_height(Some(text_size * 1.6)),
                                 )
                                 .selectable(true)
                                 .wrap(),
@@ -574,6 +553,35 @@ impl App {
                     }
                 }
             });
+        ui.add_space(space::MEDIUM);
+        // One line of facts: when, how long, and where it came from.
+        let mut facts = vec![self.meta_line(&it)];
+        if let Some(app) = &it.app {
+            // The program's own name once it is known, else its file name.
+            let program = it.program.as_deref().and_then(|p| self.programs.get(p));
+            let name = crate::app::programs::shown_name(app, program);
+            facts.push(t!("details-copied-from", app = name.as_str()));
+        }
+        if it.origin == Origin::Imported {
+            facts.push(t!("details-from-files"));
+        }
+        if it.formatted {
+            facts.push(t!("details-formatted"));
+        }
+        let weak = ui.visuals().weak_text_color();
+        let read_failed = it.ocr.is_none() && self.ocr_failed.contains(&it.id);
+        let read_again = row_wrapped(ui, |ui| {
+            ui.label(txt(&facts.join(FACTS_GAP), size::SMALL, Some(weak)));
+            read_failed
+                && ui
+                    .link(txt(&t!("details-read-again"), size::SMALL, None))
+                    .clicked()
+        });
+        if read_again {
+            self.run(Command::ReadAgain(it.id));
+        }
+        ui.add_space(space::SMALL);
+        self.tag_editor(ui, &it);
     }
 
     pub(super) fn meta_line(&mut self, it: &Item) -> String {
@@ -610,7 +618,7 @@ impl App {
         if let Some(src) = &it.source {
             parts.push(src.display().to_string());
         }
-        parts.join("  ·  ")
+        parts.join(FACTS_GAP)
     }
 
     pub(super) fn image_details(&mut self, ui: &mut Ui, it: &Item) {
