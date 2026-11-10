@@ -176,23 +176,23 @@ fn wrap(ui: &Ui, text: &str, font: &FontId, width: f32) -> Vec<String> {
         let candidate = format!("{line}{word}");
         if line.is_empty() || measure(candidate.trim_end()) <= width {
             line = candidate;
-            // A single word wider than the line is broken by characters.
-            while measure(line.trim_end()) > width && line.chars().count() > 1 {
-                let mut cut = line.len();
-                while cut > 0 && measure(&line[..cut]) > width {
-                    cut = line[..cut]
-                        .char_indices()
-                        .last()
-                        .map(|(i, _)| i)
-                        .unwrap_or(0);
-                }
-                let cut = cut.max(line.chars().next().map(char::len_utf8).unwrap_or(1));
-                lines.push(line[..cut].to_string());
-                line = line[cut..].to_string();
-            }
         } else {
             lines.push(std::mem::take(&mut line).trim_end().to_string());
             line = word.to_string();
+        }
+        // A single word wider than the line is broken by characters.
+        while measure(line.trim_end()) > width && line.chars().count() > 1 {
+            let mut cut = line.len();
+            while cut > 0 && measure(&line[..cut]) > width {
+                cut = line[..cut]
+                    .char_indices()
+                    .last()
+                    .map(|(i, _)| i)
+                    .unwrap_or(0);
+            }
+            let cut = cut.max(line.chars().next().map(char::len_utf8).unwrap_or(1));
+            lines.push(line[..cut].to_string());
+            line = line[cut..].to_string();
         }
     }
     lines.push(line.trim_end().to_string());
@@ -415,5 +415,28 @@ mod tests {
         });
         assert_eq!(names.iter().filter(|n| *n == text).count(), 2, "{names:?}");
         assert!(!names.contains(&shown), "{names:?}");
+    }
+
+    #[test]
+    fn a_word_wider_than_the_line_is_broken_wherever_it_comes() {
+        let ctx = egui::Context::default();
+        let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+            let font = FontId::proportional(size::SMALL);
+            let path = r"(D:\clipboard-manager\target\run\debug\clipboard-manager.part);";
+            for text in [path.to_string(), format!("can't be written {path} by hand")] {
+                let lines = wrap(ui, &text, &font, 120.0);
+                for line in &lines {
+                    let width = ui.fonts_mut(|f| {
+                        f.layout_no_wrap(line.clone(), font.clone(), Color32::WHITE)
+                            .size()
+                            .x
+                    });
+                    assert!(width <= 120.0, "{line:?} is {width} wide, in {lines:?}");
+                }
+                assert_eq!(lines.concat().replace(' ', ""), text.replace(' ', ""));
+            }
+        });
+        // The font atlas upload no renderer takes here.
+        output.textures_delta.clear();
     }
 }
