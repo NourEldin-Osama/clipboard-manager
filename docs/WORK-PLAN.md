@@ -249,7 +249,7 @@ use; then the look, motion and smaller changes; and the README, bug reports and 
 - [x] 16.3 Rows with no day header above them say "Yesterday" instead of only the time
 - [x] 16.4 The search server's real state: a red dot with Try again while requests fail, and the app tries again by itself; pictures whose text couldn't be read say so, with Try again
 - [x] 16.5 The log: no user name or password in server addresses, a new file after 10 MB; the bug form and CONTRIBUTING point to Settings, About
-- [ ] 16.6 The change log and version 0.6.1
+- [x] 16.6 The change log and version 0.6.1
 
 ### Phase 17. Messages
 - [ ] 17.1 Messages in the Sonner style at the bottom right of the window (D55)
