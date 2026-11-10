@@ -362,12 +362,16 @@ impl App {
                     ui.visuals().weak_text_color(),
                     None,
                 );
-                if tip(
-                    icons::pill(ui, Icon::Add, job, accent(), false),
-                    &hint(&t!("details-add-tag-tip"), &self.cfg.keys.tag),
-                )
-                .clicked()
-                {
+                // A thin outline, so the pill's edge lines up with the actions
+                // above it.
+                let pill = icons::pill(ui, Icon::Add, job, accent(), false);
+                ui.painter().rect_stroke(
+                    pill.rect,
+                    CornerRadius::same(radius::ROUND),
+                    Stroke::new(1.0, line_color(ui.visuals().dark_mode)),
+                    egui::StrokeKind::Inside,
+                );
+                if tip(pill, &hint(&t!("details-add-tag-tip"), &self.cfg.keys.tag)).clicked() {
                     self.tag_input = Some((it.id, String::new()));
                     self.tag_focus = true;
                 }
