@@ -73,7 +73,7 @@ impl App {
         self.send_question(ui, d);
 
         section(ui, &t!("settings-meaning-section"));
-        let (dot, text) = self.model_status();
+        let (dot, text) = self.meaning_state();
         row(ui, |ui| {
             ui.add_space(space::MEDIUM);
             let color = if dot == Color32::GRAY {

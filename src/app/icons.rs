@@ -439,6 +439,28 @@ pub(super) fn pill(
     color: Color32,
     selected: bool,
 ) -> egui::Response {
+    pill_with(ui, icon, job, color, selected, None)
+}
+
+/// A pill button whose icon has a color of its own, such as the dot of a
+/// state.
+pub(super) fn state_pill(
+    ui: &mut Ui,
+    icon: Icon,
+    job: egui::text::LayoutJob,
+    icon_color: Color32,
+) -> egui::Response {
+    pill_with(ui, icon, job, icon_color, false, Some(icon_color))
+}
+
+fn pill_with(
+    ui: &mut Ui,
+    icon: Icon,
+    job: egui::text::LayoutJob,
+    color: Color32,
+    selected: bool,
+    icon_color: Option<Color32>,
+) -> egui::Response {
     let g = ui.fonts_mut(|f| f.layout_job(job));
     let width = 14.0 + 6.0 + g.size().x + PILL_PAD.x * 2.0;
     let size = Vec2::new(width, pill_height(g.size().y));
@@ -457,10 +479,10 @@ pub(super) fn pill(
             v.widgets.hovered.weak_bg_fill,
         );
     }
-    let icon_color = if selected {
-        view::text_shade(color, v.dark_mode)
-    } else {
-        v.text_color()
+    let icon_color = match icon_color {
+        Some(c) => c,
+        None if selected => view::text_shade(color, v.dark_mode),
+        None => v.text_color(),
     };
     paint_icon_text(
         ui.painter(),

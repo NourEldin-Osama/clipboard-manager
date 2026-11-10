@@ -48,12 +48,31 @@ impl App {
         }
         match (&self.backend, self.search_model_names()) {
             (BackendState::Loading, _) => (AMBER, t!("status-model-loading")),
-            (BackendState::Ready { .. }, Some((model, server, _))) if on => {
-                (GREEN, t!("status-model-on", model = model, server = server))
+            (BackendState::Ready { .. }, Some((model, _, _))) if on => {
+                (GREEN, t!("status-model-on", model = model))
             }
             (BackendState::Off, _) if !on => (Color32::GRAY, t!("status-model-off")),
+            // On with no model picked yet: nothing is wrong, there is none.
+            (BackendState::Off, None) => (Color32::GRAY, t!("status-model-none")),
             (BackendState::Off, _) => (RED, t!("status-model-unavailable")),
             (BackendState::Ready { .. }, _) => (Color32::GRAY, t!("status-model-words-only")),
+        }
+    }
+
+    /// The state of search by meaning in words, for its part of Settings,
+    /// where its model shows below.
+    pub(crate) fn meaning_state(&self) -> (Color32, String) {
+        let on = self.cfg.search_engine == SearchEngine::Server;
+        if on && self.search_retry.is_some() {
+            return (RED, t!("status-model-failing"));
+        }
+        let picked = self.cfg.search_model.and_then(|at| self.cfg.model(at));
+        match (&self.backend, picked) {
+            _ if !on => (Color32::GRAY, t!("settings-meaning-off")),
+            (BackendState::Loading, _) => (AMBER, t!("status-model-loading")),
+            (_, None) => (Color32::GRAY, t!("settings-meaning-none")),
+            (BackendState::Ready { .. }, Some(_)) => (GREEN, t!("settings-meaning-ready")),
+            (BackendState::Off, Some(_)) => (RED, t!("settings-meaning-unavailable")),
         }
     }
 
@@ -109,8 +128,9 @@ impl App {
                         text_shade(dot, ui.visuals().dark_mode)
                     };
                     let job = pill_job(&text, size::SMALL, color, None);
+                    // The dot has the state's color, as the words do.
                     let r = tip(
-                        icons::pill(ui, Icon::Dot, job, color, false),
+                        icons::state_pill(ui, Icon::Dot, job, color),
                         &self.model_tip(),
                     );
                     if r.clicked() {
