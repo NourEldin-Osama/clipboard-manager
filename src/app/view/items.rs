@@ -324,6 +324,16 @@ mod tests {
     use crate::store::Origin;
 
     #[test]
+    fn sql_reads_as_code_and_a_sentence_does_not() {
+        assert!(looks_like_code(
+            "SELECT name, total FROM orders WHERE total > 1000 ORDER BY total DESC;"
+        ));
+        assert!(looks_like_code("UPDATE users SET name = 'x' WHERE id = 1"));
+        assert!(!looks_like_code("Select the items from the list"));
+        assert!(!looks_like_code("SELECT YOUR SEAT"));
+    }
+
+    #[test]
     fn colours_are_read_in_the_usual_ways() {
         let blurple = Color32::from_rgb(88, 101, 242);
         assert_eq!(color_in("#5865F2"), Some(blurple));
