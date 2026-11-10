@@ -277,26 +277,28 @@ pub(super) fn setting_row(
     reset
 }
 
-/// A note about the settings above it, in a light box of its own so it
-/// reads as one note and not as a part of the row before it.
+/// A note about the settings above it, marked by a thin bar at its start so
+/// it reads as one note and not as a part of the row before it, and not as
+/// a field or a button.
 pub(super) fn note(ui: &mut Ui, text: &str) {
+    let rtl = i18n::rtl();
     let weak = ui.visuals().weak_text_color();
-    let fill = ui.visuals().panel_fill;
     // From the rows' text to their controls' right edge.
     let (start, end) = (
         10,
         (10.0 + RESET_BUTTON_SIZE + ui.spacing().item_spacing.x) as i8,
     );
-    let (left, right) = if i18n::rtl() {
-        (end, start)
-    } else {
-        (start, end)
-    };
+    let (left, right) = if rtl { (end, start) } else { (start, end) };
+    // The text a little apart from the bar.
+    let (inner_left, inner_right) = if rtl { (0, 12) } else { (12, 0) };
     ui.add_space(space::TINY);
-    Frame::new()
-        .fill(fill)
-        .corner_radius(CornerRadius::same(radius::MEDIUM))
-        .inner_margin(Margin::symmetric(12, 8))
+    let framed = Frame::new()
+        .inner_margin(Margin {
+            left: inner_left,
+            right: inner_right,
+            top: 2,
+            bottom: 2,
+        })
         .outer_margin(Margin {
             left,
             right,
@@ -307,8 +309,21 @@ pub(super) fn note(ui: &mut Ui, text: &str) {
             ui.set_width(ui.available_width());
             super::bidi::paragraph(ui, text, FontId::proportional(size::SMALL), weak);
         });
+    let rect = framed.response.rect;
+    let bar = flip(
+        rect,
+        Rect::from_min_size(rect.min, Vec2::new(NOTE_BAR, rect.height())),
+    );
+    ui.painter().rect_filled(
+        bar,
+        CornerRadius::same(radius::SMALL),
+        weak.gamma_multiply(0.35),
+    );
     ui.add_space(space::TINY);
 }
+
+/// How wide the bar at a note's start is.
+const NOTE_BAR: f32 = 3.0;
 
 pub(super) fn path_field(ui: &mut Ui, p: &mut PathBuf, ext: &[&str]) {
     if ui
