@@ -155,20 +155,20 @@ update-version-label = { $version } (build { $build })
 update-available = Version { $version } is available
 update-verifying = Checking the download of version { $version }…
 update-downloading = Downloading version { $version }…
-update-ready-restart = Version { $version } is ready. Restart to update, or it installs when you quit.
 update-failed = Update failed: { $error }
+update-failed-title = Update failed
 update-progress = { $done } / { $total } MB
 download-retrying =
     { $seconds ->
         [one] Connection lost. Trying again in 1 second…
        *[other] Connection lost. Trying again in { $seconds } seconds…
     }
-update-later = Later
 update-skip = Skip this version
 update-download = Download
 update-restart = Restart to update
 update-try-again = Try again
 update-whats-new = What's new
+update-close = Close
 common-cancel = Cancel
 status-model-loading = Loading search model…
 status-model-off = Words only · set up meaning search
@@ -394,6 +394,7 @@ settings-check-now = Check now
 settings-update-checking = Checking…
 settings-update-current = You're up to date
 update-ready = Version { $version } is ready
+update-ready-detail = Restart to update, or it installs when you quit.
 settings-updates-off-dev = Updates are off in development builds
 update-development-build = { $version } (development build)
 settings-look = Look

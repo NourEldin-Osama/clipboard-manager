@@ -2,6 +2,8 @@
 //! (D55): a stack at the bottom right (bottom left in Arabic), above the
 //! status bar. The newest is in front and up to two older ones peek out
 //! above it; pointing at the stack opens it, and their time stops meanwhile.
+//! The update's message (D65) stays in the stack until the update is done
+//! or closed.
 
 use std::sync::Arc;
 
@@ -29,6 +31,40 @@ const SLIDE_TIME: f32 = 0.2;
 const FADE_TIME: f32 = 0.15;
 /// Between the icon, the text and the buttons.
 const SPACE: f32 = 10.0;
+/// The update message's close button: its size, how far it sits from the
+/// card's top and end, and the room its text keeps free for it.
+const CLOSE: f32 = 13.0;
+const CLOSE_AT: f32 = 10.0;
+const CLOSE_ROOM: f32 = 19.0;
+/// Around the download's progress line, which sits under the title.
+const PROGRESS_ABOVE: f32 = 7.0;
+const PROGRESS_BELOW: f32 = 4.0;
+
+/// How a button of the update's message looks.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) enum Look {
+    /// Filled, near black (near white in the dark theme), as the other
+    /// messages' buttons: the next step.
+    Main,
+    /// Filled gray, as an ordinary button.
+    Plain,
+    Link,
+}
+
+/// What the update's message has that other messages don't (D65). It is
+/// made again from `App::update` in every frame.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub(crate) struct UpdateParts {
+    /// How much of the download is done, from 0 to 1: a thin line under
+    /// the title.
+    progress: Option<f32>,
+    /// A spinner in place of the icon, while the download is checked.
+    spinner: bool,
+    /// The icon in red, after a failure.
+    red: bool,
+    /// From the far end: the next step first.
+    buttons: Vec<(String, UpdateAction, Look)>,
+}
 
 /// A message laid out at its width.
 pub(super) struct Laid {
@@ -38,9 +74,15 @@ pub(super) struct Laid {
     action: Option<Arc<Galley>>,
     /// "Show", for the text of a copy that wasn't saved.
     show: Option<Arc<Galley>>,
+    /// The update message's buttons, from the far end.
+    update_buttons: Vec<(Arc<Galley>, UpdateAction, Look)>,
     /// The buttons sit in a row under the text: beside them, the text
     /// would be squeezed into short lines.
     below: bool,
+    /// The width the text was laid out in, and the height of its lines
+    /// with the progress line.
+    text_w: f32,
+    text_h: f32,
     pub(super) height: f32,
 }
 
@@ -51,10 +93,106 @@ pub(super) struct Asked {
     pub(super) action: Option<u64>,
     /// The id of the message whose Show is held down.
     show: Option<u64>,
+    /// A button of the update's message.
+    update: Option<UpdateAction>,
+}
+
+/// The update's message for `state`: its title, second line, icon and the
+/// rest. `None` while there is nothing to show.
+fn update_message(state: &UpdateState) -> Option<(String, Option<String>, Icon, UpdateParts)> {
+    let whats_new = || (t!("update-whats-new"), UpdateAction::WhatsNew, Look::Link);
+    let mut parts = UpdateParts::default();
+    let (title, detail, icon) = match state {
+        UpdateState::Available(r) => {
+            parts.buttons = vec![
+                (t!("update-download"), UpdateAction::Download, Look::Main),
+                (t!("update-skip"), UpdateAction::Skip, Look::Plain),
+                whats_new(),
+            ];
+            let title = t!("update-available", version = r.label());
+            (title, None, Icon::Refresh)
+        }
+        UpdateState::Downloading(r, p) => {
+            let (done, total) = download_amounts(r, p);
+            if done >= total {
+                parts.spinner = true;
+                let title = t!("update-verifying", version = r.label());
+                (title, None, Icon::Refresh)
+            } else {
+                parts.progress = Some(done as f32 / total as f32);
+                parts.buttons = vec![(t!("common-cancel"), UpdateAction::Cancel, Look::Plain)];
+                let detail = match p.retry_in() {
+                    Some(seconds) => t!("download-retrying", seconds = seconds),
+                    None => t!("update-progress", done = done >> 20, total = total >> 20),
+                };
+                let title = t!("update-downloading", version = r.label());
+                (title, Some(detail), Icon::Refresh)
+            }
+        }
+        UpdateState::Ready(r, _) => {
+            parts.buttons = vec![
+                (t!("update-restart"), UpdateAction::Restart, Look::Main),
+                whats_new(),
+            ];
+            let title = t!("update-ready", version = r.label());
+            (title, Some(t!("update-ready-detail")), Icon::Check)
+        }
+        UpdateState::Failed { error, release } => {
+            parts.red = true;
+            parts.buttons = vec![(t!("update-try-again"), UpdateAction::TryAgain, Look::Main)];
+            if release.is_some() {
+                parts.buttons.push(whats_new());
+            }
+            (
+                t!("update-failed-title"),
+                Some(sentence(error)),
+                Icon::Warning,
+            )
+        }
+        UpdateState::Idle | UpdateState::Checking | UpdateState::UpToDate => return None,
+    };
+    Some((title, detail, icon, parts))
+}
+
+/// `text` with a capital first letter, as a sentence on its own line.
+fn sentence(text: &str) -> String {
+    let mut chars = text.chars();
+    chars.next().map_or_else(String::new, |first| {
+        first.to_uppercase().chain(chars).collect()
+    })
 }
 
 impl App {
-    pub(super) fn toasts(&mut self, ctx: &egui::Context) {
+    /// Puts the update's message in the stack, or takes it out, to match
+    /// `update`. It comes in front when it appears; closing it hides it
+    /// until the update's next step.
+    pub(crate) fn sync_update_message(&mut self) {
+        let message = if self.update_hidden {
+            None
+        } else {
+            update_message(&self.update)
+        };
+        let at = self.toasts.iter().position(|t| t.update.is_some());
+        let Some((title, detail, icon, parts)) = message else {
+            if let Some(at) = at {
+                self.toasts.remove(at);
+            }
+            return;
+        };
+        let toast = match at {
+            Some(at) => &mut self.toasts[at],
+            // Its time never runs out.
+            None => self.toast_with(String::new(), Duration::MAX),
+        };
+        toast.text = title;
+        toast.detail = detail;
+        toast.icon = Some(icon);
+        toast.update = Some(parts);
+    }
+
+    /// Draws the messages; `popup` leaves out the update's, which belongs
+    /// to the full window.
+    pub(super) fn toasts(&mut self, ctx: &egui::Context, popup: bool) {
         // Said when a window first draws, so a start hidden at sign-in
         // doesn't use the message up unseen.
         if std::mem::take(&mut self.whats_new_pending) {
@@ -74,7 +212,8 @@ impl App {
             }
         }
         // Messages on the screen's corner show in the note instead.
-        let shown: Vec<&Toast> = self.toasts.iter().filter(|t| !t.on_screen).collect();
+        let in_window = |t: &Toast| !t.on_screen && !(popup && t.update.is_some());
+        let shown: Vec<&Toast> = self.toasts.iter().filter(|t| in_window(t)).collect();
         if shown.is_empty() {
             self.toasts_hovered = false;
             return;
@@ -154,7 +293,7 @@ impl App {
             .pointer_hover_pos()
             .is_some_and(|p| area.response.rect.contains(p));
         let mut moving = false;
-        for toast in self.toasts.iter_mut().filter(|t| !t.on_screen) {
+        for toast in self.toasts.iter_mut().filter(|t| in_window(t)) {
             let (shift, opacity) = motion(ctx, toast);
             moving |= shift > 0.0 || opacity < 1.0;
             toast.drawn = true;
@@ -170,6 +309,9 @@ impl App {
                     self.run(command);
                 }
             }
+        }
+        if let Some(action) = asked.update {
+            self.update_action(action, ctx);
         }
         ctx.request_repaint_after(Duration::from_millis(100));
     }
@@ -216,9 +358,10 @@ fn paint_card(ui: &Ui, rect: Rect) {
 
 /// Lays out a message at `width`: its text beside its icon and buttons, or,
 /// when there it would take more than two lines and fewer across the whole
-/// width, above a row with the buttons. While `showing`, the second line is
-/// the copy's whole text. With `app_icon` it is the note on the screen: the
-/// app icon, and never Show.
+/// width, above a row with the buttons. The update's message always has its
+/// buttons under its text, and room for its close button. While `showing`,
+/// the second line is the copy's whole text. With `app_icon` it is the note
+/// on the screen: the app icon, and never Show.
 pub(super) fn lay_out(
     ui: &Ui,
     toast: &Toast,
@@ -237,6 +380,20 @@ pub(super) fn lay_out(
         let job = pill_job(label, size::SMALL, label_color, keys);
         ui.fonts_mut(|f| f.layout_job(job))
     });
+    let update_buttons: Vec<(Arc<Galley>, UpdateAction, Look)> = toast
+        .update
+        .iter()
+        .flat_map(|parts| &parts.buttons)
+        .map(|(label, action, look)| {
+            let color = match look {
+                Look::Main => label_color,
+                Look::Plain => v.widgets.inactive.fg_stroke.color,
+                Look::Link => v.hyperlink_color,
+            };
+            let job = pill_job(label, size::SMALL, color, None);
+            (ui.fonts_mut(|f| f.layout_job(job)), *action, *look)
+        })
+        .collect();
     let show = toast
         .secret
         .as_ref()
@@ -256,7 +413,12 @@ pub(super) fn lay_out(
     } else {
         0.0
     };
-    let room = width - 2.0 * PAD - icon;
+    let close = if toast.update.is_some() {
+        CLOSE_ROOM
+    } else {
+        0.0
+    };
+    let room = width - 2.0 * PAD - icon - close;
     let second = match (&toast.secret, showing) {
         (Some(secret), true) => Some(secret.as_str()),
         _ => toast.detail.as_deref(),
@@ -280,15 +442,17 @@ pub(super) fn lay_out(
         let detail = second.map_or_else(Vec::new, |d| lines(d, size::SMALL, v.weak_text_color()));
         (title, detail)
     };
-    let (mut title, mut detail) = text_in((room - buttons).max(40.0));
-    let mut below = false;
+    let mut text_w = (room - buttons).max(40.0);
+    let (mut title, mut detail) = text_in(text_w);
+    let mut below = !update_buttons.is_empty();
     if buttons > 0.0 && title.len() + detail.len() > 2 {
         let (wide_title, wide_detail) = text_in(room);
         if wide_title.len() + wide_detail.len() < title.len() + detail.len() {
-            (title, detail, below) = (wide_title, wide_detail, true);
+            (title, detail, below, text_w) = (wide_title, wide_detail, true, room);
         }
     }
-    let text_h = text_height(&title, &detail);
+    let progress = toast.update.as_ref().is_some_and(|p| p.progress.is_some());
+    let text_h = text_height(&title, &detail, progress);
     let height = if below {
         2.0 * PAD + text_h + SPACE + BUTTON_H
     } else {
@@ -299,20 +463,34 @@ pub(super) fn lay_out(
         detail,
         action,
         show,
+        update_buttons,
         below,
+        text_w,
+        text_h,
         height,
     }
 }
 
 /// The height of a message's lines, with a small gap before the second
-/// line.
-fn text_height(title: &[(Arc<Galley>, bool)], detail: &[(Arc<Galley>, bool)]) -> f32 {
+/// line, or the progress line between them.
+fn text_height(
+    title: &[(Arc<Galley>, bool)],
+    detail: &[(Arc<Galley>, bool)],
+    progress: bool,
+) -> f32 {
+    let gap = if progress {
+        PROGRESS_ABOVE + PROGRESS_LINE + PROGRESS_BELOW
+    } else if detail.is_empty() {
+        0.0
+    } else {
+        2.0
+    };
     title
         .iter()
         .chain(detail)
         .map(|(g, _)| g.size().y)
         .sum::<f32>()
-        + if detail.is_empty() { 0.0 } else { 2.0 }
+        + gap
 }
 
 /// Paints a message's icon (or `app_icon`), text and buttons in its card,
@@ -327,7 +505,7 @@ pub(super) fn paint_content(
 ) {
     let v = ui.visuals().clone();
     let inner = card.shrink(PAD);
-    let text_h = text_height(&laid.title, &laid.detail);
+    let text_h = laid.text_h;
     // The icon and the text sit in the middle beside the buttons, or at the
     // top, above the row of buttons.
     let (mid, buttons_mid) = if laid.below {
@@ -337,6 +515,7 @@ pub(super) fn paint_content(
     };
     // Laid out left to right, then mirrored for Arabic.
     let m = |r: Rect| flip(card, r);
+    let parts = toast.update.as_ref();
     let mut left = inner.left();
     let icon_at = m(Rect::from_min_size(
         Pos2::new(left, mid - ICON / 2.0),
@@ -347,11 +526,97 @@ pub(super) fn paint_content(
         ui.painter()
             .image(texture.id(), icon_at, whole, Color32::WHITE);
         left += ICON + SPACE;
+    } else if parts.is_some_and(|p| p.spinner) {
+        paint_spinner(ui, icon_at, v.text_color());
+        left += ICON + SPACE;
     } else if let Some(icon) = toast.icon {
-        icons::paint(ui.painter(), icon_at, icon, v.text_color());
+        let color = if parts.is_some_and(|p| p.red) {
+            text_shade(RED, v.dark_mode)
+        } else {
+            v.text_color()
+        };
+        icons::paint(ui.painter(), icon_at, icon, color);
         left += ICON + SPACE;
     }
+    if parts.is_some() {
+        let at = m(Rect::from_min_size(
+            Pos2::new(card.right() - CLOSE_AT - CLOSE, card.top() + CLOSE_AT),
+            Vec2::splat(CLOSE),
+        ));
+        // Easier to hit than it looks.
+        let r = ui.interact(
+            at.expand(4.0),
+            egui::Id::unique(("toast-close", toast.id)),
+            Sense::click(),
+        );
+        let label = t!("update-close");
+        r.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, &label));
+        let color = if r.hovered() {
+            v.strong_text_color()
+        } else {
+            v.weak_text_color()
+        };
+        icons::paint(ui.painter(), at, Icon::Close, color);
+        if tip(r, &label).clicked() {
+            asked.update = Some(UpdateAction::Close);
+        }
+    }
     let mut right = inner.right();
+    let labels = parts.iter().flat_map(|p| &p.buttons);
+    for ((g, action, look), (label, ..)) in laid.update_buttons.iter().zip(labels) {
+        let w = match look {
+            Look::Link => g.size().x,
+            Look::Main | Look::Plain => g.size().x + 2.0 * BUTTON_PAD,
+        };
+        let at = m(Rect::from_min_size(
+            Pos2::new(right - w, buttons_mid - BUTTON_H / 2.0),
+            Vec2::new(w, BUTTON_H),
+        ));
+        let id = egui::Id::unique(("toast-update", toast.id, *action));
+        let r = ui.interact(at, id, Sense::click());
+        let role = if *look == Look::Link {
+            egui::Role::Link
+        } else {
+            egui::Role::Button
+        };
+        r.widget_info(|| egui::WidgetInfo::labeled(role, true, label));
+        let fill = match look {
+            Look::Main => {
+                let (fill, _) = theme::message_button(v.dark_mode);
+                Some(if r.hovered() {
+                    fill.gamma_multiply(0.85)
+                } else {
+                    fill
+                })
+            }
+            Look::Plain if r.hovered() => Some(v.widgets.hovered.weak_bg_fill),
+            Look::Plain => Some(v.widgets.inactive.weak_bg_fill),
+            Look::Link => None,
+        };
+        if let Some(fill) = fill {
+            ui.painter()
+                .rect_filled(at, CornerRadius::same(radius::SMALL), fill);
+        }
+        let text = Rect::from_center_size(at.center(), g.size());
+        ui.painter()
+            .galley(text.min, g.clone(), Color32::PLACEHOLDER);
+        if *look == Look::Link && r.hovered() {
+            ui.painter().hline(
+                text.x_range(),
+                text.bottom() - 1.0,
+                Stroke::new(1.0, v.hyperlink_color),
+            );
+        }
+        let r = if *look == Look::Link {
+            r.on_hover_cursor(egui::CursorIcon::PointingHand)
+        } else {
+            r
+        };
+        if r.clicked() {
+            asked.update = Some(*action);
+        }
+        right -= w + SPACE;
+    }
     if let Some(g) = &laid.action {
         let w = g.size().x + 2.0 * BUTTON_PAD;
         let at = m(Rect::from_min_size(
@@ -411,9 +676,20 @@ pub(super) fn paint_content(
     }
     let mut y = mid - text_h / 2.0;
     let colors = [v.strong_text_color(), v.weak_text_color()];
+    let progress = parts.and_then(|p| p.progress);
     for (part, lines) in [&laid.title, &laid.detail].into_iter().enumerate() {
-        if part == 1 && !lines.is_empty() {
-            y += 2.0;
+        if part == 1 {
+            if let Some(done) = progress {
+                y += PROGRESS_ABOVE;
+                let track = m(Rect::from_min_size(
+                    Pos2::new(left, y),
+                    Vec2::new(laid.text_w, PROGRESS_LINE),
+                ));
+                paint_progress(ui.painter(), track, done, v.dark_mode);
+                y += PROGRESS_LINE + PROGRESS_BELOW;
+            } else if !lines.is_empty() {
+                y += 2.0;
+            }
         }
         for (g, _) in lines {
             let at = m(Rect::from_min_size(Pos2::new(left, y), g.size()));
@@ -440,7 +716,116 @@ mod tests {
             on_screen: false,
             drawn: false,
             id: 1,
+            update: None,
         }
+    }
+
+    /// The update's message at `state`, as `sync_update_message` makes it.
+    fn update_toast(state: &UpdateState) -> Toast {
+        let (title, detail, icon, parts) = update_message(state).expect("a message to show");
+        let mut toast = message(&title, detail.as_deref(), None);
+        toast.icon = Some(icon);
+        toast.secret = None;
+        toast.update = Some(parts);
+        toast
+    }
+
+    fn buttons(state: &UpdateState) -> Vec<UpdateAction> {
+        update_message(state).map_or_else(Vec::new, |(.., parts)| {
+            parts.buttons.iter().map(|(_, action, _)| *action).collect()
+        })
+    }
+
+    #[test]
+    fn the_update_message_follows_each_step() {
+        use UpdateAction::*;
+        let release = Release::made_up("0.7.2", 29, 30 << 20);
+        let found = UpdateState::Available(release.clone());
+        assert_eq!(buttons(&found), [Download, Skip, WhatsNew]);
+        // Before the server names the size, the release's own counts.
+        let progress = Arc::new(Progress::default());
+        progress.done.store(6 << 20, Ordering::Relaxed);
+        let downloading = UpdateState::Downloading(release.clone(), progress.clone());
+        let (_, detail, _, parts) = update_message(&downloading).unwrap();
+        assert_eq!(parts.progress, Some(0.2));
+        assert!(detail.is_some_and(|d| d.contains("6 / 30")));
+        assert_eq!(buttons(&downloading), [Cancel]);
+        // All of it is there: the download is being checked.
+        progress.done.store(30 << 20, Ordering::Relaxed);
+        let (_, _, _, parts) = update_message(&downloading).unwrap();
+        assert!(parts.spinner && parts.progress.is_none() && parts.buttons.is_empty());
+        let ready = UpdateState::Ready(release.clone(), PathBuf::new());
+        assert_eq!(buttons(&ready), [Restart, WhatsNew]);
+        let failed = UpdateState::Failed {
+            error: "the download is damaged".into(),
+            release: Some(release),
+        };
+        let (_, detail, _, parts) = update_message(&failed).unwrap();
+        assert!(parts.red);
+        assert_eq!(detail.as_deref(), Some("The download is damaged"));
+        assert_eq!(buttons(&failed), [TryAgain, WhatsNew]);
+        // A check that failed has no release to tell about.
+        let check_failed = UpdateState::Failed {
+            error: "offline".into(),
+            release: None,
+        };
+        assert_eq!(buttons(&check_failed), [TryAgain]);
+        for quiet in [
+            UpdateState::Idle,
+            UpdateState::Checking,
+            UpdateState::UpToDate,
+        ] {
+            assert!(update_message(&quiet).is_none());
+        }
+    }
+
+    #[test]
+    fn the_update_message_has_its_buttons_under_its_text() {
+        let ctx = egui::Context::default();
+        let mut output = ctx.run_ui(Default::default(), |ui| {
+            let release = Release::made_up("0.7.2", 29, 30 << 20);
+            let found = lay_out(
+                ui,
+                &update_toast(&UpdateState::Available(release.clone())),
+                WIDTH,
+                false,
+                None,
+            );
+            assert!(found.below);
+            assert_eq!(found.update_buttons.len(), 3);
+            let row: f32 = found
+                .update_buttons
+                .iter()
+                .map(|(g, _, look)| match look {
+                    Look::Link => g.size().x + SPACE,
+                    _ => g.size().x + 2.0 * BUTTON_PAD + SPACE,
+                })
+                .sum();
+            assert!(
+                row - SPACE <= WIDTH - 2.0 * PAD,
+                "the buttons fit in one row"
+            );
+            assert!(
+                found.text_w <= WIDTH - 2.0 * PAD - ICON - SPACE - CLOSE_ROOM,
+                "the text keeps clear of the close button"
+            );
+            // The progress line sits between the title and the amount.
+            let progress = Arc::new(Progress::default());
+            progress.done.store(6 << 20, Ordering::Relaxed);
+            let downloading = UpdateState::Downloading(release, progress);
+            let laid = lay_out(ui, &update_toast(&downloading), WIDTH, false, None);
+            let lines: f32 = laid
+                .title
+                .iter()
+                .chain(&laid.detail)
+                .map(|(g, _)| g.size().y)
+                .sum();
+            let line = PROGRESS_ABOVE + PROGRESS_LINE + PROGRESS_BELOW;
+            assert_eq!(laid.text_h, lines + line);
+            assert_eq!(laid.height, 2.0 * PAD + laid.text_h + SPACE + BUTTON_H);
+        });
+        // The font atlas upload no renderer takes here.
+        output.textures_delta.clear();
     }
 
     #[test]

@@ -131,6 +131,13 @@ pub(crate) fn message_button(dark: bool) -> (Color32, Color32) {
     }
 }
 
+/// A thin progress line's track and fill: the accent on a faint tint of
+/// it. A stronger tint looks like a full line in the dark theme.
+pub(crate) fn progress_colors(dark: bool) -> (Color32, Color32) {
+    let a = accent();
+    (a.gamma_multiply(if dark { 0.15 } else { 0.18 }), a)
+}
+
 /// The soft line between groups of a menu. egui's own separator uses the
 /// outline of things you can't click, which this theme leaves out.
 pub(crate) fn line_color(dark_mode: bool) -> Color32 {

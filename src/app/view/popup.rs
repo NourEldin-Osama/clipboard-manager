@@ -245,7 +245,7 @@ impl App {
                     .fill(fill),
             )
             .show(ui, |ui| self.list(ui, true));
-        self.toasts(&ctx);
+        self.toasts(&ctx, true);
         self.keys_sheet(&ctx, true);
         // Settings opened here, by a link in the empty list, need the full window.
         if !had_settings && self.draft.is_some() {

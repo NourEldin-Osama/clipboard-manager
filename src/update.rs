@@ -99,6 +99,24 @@ impl Release {
     pub fn is_newer_than(&self, other: &Release) -> bool {
         (numbers(&self.version), self.build) > (numbers(&other.version), other.build)
     }
+
+    /// A release with made-up values and no signature, for tests of the
+    /// window.
+    #[cfg(test)]
+    pub fn made_up(version: &str, build: u32, size: u64) -> Release {
+        Release {
+            version: version.to_string(),
+            build,
+            notes_url: "https://example.com/tag/v1".to_string(),
+            url: "https://example.com/download/app.exe".to_string(),
+            size,
+            sha256: "ab".repeat(32),
+            manifest: Manifest {
+                signed: String::new(),
+                signed_signature: String::new(),
+            },
+        }
+    }
 }
 
 /// Whether the running version is newer than `earlier`, such as "0.5.1".
