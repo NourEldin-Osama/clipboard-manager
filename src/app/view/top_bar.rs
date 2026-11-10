@@ -307,15 +307,20 @@ impl App {
     }
 
     pub(super) fn filter_chips(&mut self, ui: &mut Ui) {
+        const DIMMED: f32 = 0.45;
         row(ui, |ui| {
             ui.spacing_mut().item_spacing.x = 4.0;
             for f in Filter::ALL {
-                let n = self.library.items().iter().filter(|i| f.accepts(i)).count();
+                let total = self.library.items().iter().filter(|i| f.accepts(i)).count();
                 let selected = self.filter == f;
                 // Empty categories add noise; keep them out unless selected.
-                if n == 0 && f != Filter::All && !selected {
+                if total == 0 && f != Filter::All && !selected {
                     continue;
                 }
+                // While searching, a filter counts the results it would show,
+                // and one with none is dimmed (18.3).
+                let n = self.search_counts.as_ref().map_or(total, |c| c.kind(f));
+                let dim = self.search_counts.is_some() && n == 0 && !selected;
                 let (fg, weak) = if selected {
                     let shade = text_shade(accent(), ui.visuals().dark_mode);
                     (shade, shade)
@@ -323,7 +328,15 @@ impl App {
                     (ui.visuals().text_color(), ui.visuals().weak_text_color())
                 };
                 let job = pill_job(&f.label(), size::CONTROL, fg, Some((n.to_string(), weak)));
-                if icons::pill(ui, filter_icon(f), job, accent(), selected).clicked() {
+                let pill = ui
+                    .scope(|ui| {
+                        if dim {
+                            ui.multiply_opacity(DIMMED);
+                        }
+                        icons::pill(ui, filter_icon(f), job, accent(), selected)
+                    })
+                    .inner;
+                if pill.clicked() {
                     self.filter = f;
                     self.dirty = true;
                 }
@@ -373,6 +386,7 @@ impl App {
 
     /// The most used tags as filters after the kind chips; the rest in a menu.
     pub(super) fn tag_chips(&mut self, ui: &mut Ui) {
+        const DIMMED: f32 = 0.45;
         let tags = self.library.all_tags();
         if tags.is_empty() {
             return;
@@ -395,8 +409,11 @@ impl App {
         if let Some(a) = tags.iter().skip(SHOWN).find(|(t, _)| is_active(t)) {
             shown.push(a);
         }
-        for (t, n) in &shown {
+        for (t, all) in &shown {
             let sel = is_active(t);
+            // While searching, the tag counts the results it would show.
+            let n = self.search_counts.as_ref().map_or(*all, |c| c.tag(t));
+            let dim = self.search_counts.is_some() && n == 0 && !sel;
             let c = tag_color(t);
             let shade = text_shade(c, ui.visuals().dark_mode);
             let job = pill_job(
@@ -416,8 +433,16 @@ impl App {
                     },
                 )),
             );
+            let pill = ui
+                .scope(|ui| {
+                    if dim {
+                        ui.multiply_opacity(DIMMED);
+                    }
+                    icons::pill(ui, Icon::Tag, job, c, sel)
+                })
+                .inner;
             let r = tip(
-                icons::pill(ui, Icon::Tag, job, c, sel),
+                pill,
                 &if sel {
                     t!("tags-show-all")
                 } else {
@@ -430,7 +455,7 @@ impl App {
             r.context_menu(|ui| {
                 if ui
                     .button(txt(
-                        &t!("tags-remove-everywhere", tag = t.as_str(), count = *n),
+                        &t!("tags-remove-everywhere", tag = t.as_str(), count = *all),
                         size::BODY,
                         None,
                     ))

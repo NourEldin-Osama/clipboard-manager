@@ -546,6 +546,8 @@ pub struct App {
     query_vec: Option<(String, Arc<Embedding>)>,
     filter: Filter,
     results: Vec<Hit>,
+    /// While searching, how many results each filter and tag would show.
+    search_counts: Option<search::Counts>,
     /// Weaker matches, folded under one line below the results.
     weaker: Vec<Hit>,
     /// The search the weaker matches were shown for; another search folds
@@ -779,6 +781,7 @@ impl App {
             query_vec: None,
             filter: Filter::All,
             results: Vec::new(),
+            search_counts: None,
             weaker: Vec::new(),
             weaker_shown_for: None,
             dirty: true,
@@ -2183,8 +2186,9 @@ impl App {
         }
     }
 
-    fn show_results(&mut self, hits: Vec<Hit>) {
+    fn show_results(&mut self, (hits, counts): search::Found) {
         self.searching = false;
+        self.search_counts = counts;
         // Weaker matches wait under one line, unless shown for this search.
         if self.weaker_shown_for.as_deref() == Some(self.query.trim()) {
             (self.results, self.weaker) = (hits, Vec::new());

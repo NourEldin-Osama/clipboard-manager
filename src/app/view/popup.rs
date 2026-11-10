@@ -145,6 +145,13 @@ impl App {
         .into_iter()
         .filter(|(keys, _)| !keys.trim().is_empty())
         .collect();
+        // While searching, how many results there are, as the window says
+        // beside its filters.
+        if !self.query.trim().is_empty() {
+            let text = t!("top-results", count = self.results.len());
+            let weak = ui.visuals().weak_text_color();
+            row(ui, |ui| lbl(ui, &text, size::SMALL, weak));
+        }
         paint_key_hints(ui, &hints);
     }
 
