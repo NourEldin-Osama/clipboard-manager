@@ -101,10 +101,11 @@ impl App {
             });
             let p = ui.painter();
             if current {
+                // Stronger on a dark track, so the current view stands out.
                 p.rect_filled(
                     rect,
                     CornerRadius::same(radius::MEDIUM),
-                    tint.gamma_multiply(0.18),
+                    tint.gamma_multiply(if v.dark_mode { 0.34 } else { 0.18 }),
                 );
             } else if resp.hovered() {
                 p.rect_filled(rect, CornerRadius::same(radius::MEDIUM), hovered);
