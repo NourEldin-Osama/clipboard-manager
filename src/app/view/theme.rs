@@ -112,6 +112,12 @@ pub(crate) fn choice_track(dark: bool) -> (Color32, Color32) {
     }
 }
 
+/// The tint of a selected grid card: lighter than a selected row's, so the
+/// card's gray text stays readable on it.
+pub(crate) fn selected_card(accent: Color32, dark: bool) -> Color32 {
+    accent.gamma_multiply(if dark { 0.10 } else { 0.05 })
+}
+
 /// The faint edge around a grid card in the dark theme, where its shadow
 /// doesn't show; none in the light theme.
 pub(crate) fn card_edge(dark: bool) -> Option<Color32> {

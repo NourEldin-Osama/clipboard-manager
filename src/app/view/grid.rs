@@ -104,6 +104,11 @@ pub(super) fn paint_card(
     };
     p.add(shadow.as_shape(rect, radius));
     p.rect_filled(rect, radius, v.extreme_bg_color);
+    // A selected card is tinted as well as outlined, so it stands out as
+    // more than a focus ring.
+    if selected {
+        p.rect_filled(rect, radius, theme::selected_card(a, v.dark_mode));
+    }
     if let Some(edge) = theme::card_edge(v.dark_mode) {
         p.rect_stroke(
             rect,
