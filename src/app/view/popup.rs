@@ -305,7 +305,9 @@ fn paint_key_hints(ui: &mut Ui, hints: &[(String, String)]) {
                     caps.push(Piece::Cap(shortcut::keycap_label(ui, part, strong)));
                 }
             }
-            (caps, one_line(ui, what, &[], font.clone(), weak, room))
+            // What the keys do in the text color: the hints are the popup's
+            // way to its keys, and grey read as switched off.
+            (caps, one_line(ui, what, &[], font.clone(), strong, room))
         })
         .collect();
     let piece_width = |piece: &Piece| match piece {
@@ -372,7 +374,7 @@ fn paint_key_hints(ui: &mut Ui, hints: &[(String, String)]) {
                 rect,
                 Rect::from_min_size(Pos2::new(x, y - size.y / 2.0), size),
             );
-            p.galley(at.min, what.clone(), weak);
+            p.galley(at.min, what.clone(), strong);
             x += size.x + spacing;
         }
     }
