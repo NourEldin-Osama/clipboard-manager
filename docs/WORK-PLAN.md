@@ -76,6 +76,7 @@ Status: `[ ]` to do, `[~]` in progress, `[x]` done, `[!]` waiting for a decision
 | D61 | Esc or Back in a server's editor keeps the draft until Save, Discard or quitting the app; the server shows "Not saved" | You | Decided |
 | D62 | Named corner sizes (4, 8, 12 and round), gaps in steps of 4 and every color in the theme file; a test fails on a raw number or color in screen code | You | Decided |
 | D63 | Version 0.6.1 after Phase 16, then 0.7.0 after Phases 17 to 20 | You | Decided |
+| D64 | When the items the history limit counts reach 90% of it, one message says so, with a button to change the limit; it comes again only after the history drops below 90% | You | Decided |
 
 ## Order of work, and why
 
@@ -273,10 +274,11 @@ use; then the look, motion and smaller changes; and the README, bug reports and 
 - [x] 19.6 A server's editor keeps your draft (D61)
 
 ### Phase 20. README, bug reports and 0.7.0
-- [ ] 20.1 README and README_AR open with one line, the download, a screenshot and three benefits (texts shown to you first)
+- [x] 20.1 README and README_AR open with one line, the download, a screenshot and three benefits (texts shown to you first)
 - [x] 20.2 The log's first line gives the version, the build and the Windows version, without your user name; item ids and times on reading and indexing lines
 - [x] 20.3 About: Copy details for a bug report
-- [~] 20.4 New screenshots, the change log and version 0.7.0: the notes and the version are in; the screenshots wait for a dev build
+- [x] 20.5 A warning when the history is 90% full, with Change the limit (D64)
+- [x] 20.4 New screenshots, the change log and version 0.7.0
 
 ## Change log
 

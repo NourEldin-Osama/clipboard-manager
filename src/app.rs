@@ -354,6 +354,8 @@ pub(super) enum Command {
     TrySearchAgain,
     /// Reads an image's text again after it failed.
     ReadAgain(u64),
+    /// Opens Settings at a page.
+    OpenSettings(settings::SettingsPage),
 }
 
 /// Whether putting an item back on the clipboard also pastes it into the
@@ -532,8 +534,9 @@ pub struct App {
     note_height: f32,
     /// Where the note's window is, from when it appeared.
     note_at: Option<egui::Pos2>,
-    /// The note's window no longer takes the keyboard when clicked.
-    note_quiet: bool,
+    /// The note's window, as Windows' handle for it, once found: its
+    /// style is kept in every frame.
+    note_window_handle: Option<isize>,
     /// The app icon, for the note.
     app_icon: Option<egui::TextureHandle>,
     /// Alt+C was pressed and its copy hasn't come yet.
@@ -780,7 +783,7 @@ impl App {
             note_hovered: false,
             note_height: 64.0,
             note_at: None,
-            note_quiet: false,
+            note_window_handle: None,
             app_icon: None,
             skip_next_armed: false,
             glide_until: None,
@@ -1524,6 +1527,10 @@ impl App {
                 self.worker.send(Job::Probe);
                 self.search_retry = Some(Retry::new(Instant::now()));
             }
+            Command::OpenSettings(page) => {
+                self.win.show_full();
+                self.open_settings(page);
+            }
             Command::ReadAgain(id) => {
                 self.ocr_failed.remove(&id);
                 self.worker.send(Job::OcrAgain(id));
@@ -1796,13 +1803,18 @@ impl App {
         self.prune(false);
     }
 
-    /// Deletes what is over the history size and, when it is on, what is
-    /// older than the chosen number of days.
-    /// Deletes what the history limit and delete by age remove. With
-    /// `report`, it says so, with Undo, and the items wait until the message
-    /// is gone (D60). A new copy pushing the oldest item out of a full
-    /// history is not reported.
+    /// Deletes what the history limit and delete by age remove, then warns
+    /// when the history is 90% full (D64).
     fn prune(&mut self, report: bool) {
+        self.prune_now(report);
+        self.check_history_fill();
+    }
+
+    /// Deletes what is over the history size and, when it is on, what is
+    /// older than the chosen number of days. With `report`, it says so,
+    /// with Undo, and the items wait until the message is gone (D60). A new
+    /// copy pushing the oldest item out of a full history is not reported.
+    fn prune_now(&mut self, report: bool) {
         let days = i64::from(self.cfg.delete_after_days);
         let cutoff = crate::store::now() - days * 24 * 60 * 60;
         if !report {
@@ -1848,6 +1860,34 @@ impl App {
         };
         self.undo_toast(text);
         self.dirty = true;
+    }
+
+    /// Warns once when the items the history limit counts reach 90% of it
+    /// (D64), and again only after they drop below that: a higher limit,
+    /// or items deleted.
+    fn check_history_fill(&mut self) {
+        let (used, limit) = (self.library.clearable_count(), self.cfg.max_items);
+        let full = limit > 0 && used * 10 >= limit * 9;
+        if full == self.cfg.history_warned {
+            return;
+        }
+        self.cfg.history_warned = full;
+        self.save_config();
+        if !full {
+            return;
+        }
+        log::info!("the history is 90% full: {used} of {limit} items");
+        let text = t!(
+            "toast-history-almost-full",
+            used = thousands(used),
+            limit = t!("settings-history-items", size = thousands(limit))
+        );
+        let toast = self.toast_with(text, Duration::from_secs(10));
+        toast.icon = Some(icons::Icon::Warning);
+        toast.action = Some((
+            t!("toast-history-change-limit"),
+            Command::OpenSettings(settings::SettingsPage::Clipboard),
+        ));
     }
 
     /// Reads the files in the background; `finish` saves them as they come.
@@ -2617,6 +2657,17 @@ fn run_total(total: usize, before: usize, left: usize) -> usize {
     } else {
         total + left.saturating_sub(before)
     }
+}
+
+/// `n` with commas between its thousands: "5,000".
+fn thousands(n: usize) -> String {
+    n.to_string()
+        .as_bytes()
+        .rchunks(3)
+        .rev()
+        .map(|c| std::str::from_utf8(c).expect("digits"))
+        .collect::<Vec<_>>()
+        .join(",")
 }
 
 /// "Not saved: an API key" and the like.

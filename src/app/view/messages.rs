@@ -224,18 +224,12 @@ pub(super) fn lay_out(
     let v = ui.visuals();
     let (_, label_color) = theme::message_button(v.dark_mode);
     let action = toast.action.as_ref().map(|(label, _)| {
-        let mut job = pill_job(label, size::SMALL, label_color, None);
-        if let Some(keys) = &toast.keys {
-            job.append(
-                &format!("  {keys}"),
-                0.0,
-                egui::TextFormat {
-                    font_id: FontId::proportional(size::SMALL),
-                    color: label_color.gamma_multiply(0.65),
-                    ..Default::default()
-                },
-            );
-        }
+        // The keys go after the label, or before it in Arabic.
+        let keys = toast
+            .keys
+            .clone()
+            .map(|keys| (keys, label_color.gamma_multiply(0.65)));
+        let job = pill_job(label, size::SMALL, label_color, keys);
         ui.fonts_mut(|f| f.layout_job(job))
     });
     let show = toast

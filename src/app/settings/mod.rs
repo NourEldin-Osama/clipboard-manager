@@ -33,7 +33,7 @@ pub(super) use servers::{model_label, PendingSend, ServerEditor};
 
 /// The pages, each about one question.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub(super) enum SettingsPage {
+pub(crate) enum SettingsPage {
     General,
     Appearance,
     /// What is kept, and for how long.
@@ -95,7 +95,7 @@ impl App {
         self.confirm = None;
     }
 
-    pub(super) fn apply_settings(&mut self, d: Config, ctx: &egui::Context, prune: bool) {
+    pub(super) fn apply_settings(&mut self, mut d: Config, ctx: &egui::Context, prune: bool) {
         if d == self.cfg && !prune {
             return;
         }
@@ -126,6 +126,8 @@ impl App {
         if d.rules != self.cfg.rules {
             self.rules = crate::rules::Rules::new(&d.rules);
         }
+        // Kept by the app itself, not by the page.
+        d.history_warned = self.cfg.history_warned;
         self.cfg = d;
         self.flags
             .enabled

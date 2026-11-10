@@ -24,6 +24,8 @@ the notes here before a push that makes a release.
   tooltip says so.
 - Delete by age and a lower history limit say how many items they
   removed, with Undo.
+- When your history is 90% full, a message says so, with a button to
+  change the limit.
 - New in Settings, Appearance: Dark panels. Lighter, the new default,
   makes the details pane, cards and menus lighter than the window in the
   dark theme. Darker brings back the look of 0.6.
