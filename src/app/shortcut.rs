@@ -4,7 +4,7 @@
 use eframe::egui::{Event, KeyboardShortcut, Modifiers, Pos2, Rect, Ui};
 
 use super::icons::{self, Icon};
-use super::view::{accent, size};
+use super::view::{accent, radius, size};
 use super::*;
 
 pub(super) fn parse(s: &str) -> Option<KeyboardShortcut> {
@@ -127,26 +127,17 @@ fn keycap(ui: &mut Ui, label: &str, dim: bool) {
     let size = Vec2::new((g.size().x + 14.0).max(24.0), 24.0);
     let (rect, _) = ui.allocate_exact_size(size, Sense::hover());
     let p = ui.painter();
-    let fill = if v.dark_mode {
-        Color32::from_gray(48)
-    } else {
-        Color32::WHITE
-    };
-    let edge = if v.dark_mode {
-        Color32::from_gray(70)
-    } else {
-        Color32::from_gray(210)
-    };
+    let (fill, edge) = view::key_cap(v.dark_mode);
     // A slightly darker bottom edge makes it read as a key.
     p.rect_filled(
         rect.translate(Vec2::new(0.0, 1.5)),
-        CornerRadius::same(5),
+        CornerRadius::same(radius::SMALL),
         edge,
     );
-    p.rect_filled(rect, CornerRadius::same(5), fill);
+    p.rect_filled(rect, CornerRadius::same(radius::SMALL), fill);
     p.rect_stroke(
         rect,
-        CornerRadius::same(5),
+        CornerRadius::same(radius::SMALL),
         Stroke::new(1.0, edge),
         egui::StrokeKind::Inside,
     );
@@ -230,15 +221,11 @@ pub(super) fn recorder(
     let (rect, resp) = ui.allocate_exact_size(FIELD, Sense::click());
     let v = ui.visuals().clone();
     let a = accent();
-    let bg = if v.dark_mode {
-        Color32::from_gray(38)
-    } else {
-        Color32::from_gray(240)
-    };
+    let bg = v.text_edit_bg_color();
     let p = ui.painter();
     p.rect_filled(
         rect,
-        CornerRadius::same(8),
+        CornerRadius::same(radius::MEDIUM),
         if recording {
             a.gamma_multiply(0.10)
         } else {
@@ -248,14 +235,14 @@ pub(super) fn recorder(
     if recording {
         p.rect_stroke(
             rect,
-            CornerRadius::same(8),
+            CornerRadius::same(radius::MEDIUM),
             Stroke::new(1.5, a),
             egui::StrokeKind::Inside,
         );
     } else if resp.hovered() {
         p.rect_stroke(
             rect,
-            CornerRadius::same(8),
+            CornerRadius::same(radius::MEDIUM),
             Stroke::new(1.0, v.weak_text_color().gamma_multiply(0.5)),
             egui::StrokeKind::Inside,
         );

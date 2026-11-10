@@ -37,6 +37,96 @@ pub(crate) const AMBER: Color32 = Color32::from_rgb(214, 140, 20);
 
 pub(crate) const RED: Color32 = Color32::from_rgb(214, 60, 60);
 
+/// Corner sizes (D62): every rounded thing takes one of these.
+pub(crate) mod radius {
+    /// Small parts: key caps, badges, thin bars.
+    pub(crate) const SMALL: u8 = 4;
+    /// Buttons, rows, fields and their highlights.
+    pub(crate) const MEDIUM: u8 = 8;
+    /// Cards and panels.
+    pub(crate) const LARGE: u8 = 12;
+    /// Pills, chips and switches: fully round ends.
+    pub(crate) const ROUND: u8 = 255;
+}
+
+/// Gaps between things (D62), in steps of 4 points.
+pub(crate) mod space {
+    pub(crate) const TINY: f32 = 4.0;
+    pub(crate) const SMALL: f32 = 8.0;
+    pub(crate) const MEDIUM: f32 = 12.0;
+    pub(crate) const LARGE: f32 = 16.0;
+    pub(crate) const HUGE: f32 = 24.0;
+    /// Above the message of an empty list or details pane.
+    pub(crate) const EMPTY_PAGE: f32 = 64.0;
+}
+
+/// A light laid over a filled button under the pointer; a little less
+/// while it is pressed.
+pub(crate) fn lit(pressed: bool) -> Color32 {
+    Color32::from_white_alpha(if pressed { 10 } else { 28 })
+}
+
+/// Keys, arrows and dividers drawn on a filled button.
+pub(crate) fn on_button(alpha: u8) -> Color32 {
+    Color32::from_white_alpha(alpha)
+}
+
+/// A key cap's face and edge.
+pub(crate) fn key_cap(dark: bool) -> (Color32, Color32) {
+    if dark {
+        (Color32::from_gray(48), Color32::from_gray(70))
+    } else {
+        (Color32::WHITE, Color32::from_gray(210))
+    }
+}
+
+/// The search field's fill.
+pub(crate) fn search_fill(dark: bool) -> Color32 {
+    if dark {
+        Color32::from_gray(22)
+    } else {
+        Color32::WHITE
+    }
+}
+
+/// A grid card's shadow, deeper under the pointer.
+pub(crate) fn card_shadow(dark: bool, hot: bool) -> Color32 {
+    Color32::from_black_alpha(match (dark, hot) {
+        (true, _) => 90,
+        (false, true) => 34,
+        (false, false) => 20,
+    })
+}
+
+/// The strip of buttons at the foot of a card under the pointer.
+pub(crate) fn card_footer(dark: bool) -> Color32 {
+    if dark {
+        Color32::from_gray(44)
+    } else {
+        Color32::from_gray(238)
+    }
+}
+
+/// The shadow under the day header that stays at the top.
+pub(crate) fn header_shadow() -> Color32 {
+    Color32::from_black_alpha(36)
+}
+
+/// The shade over the window while files are dragged over it.
+pub(crate) fn drop_shade() -> Color32 {
+    Color32::from_black_alpha(160)
+}
+
+/// A message's button: near black in the light theme, near white in the
+/// dark one, as Sonner's. The fill, then the text.
+pub(crate) fn message_button(dark: bool) -> (Color32, Color32) {
+    if dark {
+        (Color32::from_gray(235), Color32::from_gray(20))
+    } else {
+        (Color32::from_gray(28), Color32::WHITE)
+    }
+}
+
 /// The soft line between groups of a menu. egui's own separator uses the
 /// outline of things you can't click, which this theme leaves out.
 pub(crate) fn line_color(dark_mode: bool) -> Color32 {
@@ -331,6 +421,47 @@ pub(crate) fn apply_theme(ctx: &egui::Context, t: Theme) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Screen code takes its corner sizes, gaps and colors from this file
+    /// (D62): a raw one anywhere else in the window's code fails here.
+    #[test]
+    fn screen_code_uses_named_sizes_and_colors() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/app");
+        let mut found = Vec::new();
+        let mut paths = vec![root];
+        while let Some(path) = paths.pop() {
+            if path.is_dir() {
+                for entry in std::fs::read_dir(&path).unwrap() {
+                    paths.push(entry.unwrap().path());
+                }
+                continue;
+            }
+            if path.extension().is_none_or(|e| e != "rs") || path.ends_with("view/theme.rs") {
+                continue;
+            }
+            let text = std::fs::read_to_string(&path).unwrap();
+            // Tests may use any value.
+            let code = text.split("#[cfg(test)]").next().unwrap_or("");
+            for (n, line) in code.lines().enumerate() {
+                let number_in = |call: &str| {
+                    line.split(call)
+                        .skip(1)
+                        .any(|rest| rest.starts_with(|c: char| c.is_ascii_digit()))
+                };
+                let raw = number_in("CornerRadius::same(")
+                    || number_in("add_space(")
+                    || (line.contains("Color32::from_") && !line.contains("// copied color"));
+                if raw {
+                    found.push(format!("{}:{}: {}", path.display(), n + 1, line.trim()));
+                }
+            }
+        }
+        assert!(
+            found.is_empty(),
+            "raw sizes or colors:\n{}",
+            found.join("\n")
+        );
+    }
 
     /// A context styled with each dark-panels choice, in each theme.
     fn styled() -> Vec<(egui::Context, egui::Theme)> {

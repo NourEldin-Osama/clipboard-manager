@@ -105,18 +105,15 @@ pub(super) fn color_in(text: &str) -> Option<Color32> {
         let digit = |i: usize| u8::from_str_radix(hex.get(i..i + 1)?, 16).ok();
         let pair = |i: usize| u8::from_str_radix(hex.get(i..i + 2)?, 16).ok();
         return match hex.len() {
-            3 => Some(Color32::from_rgb(
-                digit(0)? * 17,
-                digit(1)? * 17,
-                digit(2)? * 17,
-            )),
-            6 => Some(Color32::from_rgb(pair(0)?, pair(2)?, pair(4)?)),
-            8 => Some(Color32::from_rgba_unmultiplied(
-                pair(0)?,
-                pair(2)?,
-                pair(4)?,
-                pair(6)?,
-            )),
+            3 => {
+                let (r, g, b) = (digit(0)? * 17, digit(1)? * 17, digit(2)? * 17);
+                Some(Color32::from_rgb(r, g, b)) // copied color
+            }
+            6 => Some(Color32::from_rgb(pair(0)?, pair(2)?, pair(4)?)), // copied color
+            8 => {
+                let (r, g, b, a) = (pair(0)?, pair(2)?, pair(4)?, pair(6)?);
+                Some(Color32::from_rgba_unmultiplied(r, g, b, a)) // copied color
+            }
             _ => None,
         };
     }
@@ -134,11 +131,11 @@ pub(super) fn color_in(text: &str) -> Option<Color32> {
     let (a, b, c) = (number(parts[0])?, number(parts[1])?, number(parts[2])?);
     match name.trim() {
         "rgb" | "rgba" if [a, b, c].iter().all(|v| (0.0..=255.0).contains(v)) => {
-            Some(Color32::from_rgb(a as u8, b as u8, c as u8))
+            Some(Color32::from_rgb(a as u8, b as u8, c as u8)) // copied color
         }
         "hsl" | "hsla" if (0.0..=100.0).contains(&b) && (0.0..=100.0).contains(&c) => {
             let (r, g, bl) = hsl_to_rgb(a, b / 100.0, c / 100.0);
-            Some(Color32::from_rgb(r, g, bl))
+            Some(Color32::from_rgb(r, g, bl)) // copied color
         }
         _ => None,
     }

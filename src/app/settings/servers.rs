@@ -154,7 +154,7 @@ fn choose_kind(server: &mut Server, kind: ServerKind) {
 /// The type of server, as a row of tiles.
 fn kind_tiles(ui: &mut Ui, server: &mut Server) {
     super::view::row_wrapped(ui, |ui| {
-        ui.add_space(10.0);
+        ui.add_space(space::MEDIUM);
         ui.spacing_mut().item_spacing = Vec2::new(8.0, 8.0);
         for kind in ServerKind::ALL {
             let selected = server.kind == kind;
@@ -195,7 +195,7 @@ fn kind_tile(ui: &mut Ui, kind: ServerKind, selected: bool) -> egui::Response {
     let p = ui.painter();
     p.rect(
         rect,
-        CornerRadius::same(9),
+        CornerRadius::same(radius::MEDIUM),
         fill,
         stroke,
         egui::StrokeKind::Inside,
@@ -390,7 +390,7 @@ fn test_line(ui: &mut Ui, test: &Test) {
     };
     let seconds = |took: &Duration| format!("{:.1}", took.as_secs_f32());
     super::view::row_wrapped(ui, |ui| {
-        ui.add_space(10.0);
+        ui.add_space(space::MEDIUM);
         match result {
             Ok(Tested::Search(t)) => {
                 let works = if t.vectors > 1 {
@@ -442,7 +442,7 @@ fn test_line(ui: &mut Ui, test: &Test) {
         return;
     };
     super::view::row_wrapped(ui, |ui| {
-        ui.add_space(10.0);
+        ui.add_space(space::MEDIUM);
         match images {
             Ok(()) => icons::chip(ui, Icon::Check, &t!("settings-model-test-images"), GREEN),
             Err(e) => {
@@ -480,7 +480,7 @@ impl App {
                         row(ui, |ui| {
                             ui.set_min_height(30.0);
                             icons::logo(ui, server.kind, 20.0, strong);
-                            ui.add_space(4.0);
+                            ui.add_space(space::TINY);
                             lbl(ui, server.label(), size::BODY, strong);
                             far(ui, |ui| {
                                 if ui
@@ -503,7 +503,7 @@ impl App {
             });
         }
         row(ui, |ui| {
-            ui.add_space(10.0);
+            ui.add_space(space::MEDIUM);
             if ui
                 .button(txt(&t!("settings-server-add"), size::CONTROL, None))
                 .clicked()
@@ -619,12 +619,12 @@ impl App {
         let Some(pending) = &self.pending_send else {
             return;
         };
-        ui.add_space(8.0);
+        ui.add_space(space::SMALL);
         send_questions(ui, &pending.search, &pending.reader);
-        ui.add_space(4.0);
+        ui.add_space(space::TINY);
         let mut answer = None;
         row(ui, |ui| {
-            ui.add_space(10.0);
+            ui.add_space(space::MEDIUM);
             if primary_button(ui, &t!("settings-server-send")).clicked() {
                 answer = Some(true);
             }
@@ -701,7 +701,7 @@ impl App {
 
         let strong = ui.visuals().strong_text_color();
         let weak = ui.visuals().weak_text_color();
-        ui.add_space(8.0);
+        ui.add_space(space::SMALL);
         row(ui, |ui| {
             if icons::icon_button_ex(
                 ui,
@@ -726,7 +726,7 @@ impl App {
 
         section(ui, &t!("settings-server-kind"));
         kind_tiles(ui, &mut editor.server);
-        ui.add_space(6.0);
+        ui.add_space(space::SMALL);
 
         let server = &mut editor.server;
         plain_setting(
@@ -794,7 +794,7 @@ impl App {
             );
         }
         super::view::row_wrapped(ui, |ui| {
-            ui.add_space(10.0);
+            ui.add_space(space::MEDIUM);
             let found = &editor.found;
             if launching {
                 lbl(ui, &t!("settings-server-launch-note"), size::SMALL, weak);
@@ -937,7 +937,7 @@ impl App {
             });
         }
         row(ui, |ui| {
-            ui.add_space(10.0);
+            ui.add_space(space::MEDIUM);
             for (search, label) in [
                 (true, t!("settings-model-add-search")),
                 (false, t!("settings-model-add-read")),
@@ -1025,11 +1025,11 @@ impl App {
 
         let mut agreed = false;
         if let Some((search, reader)) = &editor.ask_send {
-            ui.add_space(8.0);
+            ui.add_space(space::SMALL);
             send_questions(ui, search, reader);
             let mut answer = None;
             row(ui, |ui| {
-                ui.add_space(10.0);
+                ui.add_space(space::MEDIUM);
                 if primary_button(ui, &t!("settings-server-send-and-save")).clicked() {
                     answer = Some(true);
                 }
@@ -1050,10 +1050,10 @@ impl App {
             }
         }
 
-        ui.add_space(14.0);
+        ui.add_space(space::LARGE);
         let can_save = launching || !editor.server.base_url.trim().is_empty();
         row(ui, |ui| {
-            ui.add_space(10.0);
+            ui.add_space(space::MEDIUM);
             if !editor.is_new {
                 let red = text_shade(RED, ui.visuals().dark_mode);
                 if editor.deleting {
@@ -1093,7 +1093,7 @@ impl App {
                 }
             }
             far(ui, |ui| {
-                ui.add_space(10.0);
+                ui.add_space(space::MEDIUM);
                 if ui
                     .add_enabled(
                         can_save,
@@ -1240,7 +1240,7 @@ fn model_settings(
                 },
             );
             row(ui, |ui| {
-                ui.add_space(10.0);
+                ui.add_space(space::MEDIUM);
                 let running = fill.is_some_and(|f| f.running.is_some());
                 if tip(
                     ui.add_enabled(
@@ -1277,7 +1277,7 @@ fn search_settings(ui: &mut Ui, s: &mut SearchSettings, model: &str) {
     if let Some((query, document)) = catalog::known_prompts(model) {
         if s.query_prefix != query || s.document_prefix != document {
             row(ui, |ui| {
-                ui.add_space(10.0);
+                ui.add_space(space::MEDIUM);
                 icons::chip(ui, Icon::Info, &t!("settings-model-prompts-tip"), AMBER);
                 if ui
                     .button(txt(&t!("settings-server-use-them"), size::BODY, None))

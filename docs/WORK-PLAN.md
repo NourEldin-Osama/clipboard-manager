@@ -259,7 +259,7 @@ use; then the look, motion and smaller changes; and the README, bug reports and 
 - [x] 17.5 Alt+C: a note and a tray badge (D59)
 
 ### Phase 18. Look
-- [ ] 18.1 Named sizes and colors, and a test against raw ones (D62)
+- [x] 18.1 Named sizes and colors, and a test against raw ones (D62)
 - [x] 18.2 Dark panels: Darker or Lighter, Lighter by default (D58)
 - [x] 18.3 Filter counts within the search results, filters with none dimmed, the result count in the popup
 - [x] 18.4 Image rows: "Image" or the read text, then the size

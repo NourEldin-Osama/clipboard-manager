@@ -33,7 +33,7 @@ fn main_button(ui: &mut Ui, ways: &[CopyWay]) -> Option<Paste> {
     let (main, others) = ways.split_first()?;
     let height = 34.0;
     let arrow_w = if others.is_empty() { 0.0 } else { 30.0 };
-    let key_color = Color32::from_white_alpha(190);
+    let key_color = theme::on_button(190);
     let keys = ui.fonts_mut(|f| {
         f.layout_no_wrap(
             main.keys.clone(),
@@ -76,12 +76,16 @@ fn main_button(ui: &mut Ui, ways: &[CopyWay]) -> Option<Paste> {
         },
     );
     let (main_round, arrow_round) = match (others.is_empty(), i18n::rtl()) {
-        (true, _) => (CornerRadius::same(8), CornerRadius::ZERO),
+        (true, _) => (CornerRadius::same(radius::MEDIUM), CornerRadius::ZERO),
         (false, false) => (start, end),
         (false, true) => (end, start),
     };
     let p = ui.painter();
-    p.rect_filled(rect, CornerRadius::same(8), button_fill(accent()));
+    p.rect_filled(
+        rect,
+        CornerRadius::same(radius::MEDIUM),
+        button_fill(accent()),
+    );
     let resp = ui.interact(
         main_rect,
         egui::Id::unique("details-main-button"),
@@ -91,7 +95,7 @@ fn main_button(ui: &mut Ui, ways: &[CopyWay]) -> Option<Paste> {
     let lit = |resp: &egui::Response, round: CornerRadius, at: Rect| {
         if resp.hovered() {
             let pressed = resp.is_pointer_button_down_on();
-            let shade = Color32::from_white_alpha(if pressed { 10 } else { 28 });
+            let shade = theme::lit(pressed);
             ui.painter().rect_filled(at, round, shade);
         }
     };
@@ -134,7 +138,7 @@ fn main_button(ui: &mut Ui, ways: &[CopyWay]) -> Option<Paste> {
                 Vec2::new(1.0, height - 14.0),
             ),
             0.0,
-            Color32::from_white_alpha(70),
+            theme::on_button(70),
         );
         icons::paint(
             ui.painter(),
@@ -204,7 +208,7 @@ impl App {
                 let shade = text_shade(c, ui.visuals().dark_mode);
                 Frame::new()
                     .fill(c.gamma_multiply(if ui.visuals().dark_mode { 0.25 } else { 0.13 }))
-                    .corner_radius(CornerRadius::same(12))
+                    .corner_radius(CornerRadius::same(radius::LARGE))
                     .inner_margin(Margin {
                         left: 10,
                         right: 4,
@@ -411,7 +415,7 @@ impl App {
                 }
             });
         });
-        ui.add_space(2.0);
+        ui.add_space(space::TINY);
         let meta = self.meta_line(&it);
         let weak = ui.visuals().weak_text_color();
         let read_failed = it.ocr.is_none() && self.ocr_failed.contains(&it.id);
@@ -440,9 +444,9 @@ impl App {
                 ));
             });
         }
-        ui.add_space(6.0);
+        ui.add_space(space::SMALL);
         self.tag_editor(ui, &it);
-        ui.add_space(10.0);
+        ui.add_space(space::MEDIUM);
 
         egui::ScrollArea::vertical()
             .auto_shrink([false, false])
@@ -511,24 +515,27 @@ impl App {
                             let (swatch, _) =
                                 ui.allocate_exact_size(Vec2::splat(48.0), Sense::hover());
                             let edge = ui.visuals().weak_text_color().gamma_multiply(0.3);
-                            ui.painter()
-                                .rect_filled(swatch, CornerRadius::same(8), color);
+                            ui.painter().rect_filled(
+                                swatch,
+                                CornerRadius::same(radius::MEDIUM),
+                                color,
+                            );
                             ui.painter().rect_stroke(
                                 swatch,
-                                CornerRadius::same(8),
+                                CornerRadius::same(radius::MEDIUM),
                                 Stroke::new(1.0, edge),
                                 egui::StrokeKind::Inside,
                             );
                             lbl(ui, &line, size::BODY, ui.visuals().text_color());
                         });
-                        ui.add_space(8.0);
+                        ui.add_space(space::SMALL);
                     }
                     let d = self.detail_text(&it);
                     if d.monospace {
                         let code_bg = ui.visuals().panel_fill;
                         Frame::new()
                             .fill(code_bg)
-                            .corner_radius(CornerRadius::same(8))
+                            .corner_radius(CornerRadius::same(radius::MEDIUM))
                             .inner_margin(Margin::same(12))
                             .show(ui, |ui| {
                                 ui.set_width(ui.available_width());
@@ -621,7 +628,7 @@ impl App {
                 ui.add(egui::Image::new((tex.id(), size * scale)).corner_radius(8.0));
             }
             Preview::Loading => {
-                ui.add_space(24.0);
+                ui.add_space(space::HUGE);
                 slow_spinner(ui, 22.0, None);
             }
             Preview::Missing => {
@@ -634,7 +641,7 @@ impl App {
             }
         }
         if let Some(t) = it.ocr.as_deref().filter(|t| !t.trim().is_empty()) {
-            ui.add_space(16.0);
+            ui.add_space(space::LARGE);
             row(ui, |ui| {
                 lbl(
                     ui,
@@ -666,11 +673,11 @@ impl App {
     }
 
     pub(super) fn empty_details(&self, ui: &mut Ui) {
-        ui.add_space(80.0);
+        ui.add_space(space::EMPTY_PAGE);
         ui.vertical_centered(|ui| {
             let weak = ui.visuals().weak_text_color();
             lbl(ui, &t!("details-select-an-item"), size::BODY, weak);
-            ui.add_space(18.0);
+            ui.add_space(space::LARGE);
             let k = &self.cfg.keys;
             let quick = t!("quick-paste-keys");
             let rows = [
@@ -702,7 +709,7 @@ impl App {
                         keys.split('+').rev().collect::<Vec<_>>().join("+")
                     };
                     shortcut::keycaps(&mut caps, &keys, false);
-                    ui.add_space(8.0);
+                    ui.add_space(space::SMALL);
                     lbl(ui, &what, size::SMALL, weak);
                 });
             }

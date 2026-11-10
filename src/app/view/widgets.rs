@@ -367,11 +367,17 @@ pub(super) fn mode_button(ui: &mut Ui, label: &str, emphasised: bool) -> egui::R
     );
     let v = ui.visuals();
     if emphasised {
-        ui.painter()
-            .rect_filled(rect, CornerRadius::same(8), accent().gamma_multiply(0.12));
+        ui.painter().rect_filled(
+            rect,
+            CornerRadius::same(radius::MEDIUM),
+            accent().gamma_multiply(0.12),
+        );
     } else if resp.hovered() || resp.is_pointer_button_down_on() {
-        ui.painter()
-            .rect_filled(rect, CornerRadius::same(8), v.widgets.hovered.weak_bg_fill);
+        ui.painter().rect_filled(
+            rect,
+            CornerRadius::same(radius::MEDIUM),
+            v.widgets.hovered.weak_bg_fill,
+        );
     }
     let color = if resp.hovered() && !emphasised {
         v.text_color()
@@ -409,7 +415,7 @@ pub(crate) fn chip(ui: &mut Ui, text: impl Into<String>, color: Color32) -> egui
     let shade = text_shade(color, ui.visuals().dark_mode);
     Frame::new()
         .fill(color.gamma_multiply(0.14))
-        .corner_radius(CornerRadius::same(10))
+        .corner_radius(CornerRadius::same(radius::ROUND))
         .inner_margin(Margin::symmetric(8, 3))
         .show(ui, |ui| ui.label(txt(&text, size::SMALL, Some(shade))))
         .response
@@ -422,8 +428,11 @@ pub(super) fn check_row(ui: &mut Ui, text: &str, checked: bool) -> egui::Respons
     resp.widget_info(|| egui::WidgetInfo::selected(egui::Role::CheckBox, true, checked, text));
     let v = ui.visuals();
     if resp.hovered() {
-        ui.painter()
-            .rect_filled(rect, CornerRadius::same(6), v.widgets.hovered.weak_bg_fill);
+        ui.painter().rect_filled(
+            rect,
+            CornerRadius::same(radius::MEDIUM),
+            v.widgets.hovered.weak_bg_fill,
+        );
     }
     let color = if checked {
         text_shade(accent(), v.dark_mode)
@@ -474,8 +483,11 @@ pub(super) fn menu_entry(
     // The keyboard moves through a menu by focus.
     let lit = resp.hovered() || resp.has_focus();
     if lit {
-        ui.painter()
-            .rect_filled(rect, CornerRadius::same(6), v.widgets.hovered.weak_bg_fill);
+        ui.painter().rect_filled(
+            rect,
+            CornerRadius::same(radius::MEDIUM),
+            v.widgets.hovered.weak_bg_fill,
+        );
     }
     let color = match color {
         Some(c) => text_shade(c, v.dark_mode),
@@ -564,7 +576,7 @@ pub(super) fn mode_option(ui: &mut Ui, m: SearchMode, active: bool) -> egui::Res
     let v = ui.visuals();
     let p = ui.painter();
     let a = accent();
-    let r = CornerRadius::same(8);
+    let r = CornerRadius::same(radius::MEDIUM);
     if active {
         p.rect_filled(
             rect,
@@ -579,7 +591,7 @@ pub(super) fn mode_option(ui: &mut Ui, m: SearchMode, active: bool) -> egui::Res
                     Vec2::new(3.0, rect.height() - 20.0),
                 ),
             ),
-            CornerRadius::same(2),
+            CornerRadius::same(radius::SMALL),
             a,
         );
     }

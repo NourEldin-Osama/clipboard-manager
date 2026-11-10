@@ -94,12 +94,12 @@ impl App {
 fn rules_section(ui: &mut Ui, d: &mut Config) {
     section(ui, &t!("settings-rules"));
     note(ui, &t!("settings-rules-help"));
-    ui.add_space(4.0);
+    ui.add_space(space::TINY);
     let mut remove = None;
     for (index, rule) in d.rules.iter_mut().enumerate() {
         ui.push_id(index, |ui| {
             row(ui, |ui| {
-                ui.add_space(10.0);
+                ui.add_space(space::MEDIUM);
                 let program = ui.add(
                     egui::TextEdit::singleline(&mut rule.app)
                         .hint_text(txt(&t!("settings-rule-program"), size::BODY, None))
@@ -145,7 +145,7 @@ fn rules_section(ui: &mut Ui, d: &mut Config) {
         d.rules.remove(index);
     }
     row(ui, |ui| {
-        ui.add_space(10.0);
+        ui.add_space(space::MEDIUM);
         if ui
             .button(txt(&t!("settings-rule-add"), size::CONTROL, None))
             .clicked()

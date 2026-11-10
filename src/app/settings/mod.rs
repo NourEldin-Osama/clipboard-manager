@@ -8,8 +8,8 @@ use super::icons::{self, Icon};
 use super::shortcut;
 use super::view::{
     accent, accent_name, button_fill, chip, cut_line, divider, far, flip, lbl, paint_text,
-    primary_button, reveal, row, section_title, set_choice_name, set_name, size, start_anchor,
-    text_shade, tip, title_lbl, txt, ACCENTS, AMBER, GREEN, RED,
+    primary_button, radius, reveal, row, section_title, set_choice_name, set_name, size, space,
+    start_anchor, text_shade, tip, title_lbl, txt, ACCENTS, AMBER, GREEN, RED,
 };
 use super::*;
 use crate::config::{DarkPanels, Density, Language, ReaderModel, TextReader, TimeFormat};
@@ -208,7 +208,7 @@ impl App {
                     {
                         close = true;
                     }
-                    ui.add_space(8.0);
+                    ui.add_space(space::SMALL);
                     let strong = ui.visuals().strong_text_color();
                     title_lbl(ui, &t!("settings-title"), size::TITLE, strong);
                     // A server's settings wait for its Save.
@@ -254,13 +254,13 @@ impl App {
                     if sel {
                         ui.painter().rect_filled(
                             rect,
-                            CornerRadius::same(8),
+                            CornerRadius::same(radius::MEDIUM),
                             accent().gamma_multiply(0.13),
                         );
                     } else if r.hovered() {
                         ui.painter().rect_filled(
                             rect,
-                            CornerRadius::same(8),
+                            CornerRadius::same(radius::MEDIUM),
                             v.widgets.hovered.weak_bg_fill,
                         );
                     }
@@ -341,7 +341,7 @@ impl App {
                             }
                             SettingsPage::About => self.about_page(ui, &mut d),
                         });
-                        ui.add_space(24.0);
+                        ui.add_space(space::HUGE);
                     });
             });
 

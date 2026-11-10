@@ -47,7 +47,7 @@ impl App {
                             }
                         });
                         self.view_switch(ui);
-                        ui.add_space(8.0);
+                        ui.add_space(space::SMALL);
                         self.pause_button(ui);
                         ui.min_rect().width()
                     });
@@ -57,7 +57,7 @@ impl App {
                             .request_discard("the top bar's buttons changed width");
                     }
                 });
-                ui.add_space(4.0);
+                ui.add_space(space::TINY);
                 self.filter_chips(ui);
             });
     }
@@ -75,7 +75,7 @@ impl App {
         let v = ui.visuals();
         ui.painter().rect_filled(
             track,
-            CornerRadius::same(10),
+            CornerRadius::same(radius::MEDIUM),
             v.widgets.inactive.weak_bg_fill,
         );
         let tint = accent();
@@ -99,9 +99,13 @@ impl App {
             });
             let p = ui.painter();
             if current {
-                p.rect_filled(rect, CornerRadius::same(8), tint.gamma_multiply(0.18));
+                p.rect_filled(
+                    rect,
+                    CornerRadius::same(radius::MEDIUM),
+                    tint.gamma_multiply(0.18),
+                );
             } else if resp.hovered() {
-                p.rect_filled(rect, CornerRadius::same(8), hovered);
+                p.rect_filled(rect, CornerRadius::same(radius::MEDIUM), hovered);
             }
             let color = match (current, resp.hovered()) {
                 (true, _) => shade,
@@ -138,13 +142,17 @@ impl App {
         let p = ui.painter();
         let color = if recording {
             if resp.hovered() {
-                p.rect_filled(rect, CornerRadius::same(8), v.widgets.hovered.weak_bg_fill);
+                p.rect_filled(
+                    rect,
+                    CornerRadius::same(radius::MEDIUM),
+                    v.widgets.hovered.weak_bg_fill,
+                );
             }
             v.text_color()
         } else {
-            p.rect_filled(rect, CornerRadius::same(8), button_fill(AMBER));
+            p.rect_filled(rect, CornerRadius::same(radius::MEDIUM), button_fill(AMBER));
             if resp.hovered() {
-                p.rect_filled(rect, CornerRadius::same(8), Color32::from_white_alpha(28));
+                p.rect_filled(rect, CornerRadius::same(radius::MEDIUM), theme::lit(false));
             }
             Color32::WHITE
         };
@@ -165,14 +173,10 @@ impl App {
         let focused_before = ui
             .memory(|m| m.focused())
             .is_some_and(|id| id == search_id());
-        let bg = if ui.visuals().dark_mode {
-            Color32::from_gray(22)
-        } else {
-            Color32::WHITE
-        };
+        let bg = theme::search_fill(ui.visuals().dark_mode);
         let out = Frame::new()
             .fill(bg)
-            .corner_radius(CornerRadius::same(10))
+            .corner_radius(CornerRadius::same(radius::MEDIUM))
             .stroke(if focused_before {
                 Stroke::new(1.5, accent())
             } else {
@@ -343,7 +347,7 @@ impl App {
             }
             self.tag_chips(ui);
             far(ui, |ui| {
-                ui.add_space(4.0);
+                ui.add_space(space::TINY);
                 self.sort_menu(ui);
                 if !self.query.trim().is_empty() {
                     let text = t!("top-results", count = self.results.len());
@@ -367,7 +371,7 @@ impl App {
             ui.set_width(MENU_W);
             let weak = ui.visuals().weak_text_color();
             row(ui, |ui| {
-                ui.add_space(10.0);
+                ui.add_space(space::MEDIUM);
                 lbl(ui, &t!("top-sort-by-heading"), size::SMALL, weak);
             });
             for s in SortOrder::ALL {
@@ -391,14 +395,14 @@ impl App {
         if tags.is_empty() {
             return;
         }
-        ui.add_space(6.0);
+        ui.add_space(space::SMALL);
         let (sep_rect, _) = ui.allocate_exact_size(Vec2::new(1.0, 18.0), Sense::hover());
         ui.painter().rect_filled(
             sep_rect,
             0.0,
             ui.visuals().weak_text_color().gamma_multiply(0.3),
         );
-        ui.add_space(6.0);
+        ui.add_space(space::SMALL);
         const SHOWN: usize = 6;
         let mut clicked: Option<String> = None;
         let mut delete: Option<String> = None;

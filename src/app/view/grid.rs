@@ -26,17 +26,13 @@ pub(super) fn paint_card(
 ) {
     let v = ui.visuals();
     let a = accent();
-    let radius = CornerRadius::same(10);
+    let radius = CornerRadius::same(radius::LARGE);
     let p = ui.painter();
     let shadow = egui::epaint::Shadow {
         offset: [0, 2],
         blur: if hot { 14 } else { 8 },
         spread: 0,
-        color: Color32::from_black_alpha(match (v.dark_mode, hot) {
-            (true, _) => 90,
-            (false, true) => 34,
-            (false, false) => 20,
-        }),
+        color: theme::card_shadow(v.dark_mode, hot),
     };
     p.add(shadow.as_shape(rect, radius));
     p.rect_filled(rect, radius, v.extreme_bg_color);
@@ -54,14 +50,10 @@ pub(super) fn paint_card(
         let r = CornerRadius {
             nw: 0,
             ne: 0,
-            sw: 10,
-            se: 10,
+            sw: radius::LARGE,
+            se: radius::LARGE,
         };
-        let fill = if v.dark_mode {
-            Color32::from_gray(44)
-        } else {
-            Color32::from_gray(238)
-        };
+        let fill = theme::card_footer(v.dark_mode);
         p.rect_filled(footer, r, fill);
     } else {
         paint_footer(
@@ -101,7 +93,7 @@ pub(super) fn paint_card(
                 .paint_at(ui, img);
             bp.rect_stroke(
                 img,
-                CornerRadius::same(6),
+                CornerRadius::same(radius::MEDIUM),
                 Stroke::new(1.0, weak.gamma_multiply(0.25)),
                 egui::StrokeKind::Inside,
             );
@@ -121,10 +113,10 @@ pub(super) fn paint_card(
                 body.min,
                 Vec2::new(body.width(), (body.height() - 46.0).max(24.0)),
             );
-            bp.rect_filled(swatch, CornerRadius::same(8), color);
+            bp.rect_filled(swatch, CornerRadius::same(radius::MEDIUM), color);
             bp.rect_stroke(
                 swatch,
-                CornerRadius::same(8),
+                CornerRadius::same(radius::MEDIUM),
                 Stroke::new(1.0, weak.gamma_multiply(0.3)),
                 egui::StrokeKind::Inside,
             );
@@ -430,7 +422,7 @@ fn paint_tags(ui: &Ui, rect: Rect, it: &Item, pad: f32, tags_top: f32, strip_top
                 g.size() + Vec2::new(14.0, 6.0),
             ),
         );
-        tp.rect_filled(r, CornerRadius::same(9), fill);
+        tp.rect_filled(r, CornerRadius::same(radius::MEDIUM), fill);
         x += r.width() + gap;
         tp.galley(r.min + Vec2::new(7.0, 3.0), g, c);
     };
