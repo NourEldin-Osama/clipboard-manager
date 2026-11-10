@@ -307,25 +307,37 @@ pub(super) fn paint_row(
             text_shade(c, v.dark_mode),
         );
     };
+    // On one line a picture or a swatch takes about the room of the kind's
+    // symbol, so the column stays even.
+    let picture = if compact {
+        av_rect.shrink(4.0)
+    } else {
+        av_rect
+    };
     match thumb {
         Some(t) => {
+            let side = picture.width();
             let s = t.size_vec2();
-            let k = (av / s.x).max(av / s.y);
+            let k = (side / s.x).max(side / s.y);
             // Fill the square, cropping the longer side.
-            let uv_w = (av / (s.x * k)).min(1.0);
-            let uv_h = (av / (s.y * k)).min(1.0);
+            let uv_w = (side / (s.x * k)).min(1.0);
+            let uv_h = (side / (s.y * k)).min(1.0);
             let uv = Rect::from_min_max(
                 Pos2::new((1.0 - uv_w) / 2.0, (1.0 - uv_h) / 2.0),
                 Pos2::new((1.0 + uv_w) / 2.0, (1.0 + uv_h) / 2.0),
             );
-            egui::Image::new((t.id(), Vec2::splat(av)))
+            egui::Image::new((t.id(), Vec2::splat(side)))
                 .uv(uv)
                 .tint(theme::picture_tint(v.dark_mode))
-                .corner_radius(6.0)
-                .paint_at(ui, av_rect);
+                .corner_radius(if compact { 4.0 } else { 6.0 })
+                .paint_at(ui, picture);
         }
         None if color.is_some() => {
-            let swatch = av_rect.shrink(3.0);
+            let swatch = if compact {
+                picture
+            } else {
+                av_rect.shrink(3.0)
+            };
             p.rect_filled(
                 swatch,
                 CornerRadius::same(radius::MEDIUM),
