@@ -503,6 +503,13 @@ impl App {
         // A right-click, or Shift+F10 on the selected card, opens a menu.
         let mut open_menu = None;
         let menu_key = self.menu_by_key;
+        // After a delete the cards after it glide into the gap.
+        let moving = ui.ctx().style_of(ui.ctx().theme()).animation_time > 0.0;
+        let glide = if moving && self.glide_until.is_some_and(|t| Instant::now() < t) {
+            GLIDE_TIME
+        } else {
+            0.0
+        };
         // The hover buttons' tips name their keys.
         let keys = self.cfg.keys.clone();
         let frame = ui.ctx().cumulative_pass_nr();
@@ -525,10 +532,18 @@ impl App {
                 let (row, col) = (r / cols, r % cols);
                 // Cards fill from the reading-start side.
                 let col = if i18n::rtl() { cols - 1 - col } else { col };
+                let ctx = ui.ctx().clone();
+                let to = |axis: &str, value: f32| {
+                    ctx.animate_value_with_time(
+                        egui::Id::unique(("card", axis, hit.id)),
+                        value,
+                        glide,
+                    )
+                };
                 let rect = Rect::from_min_size(
                     Pos2::new(
-                        origin.x + col as f32 * (card_w + gap),
-                        origin.y + row as f32 * pitch + 2.0,
+                        origin.x + to("x", col as f32 * (card_w + gap)),
+                        origin.y + to("y", row as f32 * pitch) + 2.0,
                     ),
                     Vec2::new(card_w, card_h),
                 );

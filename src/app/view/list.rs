@@ -621,6 +621,13 @@ impl App {
         // A right-click, or Shift+F10 on the selected row, opens a menu.
         let mut open_menu = None;
         let menu_key = self.menu_by_key;
+        // After a delete the rows below glide up into the gap.
+        let moving = ui.ctx().style_of(ui.ctx().theme()).animation_time > 0.0;
+        let glide = if moving && self.glide_until.is_some_and(|t| Instant::now() < t) {
+            GLIDE_TIME
+        } else {
+            0.0
+        };
         // The hover buttons' tips name their keys.
         let keys = self.cfg.keys.clone();
         let frame = ui.ctx().cumulative_pass_nr();
@@ -653,8 +660,16 @@ impl App {
                 if ys[i] + h < viewport.min.y || ys[i] > viewport.max.y {
                     continue;
                 }
+                let top = match l {
+                    Line::Row(r) => ui.ctx().animate_value_with_time(
+                        egui::Id::unique(("row-y", results[*r].id)),
+                        ys[i],
+                        glide,
+                    ),
+                    Line::Header(..) => ys[i],
+                };
                 let rect =
-                    Rect::from_min_size(Pos2::new(left, origin.y + ys[i]), Vec2::new(width, h));
+                    Rect::from_min_size(Pos2::new(left, origin.y + top), Vec2::new(width, h));
                 match l {
                     Line::Header(label, n) => paint_header(ui, rect, *label, *n),
                     Line::Row(r) => {

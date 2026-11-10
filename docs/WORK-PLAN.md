@@ -265,7 +265,7 @@ use; then the look, motion and smaller changes; and the README, bug reports and 
 - [x] 18.4 Image rows: "Image" or the read text, then the size
 
 ### Phase 19. Motion and smaller changes
-- [ ] 19.1 Deleted rows and cards fade out and the gap closes; messages slide in and out
+- [x] 19.1 Deleted rows and cards fade out and the gap closes; messages slide in and out
 - [x] 19.2 Filled buttons react to the pointer and to a press
 - [x] 19.3 Nothing moves when Windows' "Animation effects" is off
 - [x] 19.4 The tray icon turns gray while recording is paused, and its tooltip says so (D59)

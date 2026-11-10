@@ -22,6 +22,11 @@ const PAD: f32 = 14.0;
 const ICON: f32 = 16.0;
 const BUTTON_H: f32 = 24.0;
 const BUTTON_PAD: f32 = 8.0;
+/// How far a message slides as it comes, and how long that takes; it
+/// fades out over the last part of its time.
+const SLIDE: f32 = 16.0;
+const SLIDE_TIME: f32 = 0.2;
+const FADE_TIME: f32 = 0.15;
 /// Between the icon, the text and the buttons.
 const SPACE: f32 = 10.0;
 
@@ -100,8 +105,13 @@ impl App {
                             Pos2::new(rect.left(), top),
                             Vec2::new(width, l.height),
                         );
-                        paint_card(ui, card);
-                        paint_content(ui, card, toast, l, &mut asked, None);
+                        let (shift, opacity) = motion(ui.ctx(), toast);
+                        let card = card.translate(Vec2::new(0.0, shift));
+                        ui.scope(|ui| {
+                            ui.multiply_opacity(opacity);
+                            paint_card(ui, card);
+                            paint_content(ui, card, toast, l, &mut asked, None);
+                        });
                         top += l.height + GAP;
                     }
                 } else {
@@ -127,14 +137,28 @@ impl App {
                             ),
                         );
                     }
-                    paint_card(ui, card);
                     let toast = shown.last().expect("there is a message");
-                    paint_content(ui, card, toast, front, &mut asked, None);
+                    let (shift, opacity) = motion(ui.ctx(), toast);
+                    let card = card.translate(Vec2::new(0.0, shift));
+                    ui.scope(|ui| {
+                        ui.multiply_opacity(opacity);
+                        paint_card(ui, card);
+                        paint_content(ui, card, toast, front, &mut asked, None);
+                    });
                 }
             });
         self.toasts_hovered = ctx
             .pointer_hover_pos()
             .is_some_and(|p| area.response.rect.contains(p));
+        let mut moving = false;
+        for toast in self.toasts.iter_mut().filter(|t| !t.on_screen) {
+            let (shift, opacity) = motion(ctx, toast);
+            moving |= shift > 0.0 || opacity < 1.0;
+            toast.drawn = true;
+        }
+        if moving {
+            ctx.request_repaint();
+        }
         self.toast_showing = asked.show;
         if let Some(id) = asked.action {
             if let Some(at) = self.toasts.iter().position(|t| t.id == id) {
@@ -146,6 +170,25 @@ impl App {
         }
         ctx.request_repaint_after(Duration::from_millis(100));
     }
+}
+
+/// How far a message is still below its place, and how opaque it is: it
+/// slides up as it comes and fades as its time runs out (19.1). Nothing
+/// moves when animations are off.
+fn motion(ctx: &egui::Context, toast: &Toast) -> (f32, f32) {
+    if ctx.style_of(ctx.theme()).animation_time == 0.0 {
+        return (0.0, 1.0);
+    }
+    let id = egui::Id::unique(("toast-slide", toast.id));
+    let shift = if toast.drawn {
+        ctx.animate_value_with_time(id, 0.0, SLIDE_TIME)
+    } else {
+        ctx.animate_value_with_time(id, SLIDE, 0.0)
+    };
+    let left = toast.how_long.saturating_sub(toast.shown_for).as_secs_f32();
+    let fading = (left / FADE_TIME).clamp(0.0, 1.0);
+    let coming = 1.0 - shift / SLIDE;
+    (shift + (1.0 - fading) * SLIDE / 2.0, coming.min(fading))
 }
 
 /// The card behind a message: its shadow, fill and edge.
@@ -370,6 +413,7 @@ mod tests {
             keys: None,
             secret: Some("sk-proj-abcdefghijklmnopqrstuvwxyz0123456789".into()),
             on_screen: false,
+            drawn: false,
             id: 1,
         }
     }
