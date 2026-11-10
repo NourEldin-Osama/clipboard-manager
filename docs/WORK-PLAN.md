@@ -86,6 +86,8 @@ Status: `[ ]` to do, `[~]` in progress, `[x]` done, `[!]` waiting for a decision
 | D69 | Grid cards are all the same height (the default) or as tall as their content, a choice in Settings, Appearance; cards as tall as their content stack in columns, and the up and down keys move within a column | You | Decided |
 | D70 | In Arabic, a text, link, path or tag written in a left-to-right script aligns left, as in English | You | Decided |
 | D71 | The review rounds stop when each of the three reviewers gives the app at least 9.5 in each of the six categories and a higher total than each of the five other apps (the design concept is scored, but counts for the look only), or after 10 rounds | You | Decided |
+| D72 | A program without an icon of its own shows App Generic from Fluent UI System Icons, in card footers and as the badge on list rows | You | Decided |
+| D73 | Alt+Enter opens the selected item's details, a key in Settings, Shortcuts, shown in the item menu and the F1 sheet; saved settings without it take the default | You | Decided |
 
 ## Order of work, and why
 
