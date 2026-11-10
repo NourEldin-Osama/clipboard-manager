@@ -51,9 +51,10 @@ fn content_size(text: &str) -> f32 {
 /// left-to-right text reads, in Arabic too.
 fn reading_text(ui: &mut Ui, text: &str) {
     let text_size = content_size(text);
+    // The pane's main content, in the strongest text color.
+    let color = ui.visuals().strong_text_color();
     if bidi::has_rtl(text) {
-        let c = ui.visuals().text_color();
-        bidi::content(ui, text, FontId::proportional(text_size), c);
+        bidi::content(ui, text, FontId::proportional(text_size), color);
         return;
     }
     let room = ui.available_rect_before_wrap();
@@ -67,6 +68,7 @@ fn reading_text(ui: &mut Ui, text: &str) {
             egui::Label::new(
                 RichText::new(text)
                     .size(text_size)
+                    .color(color)
                     .line_height(Some(text_size * 1.6)),
             )
             .selectable(true)

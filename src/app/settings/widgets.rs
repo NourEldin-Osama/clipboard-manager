@@ -260,12 +260,27 @@ pub(super) fn setting_row(
 pub(super) fn note(ui: &mut Ui, text: &str) {
     let weak = ui.visuals().weak_text_color();
     let fill = ui.visuals().panel_fill;
+    // From the rows' text to their controls' right edge.
+    let (start, end) = (
+        10,
+        (10.0 + RESET_BUTTON_SIZE + ui.spacing().item_spacing.x) as i8,
+    );
+    let (left, right) = if i18n::rtl() {
+        (end, start)
+    } else {
+        (start, end)
+    };
     ui.add_space(space::TINY);
     Frame::new()
         .fill(fill)
         .corner_radius(CornerRadius::same(radius::MEDIUM))
         .inner_margin(Margin::symmetric(12, 8))
-        .outer_margin(Margin::symmetric(10, 0))
+        .outer_margin(Margin {
+            left,
+            right,
+            top: 0,
+            bottom: 0,
+        })
         .show(ui, |ui| {
             ui.set_width(ui.available_width());
             super::bidi::paragraph(ui, text, FontId::proportional(size::SMALL), weak);
