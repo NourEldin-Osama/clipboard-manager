@@ -290,21 +290,21 @@ use; then the look, motion and smaller changes; and the README, bug reports and 
 - [x] 20.4 New screenshots, the change log and version 0.7.0
 
 ### Phase 21. Review rounds of the look and the flows
-- [ ] 21.1 Programs by their own names, never their file names; a copy whose program is unknown shows the file name without .exe
-- [ ] 21.2 Search: the filters count what is shown, and the best match is selected
-- [ ] 21.3 The popup's keys drawn as key caps like the Shortcuts page's, the numbers as keys, and a fade where the list goes on
-- [ ] 21.4 Grid cards as tall as their content, a choice in Appearance (D69)
-- [ ] 21.5 Dark theme: a faint edge on the cards, pictures a little dimmer
-- [ ] 21.6 Details: the copied text first, then one line of facts
-- [ ] 21.7 Settings: controls closer to their names, one right edge, choices on a track, thin menu arrows
-- [ ] 21.8 States said in words: the status bar and Search & AI
-- [ ] 21.9 Arabic: the plural forms for 11 to 99 and for two; left-to-right content aligns left (D70)
-- [ ] 21.10 The item menu: the card under it stays calm
-- [ ] 21.11 A Servers page (D68)
-- [ ] 21.12 Servers found on this PC, with Use (D66)
-- [ ] 21.13 Every model a saved server has, in the model menus (D67)
-- [ ] 21.14 The checklist turns on search by meaning with a server found on this PC
-- [ ] 21.15 Rules per app: Add a rule offers the programs in the history
+- [x] 21.1 Programs by their own names, never their file names; a copy whose program is unknown shows the file name without .exe
+- [x] 21.2 Search: the filters count what is shown, and the best match is selected
+- [x] 21.3 The popup's keys drawn as key caps like the Shortcuts page's, the numbers as keys, and a fade where the list goes on
+- [x] 21.4 Grid cards as tall as their content, a choice in Appearance (D69)
+- [x] 21.5 Dark theme: a faint edge on the cards, pictures a little dimmer
+- [x] 21.6 Details: the copied text first, then one line of facts
+- [x] 21.7 Settings: controls closer to their names, one right edge, choices on a track, thin menu arrows
+- [x] 21.8 States said in words: the status bar and Search & AI
+- [x] 21.9 Arabic: the plural forms for 11 to 99 and for two; left-to-right content aligns left (D70)
+- [x] 21.10 The item menu: the card under it stays calm
+- [x] 21.11 A Servers page (D68)
+- [x] 21.12 Servers found on this PC, with Use (D66)
+- [x] 21.13 Every model a saved server has, in the model menus (D67)
+- [x] 21.14 The checklist turns on search by meaning with a server found on this PC
+- [x] 21.15 Rules per app: Add a rule offers the programs in the history
 
 ## Change log
 
@@ -351,3 +351,4 @@ use; then the look, motion and smaller changes; and the README, bug reports and 
 | 2026-11-10 | `1314836`, `b3a105f`, merge `cfbdbf0` | Two small message fixes the user approved after the Phase 20 check: Save anyway says "Saved" before recording the copy, so the 90% warning comes in front; a message whose text would take more than two short lines beside its buttons gets the whole width, with the buttons in a row under it ("Not saved" with Show and Save anyway, the note on the screen). Checked on screen in English and Arabic |
 | 2026-11-10 | `bf01e2b`, merge `9890a70` | Version 0.7.1 for the two message fixes, at the user's choice after 0.7.0 was pushed: the change log notes and the version |
 | 2026-11-10 | `9dba353` to `5cf864c` (4 commits), merge `1f8ae9d` | Version 0.7.2, at the user's request after 0.7.1: the update bar under the search box is gone, and one message at the bottom right follows the update: found with Download, Skip this version and What's new, the download with a thin progress line and Cancel, a spinner while it is checked, ready with Restart to update, failed with the reason and Try again (D65, Option A of the preview). Settings, About shows the same step with the same buttons. A newer release found while an update waits replaces it. Found in the check and fixed: a long word after other words ran past the edge of a message (the shared line wrapping), and the progress line's track looked full in the dark theme. Checked with a test copy that downloaded the real 0.7.1 build 28, in English and light, and in Arabic and dark: the download, ready, the close button, the Settings row, a failed download and Try again, Cancel in the middle and Download again, which went on from the partial file. Not checked on screen: a newer version replacing a waiting one (it needs two releases; a unit test covers the comparison), the spinner while the download is checked (under a second), Skip this version, What's new, and the message staying out of the quick popup |
+| 2026-11-10 | `be9459e` to `c322ff4` (16 commits) | Phase 21, round 1 (the look and the flows the user chose from the round 0 page, with D66 to D71): programs by their own names, with a copy whose program is unknown showing its file name without .exe in its usual case; the cards and rows under an item's menu stay calm; Arabic counts take their form for 11 to 99, also for the pinned count; in Arabic a card's path, color and tags and the details text keep the side of their own script (D70); while searching, the filters count what each shows above its weaker matches, and the selection follows the best match until another is picked; the popup's keys and numbers are key caps like the Shortcuts page's, with a fade where the list goes on; in the dark theme cards have a faint edge and pictures are a little dimmer; the details start with the content, then one line of facts and the tags, and the pin button says Pinned; settings pages are 560 points wide with one right edge, choices on a track and thin menu arrows; the state of search by meaning is said in words, gray instead of red with no model yet; grid cards as tall as their content, a choice in Appearance (D69); a Servers page (D68); model servers on this PC found by themselves with Use and Add (D66); every model a saved server lists in the model menus (D67); the checklist's Turn on; Add a rule offers the history's programs. Checked on screen in a test copy with a stand-in server: the nine review screens, the Fit grid and its arrow keys, a server found and Use, the Servers page, the fuller model menu, the checklist's Turn on and the rule menu. Not checked: real model servers, a server that asks for a key, a reading model added from the menu |
