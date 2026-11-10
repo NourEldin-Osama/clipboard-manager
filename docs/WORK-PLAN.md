@@ -253,7 +253,7 @@ use; then the look, motion and smaller changes; and the README, bug reports and 
 
 ### Phase 17. Messages
 - [x] 17.1 Messages in the Sonner style at the bottom right of the window (D55)
-- [ ] 17.2 The app's own note on the screen (D56)
+- [x] 17.2 The app's own note on the screen (D56)
 - [x] 17.3 "Not saved" says what, with Show in the window (D57)
 - [x] 17.4 Delete by age and the item limit say what they removed, with Undo (D60); a new copy pushing the oldest item out of a full history says nothing, as before
 - [ ] 17.5 Alt+C: a note and a tray badge (D59)

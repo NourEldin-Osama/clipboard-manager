@@ -25,6 +25,7 @@ mod keys_sheet;
 mod list;
 mod menu;
 mod messages;
+mod note;
 mod popup;
 mod theme;
 mod time_format;
@@ -225,6 +226,7 @@ impl eframe::App for App {
         }
         self.window_logic(ctx);
         self.popup_logic(ctx);
+        self.note_logic(ctx);
         self.handle_events(ctx);
         let focused = ctx.input(|i| i.viewport().focused.unwrap_or(false));
         if self.focused.swap(focused, Ordering::SeqCst) && !focused {
@@ -258,6 +260,7 @@ impl eframe::App for App {
         // Before the main window, so the popup's search field takes the
         // keyboard when it opens.
         self.popup_window(&ctx);
+        self.note_window(&ctx);
         // Hidden or minimised, the main window draws nothing; the popup may
         // be open meanwhile.
         if self.win.hidden.load(Ordering::SeqCst)

@@ -276,6 +276,8 @@ struct Toast {
     keys: Option<String>,
     /// The whole text of a copy that wasn't saved, shown while Show is held.
     secret: Option<String>,
+    /// Shown in the note at the screen's corner, not in the window (D56).
+    on_screen: bool,
     /// Tells the messages apart, for egui.
     id: u64,
 }
@@ -518,6 +520,16 @@ pub struct App {
     toasts_tick: Option<Instant>,
     /// The message whose Show is held down: its copy's whole text shows.
     toast_showing: Option<u64>,
+    /// The pointer is on the note at the screen's corner: its time stops.
+    note_hovered: bool,
+    /// The note's height for its message, learned as it draws.
+    note_height: f32,
+    /// Where the note's window is, from when it appeared.
+    note_at: Option<egui::Pos2>,
+    /// The note's window no longer takes the keyboard when clicked.
+    note_quiet: bool,
+    /// The app icon, for the note.
+    app_icon: Option<egui::TextureHandle>,
     pending_delete: Option<PendingDelete>,
     /// When deleting by age runs next; `None` runs it at the next frame.
     next_age_prune: Option<Instant>,
@@ -749,6 +761,11 @@ impl App {
             toasts_hovered: false,
             toasts_tick: None,
             toast_showing: None,
+            note_hovered: false,
+            note_height: 64.0,
+            note_at: None,
+            note_quiet: false,
+            app_icon: None,
             pending_delete: None,
             next_age_prune: None,
             search_retry: None,
@@ -1321,6 +1338,7 @@ impl App {
             action: None,
             keys: None,
             secret: None,
+            on_screen: false,
             id: self.toast_seq,
         });
         self.toasts.last_mut().expect("a message was just added")
@@ -1337,9 +1355,16 @@ impl App {
         }
         let step = last.map_or(Duration::ZERO, |last| now - last);
         // A long gap means no window drew meanwhile: that time doesn't count.
-        if shown && !self.toasts_hovered && step < Duration::from_secs(1) {
+        if step < Duration::from_secs(1) {
             for toast in &mut self.toasts {
-                toast.shown_for += step;
+                let runs = if toast.on_screen {
+                    !self.note_hovered
+                } else {
+                    shown && !self.toasts_hovered
+                };
+                if runs {
+                    toast.shown_for += step;
+                }
             }
         }
         let (over, left): (Vec<Toast>, Vec<Toast>) = std::mem::take(&mut self.toasts)
@@ -1349,7 +1374,7 @@ impl App {
         if over.iter().any(Toast::undoes) {
             self.finish_delete();
         }
-        if shown {
+        if shown || self.toasts.iter().any(|t| t.on_screen) {
             ctx.request_repaint_after(Duration::from_millis(100));
         }
     }
@@ -1642,6 +1667,10 @@ impl App {
         toast.detail = (!detail.is_empty()).then(|| detail.join(" · "));
         toast.secret = secret;
         toast.action = kept.map(|c| (t!("toast-save-anyway"), Command::SaveSkipped(c)));
+        let on_screen = self.note_wanted();
+        if let Some(toast) = self.toasts.last_mut() {
+            toast.on_screen = on_screen;
+        }
     }
 
     /// The program a copy came from: its own name once it is known, else

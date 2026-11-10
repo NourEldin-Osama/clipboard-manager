@@ -26,21 +26,21 @@ const BUTTON_PAD: f32 = 8.0;
 const SPACE: f32 = 10.0;
 
 /// A message laid out at its width.
-struct Laid {
+pub(super) struct Laid {
     title: Vec<(Arc<Galley>, bool)>,
     detail: Vec<(Arc<Galley>, bool)>,
     /// The button's label, with its keys in a fainter color.
     action: Option<Arc<Galley>>,
     /// "Show", for the text of a copy that wasn't saved.
     show: Option<Arc<Galley>>,
-    height: f32,
+    pub(super) height: f32,
 }
 
 /// What a click or a press on the messages asks for.
 #[derive(Default)]
-struct Asked {
+pub(super) struct Asked {
     /// The id of the message whose button was clicked.
-    action: Option<u64>,
+    pub(super) action: Option<u64>,
     /// The id of the message whose Show is held down.
     show: Option<u64>,
 }
@@ -65,7 +65,9 @@ impl App {
                 self.error = None;
             }
         }
-        if self.toasts.is_empty() {
+        // Messages on the screen's corner show in the note instead.
+        let shown: Vec<&Toast> = self.toasts.iter().filter(|t| !t.on_screen).collect();
+        if shown.is_empty() {
             self.toasts_hovered = false;
             return;
         }
@@ -83,10 +85,9 @@ impl App {
             .order(egui::Order::Foreground)
             .anchor(anchor, Vec2::new(x, -ABOVE))
             .show(ctx, |ui| {
-                let laid: Vec<Laid> = self
-                    .toasts
+                let laid: Vec<Laid> = shown
                     .iter()
-                    .map(|t| lay_out(ui, t, width, showing == Some(t.id)))
+                    .map(|t| lay_out(ui, t, width, showing == Some(t.id), None))
                     .collect();
                 if open {
                     // All of them, the newest at the bottom.
@@ -94,13 +95,13 @@ impl App {
                         laid.iter().map(|l| l.height).sum::<f32>() + GAP * (laid.len() - 1) as f32;
                     let (rect, _) = ui.allocate_exact_size(Vec2::new(width, total), Sense::hover());
                     let mut top = rect.top();
-                    for (toast, l) in self.toasts.iter().zip(&laid) {
+                    for (toast, l) in shown.iter().zip(&laid) {
                         let card = Rect::from_min_size(
                             Pos2::new(rect.left(), top),
                             Vec2::new(width, l.height),
                         );
                         paint_card(ui, card);
-                        paint_content(ui, card, toast, l, &mut asked);
+                        paint_content(ui, card, toast, l, &mut asked, None);
                         top += l.height + GAP;
                     }
                 } else {
@@ -127,8 +128,8 @@ impl App {
                         );
                     }
                     paint_card(ui, card);
-                    let toast = self.toasts.last().expect("there is a message");
-                    paint_content(ui, card, toast, front, &mut asked);
+                    let toast = shown.last().expect("there is a message");
+                    paint_content(ui, card, toast, front, &mut asked, None);
                 }
             });
         self.toasts_hovered = ctx
@@ -178,8 +179,15 @@ fn button_colors(dark: bool) -> (Color32, Color32) {
 }
 
 /// Lays out a message's text at `width`: the room left beside its icon and
-/// buttons. While `showing`, the second line is the copy's whole text.
-fn lay_out(ui: &Ui, toast: &Toast, width: f32, showing: bool) -> Laid {
+/// buttons. While `showing`, the second line is the copy's whole text. With
+/// `app_icon` it is the note on the screen: the app icon, and never Show.
+pub(super) fn lay_out(
+    ui: &Ui,
+    toast: &Toast,
+    width: f32,
+    showing: bool,
+    app_icon: Option<&egui::TextureHandle>,
+) -> Laid {
     let v = ui.visuals();
     let (_, label_color) = button_colors(v.dark_mode);
     let action = toast.action.as_ref().map(|(label, _)| {
@@ -197,17 +205,21 @@ fn lay_out(ui: &Ui, toast: &Toast, width: f32, showing: bool) -> Laid {
         }
         ui.fonts_mut(|f| f.layout_job(job))
     });
-    let show = toast.secret.as_ref().map(|_| {
-        let job = pill_job(&t!("toast-show"), size::SMALL, v.hyperlink_color, None);
-        ui.fonts_mut(|f| f.layout_job(job))
-    });
+    let show = toast
+        .secret
+        .as_ref()
+        .filter(|_| app_icon.is_none())
+        .map(|_| {
+            let job = pill_job(&t!("toast-show"), size::SMALL, v.hyperlink_color, None);
+            ui.fonts_mut(|f| f.layout_job(job))
+        });
     let buttons = action
         .as_ref()
         .map_or(0.0, |g| g.size().x + 2.0 * BUTTON_PAD + SPACE)
         + show
             .as_ref()
             .map_or(0.0, |g| ICON + 4.0 + g.size().x + SPACE);
-    let icon = if toast.icon.is_some() {
+    let icon = if toast.icon.is_some() || app_icon.is_some() {
         ICON + SPACE
     } else {
         0.0
@@ -247,18 +259,33 @@ fn lay_out(ui: &Ui, toast: &Toast, width: f32, showing: bool) -> Laid {
     }
 }
 
-/// Paints a message's icon, text and buttons in its card, mirrored in
-/// Arabic, and notes a click on its button or a press on Show.
-fn paint_content(ui: &mut Ui, card: Rect, toast: &Toast, laid: &Laid, asked: &mut Asked) {
+/// Paints a message's icon (or `app_icon`), text and buttons in its card,
+/// mirrored in Arabic, and notes a click on its button or a press on Show.
+pub(super) fn paint_content(
+    ui: &mut Ui,
+    card: Rect,
+    toast: &Toast,
+    laid: &Laid,
+    asked: &mut Asked,
+    app_icon: Option<&egui::TextureHandle>,
+) {
     let v = ui.visuals().clone();
     let inner = card.shrink(PAD);
     let mid = inner.center().y;
     // Laid out left to right, then mirrored for Arabic.
     let m = |r: Rect| flip(card, r);
     let mut left = inner.left();
-    if let Some(icon) = toast.icon {
-        let at = Rect::from_min_size(Pos2::new(left, mid - ICON / 2.0), Vec2::splat(ICON));
-        icons::paint(ui.painter(), m(at), icon, v.text_color());
+    let icon_at = m(Rect::from_min_size(
+        Pos2::new(left, mid - ICON / 2.0),
+        Vec2::splat(ICON),
+    ));
+    if let Some(texture) = app_icon {
+        let whole = Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0));
+        ui.painter()
+            .image(texture.id(), icon_at, whole, Color32::WHITE);
+        left += ICON + SPACE;
+    } else if let Some(icon) = toast.icon {
+        icons::paint(ui.painter(), icon_at, icon, v.text_color());
         left += ICON + SPACE;
     }
     let mut right = inner.right();
@@ -351,6 +378,7 @@ mod tests {
             action: button.map(|b| (b.to_string(), Command::ShowWeaker)),
             keys: None,
             secret: Some("sk-proj-abcdefghijklmnopqrstuvwxyz0123456789".into()),
+            on_screen: false,
             id: 1,
         }
     }
@@ -359,13 +387,13 @@ mod tests {
     fn a_message_grows_with_its_text_and_shows_the_copy_only_while_held() {
         let ctx = egui::Context::default();
         let mut output = ctx.run_ui(Default::default(), |ui| {
-            let short = lay_out(ui, &message("Copied", None, None), WIDTH, false);
+            let short = lay_out(ui, &message("Copied", None, None), WIDTH, false, None);
             let long = message(
                 "Not saved: looks like a password or API key, from a program with a long name",
                 Some("From Visual Studio Code · sk-…6789"),
                 Some("Save anyway"),
             );
-            let laid = lay_out(ui, &long, WIDTH, false);
+            let laid = lay_out(ui, &long, WIDTH, false, None);
             assert!(
                 laid.height > short.height,
                 "a longer text wraps onto more lines"
@@ -381,7 +409,7 @@ mod tests {
                 !hint.contains("abcdefgh"),
                 "the copy's text stays hidden: {hint}"
             );
-            let held = lay_out(ui, &long, WIDTH, true);
+            let held = lay_out(ui, &long, WIDTH, true, None);
             let shown: String = held
                 .detail
                 .iter()
