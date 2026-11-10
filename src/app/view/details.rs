@@ -524,11 +524,10 @@ impl App {
                                 );
                             });
                     } else {
-                        // The text in a reading area, the pane's main content.
+                        // The text itself, the pane's main content, lined up with
+                        // the actions under it; a box around it read as a field.
                         Frame::new()
-                            .fill(ui.visuals().panel_fill)
-                            .corner_radius(CornerRadius::same(radius::LARGE))
-                            .inner_margin(Margin::symmetric(20, 16))
+                            .inner_margin(Margin::symmetric(0, 4))
                             .show(ui, |ui| {
                                 ui.set_width(ui.available_width());
                                 reading_text(ui, &d.shown);
