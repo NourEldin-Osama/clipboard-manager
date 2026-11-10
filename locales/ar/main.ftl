@@ -649,6 +649,7 @@ settings-read-model-hint = نموذج الرؤية الذي يقرأ النص ف
 settings-read-model-help = يقرأ الصور التي تُنسخ من الآن، وتبقى الصور المقروءة بنصها.
 settings-model-choose = اختر نموذجًا
 settings-model-on-server = { $model } · { $server }
+settings-model-on-server-only = على الخادم
 settings-found-title = وُجدت على هذا الجهاز
 settings-found-running = يعمل { $server } على هذا الجهاز
 settings-found-search = بحث

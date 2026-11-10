@@ -17,6 +17,8 @@ fn strictness() -> [(f32, String); 3] {
 impl App {
     pub(super) fn search_page(&mut self, ui: &mut Ui, d: &mut Config) {
         let def = Config::default();
+        // The models each saved server has, for the model menus (D67).
+        self.server_lists.ask(&d.servers, ui.ctx());
         section(ui, &t!("settings-search"));
         setting_for(
             ui,

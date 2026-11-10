@@ -52,9 +52,9 @@ pub(crate) use theme::{
     RED,
 };
 pub(crate) use widgets::{
-    chip, cut_line, divider, far, flip, lbl, paint_progress, paint_text, primary_button, row,
-    row_layout, row_wrapped, section_title, set_choice_name, set_name, slow_spinner, start_anchor,
-    tip, title_lbl, txt, Reacts, PROGRESS_LINE,
+    chip, cut_line, divider, far, flip, lbl, paint_progress, paint_text, pill_job, primary_button,
+    row, row_layout, row_wrapped, section_title, set_choice_name, set_name, slow_spinner,
+    start_anchor, tip, title_lbl, txt, Reacts, PROGRESS_LINE,
 };
 
 impl App {

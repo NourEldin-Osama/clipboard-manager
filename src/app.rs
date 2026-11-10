@@ -105,6 +105,70 @@ impl LocalServers {
     }
 }
 
+/// The models each saved server lists, for the model menus (D67): asked once
+/// each time Settings opens.
+#[derive(Default)]
+struct ServerLists {
+    /// By the server's address and key.
+    found: HashMap<String, Vec<String>>,
+    pending: HashMap<String, Receiver<Vec<String>>>,
+}
+
+impl ServerLists {
+    fn key(server: &crate::config::Server) -> String {
+        format!("{}|{}", server.base_url.trim(), server.api_key.trim())
+    }
+
+    /// Asks each server not asked yet.
+    fn ask(&mut self, servers: &[crate::config::Server], ctx: &egui::Context) {
+        for server in servers {
+            let key = Self::key(server);
+            if self.found.contains_key(&key) || self.pending.contains_key(&key) {
+                continue;
+            }
+            let (tx, rx) = channel();
+            let (url, api_key, kind) =
+                (server.base_url.clone(), server.api_key.clone(), server.kind);
+            let wake = ctx.clone();
+            let started = std::thread::Builder::new()
+                .name("server-models".into())
+                .spawn(move || {
+                    let models = match crate::embed::local::models_at(&url, &api_key, kind) {
+                        crate::embed::local::Listed::Models(models) => models,
+                        _ => Vec::new(),
+                    };
+                    let _ = tx.send(models);
+                    wake.request_repaint();
+                });
+            if started.is_ok() {
+                self.pending.insert(key, rx);
+            }
+        }
+    }
+
+    fn poll(&mut self) {
+        let mut done = Vec::new();
+        for (key, rx) in &self.pending {
+            match rx.try_recv() {
+                Ok(models) => done.push((key.clone(), models)),
+                Err(TryRecvError::Disconnected) => done.push((key.clone(), Vec::new())),
+                Err(TryRecvError::Empty) => {}
+            }
+        }
+        for (key, models) in done {
+            self.pending.remove(&key);
+            self.found.insert(key, models);
+        }
+    }
+
+    /// What `server` listed, once it answered.
+    fn models(&self, server: &crate::config::Server) -> &[String] {
+        self.found
+            .get(&Self::key(server))
+            .map_or(&[], |models| models.as_slice())
+    }
+}
+
 /// Models offered by a server, fetched in the background.
 #[derive(Default)]
 struct ModelList {
@@ -696,6 +760,8 @@ pub struct App {
     model_list: ModelList,
     /// Model servers found on this PC (D66).
     local_servers: LocalServers,
+    /// What the saved servers list, for the model menus (D67).
+    server_lists: ServerLists,
     settings_page: SettingsPage,
     confirm: Option<Confirm>,
     /// The server being added or edited in Settings.
@@ -922,6 +988,7 @@ impl App {
             hotkey_conflicts: Vec::new(),
             model_list: ModelList::default(),
             local_servers: LocalServers::default(),
+            server_lists: ServerLists::default(),
             settings_page: SettingsPage::Search,
             confirm: None,
             server_editor: None,
@@ -2185,6 +2252,7 @@ impl App {
     fn handle_events(&mut self, ctx: &egui::Context) {
         self.model_list.poll();
         self.local_servers.poll();
+        self.server_lists.poll();
         loop {
             match self.captures.try_recv() {
                 Ok(c) => self.on_capture(c),

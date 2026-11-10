@@ -8,7 +8,7 @@ use super::icons::{self, Icon};
 use super::shortcut;
 use super::view::{
     accent, accent_name, button_fill, chip, choice_track, cut_line, divider, far, flip, lbl,
-    paint_progress, paint_text, primary_button, radius, reveal, row, section_title,
+    paint_progress, paint_text, pill_job, primary_button, radius, reveal, row, section_title,
     set_choice_name, set_name, size, slow_spinner, space, start_anchor, text_shade, tip, title_lbl,
     txt, Reacts, ACCENTS, AMBER, GREEN, PROGRESS_LINE, RED,
 };
@@ -82,6 +82,7 @@ impl SettingsPage {
 impl App {
     pub(super) fn open_settings(&mut self, page: SettingsPage) {
         self.stash_server_editor();
+        self.server_lists = Default::default();
         self.draft = Some(self.cfg.clone());
         self.settings_page = page;
         self.recording = None;

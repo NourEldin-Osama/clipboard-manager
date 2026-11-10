@@ -573,6 +573,7 @@ settings-read-model-hint = The vision model that reads the text in images
 settings-read-model-help = It reads the images copied from now on; images already read keep their text.
 settings-model-choose = Choose a model
 settings-model-on-server = { $model } · { $server }
+settings-model-on-server-only = on the server
 settings-found-title = Found on this PC
 settings-found-running = { $server } is running on this PC
 settings-found-search = Search

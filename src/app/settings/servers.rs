@@ -158,6 +158,19 @@ pub(in crate::app) fn use_found(d: &mut Config, found: &LocalServer, id: &str) {
     d.search_model = Some(at);
 }
 
+/// Adds the model `id` a saved server lists to it, for searching or
+/// reading (D67), and says where it is.
+fn add_model(d: &mut Config, server: u32, id: &str, search: bool) -> Option<ModelRef> {
+    let server = d.servers.iter_mut().find(|s| s.id == server)?;
+    let model = found_model(server.next_model_id(), id, search);
+    let at = ModelRef {
+        server: server.id,
+        model: model.id,
+    };
+    server.models.push(model);
+    Some(at)
+}
+
 fn kind_name(kind: ServerKind) -> String {
     match kind {
         ServerKind::Other => t!("server-kind-other"),
@@ -837,6 +850,35 @@ impl App {
         let in_use = chosen
             .and_then(|at| d.server(at.server))
             .map(|server| server.kind);
+        // Models a saved server has that aren't added to it yet (D67).
+        let mut added: Option<(u32, String)> = None;
+        let fits = |id: &str| {
+            if search {
+                catalog::is_search_model(id)
+            } else {
+                catalog::is_reading_model(id)
+            }
+        };
+        let others: Vec<(u32, Vec<String>)> = d
+            .servers
+            .iter()
+            .map(|server| {
+                let more = self
+                    .server_lists
+                    .models(server)
+                    .iter()
+                    .filter(|id| fits(id))
+                    .filter(|id| {
+                        !server
+                            .models
+                            .iter()
+                            .any(|m| m.model.eq_ignore_ascii_case(id))
+                    })
+                    .cloned()
+                    .collect();
+                (server.id, more)
+            })
+            .collect();
         plain_setting(ui, &t!("settings-model"), &line, &details, |ui| {
             let weak = ui.visuals().weak_text_color();
             let strong = ui.visuals().strong_text_color();
@@ -852,7 +894,11 @@ impl App {
                                 .iter()
                                 .filter(|m| is_search(m) == search)
                                 .collect();
-                            if models.is_empty() {
+                            let more = others
+                                .iter()
+                                .find(|(id, _)| *id == server.id)
+                                .map_or(&[][..], |(_, more)| more.as_slice());
+                            if models.is_empty() && more.is_empty() {
                                 continue;
                             }
                             row(ui, |ui| {
@@ -867,6 +913,14 @@ impl App {
                                 let label = txt(&model_label(m), size::BODY, None);
                                 if ui.selectable_label(chosen == Some(at), label).clicked() {
                                     picked = Some(at);
+                                }
+                            }
+                            // The ones it has that aren't added yet, marked so.
+                            for id in more {
+                                let note = (t!("settings-model-on-server-only"), weak);
+                                let label = pill_job(id, size::BODY, strong, Some(note));
+                                if ui.selectable_label(false, label).clicked() {
+                                    added = Some((server.id, id.clone()));
                                 }
                             }
                         }
@@ -887,6 +941,9 @@ impl App {
                 icons::logo(ui, kind, 18.0, strong);
             }
         });
+        if let Some((server, id)) = added {
+            picked = add_model(d, server, &id, search);
+        }
         match picked {
             Some(at) if search => d.search_model = Some(at),
             Some(at) => d.read_model = Some(at),
