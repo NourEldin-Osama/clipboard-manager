@@ -90,7 +90,7 @@ impl App {
 
     pub(super) fn status_bar(&mut self, ui: &mut Ui) {
         let fill = ui.visuals().panel_fill;
-        egui::Panel::bottom("status")
+        let bar = egui::Panel::bottom("status")
             .show_separator_line(false)
             .frame(
                 Frame::new()
@@ -208,6 +208,13 @@ impl App {
                     far(ui, |ui| ui.label(count));
                 });
             });
+        // A thin line between the items and the bar: the items go on under it.
+        let rect = bar.response.rect;
+        ui.painter().hline(
+            rect.x_range(),
+            rect.top() + 0.5,
+            Stroke::new(1.0, line_color(ui.visuals().dark_mode)),
+        );
     }
 
     /// While several items are selected, the status bar holds what can be

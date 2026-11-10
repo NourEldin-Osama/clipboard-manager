@@ -513,9 +513,9 @@ const NUMBER_CAP: f32 = 20.0;
 /// How tall the fade at the end of the popup's list is.
 const FADE_HEIGHT: f32 = 16.0;
 
-/// A fade at the bottom of a scrolled list or grid while it goes on below,
-/// into the panel's color behind it.
-pub(super) fn fade_below<R>(ui: &Ui, out: &egui::scroll_area::ScrollAreaOutput<R>) {
+/// A fade at the bottom of a scrolled list while it goes on below, into the
+/// panel's color behind it.
+fn fade_below<R>(ui: &Ui, out: &egui::scroll_area::ScrollAreaOutput<R>) {
     let (offset, view) = (out.state.clamped_offset().y, out.inner_rect.height());
     if offset + view < out.content_size.y - 1.0 {
         let rect = Rect::from_min_max(
@@ -889,9 +889,9 @@ impl App {
             }
         });
         let view = (out.state.clamped_offset().y, out.inner_rect.height());
-        // A fade where the list goes on below.
-        fade_below(ui, &out);
         if in_popup {
+            // The popup has no status bar: a fade where its list goes on.
+            fade_below(ui, &out);
             self.popup_list_view = view;
         } else {
             self.list_view = view;
