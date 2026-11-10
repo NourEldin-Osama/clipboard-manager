@@ -26,7 +26,7 @@ use crate::library::{Library, Removed};
 use crate::paste;
 use crate::search::{self, Filter, Hit, Searcher};
 use crate::store::{looks_like_link, Item, Kind, Origin, Store};
-use crate::tray::{Tray, TrayCmd};
+use crate::tray::{Tray, TrayCmd, TrayLook};
 use crate::update::{self, Release};
 use crate::worker::{Event, Job, Worker};
 
@@ -530,6 +530,8 @@ pub struct App {
     note_quiet: bool,
     /// The app icon, for the note.
     app_icon: Option<egui::TextureHandle>,
+    /// Alt+C was pressed and its copy hasn't come yet.
+    skip_next_armed: bool,
     pending_delete: Option<PendingDelete>,
     /// When deleting by age runs next; `None` runs it at the next frame.
     next_age_prune: Option<Instant>,
@@ -766,6 +768,7 @@ impl App {
             note_at: None,
             note_quiet: false,
             app_icon: None,
+            skip_next_armed: false,
             pending_delete: None,
             next_age_prune: None,
             search_retry: None,
@@ -1010,6 +1013,7 @@ impl App {
                 }
             } else if pressed == ids.ignore.load(Ordering::SeqCst) {
                 flags.ignore_next.store(true, Ordering::SeqCst);
+                flags.skip_asked.store(true, Ordering::SeqCst);
             }
             c.request_repaint();
         }));
@@ -1078,8 +1082,27 @@ impl App {
                 }
             }
         }
+        // Alt+C: a short note, and a badge on the tray icon until the copy
+        // it skips (D59).
+        if self.flags.skip_asked.swap(false, Ordering::SeqCst) {
+            self.skip_next_armed = true;
+            let on_screen = self.note_wanted();
+            let toast = self.toast_with(t!("toast-skip-next"), Duration::from_secs(2));
+            toast.icon = Some(icons::Icon::EyeOff);
+            toast.on_screen = on_screen;
+        }
+        if self.skip_next_armed && !self.flags.ignore_next.load(Ordering::SeqCst) {
+            self.skip_next_armed = false;
+        }
+        let paused = !self.flags.enabled.load(Ordering::SeqCst);
+        let look = if self.skip_next_armed {
+            TrayLook::SkipNext
+        } else {
+            TrayLook::Recording
+        };
         if let Some(t) = &mut self.tray {
-            t.set_paused(!self.flags.enabled.load(Ordering::SeqCst));
+            t.set_paused(paused);
+            t.set_look(look);
         }
         // Opening the window starts at the top: the newest item, or the best
         // match for the search. The next results select it.

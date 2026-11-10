@@ -19,9 +19,18 @@ pub enum TrayCmd {
 
 pub struct Tray {
     // Dropping the icon removes it from the tray.
-    _icon: TrayIcon,
+    icon: TrayIcon,
     pause: MenuItem,
     paused: bool,
+    look: TrayLook,
+}
+
+/// How the tray icon looks.
+#[derive(Clone, Copy, PartialEq)]
+pub enum TrayLook {
+    Recording,
+    /// After Alt+C: a badge until the copy it skips (D59).
+    SkipNext,
 }
 
 impl Tray {
@@ -85,10 +94,31 @@ impl Tray {
             .with_menu_on_left_click(false)
             .build()?;
         Ok(Self {
-            _icon: icon,
+            icon,
             pause,
             paused,
+            look: TrayLook::Recording,
         })
+    }
+
+    /// Changes the icon when the look changes.
+    pub fn set_look(&mut self, look: TrayLook) {
+        if look == self.look {
+            return;
+        }
+        self.look = look;
+        let (rgba, size) = match look {
+            TrayLook::Recording => crate::icon_rgba(),
+            TrayLook::SkipNext => crate::badged_icon_rgba(),
+        };
+        match tray_icon::Icon::from_rgba(rgba, size, size) {
+            Ok(icon) => {
+                if let Err(e) = self.icon.set_icon(Some(icon)) {
+                    log::warn!("changing the tray icon: {e}");
+                }
+            }
+            Err(e) => log::warn!("making the tray icon: {e}"),
+        }
     }
 
     /// Keeps the menu's pause item in step with the recording state.

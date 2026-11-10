@@ -256,7 +256,7 @@ use; then the look, motion and smaller changes; and the README, bug reports and 
 - [x] 17.2 The app's own note on the screen (D56)
 - [x] 17.3 "Not saved" says what, with Show in the window (D57)
 - [x] 17.4 Delete by age and the item limit say what they removed, with Undo (D60); a new copy pushing the oldest item out of a full history says nothing, as before
-- [ ] 17.5 Alt+C: a note and a tray badge (D59)
+- [x] 17.5 Alt+C: a note and a tray badge (D59)
 
 ### Phase 18. Look
 - [ ] 18.1 Named sizes and colors, and a test against raw ones (D62)
