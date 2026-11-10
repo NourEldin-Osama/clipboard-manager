@@ -474,6 +474,7 @@ fn paint_footer(
     } else {
         name
     };
+    // The program in the normal text color, a step above the time.
     paint_text(
         ui,
         &p,
@@ -481,7 +482,7 @@ fn paint_footer(
         start_anchor(egui::Align::Center),
         &shown,
         font,
-        weak,
+        v.text_color(),
     );
 }
 
