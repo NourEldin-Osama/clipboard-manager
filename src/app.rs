@@ -789,8 +789,13 @@ pub struct App {
     details_open: bool,
     /// Cards per row in the grid, from the last frame, for ↑ ↓ navigation.
     grid_cols: usize,
-    /// With cards as tall as their content, where each one was drawn last,
-    /// from the grid's top left, for the arrow keys. Empty otherwise.
+    /// How many cards a row of the grid holds at the window's width, from
+    /// the last frame, whatever the view: a search with fewer strong
+    /// matches shows its weaker ones at once (D74).
+    cards_in_a_row: usize,
+    /// With cards as tall as their content, or with weaker matches on rows
+    /// of their own, where each card was drawn last, from the grid's top
+    /// left, for the arrow keys. Empty otherwise.
     grid_places: Vec<(u64, egui::Rect)>,
     win: WindowCtl,
     /// Marks this as the running copy; another start shows this window.
@@ -1004,6 +1009,7 @@ impl App {
             popup_moving: false,
             details_open: false,
             grid_cols: 1,
+            cards_in_a_row: view::cards_per_row(WINDOW_SIZE[0] - view::GRID_SIDES),
             grid_places: Vec::new(),
             update: UpdateState::Idle,
             update_rx: None,
@@ -2482,6 +2488,10 @@ impl App {
     fn show_results(&mut self, (hits, counts): search::Found) {
         self.searching = false;
         self.search_counts = counts;
+        // Shown at once, the weaker matches stay for the rest of this search.
+        if weaker_at_once(&hits, self.cards_in_a_row) {
+            self.weaker_shown_for = Some(self.query.trim().to_string());
+        }
         // Weaker matches wait under one line, unless shown for this search.
         if self.weaker_folded() {
             (self.results, self.weaker) = hits.into_iter().partition(|h| !h.weak);
@@ -3041,10 +3051,36 @@ use background::{Background, Done};
 use settings::{PendingSend, ServerEditor, SettingsPage};
 use view::{add_fonts, apply_theme, looks_like_code, set_accent, style};
 
+/// Whether a search's weaker matches show at once, below the strong ones:
+/// when the strong ones don't fill a row of `row` cards (D74).
+fn weaker_at_once(hits: &[Hit], row: usize) -> bool {
+    let strong = hits.iter().filter(|h| !h.weak).count();
+    strong < row && strong < hits.len()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use eframe::Storage as _;
+
+    #[test]
+    fn weaker_matches_show_at_once_when_the_strong_ones_dont_fill_a_row() {
+        let hits = |strong: usize, weak: usize| -> Vec<Hit> {
+            (0..strong + weak)
+                .map(|i| Hit {
+                    id: i as u64,
+                    closeness: None,
+                    weak: i >= strong,
+                })
+                .collect()
+        };
+        assert!(weaker_at_once(&hits(2, 14), 4));
+        // A full row of strong matches keeps the weaker ones folded.
+        assert!(!weaker_at_once(&hits(4, 14), 4));
+        // Nothing weaker to show.
+        assert!(!weaker_at_once(&hits(2, 0), 4));
+        assert!(!weaker_at_once(&hits(0, 0), 4));
+    }
 
     #[test]
     fn an_indexing_run_grows_with_new_work_and_ends_when_empty() {

@@ -43,7 +43,7 @@ use widgets::*;
 
 // The ones the rest of the app uses.
 pub(crate) use details::reveal;
-pub(crate) use grid::GRID_GAP;
+pub(crate) use grid::{cards_per_row, GRID_GAP, GRID_SIDES};
 pub(crate) use items::looks_like_code;
 pub(crate) use messages::UpdateParts;
 pub(crate) use theme::{
@@ -60,6 +60,9 @@ pub(crate) use widgets::{
 impl App {
     /// Everything below the top bar: list, grid or list + details, per the view mode.
     fn main_area(&mut self, ui: &mut Ui) {
+        // A row of the grid at this width, also in the other views, so a
+        // search shows the same results in each.
+        self.cards_in_a_row = cards_per_row(ui.available_width() - GRID_SIDES);
         let fill = ui.visuals().panel_fill;
         // Panels swap sides right to left: the list starts on the reading side.
         let (start, end) = if i18n::rtl() {

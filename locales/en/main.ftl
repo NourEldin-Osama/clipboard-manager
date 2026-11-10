@@ -94,6 +94,7 @@ list-show-weaker =
         [one] Show 1 weaker match
        *[other] Show { $count } weaker matches
     }
+list-weaker = Weaker matches
 list-empty-title = Your clipboard history will appear here
 list-empty-help =
     Copy anything, or drop files here.

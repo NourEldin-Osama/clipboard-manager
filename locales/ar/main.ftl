@@ -102,6 +102,7 @@ list-show-weaker =
         [many] إظهار { $count } نتيجة أضعف
        *[other] إظهار { $count } نتيجة أضعف
     }
+list-weaker = نتائج أضعف
 list-empty-title = سيظهر سجل الحافظة هنا
 list-empty-help =
     انسخ أي شيء، أو أفلت الملفات هنا.

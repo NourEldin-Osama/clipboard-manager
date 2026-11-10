@@ -6,6 +6,20 @@ use crate::app::programs::Program;
 /// Between cards, across and down.
 pub(crate) const GRID_GAP: f32 = 14.0;
 
+/// The room beside the cards in the main area: the grid's margins and the
+/// place it keeps for the scroll bar.
+pub(crate) const GRID_SIDES: f32 = 16.0 + 4.0 + 12.0;
+
+/// How many cards fit side by side in `width`, each at least 240 points
+/// wide.
+pub(crate) fn cards_per_row(width: f32) -> usize {
+    ((width + GRID_GAP) / (240.0 + GRID_GAP)).floor().max(1.0) as usize
+}
+
+/// Height of the header above weaker matches shown with the strong ones,
+/// as tall as a day's header in the list.
+const WEAKER_HEADER: f32 = 30.0;
+
 /// How tall a card is when cards are as tall as their content (D69): its
 /// content measured roughly, between half and 1.6 times the height cards
 /// have when they are all the same (`same`).
@@ -578,39 +592,35 @@ impl App {
         let card_h = if compact { 150.0 } else { 210.0 };
         // Leave room for the scroll bar so cards don't jump when it appears.
         let width = ui.available_width() - 12.0;
-        let cols = ((width + gap) / (240.0 + gap)).floor().max(1.0) as usize;
+        let cols = cards_per_row(width);
         let card_w = (width - gap * (cols as f32 - 1.0)) / cols as f32;
         self.grid_cols = cols;
-        let pitch = card_h + gap;
         // Where each card goes from the grid's top left, in the results'
         // order: in rows, or stacked in columns, each card in the shortest
-        // one (D69).
+        // one (D69); cards of one height make plain rows. Weaker matches
+        // shown with the strong ones start below them, under their header.
         let fit = self.cfg.card_height == CardHeight::Fit;
-        let places: Vec<Rect> = if fit {
-            let heights: Vec<f32> = self
-                .results
-                .iter()
-                .map(|hit| {
-                    self.library
-                        .get(hit.id)
-                        .map_or(card_h, |it| fitted_height(it, card_w, card_h))
-                })
-                .collect();
-            stack(&heights, cols, card_w, gap)
-        } else {
-            (0..self.results.len())
-                .map(|r| {
-                    Rect::from_min_size(
-                        Pos2::new(
-                            (r % cols) as f32 * (card_w + gap),
-                            (r / cols) as f32 * pitch,
-                        ),
-                        Vec2::new(card_w, card_h),
-                    )
-                })
-                .collect()
-        };
-        self.grid_places = if fit {
+        let heights: Vec<f32> = self
+            .results
+            .iter()
+            .map(|hit| match self.library.get(hit.id) {
+                Some(it) if fit => fitted_height(it, card_w, card_h),
+                _ => card_h,
+            })
+            .collect();
+        let weaker_from = self.results.iter().position(|h| h.weak);
+        let split = weaker_from.unwrap_or(self.results.len());
+        let bottom = |places: &[Rect]| places.iter().map(|p| p.bottom() + gap).fold(0.0, f32::max);
+        let mut places = stack(&heights[..split], cols, card_w, gap);
+        let strong_h = bottom(&places);
+        let below = Vec2::new(0.0, strong_h + WEAKER_HEADER);
+        places.extend(
+            stack(&heights[split..], cols, card_w, gap)
+                .into_iter()
+                .map(|p| p.translate(below)),
+        );
+        // Plain rows step by index; otherwise the arrow keys go by place.
+        self.grid_places = if fit || weaker_from.is_some() {
             self.results
                 .iter()
                 .map(|h| h.id)
@@ -619,7 +629,7 @@ impl App {
         } else {
             Vec::new()
         };
-        let grid_h = places.iter().map(|p| p.bottom() + gap).fold(0.0, f32::max);
+        let grid_h = bottom(&places);
         let weaker = self.weaker.len();
         let fold_h = if weaker > 0 { WEAKER_LINE } else { 0.0 };
         let total = grid_h + fold_h;
@@ -792,6 +802,13 @@ impl App {
                         }
                     }
                 }
+            }
+            if let Some(from) = weaker_from.filter(|_| strong_h <= viewport.max.y) {
+                let rect = Rect::from_min_size(
+                    Pos2::new(origin.x, origin.y + strong_h),
+                    Vec2::new(width, WEAKER_HEADER),
+                );
+                paint_header(ui, rect, Group::Weaker, results.len() - from);
             }
             let line_top = grid_h;
             if weaker > 0 && line_top <= viewport.max.y {

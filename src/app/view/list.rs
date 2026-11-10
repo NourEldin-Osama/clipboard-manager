@@ -119,9 +119,11 @@ fn pinned_header(lines: &[Line], ys: &[f32], top: f32, header_h: f32) -> Option<
     Some((above, next.map_or(top, |i| top.min(ys[i] - header_h))))
 }
 
-/// A day's header: its name, as small section titles show them, on the side
-/// reading starts, and how many rows it has at the other end.
-fn paint_header(ui: &Ui, rect: Rect, label: Group, count: usize) {
+/// A header in the list: a day's name or the weaker matches', as small
+/// section titles show them, on the side reading starts, and how many rows
+/// it has right after. The weaker matches' header goes on as a thin line to
+/// the far end, a divider between them and the strong matches.
+pub(super) fn paint_header(ui: &Ui, rect: Rect, label: Group, count: usize) {
     let weak = ui.visuals().weak_text_color();
     let rtl = i18n::rtl();
     let label_x = if rtl {
@@ -145,13 +147,23 @@ fn paint_header(ui: &Ui, rect: Rect, label: Group, count: usize) {
     } else {
         (Pos2::new(label_x + title_w + 6.0, y), Align2::LEFT_BOTTOM)
     };
-    ui.painter().text(
+    let count_rect = ui.painter().text(
         count_at,
         anchor,
         count.to_string(),
         FontId::proportional(size::SMALL),
         weak,
     );
+    if label == Group::Weaker {
+        let gap = 10.0;
+        let line = if rtl {
+            rect.left() + ROW_PADDING..=count_rect.left() - gap
+        } else {
+            count_rect.right() + gap..=rect.right() - ROW_PADDING
+        };
+        let stroke = Stroke::new(1.0, line_color(ui.visuals().dark_mode));
+        ui.painter().hline(line, count_rect.center().y, stroke);
+    }
 }
 
 #[derive(Debug, PartialEq)]
@@ -648,6 +660,12 @@ impl App {
             }));
         } else {
             lines.extend((0..self.results.len()).map(Line::Row));
+            // Weaker matches shown with the strong ones follow under their
+            // own header.
+            if let Some(from) = self.results.iter().position(|h| h.weak) {
+                let count = self.results.len() - from;
+                lines.insert(from, Line::Header(Group::Weaker, count));
+            }
         }
         let mut ys = Vec::with_capacity(lines.len());
         let mut y = 0.0;

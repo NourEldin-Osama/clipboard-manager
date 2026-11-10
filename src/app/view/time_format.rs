@@ -70,7 +70,8 @@ pub(crate) fn when(ts: i64) -> String {
     }
 }
 
-/// The day header an item is listed under while browsing.
+/// The header an item is listed under: its day while browsing, or the
+/// weaker matches' while searching.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(super) enum Group {
     Pinned,
@@ -79,6 +80,8 @@ pub(super) enum Group {
     ThisWeek,
     ThisMonth,
     Older,
+    /// Weaker matches shown below the strong ones.
+    Weaker,
 }
 
 impl Group {
@@ -103,6 +106,7 @@ impl Group {
             Group::ThisWeek => t!("group-this-week"),
             Group::ThisMonth => t!("group-this-month"),
             Group::Older => t!("group-older"),
+            Group::Weaker => t!("list-weaker"),
         }
     }
 }
