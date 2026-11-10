@@ -60,6 +60,51 @@ enum BackendState {
     Ready { key: String, images: bool },
 }
 
+/// Model servers found on this PC (D66), asked again at most every 30
+/// seconds while a screen that offers them shows.
+#[derive(Default)]
+struct LocalServers {
+    found: Vec<crate::embed::local::LocalServer>,
+    asked: Option<Instant>,
+    pending: Option<Receiver<Vec<crate::embed::local::LocalServer>>>,
+}
+
+impl LocalServers {
+    const AGAIN: Duration = Duration::from_secs(30);
+
+    /// Looks for them, unless that is running or was done just now.
+    fn look(&mut self, ctx: &egui::Context) {
+        if self.pending.is_some() || self.asked.is_some_and(|t| t.elapsed() < Self::AGAIN) {
+            return;
+        }
+        let (tx, rx) = channel();
+        let wake = ctx.clone();
+        let started = std::thread::Builder::new()
+            .name("local-servers".into())
+            .spawn(move || {
+                let _ = tx.send(crate::embed::local::find());
+                wake.request_repaint();
+            });
+        if started.is_ok() {
+            self.asked = Some(Instant::now());
+            self.pending = Some(rx);
+        }
+    }
+
+    fn poll(&mut self) {
+        if let Some(rx) = &self.pending {
+            match rx.try_recv() {
+                Ok(found) => {
+                    self.found = found;
+                    self.pending = None;
+                }
+                Err(TryRecvError::Disconnected) => self.pending = None,
+                Err(TryRecvError::Empty) => {}
+            }
+        }
+    }
+}
+
 /// Models offered by a server, fetched in the background.
 #[derive(Default)]
 struct ModelList {
@@ -649,6 +694,8 @@ pub struct App {
     hotkey_conflicts: Vec<String>,
     /// What the search model's server offers, for the default model's name.
     model_list: ModelList,
+    /// Model servers found on this PC (D66).
+    local_servers: LocalServers,
     settings_page: SettingsPage,
     confirm: Option<Confirm>,
     /// The server being added or edited in Settings.
@@ -874,6 +921,7 @@ impl App {
             hotkey_error: None,
             hotkey_conflicts: Vec::new(),
             model_list: ModelList::default(),
+            local_servers: LocalServers::default(),
             settings_page: SettingsPage::Search,
             confirm: None,
             server_editor: None,
@@ -2136,6 +2184,7 @@ impl App {
 
     fn handle_events(&mut self, ctx: &egui::Context) {
         self.model_list.poll();
+        self.local_servers.poll();
         loop {
             match self.captures.try_recv() {
                 Ok(c) => self.on_capture(c),

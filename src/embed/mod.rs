@@ -1,5 +1,6 @@
 //! Embedding backends and vector scoring.
 
+pub mod local;
 pub mod server;
 
 use anyhow::Result;

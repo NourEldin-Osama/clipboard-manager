@@ -7,6 +7,7 @@ use crate::config::{
     Model, ModelJob, ModelRef, ReadEngine, ReadSettings, SearchEngine, SearchSettings, Server,
     ServerKind,
 };
+use crate::embed::local::LocalServer;
 use crate::embed::server::SearchTest;
 use crate::i18n::log_server_error;
 use crate::net::ServerError;
@@ -83,6 +84,78 @@ pub(in crate::app) fn model_label(model: &Model) -> String {
         ("", model) => model.to_string(),
         (name, _) => name.to_string(),
     }
+}
+
+/// Whether two server addresses name the same place, with `localhost` as
+/// 127.0.0.1.
+fn same_place(a: &str, b: &str) -> bool {
+    let place = |url: &str| {
+        crate::net::host(url)
+            .to_ascii_lowercase()
+            .replace("localhost", "127.0.0.1")
+    };
+    place(a) == place(b)
+}
+
+/// A model `id` as a server's model for searching or reading, with the
+/// settings it is known to need: the prompts of a known embedding model,
+/// or the reader type and its prompt.
+fn found_model(model_id: u32, id: &str, search: bool) -> Model {
+    let job = if search {
+        let (query, document) = catalog::known_prompts(id).unwrap_or(("", ""));
+        ModelJob::Search(SearchSettings {
+            query_prefix: query.into(),
+            document_prefix: document.into(),
+            ..Default::default()
+        })
+    } else {
+        let kind = catalog::reader_kind(id).unwrap_or(ReaderModel::Other);
+        ModelJob::Read(ReadSettings {
+            kind,
+            prompt: kind.prompt().to_string(),
+        })
+    };
+    Model {
+        id: model_id,
+        model: id.to_string(),
+        name: String::new(),
+        job,
+    }
+}
+
+/// A server found on this PC as a saved server, with the models it lists
+/// that search or read.
+fn found_server(d: &Config, found: &LocalServer) -> Server {
+    let mut models = Vec::new();
+    for id in &found.models {
+        let search = catalog::is_search_model(id);
+        if search || catalog::is_reading_model(id) {
+            models.push(found_model(models.len() as u32 + 1, id, search));
+        }
+    }
+    Server {
+        id: d.next_server_id(),
+        kind: found.kind,
+        name: found.kind.name().to_string(),
+        base_url: found.base_url.clone(),
+        api_key: String::new(),
+        models,
+        launch: None,
+    }
+}
+
+/// Use on a server found on this PC: saves it with the model `id` and
+/// searches by meaning with it (D66).
+pub(in crate::app) fn use_found(d: &mut Config, found: &LocalServer, id: &str) {
+    let mut server = found_server(d, found);
+    server.models = vec![found_model(1, id, true)];
+    let at = ModelRef {
+        server: server.id,
+        model: 1,
+    };
+    d.servers.push(server);
+    d.search_engine = SearchEngine::Server;
+    d.search_model = Some(at);
 }
 
 fn kind_name(kind: ServerKind) -> String {
@@ -463,13 +536,149 @@ fn test_line(ui: &mut Ui, test: &Test) {
 
 impl App {
     /// The servers, below the engines: one row each, then "Add server".
-    /// Settings, Servers: the saved servers, or the editor of one (D68).
+    /// Settings, Servers: the ones found on this PC and the saved ones, or
+    /// the editor of one (D68).
     pub(super) fn servers_page(&mut self, ui: &mut Ui, d: &mut Config) {
         if self.server_editor.is_some() {
             self.server_editor_page(ui, d);
             return;
         }
+        self.local_servers.look(ui.ctx());
+        self.found_section(ui, d);
         self.servers_section(ui, d);
+    }
+
+    /// The model servers found on this PC that aren't saved yet.
+    fn unsaved_local(&self, d: &Config) -> Vec<LocalServer> {
+        self.local_servers
+            .found
+            .iter()
+            .filter(|f| {
+                !d.servers
+                    .iter()
+                    .any(|s| same_place(&s.base_url, &f.base_url))
+            })
+            .cloned()
+            .collect()
+    }
+
+    /// Each model server found on this PC with its search models, and Use
+    /// beside each, which saves the server with that model and uses it (D66).
+    pub(super) fn found_card(&mut self, ui: &mut Ui, d: &mut Config) {
+        let found: Vec<LocalServer> = self
+            .unsaved_local(d)
+            .into_iter()
+            .filter(|f| f.models.iter().any(|m| catalog::is_search_model(m)))
+            .collect();
+        let mut used = None;
+        // The card ends where the settings' controls do, so its buttons line
+        // up with theirs.
+        let reserve = (RESET_BUTTON_SIZE + ui.spacing().item_spacing.x - 4.0) as i8;
+        let outside = if i18n::rtl() {
+            Margin {
+                left: reserve,
+                ..Margin::ZERO
+            }
+        } else {
+            Margin {
+                right: reserve,
+                ..Margin::ZERO
+            }
+        };
+        for server in &found {
+            let v = ui.visuals().clone();
+            Frame::new()
+                .outer_margin(outside)
+                .fill(accent().gamma_multiply(if v.dark_mode { 0.12 } else { 0.05 }))
+                .stroke(Stroke::new(1.0, accent().gamma_multiply(0.3)))
+                .corner_radius(CornerRadius::same(radius::LARGE))
+                .inner_margin(Margin::symmetric(14, 10))
+                .show(ui, |ui| {
+                    ui.set_width(ui.available_width());
+                    row(ui, |ui| {
+                        icons::logo(ui, server.kind, 20.0, v.strong_text_color());
+                        let running = t!("settings-found-running", server = server.kind.name());
+                        title_lbl(ui, &running, size::BODY, v.strong_text_color());
+                        far(ui, |ui| {
+                            let host = crate::net::host(&server.base_url);
+                            lbl(ui, host, size::SMALL, v.weak_text_color());
+                        });
+                    });
+                    let models = server.models.iter().filter(|m| catalog::is_search_model(m));
+                    for (i, model) in models.enumerate() {
+                        row(ui, |ui| {
+                            ui.set_min_height(34.0);
+                            ui.add_space(space::HUGE + space::TINY);
+                            lbl(ui, model, size::BODY, v.text_color());
+                            chip(ui, t!("settings-found-search"), accent());
+                            far(ui, |ui| {
+                                let text = t!("settings-found-use");
+                                let r = if i == 0 {
+                                    primary_button(ui, &text)
+                                } else {
+                                    ui.button(txt(&text, size::CONTROL, None))
+                                };
+                                if r.clicked() {
+                                    used = Some((server.clone(), model.clone()));
+                                }
+                            });
+                        });
+                    }
+                });
+            ui.add_space(space::SMALL);
+        }
+        if let Some((server, model)) = used {
+            use_found(d, &server, &model);
+        }
+    }
+
+    /// Settings, Servers: the model servers found on this PC, each with
+    /// Add, which opens the editor filled in with it.
+    fn found_section(&mut self, ui: &mut Ui, d: &Config) {
+        let found = self.unsaved_local(d);
+        if found.is_empty() {
+            return;
+        }
+        section(ui, &t!("settings-found-title"));
+        let mut add = None;
+        let weak = ui.visuals().weak_text_color();
+        let strong = ui.visuals().strong_text_color();
+        for server in &found {
+            Frame::new()
+                .inner_margin(Margin::symmetric(10, 6))
+                .show(ui, |ui| {
+                    ui.set_width(ui.available_width());
+                    row(ui, |ui| {
+                        ui.set_min_height(30.0);
+                        icons::logo(ui, server.kind, 20.0, strong);
+                        ui.add_space(space::TINY);
+                        lbl(ui, server.kind.name(), size::BODY, strong);
+                        far(ui, |ui| {
+                            ui.add_space(RESET_BUTTON_SIZE + ui.spacing().item_spacing.x);
+                            if ui
+                                .button(txt(&t!("settings-found-add"), size::CONTROL, None))
+                                .clicked()
+                            {
+                                add = Some(server.clone());
+                            }
+                            let what = if server.needs_key {
+                                t!("settings-found-needs-key")
+                            } else {
+                                t!("settings-server-models-count", count = server.models.len())
+                            };
+                            lbl(ui, &what, size::SMALL, weak);
+                            lbl(ui, crate::net::host(&server.base_url), size::SMALL, weak);
+                        });
+                    });
+                });
+        }
+        if let Some(found) = add {
+            let mut server = found_server(d, &found);
+            // Its search models to start with; the editor adds the others.
+            server.models.retain(is_search);
+            self.server_editor = Some(ServerEditor::new(server, true));
+            self.settings_page = SettingsPage::Servers;
+        }
     }
 
     pub(super) fn servers_section(&mut self, ui: &mut Ui, d: &Config) {

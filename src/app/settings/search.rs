@@ -83,6 +83,13 @@ impl App {
             ui.label(txt(&text, size::CONTROL, Some(color)));
         });
         ui.add_space(space::TINY);
+        // Without a search model in use, the ones found on this PC come first.
+        let in_use =
+            d.search_engine == SearchEngine::Server && is_model_for(d, d.search_model, true);
+        self.local_servers.look(ui.ctx());
+        if !in_use {
+            self.found_card(ui, d);
+        }
         let engine = d.search_engine;
         plain_setting(
             ui,
