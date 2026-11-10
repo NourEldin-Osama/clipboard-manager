@@ -278,7 +278,7 @@ use; then the look, motion and smaller changes; and the README, bug reports and 
 - [x] 20.2 The log's first line gives the version, the build and the Windows version, without your user name; item ids and times on reading and indexing lines
 - [x] 20.3 About: Copy details for a bug report
 - [x] 20.5 A warning when the history is 90% full, with Change the limit (D64)
-- [~] 20.4 New screenshots, the change log and version 0.7.0: the notes and the version are in; the screenshots wait for a dev build
+- [x] 20.4 New screenshots, the change log and version 0.7.0
 
 ## Change log
 
