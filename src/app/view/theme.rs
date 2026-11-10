@@ -134,7 +134,7 @@ pub(crate) fn card_edge(dark: bool) -> Option<Color32> {
 /// picture doesn't glare next to the dark cards.
 pub(crate) fn picture_tint(dark: bool) -> Color32 {
     if dark {
-        Color32::from_gray(222)
+        Color32::from_gray(208)
     } else {
         Color32::WHITE
     }
