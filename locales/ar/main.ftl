@@ -132,7 +132,7 @@ list-none-yet-pinned = لا توجد عناصر مثبتة بعد
 ## Main window
 
 top-settings = الإعدادات
-top-add = إضافة
+top-add = إضافة ملفات
 top-add-files-tip = أضف ملفات أو مجلدًا للبحث فيه (يمكنك أيضًا إفلاتها على النافذة)
 top-add-files = إضافة ملفات…
 top-add-folder = إضافة مجلد…

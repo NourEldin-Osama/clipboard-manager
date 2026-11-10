@@ -124,7 +124,7 @@ list-none-yet-pinned = No pinned items yet
 ## Main window
 
 top-settings = Settings
-top-add = Add
+top-add = Add files
 top-add-files-tip = Add files or a folder to search (you can also drop them on the window)
 top-add-files = Add files…
 top-add-folder = Add a folder…
