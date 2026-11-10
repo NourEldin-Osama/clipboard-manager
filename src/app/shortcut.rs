@@ -107,7 +107,17 @@ fn keycap(ui: &mut Ui, label: &str, dim: bool) {
     } else {
         v.strong_text_color()
     };
-    // Arrow names read better as arrows.
+    let g = keycap_label(ui, label, color);
+    let (rect, _) = ui.allocate_exact_size(keycap_size(&g, KEYCAP_HEIGHT), Sense::hover());
+    paint_keycap(ui.painter(), rect, g, color, v.dark_mode);
+}
+
+/// How tall a key cap is.
+pub(super) const KEYCAP_HEIGHT: f32 = 24.0;
+
+/// A key's name laid out for its cap: the arrow keys as arrows, and a
+/// translated key such as "1 حتى 9" (1 to 9) in reading order.
+pub(super) fn keycap_label(ui: &Ui, label: &str, color: Color32) -> Arc<egui::Galley> {
     let shown = match label {
         "Up" | "ArrowUp" => "↑",
         "Down" | "ArrowDown" => "↓",
@@ -115,20 +125,31 @@ fn keycap(ui: &mut Ui, label: &str, dim: bool) {
         "Right" | "ArrowRight" => "→",
         l => l,
     };
-    // A translated key such as "1 حتى 9" (1 to 9) is shown in reading order.
     let font = FontId::proportional(size::SMALL);
-    let g = ui.fonts_mut(|f| {
+    ui.fonts_mut(|f| {
         if super::bidi::has_rtl(shown) {
             f.layout_job(super::bidi::job(shown, font, color))
         } else {
             f.layout_no_wrap(shown.to_string(), font, color)
         }
-    });
-    let size = Vec2::new((g.size().x + 14.0).max(24.0), 24.0);
-    let (rect, _) = ui.allocate_exact_size(size, Sense::hover());
-    let p = ui.painter();
-    let (fill, edge) = view::key_cap(v.dark_mode);
-    // A slightly darker bottom edge makes it read as a key.
+    })
+}
+
+/// The size of a key cap `height` tall around its laid-out name.
+pub(super) fn keycap_size(label: &egui::Galley, height: f32) -> Vec2 {
+    Vec2::new((label.size().x + 14.0).max(height), height)
+}
+
+/// Paints a key cap in `rect`: its face and edge, with a slightly darker
+/// bottom edge that makes it read as a key, and its name in the middle.
+pub(super) fn paint_keycap(
+    p: &egui::Painter,
+    rect: Rect,
+    label: Arc<egui::Galley>,
+    color: Color32,
+    dark: bool,
+) {
+    let (fill, edge) = view::key_cap(dark);
     p.rect_filled(
         rect.translate(Vec2::new(0.0, 1.5)),
         CornerRadius::same(radius::SMALL),
@@ -141,7 +162,7 @@ fn keycap(ui: &mut Ui, label: &str, dim: bool) {
         Stroke::new(1.0, edge),
         egui::StrokeKind::Inside,
     );
-    p.galley(rect.center() - g.size() / 2.0, g, color);
+    p.galley(rect.center() - label.size() / 2.0, label, color);
 }
 
 const FIELD: Vec2 = Vec2::new(170.0, 32.0);

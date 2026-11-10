@@ -256,23 +256,16 @@ pub(super) fn paint_row(
         );
     }
 
-    let gutter = if numbered { 16.0 } else { 0.0 };
+    let gutter = if numbered { NUMBER_CAP + 6.0 } else { 0.0 };
     if let Some(n) = number {
+        // The number of quick paste as a key, the one Ctrl+number presses.
+        let color = v.text_color();
+        let label = shortcut::keycap_label(ui, &n.to_string(), color);
         let at = m(Rect::from_center_size(
             Pos2::new(rect.left() + ROW_PADDING + gutter / 2.0, rect.center().y),
-            Vec2::ZERO,
-        ))
-        .center();
-        let font = FontId::proportional(size::SMALL);
-        paint_text(
-            ui,
-            &p,
-            at,
-            Align2::CENTER_CENTER,
-            &n.to_string(),
-            font,
-            v.weak_text_color(),
-        );
+            Vec2::splat(NUMBER_CAP),
+        ));
+        shortcut::paint_keycap(&p, at, label, color, v.dark_mode);
     }
     let av = if compact { 26.0 } else { 38.0 };
     let av_rect = m(Rect::from_min_size(
@@ -479,6 +472,24 @@ pub(super) fn paint_row(
     if let Some(level) = relevance_level(hit) {
         paint_relevance(&p, rect, ix, iy + 6.0, level, a, weak);
     }
+}
+
+/// How big the numbers of quick paste are, drawn as keys.
+const NUMBER_CAP: f32 = 20.0;
+
+/// How tall the fade at the end of the popup's list is.
+const FADE_HEIGHT: f32 = 28.0;
+
+/// A fade over `rect`, from clear at its top to `color` at its bottom.
+fn paint_fade(p: &egui::Painter, rect: Rect, color: Color32) {
+    let mut mesh = egui::Mesh::default();
+    mesh.colored_vertex(rect.left_top(), Color32::TRANSPARENT);
+    mesh.colored_vertex(rect.right_top(), Color32::TRANSPARENT);
+    mesh.colored_vertex(rect.right_bottom(), color);
+    mesh.colored_vertex(rect.left_bottom(), color);
+    mesh.add_triangle(0, 1, 2);
+    mesh.add_triangle(0, 2, 3);
+    p.add(mesh);
 }
 
 /// One line of item text cut to `width`, query terms highlighted; Arabic in
@@ -827,6 +838,15 @@ impl App {
             }
         });
         let view = (out.state.clamped_offset().y, out.inner_rect.height());
+        // In the popup, a fade where the list goes on below.
+        let more_below = view.0 + view.1 < out.content_size.y - 1.0;
+        if in_popup && more_below {
+            let rect = Rect::from_min_max(
+                Pos2::new(out.inner_rect.left(), out.inner_rect.bottom() - FADE_HEIGHT),
+                out.inner_rect.max,
+            );
+            paint_fade(ui.painter(), rect, ui.visuals().panel_fill);
+        }
         if in_popup {
             self.popup_list_view = view;
         } else {

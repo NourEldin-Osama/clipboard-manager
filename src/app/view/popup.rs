@@ -272,24 +272,37 @@ impl App {
     }
 }
 
-/// Pairs of keys and what they do, side by side in centered lines. A pair
-/// that doesn't fit on a line starts the next one.
+/// Pairs of keys and what they do, side by side in centered lines: the keys
+/// as key caps, as Settings shows them. A pair that doesn't fit on a line
+/// starts the next one.
 fn paint_key_hints(ui: &mut Ui, hints: &[(String, String)]) {
     let (strong, weak) = (ui.visuals().text_color(), ui.visuals().weak_text_color());
+    let dark = ui.visuals().dark_mode;
     let room = ui.available_width().max(0.0);
     let font = FontId::proportional(size::SMALL);
+    // Between the caps of one shortcut.
+    let cap_gap = 3.0;
     let pairs: Vec<_> = hints
         .iter()
         .map(|(keys, what)| {
-            (
-                one_line(ui, keys, &[], font.clone(), strong, room),
-                one_line(ui, what, &[], font.clone(), weak, room),
-            )
+            let caps: Vec<_> = keys
+                .split('+')
+                .map(str::trim)
+                .filter(|k| !k.is_empty())
+                .map(|k| shortcut::keycap_label(ui, k, strong))
+                .collect();
+            (caps, one_line(ui, what, &[], font.clone(), weak, room))
         })
         .collect();
-    // Between a key and its words, and between pairs.
-    let (gap, spacing) = (5.0, 16.0);
-    let width = |i: usize| pairs[i].0.size().x + gap + pairs[i].1.size().x;
+    let caps_width = |caps: &[Arc<egui::Galley>]| {
+        caps.iter()
+            .map(|g| shortcut::keycap_size(g, HINT_CAP).x)
+            .sum::<f32>()
+            + cap_gap * caps.len().saturating_sub(1) as f32
+    };
+    // Between the keys and their words, and between pairs.
+    let (gap, spacing) = (6.0, 16.0);
+    let width = |i: usize| caps_width(&pairs[i].0) + gap + pairs[i].1.size().x;
     let mut lines: Vec<Vec<usize>> = Vec::new();
     let mut used = 0.0;
     for i in 0..pairs.len() {
@@ -304,30 +317,47 @@ fn paint_key_hints(ui: &mut Ui, hints: &[(String, String)]) {
             }
         }
     }
-    let line_h = 18.0;
+    let line_h = HINT_CAP + 6.0;
     let (rect, _) =
         ui.allocate_exact_size(Vec2::new(room, line_h * lines.len() as f32), Sense::hover());
+    let p = ui.painter();
     for (row, line) in lines.iter().enumerate() {
         let total = line.iter().map(|&i| width(i)).sum::<f32>() + spacing * (line.len() - 1) as f32;
         let mut x = rect.center().x - total / 2.0;
         let y = rect.top() + line_h * (row as f32 + 0.5);
         for &i in line {
-            let (keys, what) = &pairs[i];
-            // Laid out left to right, then mirrored for Arabic.
-            let mut place = |galley: &Arc<egui::Galley>, color: Color32, after: f32| {
-                let size = galley.size();
-                let at = flip(
-                    rect,
-                    Rect::from_min_size(Pos2::new(x, y - size.y / 2.0), size),
-                );
-                ui.painter().galley(at.min, galley.clone(), color);
-                x += size.x + after;
-            };
-            place(keys, strong, gap);
-            place(what, weak, spacing);
+            let (caps, what) = &pairs[i];
+            // The keys as one group, mirrored for Arabic as a whole, so
+            // they keep the order Settings shows them in.
+            let group = flip(
+                rect,
+                Rect::from_min_size(
+                    Pos2::new(x, y - HINT_CAP / 2.0),
+                    Vec2::new(caps_width(caps), HINT_CAP),
+                ),
+            );
+            let mut cap_x = group.left();
+            for g in caps {
+                let size = shortcut::keycap_size(g, HINT_CAP);
+                let cap = Rect::from_min_size(Pos2::new(cap_x, group.top()), size);
+                shortcut::paint_keycap(p, cap, g.clone(), strong, dark);
+                cap_x += size.x + cap_gap;
+            }
+            x += group.width() + gap;
+            let size = what.size();
+            let at = flip(
+                rect,
+                Rect::from_min_size(Pos2::new(x, y - size.y / 2.0), size),
+            );
+            p.galley(at.min, what.clone(), weak);
+            x += size.x + spacing;
         }
     }
 }
+
+/// How tall the popup's key caps are: a little smaller than Settings', so
+/// two lines of them leave room for the list.
+const HINT_CAP: f32 = 22.0;
 
 /// Where the popup goes: its corner at the mouse pointer, inside the work
 /// area of the pointer's screen, in points. `None` where the pointer can't
