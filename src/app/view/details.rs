@@ -205,7 +205,7 @@ fn main_button(ui: &mut Ui, ways: &[CopyWay]) -> Option<Paste> {
             );
             ui.set_width(width);
             for way in others {
-                if menu_entry(ui, &way.text, &way.keys, None).clicked() {
+                if menu_entry(ui, &way.text, &way.keys, None, None).clicked() {
                     chosen = Some(way.paste);
                 }
             }

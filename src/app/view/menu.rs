@@ -31,6 +31,25 @@ struct Entry {
     action: Action,
 }
 
+impl Action {
+    /// The icon the app shows for the same action elsewhere.
+    fn icon(&self) -> Icon {
+        match self {
+            Action::Copy(Paste::Yes) => Icon::Clipboard,
+            Action::Copy(Paste::Plain) | Action::CopyImageText => Icon::Text,
+            Action::Copy(Paste::No) | Action::CopyGroup(_) => Icon::Copy,
+            Action::Pin | Action::PinGroup => Icon::Pin,
+            Action::Tag | Action::TagGroup => Icon::Tag,
+            Action::Details => Icon::Open,
+            Action::OpenLink => Icon::Browser,
+            Action::ShowInFolder(_) => Icon::Folder,
+            Action::SaveImage => Icon::Save,
+            Action::IgnoreApp(_) => Icon::EyeOff,
+            Action::Delete | Action::DeleteGroup => Icon::Delete,
+        }
+    }
+}
+
 impl App {
     /// The entries of an item's menu, in groups that lines set apart.
     fn menu_groups(&mut self, it: &Item, in_popup: bool) -> Vec<Vec<Entry>> {
@@ -204,7 +223,7 @@ impl App {
                 for (i, e) in group.iter().enumerate() {
                     let red =
                         matches!(e.action, Action::Delete | Action::DeleteGroup).then_some(RED);
-                    let r = menu_entry(ui, &e.text, &e.keys, red);
+                    let r = menu_entry(ui, &e.text, &e.keys, red, Some(e.action.icon()));
                     // The first frame only measures the menu.
                     if focus_first && g == 0 && i == 0 && !ui.is_sizing_pass() {
                         r.request_focus();

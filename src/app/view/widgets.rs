@@ -504,9 +504,10 @@ pub(super) fn menu_entry(
     text: &str,
     keys: &str,
     color: Option<Color32>,
+    icon: Option<Icon>,
 ) -> egui::Response {
     let (rect, resp) =
-        ui.allocate_exact_size(Vec2::new(ui.available_width(), 30.0), Sense::click());
+        ui.allocate_exact_size(Vec2::new(ui.available_width(), MENU_ROW), Sense::click());
     resp.widget_info(|| egui::WidgetInfo::labeled(egui::Role::MenuItem, true, text));
     let v = ui.visuals();
     // The keyboard moves through a menu by focus.
@@ -530,10 +531,25 @@ pub(super) fn menu_entry(
         )
         .min
     };
+    // The action's icon at the start, as the app shows it elsewhere.
+    let text_at = match icon {
+        Some(icon) => {
+            let place = flip(
+                rect,
+                Rect::from_center_size(
+                    Pos2::new(rect.left() + 18.0, rect.center().y),
+                    Vec2::splat(16.0),
+                ),
+            );
+            icons::paint(ui.painter(), place, icon, color);
+            rect.left() + 34.0
+        }
+        None => rect.left() + 10.0,
+    };
     paint_text(
         ui,
         ui.painter(),
-        at(rect.left() + 10.0),
+        at(text_at),
         start_anchor(egui::Align::Center),
         text,
         FontId::proportional(size::BODY),
@@ -558,6 +574,9 @@ pub(super) fn menu_entry(
     resp
 }
 
+/// How tall a menu's row is.
+const MENU_ROW: f32 = 28.0;
+
 /// Wide enough for the widest of `entries`, each its text and its keys.
 pub(super) fn menu_width<'a>(
     ui: &Ui,
@@ -572,7 +591,7 @@ pub(super) fn menu_width<'a>(
     };
     entries
         .into_iter()
-        .map(|(text, keys)| width(text, size::BODY) + 36.0 + width(keys, size::SMALL) + 20.0)
+        .map(|(text, keys)| width(text, size::BODY) + 60.0 + width(keys, size::SMALL) + 20.0)
         .fold(MENU_W, f32::max)
         .min(440.0)
 }
