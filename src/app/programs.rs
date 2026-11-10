@@ -105,9 +105,42 @@ pub(super) fn shown_name(app: &str, program: Option<&Program>) -> String {
     program.map_or_else(|| tidy(app), |p| p.name.clone())
 }
 
-/// A program's file name as a name: without `.exe`, starting with a
-/// capital, and in small letters after it when the whole name is in
-/// capitals. "OUTLOOK.EXE" becomes "Outlook" and "chrome.exe" "Chrome".
+/// The own names of well-known programs whose file names say less, for
+/// copies whose program file can't be read (made before 0.6, or a program
+/// Windows keeps out of reach). Names, the same in every language.
+const KNOWN_PROGRAMS: [(&str, &str); 26] = [
+    ("acrobat", "Adobe Acrobat"),
+    ("acrord32", "Adobe Acrobat Reader"),
+    ("chrome", "Google Chrome"),
+    ("cmd", "Windows Command Processor"),
+    ("code", "Visual Studio Code"),
+    ("devenv", "Visual Studio"),
+    ("discord", "Discord"),
+    ("excel", "Microsoft Excel"),
+    ("explorer", "Windows Explorer"),
+    ("figma", "Figma"),
+    ("firefox", "Firefox"),
+    ("ms-teams", "Microsoft Teams"),
+    ("msedge", "Microsoft Edge"),
+    ("mspaint", "Paint"),
+    ("notepad", "Notepad"),
+    ("obsidian", "Obsidian"),
+    ("olk", "Outlook"),
+    ("onenote", "Microsoft OneNote"),
+    ("outlook", "Microsoft Outlook"),
+    ("powerpnt", "Microsoft PowerPoint"),
+    ("slack", "Slack"),
+    ("snippingtool", "Snipping Tool"),
+    ("teams", "Microsoft Teams"),
+    ("telegram", "Telegram"),
+    ("windowsterminal", "Windows Terminal"),
+    ("winword", "Microsoft Word"),
+];
+
+/// A program's file name as a name: a well-known program's own name, or
+/// else the file name without `.exe`, starting with a capital, and in small
+/// letters after it when the whole name is in capitals. "WINWORD.EXE"
+/// becomes "Microsoft Word" and "tool.exe" "Tool".
 pub(super) fn tidy(file: &str) -> String {
     let stem = match file.len().checked_sub(4) {
         Some(cut) if file.is_char_boundary(cut) && file[cut..].eq_ignore_ascii_case(".exe") => {
@@ -115,6 +148,12 @@ pub(super) fn tidy(file: &str) -> String {
         }
         _ => file,
     };
+    if let Some((_, name)) = KNOWN_PROGRAMS
+        .iter()
+        .find(|(known, _)| known.eq_ignore_ascii_case(stem))
+    {
+        return (*name).to_string();
+    }
     // Short names in capitals are usually letters said one by one.
     let letters = stem.chars().filter(|c| c.is_alphabetic()).count();
     let in_capitals = letters > 3 && !stem.chars().any(char::is_lowercase);
@@ -291,15 +330,27 @@ mod name_tests {
 
     #[test]
     fn file_names_read_as_names() {
-        assert_eq!(tidy("OUTLOOK.EXE"), "Outlook");
-        assert_eq!(tidy("chrome.exe"), "Chrome");
-        assert_eq!(tidy("SnippingTool.exe"), "SnippingTool");
-        assert_eq!(tidy("Teams.exe"), "Teams");
+        // Well-known programs by their own names.
+        assert_eq!(tidy("WINWORD.EXE"), "Microsoft Word");
+        assert_eq!(tidy("Code.exe"), "Visual Studio Code");
+        assert_eq!(tidy("SnippingTool.exe"), "Snipping Tool");
+        // Others by their file names.
+        assert_eq!(tidy("MYNOTES.EXE"), "Mynotes");
+        assert_eq!(tidy("tool.exe"), "Tool");
         // Letters said one by one keep their capitals.
-        assert_eq!(tidy("CMD.EXE"), "CMD");
+        assert_eq!(tidy("ABC.EXE"), "ABC");
         // Only a last `.exe` goes.
         assert_eq!(tidy("app.exe.config"), "App.exe.config");
         assert_eq!(tidy(""), "");
+    }
+
+    #[test]
+    fn known_programs_are_in_order_and_once() {
+        let files: Vec<&str> = KNOWN_PROGRAMS.iter().map(|(f, _)| *f).collect();
+        let mut sorted = files.clone();
+        sorted.sort_unstable();
+        sorted.dedup();
+        assert_eq!(files, sorted);
     }
 }
 
