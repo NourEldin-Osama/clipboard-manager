@@ -1100,6 +1100,8 @@ impl App {
         let paused = !self.flags.enabled.load(Ordering::SeqCst);
         let look = if self.skip_next_armed {
             TrayLook::SkipNext
+        } else if paused {
+            TrayLook::Paused
         } else {
             TrayLook::Recording
         };

@@ -908,3 +908,4 @@ tray-show = إظهار مدير الحافظة
 tray-pause-recording = إيقاف التسجيل مؤقتًا
 tray-resume-recording = استئناف التسجيل
 tray-quit = خروج
+tray-tooltip-paused = مدير الحافظة · التسجيل متوقف

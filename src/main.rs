@@ -221,6 +221,18 @@ pub fn icon_rgba() -> (Vec<u8>, u32) {
     (rgba, SIZE)
 }
 
+/// The app icon in gray, a little faded: the tray while recording is
+/// paused (D59).
+pub fn gray_icon_rgba() -> (Vec<u8>, u32) {
+    let (mut rgba, size) = icon_rgba();
+    for pixel in rgba.as_chunks_mut::<4>().0 {
+        let [r, g, b, a] = pixel.map(f32::from);
+        let gray = (0.2126 * r + 0.7152 * g + 0.0722 * b) as u8;
+        *pixel = [gray, gray, gray, (a * 0.6) as u8];
+    }
+    (rgba, size)
+}
+
 /// The app icon with a badge at its corner: the "eye off" icon on the
 /// accent color, for the tray after Alt+C (D59).
 pub fn badged_icon_rgba() -> (Vec<u8>, u32) {

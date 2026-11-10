@@ -29,6 +29,8 @@ pub struct Tray {
 #[derive(Clone, Copy, PartialEq)]
 pub enum TrayLook {
     Recording,
+    /// Recording is paused: the icon in gray, and the tooltip says so.
+    Paused,
     /// After Alt+C: a badge until the copy it skips (D59).
     SkipNext,
 }
@@ -109,6 +111,7 @@ impl Tray {
         self.look = look;
         let (rgba, size) = match look {
             TrayLook::Recording => crate::icon_rgba(),
+            TrayLook::Paused => crate::gray_icon_rgba(),
             TrayLook::SkipNext => crate::badged_icon_rgba(),
         };
         match tray_icon::Icon::from_rgba(rgba, size, size) {
@@ -118,6 +121,14 @@ impl Tray {
                 }
             }
             Err(e) => log::warn!("making the tray icon: {e}"),
+        }
+        let tooltip = if look == TrayLook::Paused {
+            t!("tray-tooltip-paused")
+        } else {
+            t!("app-title")
+        };
+        if let Err(e) = self.icon.set_tooltip(Some(tooltip)) {
+            log::warn!("changing the tray tooltip: {e}");
         }
     }
 

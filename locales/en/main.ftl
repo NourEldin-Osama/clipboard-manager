@@ -832,3 +832,4 @@ tray-show = Show Clipboard Manager
 tray-pause-recording = Pause recording
 tray-resume-recording = Resume recording
 tray-quit = Quit
+tray-tooltip-paused = Clipboard Manager · Recording paused
