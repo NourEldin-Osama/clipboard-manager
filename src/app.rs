@@ -608,6 +608,9 @@ pub struct App {
     confirm: Option<Confirm>,
     /// The server being added or edited in Settings.
     server_editor: Option<ServerEditor>,
+    /// Servers' editors left with changes not saved, by server id (D61):
+    /// kept until Save, Discard or quitting the app.
+    server_drafts: HashMap<u32, ServerEditor>,
     /// A choice that would send to a server outside this PC, waiting for
     /// the user's yes.
     pending_send: Option<PendingSend>,
@@ -823,6 +826,7 @@ impl App {
             settings_page: SettingsPage::Search,
             confirm: None,
             server_editor: None,
+            server_drafts: HashMap::new(),
             pending_send: None,
             list_view: (0.0, 0.0),
             popup_list_view: (0.0, 0.0),

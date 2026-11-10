@@ -71,11 +71,11 @@ impl SettingsPage {
 
 impl App {
     pub(super) fn open_settings(&mut self, page: SettingsPage) {
+        self.stash_server_editor();
         self.draft = Some(self.cfg.clone());
         self.settings_page = page;
         self.recording = None;
         self.confirm = None;
-        self.server_editor = None;
         self.pending_send = None;
     }
 
@@ -83,7 +83,7 @@ impl App {
     /// saved stays as it was, and a server outside this PC that the user
     /// hasn't agreed to gets nothing.
     pub(super) fn close_settings(&mut self, ctx: &egui::Context) {
-        self.server_editor = None;
+        self.stash_server_editor();
         self.pending_send = None;
         if let Some(d) = self.draft.take() {
             self.apply_settings(d, ctx, true);
@@ -293,7 +293,7 @@ impl App {
                         self.settings_page = page;
                         self.confirm = None;
                         self.recording = None;
-                        self.server_editor = None;
+                        self.stash_server_editor();
                     }
                 }
             });
@@ -349,7 +349,7 @@ impl App {
         self.hold_unagreed(&mut d, before);
         if close {
             // Back from a server's editor goes to the page, not out of Settings.
-            if self.server_editor.take().is_none() {
+            if !self.stash_server_editor() {
                 self.draft = Some(d);
                 self.close_settings(&ctx);
                 return;
