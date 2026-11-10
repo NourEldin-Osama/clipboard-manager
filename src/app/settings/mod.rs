@@ -164,7 +164,7 @@ impl App {
             self.query_changed = Some(Instant::now() - QUERY_DEBOUNCE);
         }
         if prune {
-            self.prune();
+            self.prune(true);
         }
         self.dirty = true;
     }

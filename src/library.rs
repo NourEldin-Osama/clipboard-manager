@@ -328,8 +328,15 @@ impl Library {
     }
 
     /// Deletes a taken item from the disk: its row, vectors and image file.
+    #[cfg(test)]
     pub fn forget(&self, removed: Removed) -> Result<()> {
         self.store.delete(&removed.item)
+    }
+
+    /// Deletes taken items from the disk in one transaction.
+    pub fn forget_many(&self, removed: Vec<Removed>) -> Result<()> {
+        let items: Vec<Item> = removed.iter().map(|r| Item::clone(&r.item)).collect();
+        self.store.delete_many(&items)
     }
 
     /// How many items Clear history would delete.
@@ -339,6 +346,12 @@ impl Library {
 
     /// Deletes the oldest clearable items beyond `max`. Returns the removed ids.
     pub fn prune(&mut self, max: usize) -> Result<Vec<u64>> {
+        let doomed: HashSet<u64> = self.over_limit(max).into_iter().collect();
+        self.remove_where(|i| doomed.contains(&i.id))
+    }
+
+    /// The oldest clearable items beyond `max`: what `prune` deletes.
+    pub fn over_limit(&self, max: usize) -> Vec<u64> {
         let mut history: Vec<(i64, u64)> = self
             .items
             .iter()
@@ -346,18 +359,27 @@ impl Library {
             .map(|i| (i.created, i.id))
             .collect();
         if history.len() <= max {
-            return Ok(Vec::new());
+            return Vec::new();
         }
         history.sort();
         let excess = history.len() - max;
-        let doomed: HashSet<u64> = history.into_iter().take(excess).map(|(_, id)| id).collect();
-        self.remove_where(|i| doomed.contains(&i.id))
+        history.into_iter().take(excess).map(|(_, id)| id).collect()
     }
 
     /// Deletes the clearable items copied before `cutoff` (Unix seconds).
     /// Returns the removed ids.
     pub fn prune_older_than(&mut self, cutoff: i64) -> Result<Vec<u64>> {
         self.remove_where(|i| is_clearable(i) && i.created < cutoff)
+    }
+
+    /// The clearable items copied before `cutoff`: what `prune_older_than`
+    /// deletes.
+    pub fn older_than(&self, cutoff: i64) -> Vec<u64> {
+        self.items
+            .iter()
+            .filter(|i| is_clearable(i) && i.created < cutoff)
+            .map(|i| i.id)
+            .collect()
     }
 
     /// Deletes every clearable item. Returns the removed ids.
@@ -472,6 +494,7 @@ mod tests {
         let new = add(&mut lib, "new", 500);
         lib.toggle_pin(pinned).unwrap();
         lib.add_tags(tagged, "keep").unwrap();
+        assert_eq!(lib.older_than(300), [old], "what would go, before it goes");
         assert_eq!(lib.prune_older_than(300).unwrap(), [old]);
         let mut left: Vec<u64> = lib.items().iter().map(|i| i.id).collect();
         left.sort();

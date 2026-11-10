@@ -220,7 +220,7 @@ impl eframe::App for App {
             && self.next_age_prune.is_none_or(|at| Instant::now() >= at)
         {
             self.next_age_prune = Some(Instant::now() + AGE_PRUNE_EVERY);
-            self.prune();
+            self.prune(true);
             ctx.request_repaint_after(AGE_PRUNE_EVERY);
         }
         self.window_logic(ctx);

@@ -846,6 +846,22 @@ toast-imported =
         [few] تم استيراد { $count } ملفات
        *[other] تم استيراد { $count } ملف
     }
+toast-pruned-age =
+    { $count ->
+        [one] حُذف عنصر واحد أقدم من { $age }
+        [two] حُذف عنصران أقدم من { $age }
+        [few] حُذف { $count } عناصر أقدم من { $age }
+        [many] حُذف { $count } عنصرًا أقدم من { $age }
+       *[other] حُذف { $count } عنصر أقدم من { $age }
+    }
+toast-pruned-limit =
+    { $count ->
+        [one] حُذف عنصر واحد تجاوز حد السجل
+        [two] حُذف عنصران تجاوزا حد السجل
+        [few] حُذف { $count } عناصر تجاوزت حد السجل
+        [many] حُذف { $count } عنصرًا تجاوز حد السجل
+       *[other] حُذف { $count } عنصر تجاوز حد السجل
+    }
 toast-cleared =
     { $count ->
         [one] تم مسح عنصر واحد

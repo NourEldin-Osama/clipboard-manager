@@ -783,6 +783,16 @@ toast-imported =
         [one] Imported 1 file
        *[other] Imported { $count } files
     }
+toast-pruned-age =
+    { $count ->
+        [one] Deleted 1 item older than { $age }
+       *[other] Deleted { $count } items older than { $age }
+    }
+toast-pruned-limit =
+    { $count ->
+        [one] Deleted 1 item over your history limit
+       *[other] Deleted { $count } items over your history limit
+    }
 toast-cleared =
     { $count ->
         [one] Cleared 1 item

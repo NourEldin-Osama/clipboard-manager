@@ -1721,24 +1721,61 @@ impl App {
             }
         }
         self.add_item(item);
-        self.prune();
+        self.prune(false);
     }
 
     /// Deletes what is over the history size and, when it is on, what is
     /// older than the chosen number of days.
-    fn prune(&mut self) {
+    /// Deletes what the history limit and delete by age remove. With
+    /// `report`, it says so, with Undo, and the items wait until the message
+    /// is gone (D60). A new copy pushing the oldest item out of a full
+    /// history is not reported.
+    fn prune(&mut self, report: bool) {
         let days = i64::from(self.cfg.delete_after_days);
-        let pruned = self.library.prune(self.cfg.max_items).and_then(|mut ids| {
-            if days > 0 {
-                let cutoff = crate::store::now() - days * 24 * 60 * 60;
-                ids.extend(self.library.prune_older_than(cutoff)?);
+        let cutoff = crate::store::now() - days * 24 * 60 * 60;
+        if !report {
+            let pruned = self.library.prune(self.cfg.max_items).and_then(|mut ids| {
+                if days > 0 {
+                    ids.extend(self.library.prune_older_than(cutoff)?);
+                }
+                Ok(ids)
+            });
+            match pruned {
+                Ok(removed) => self.drop_removed(&removed),
+                Err(e) => self.set_error(log_error!("error-deleting", error = e.to_string())),
             }
-            Ok(ids)
-        });
-        match pruned {
-            Ok(removed) => self.drop_removed(&removed),
-            Err(e) => self.set_error(log_error!("error-deleting", error = e.to_string())),
+            return;
         }
+        let mut ids = self.library.over_limit(self.cfg.max_items);
+        let over_limit = ids.len();
+        if days > 0 {
+            let more: Vec<u64> = self
+                .library
+                .older_than(cutoff)
+                .into_iter()
+                .filter(|id| !ids.contains(id))
+                .collect();
+            ids.extend(more);
+        }
+        if ids.is_empty() {
+            return;
+        }
+        // One undo at a time: an earlier delete becomes final now.
+        self.finish_delete();
+        let removed = self.take_items(&ids);
+        self.drop_stale_tag_filter();
+        self.drop_removed(&ids);
+        let count = removed.len();
+        log::info!("deleted {count} items by age or the history limit");
+        self.pending_delete = Some(PendingDelete { removed });
+        let text = if count == over_limit {
+            t!("toast-pruned-limit", count = count)
+        } else {
+            let age = t!("settings-age-days", count = days);
+            t!("toast-pruned-age", count = count, age = age)
+        };
+        self.undo_toast(text);
+        self.dirty = true;
     }
 
     /// Reads the files in the background; `finish` saves them as they come.
@@ -1756,7 +1793,7 @@ impl App {
             } => {
                 item.image = Some(path);
                 self.add_item(*item);
-                self.prune();
+                self.prune(false);
             }
             Done::ImageSaved { saved: Err(e), .. } => {
                 self.set_error(log_error!("error-saving-image", error = e.to_string()))
@@ -2261,10 +2298,8 @@ impl App {
         // Its message can't undo it any more.
         self.toasts.retain(|t| !t.undoes());
         if let Some(pending) = self.pending_delete.take() {
-            for removed in pending.removed {
-                if let Err(e) = self.library.forget(removed) {
-                    self.set_error(log_error!("error-deleting", error = e.to_string()));
-                }
+            if let Err(e) = self.library.forget_many(pending.removed) {
+                self.set_error(log_error!("error-deleting", error = e.to_string()));
             }
         }
     }
@@ -2350,9 +2385,9 @@ impl App {
     }
 
     /// Deletes every item of `ids`; one Undo brings them all back.
-    fn delete_group(&mut self, ids: &[u64]) {
-        // One undo at a time: an earlier delete becomes final now.
-        self.finish_delete();
+    /// Takes `ids` out of the history in memory, the last first, so each
+    /// comes back in its place on Undo.
+    fn take_items(&mut self, ids: &[u64]) -> Vec<Removed> {
         let place: HashMap<u64, usize> = self
             .library
             .items()
@@ -2365,18 +2400,24 @@ impl App {
             .copied()
             .filter(|id| place.contains_key(id))
             .collect();
-        // Taken from the last to the first, each keeps its place.
         ids.sort_by_key(|id| std::cmp::Reverse(place[id]));
-        let row = self.results.iter().position(|h| ids.contains(&h.id));
         let mut removed = Vec::with_capacity(ids.len());
-        for &id in &ids {
+        for id in ids {
             if let Some(r) = self.library.take(id) {
                 self.loader.forget(id, false);
                 removed.push(r);
             }
         }
+        removed
+    }
+
+    fn delete_group(&mut self, ids: &[u64]) {
+        // One undo at a time: an earlier delete becomes final now.
+        self.finish_delete();
+        let row = self.results.iter().position(|h| ids.contains(&h.id));
+        let removed = self.take_items(ids);
         self.drop_stale_tag_filter();
-        self.drop_removed(&ids);
+        self.drop_removed(ids);
         self.clear_marks();
         // Keep the selection on the row that takes the first one's place.
         if let Some(i) = row {
