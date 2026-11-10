@@ -121,13 +121,13 @@ pub(crate) fn search_hit(dark: bool) -> Color32 {
 /// The tint of a selected grid card: lighter than a selected row's, so the
 /// card's gray text stays readable on it.
 pub(crate) fn selected_card(accent: Color32, dark: bool) -> Color32 {
-    accent.gamma_multiply(if dark { 0.10 } else { 0.05 })
+    accent.gamma_multiply(if dark { 0.16 } else { 0.05 })
 }
 
 /// The faint edge around a grid card in the dark theme, where its shadow
 /// doesn't show; none in the light theme.
 pub(crate) fn card_edge(dark: bool) -> Option<Color32> {
-    dark.then(|| Color32::from_gray(58))
+    dark.then(|| Color32::from_gray(70))
 }
 
 /// How pictures are tinted: a little dimmer in the dark theme, so a bright
