@@ -392,6 +392,9 @@ pub(super) fn paint_row(
     let title = row_title(it);
     let title = if title.is_empty() {
         t!("item-empty")
+    } else if compact && it.kind == Kind::Image && sub.is_empty() {
+        // One line has no room for the size under the title: it follows it.
+        format!("{title} · {}", subtitle(it))
     } else {
         title
     };
