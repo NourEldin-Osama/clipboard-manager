@@ -4,6 +4,21 @@ What changed in each version, for the people who use the app. Each release
 starts its notes with the section of the version it was built from, so add
 the notes here before a push that makes a release.
 
+## 0.7.2
+
+- Updates show in one message at the bottom right of the window (bottom
+  left in Arabic) instead of a bar under the search box. It shows the
+  download with its progress and Cancel, then Restart to update, or the
+  reason it failed with Try again. Its close button hides it until the
+  next step.
+- Settings, About shows the same step of the update with the same
+  buttons: Download, Cancel with the progress, Restart to update or Try
+  again.
+- A newer version found while an update waits to be installed now takes
+  its place, so one restart brings the newest version.
+- A long word, such as a file path in an error, breaks onto the next line
+  instead of running past the edge of a message.
+
 ## 0.7.1
 
 - A "Not saved" message, in the window or as a note on the screen, no
