@@ -35,11 +35,44 @@ const FACTS_GAP: &str = "  ·  ";
 
 /// How big the details show a text: short ones larger, so they read first.
 fn content_size(text: &str) -> f32 {
-    if text.chars().count() <= 160 && text.lines().count() <= 4 {
+    let (chars, lines) = (text.chars().count(), text.lines().count());
+    if chars <= 60 && lines <= 2 {
+        size::TITLE
+    } else if chars <= 160 && lines <= 4 {
         size::LARGE
     } else {
         size::BODY
     }
+}
+
+/// An item's text to read: Arabic wrapped in reading order (not
+/// selectable; copy takes all of it) on the side its first letter reads
+/// from; other text in lines of about 70 characters on the left, as
+/// left-to-right text reads, in Arabic too.
+fn reading_text(ui: &mut Ui, text: &str) {
+    let text_size = content_size(text);
+    if bidi::has_rtl(text) {
+        let c = ui.visuals().text_color();
+        bidi::content(ui, text, FontId::proportional(text_size), c);
+        return;
+    }
+    let room = ui.available_rect_before_wrap();
+    let width = room.width().min(text_size * READING_WIDTH);
+    let lines = Rect::from_min_size(room.min, Vec2::new(width, room.height()));
+    let builder = egui::UiBuilder::new()
+        .max_rect(lines)
+        .layout(Layout::top_down(Align::Min));
+    ui.scope_builder(builder, |ui| {
+        ui.add(
+            egui::Label::new(
+                RichText::new(text)
+                    .size(text_size)
+                    .line_height(Some(text_size * 1.6)),
+            )
+            .selectable(true)
+            .wrap(),
+        );
+    });
 }
 
 /// The details' main button: the main way to put the item back, with its
@@ -382,11 +415,21 @@ impl App {
                 {
                     self.run(Command::Delete(it.id));
                 }
-                // A pinned item says so on its pin button, which unpins it.
+                // A pinned item says so on its pin button; under the pointer
+                // the button says what a click does. It keeps the width of
+                // the longer word, so it stays in place.
                 let pin = if it.pinned {
+                    let id = egui::Id::unique("details-pin");
+                    let pointed = ui
+                        .data(|d| d.get_temp::<Rect>(id))
+                        .is_some_and(|r| ui.rect_contains_pointer(r));
+                    let (pinned, unpin) = (t!("details-pinned"), t!("details-unpin"));
+                    let width = icons::pill_width(ui, &[&pinned, &unpin], size::CONTROL);
                     let shade = text_shade(accent(), ui.visuals().dark_mode);
-                    let job = pill_job(&t!("details-pinned"), size::CONTROL, shade, None);
-                    let r = icons::pill(ui, Icon::PinFilled, job, accent(), true);
+                    let label = if pointed { &unpin } else { &pinned };
+                    let job = pill_job(label, size::CONTROL, shade, None);
+                    let r = icons::pill_at_least(ui, Icon::PinFilled, job, accent(), true, width);
+                    ui.data_mut(|d| d.insert_temp(id, r.rect));
                     tip(r, &hint(&t!("details-unpin"), &keys.pin))
                 } else {
                     let tip = hint(&t!("details-pin-keep"), &keys.pin);
@@ -522,34 +565,16 @@ impl App {
                                     .selectable(true),
                                 );
                             });
-                    } else if bidi::has_rtl(&d.shown) {
-                        // Arabic: wrapped in reading order (not selectable; copy takes
-                        // all of it), on the side its first letter reads from.
-                        let shown = d.shown.clone();
-                        let c = ui.visuals().text_color();
-                        let font = FontId::proportional(content_size(&shown));
-                        bidi::content(ui, &shown, font, c);
                     } else {
-                        // Lines of about 70 characters on the left, as left-to-right
-                        // text reads, in Arabic too.
-                        let room = ui.available_rect_before_wrap();
-                        let width = room.width().min(size::BODY * READING_WIDTH);
-                        let lines = Rect::from_min_size(room.min, Vec2::new(width, room.height()));
-                        let builder = egui::UiBuilder::new()
-                            .max_rect(lines)
-                            .layout(Layout::top_down(Align::Min));
-                        let text_size = content_size(&d.shown);
-                        ui.scope_builder(builder, |ui| {
-                            ui.add(
-                                egui::Label::new(
-                                    RichText::new(d.shown.as_str())
-                                        .size(text_size)
-                                        .line_height(Some(text_size * 1.6)),
-                                )
-                                .selectable(true)
-                                .wrap(),
-                            );
-                        });
+                        // The text in a reading area, the pane's main content.
+                        Frame::new()
+                            .fill(ui.visuals().panel_fill)
+                            .corner_radius(CornerRadius::same(radius::LARGE))
+                            .inner_margin(Margin::symmetric(20, 16))
+                            .show(ui, |ui| {
+                                ui.set_width(ui.available_width());
+                                reading_text(ui, &d.shown);
+                            });
                     }
                 }
             });

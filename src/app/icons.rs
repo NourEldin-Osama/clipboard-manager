@@ -442,7 +442,34 @@ pub(super) fn pill(
     color: Color32,
     selected: bool,
 ) -> egui::Response {
-    pill_with(ui, icon, job, color, selected, None)
+    pill_with(ui, icon, job, color, selected, None, 0.0)
+}
+
+/// A pill at least `min_width` wide, so one whose label changes keeps its
+/// place.
+pub(super) fn pill_at_least(
+    ui: &mut Ui,
+    icon: Icon,
+    job: egui::text::LayoutJob,
+    color: Color32,
+    selected: bool,
+    min_width: f32,
+) -> egui::Response {
+    pill_with(ui, icon, job, color, selected, None, min_width)
+}
+
+/// How wide a pill is with the widest of `labels`, `text_size` big.
+pub(super) fn pill_width(ui: &Ui, labels: &[&str], text_size: f32) -> f32 {
+    let font = FontId::proportional(text_size);
+    let widest = labels
+        .iter()
+        .map(|l| {
+            ui.fonts_mut(|f| f.layout_no_wrap(l.to_string(), font.clone(), Color32::WHITE))
+                .size()
+                .x
+        })
+        .fold(0.0, f32::max);
+    14.0 + 6.0 + widest + PILL_PAD.x * 2.0
 }
 
 /// A pill button whose icon has a color of its own, such as the dot of a
@@ -453,7 +480,7 @@ pub(super) fn state_pill(
     job: egui::text::LayoutJob,
     icon_color: Color32,
 ) -> egui::Response {
-    pill_with(ui, icon, job, icon_color, false, Some(icon_color))
+    pill_with(ui, icon, job, icon_color, false, Some(icon_color), 0.0)
 }
 
 fn pill_with(
@@ -463,9 +490,10 @@ fn pill_with(
     color: Color32,
     selected: bool,
     icon_color: Option<Color32>,
+    min_width: f32,
 ) -> egui::Response {
     let g = ui.fonts_mut(|f| f.layout_job(job));
-    let width = 14.0 + 6.0 + g.size().x + PILL_PAD.x * 2.0;
+    let width = (14.0 + 6.0 + g.size().x + PILL_PAD.x * 2.0).max(min_width);
     let size = Vec2::new(width, pill_height(g.size().y));
     let (rect, resp) = ui.allocate_exact_size(size, Sense::click());
     let v = ui.visuals();
