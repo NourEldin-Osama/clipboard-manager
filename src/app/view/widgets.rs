@@ -298,8 +298,10 @@ pub(crate) fn pill_job(
     };
     job.halign = egui::Align::LEFT;
     if let Some((n, c)) = count {
+        // The count in the label's size, so it sits on the same line,
+        // in a quieter color.
         let fmt = TextFormat {
-            font_id: FontId::proportional(size::SMALL),
+            font_id: FontId::proportional(size),
             color: c,
             ..Default::default()
         };
