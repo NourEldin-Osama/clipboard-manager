@@ -337,13 +337,18 @@ pub(super) fn paint_card(
         }
     }
     // Outline last, so the footer doesn't cover it. On a dark card the
-    // accent's lighter shade, which stands out from the dark cards around.
+    // accent's lighter shade and a little wider, so it stands out from the
+    // dark cards around.
     if selected {
-        let edge = if v.dark_mode { text_shade(a, true) } else { a };
+        let (edge, width) = if v.dark_mode {
+            (text_shade(a, true), 2.5)
+        } else {
+            (a, 2.0)
+        };
         p.rect_stroke(
             rect,
             radius,
-            Stroke::new(2.0, edge),
+            Stroke::new(width, edge),
             egui::StrokeKind::Inside,
         );
     } else if hot {

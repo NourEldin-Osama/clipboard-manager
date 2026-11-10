@@ -139,7 +139,7 @@ pub(crate) fn search_hit(dark: bool) -> Color32 {
 /// The tint of a selected grid card: lighter than a selected row's, so the
 /// card's gray text stays readable on it.
 pub(crate) fn selected_card(accent: Color32, dark: bool) -> Color32 {
-    accent.gamma_multiply(if dark { 0.16 } else { 0.05 })
+    accent.gamma_multiply(if dark { 0.20 } else { 0.05 })
 }
 
 /// The line between a menu's groups: a step stronger than the other
