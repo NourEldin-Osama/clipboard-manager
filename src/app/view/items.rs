@@ -8,7 +8,24 @@ pub(crate) fn looks_like_code(s: &str) -> bool {
         .chars()
         .filter(|c| "{}();=<>[]_/\\".contains(*c))
         .count();
-    sample.lines().count() > 1 && symbols * 20 > sample.len().max(1)
+    looks_like_sql(&sample) || (sample.lines().count() > 1 && symbols * 20 > sample.len().max(1))
+}
+
+/// An SQL statement, often one line: a statement word in capitals first and
+/// one of its clauses in capitals later, so a sentence that starts with
+/// "Select" doesn't count.
+fn looks_like_sql(sample: &str) -> bool {
+    let text = sample.trim_start();
+    let statements = [
+        "SELECT ",
+        "INSERT INTO ",
+        "UPDATE ",
+        "DELETE FROM ",
+        "CREATE TABLE ",
+        "WITH ",
+    ];
+    let clauses = [" FROM ", " WHERE ", " SET ", " VALUES", " JOIN ", " AS ("];
+    statements.iter().any(|s| text.starts_with(s)) && clauses.iter().any(|c| text.contains(c))
 }
 
 /// A text item that looks like code.
