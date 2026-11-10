@@ -55,6 +55,7 @@ pub(super) enum Icon {
     Warning,
     Time,
     Language,
+    Server,
     /// A plain filled circle (status light), not an icon.
     Dot,
 }
@@ -153,11 +154,12 @@ fn source(icon: Icon) -> Option<(&'static str, &'static [u8])> {
         Icon::Warning => svg!("warning"),
         Icon::Time => svg!("time"),
         Icon::Language => svg!("language"),
+        Icon::Server => svg!("server"),
         Icon::Dot => return None,
     })
 }
 
-const ALL: [Icon; 41] = [
+const ALL: [Icon; 42] = [
     Icon::Refresh,
     Icon::Eye,
     Icon::EyeOff,
@@ -198,6 +200,7 @@ const ALL: [Icon; 41] = [
     Icon::Warning,
     Icon::Time,
     Icon::Language,
+    Icon::Server,
     Icon::Dot,
 ];
 

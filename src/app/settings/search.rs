@@ -1,5 +1,6 @@
-//! Settings, Search & AI: how search works, what searches by meaning, what
-//! reads the text in images, and the servers they run on.
+//! Settings, Search & AI: how search works, what searches by meaning and
+//! what reads the text in images. The servers they run on have their own
+//! page.
 
 use super::*;
 use crate::config::{ReadEngine, SearchEngine};
@@ -15,10 +16,6 @@ fn strictness() -> [(f32, String); 3] {
 
 impl App {
     pub(super) fn search_page(&mut self, ui: &mut Ui, d: &mut Config) {
-        if self.server_editor.is_some() {
-            self.server_editor_page(ui, d);
-            return;
-        }
         let def = Config::default();
         section(ui, &t!("settings-search"));
         setting_for(
@@ -142,8 +139,6 @@ impl App {
             }
             ReadEngine::Server => self.model_menu(ui, d, false),
         }
-
-        self.servers_section(ui, d);
     }
 
     /// The engine is a server, but no server has a model for it yet.

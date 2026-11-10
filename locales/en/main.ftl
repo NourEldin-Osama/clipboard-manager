@@ -352,6 +352,7 @@ toast-images-turned-off = Send images is off for this model.
 
 settings-page-general = General
 settings-page-search = Search & AI
+settings-page-servers = Servers
 settings-page-privacy = Privacy
 settings-page-about = About
 settings-page-clipboard = Clipboard
@@ -556,7 +557,7 @@ settings-meaning-off = Off: search finds words only
 settings-meaning-none = No search model yet
 settings-meaning-unavailable = The search model can't be used: check its server
 settings-read-section = Read text in images
-settings-servers-section = Servers
+settings-servers-section = Saved servers
 settings-engine = Engine
 settings-search-engine-hint = Where meaning search runs
 settings-search-engine-help = Off: search by words only, plus the text found in images. Your own server: a model on one of your servers also finds items by meaning.

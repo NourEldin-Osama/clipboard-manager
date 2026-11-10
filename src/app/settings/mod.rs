@@ -47,17 +47,20 @@ pub(crate) enum SettingsPage {
     /// What is never kept, and where the data goes.
     Privacy,
     Search,
+    /// The saved servers and the ones found on this PC (D68).
+    Servers,
     Shortcuts,
     About,
 }
 
 impl SettingsPage {
-    const ALL: [SettingsPage; 7] = [
+    const ALL: [SettingsPage; 8] = [
         Self::General,
         Self::Appearance,
         Self::Clipboard,
         Self::Privacy,
         Self::Search,
+        Self::Servers,
         Self::Shortcuts,
         Self::About,
     ];
@@ -69,6 +72,7 @@ impl SettingsPage {
             Self::Clipboard => (Icon::Clipboard, t!("settings-page-clipboard")),
             Self::Privacy => (Icon::Lock, t!("settings-page-privacy")),
             Self::Search => (Icon::Search, t!("settings-page-search")),
+            Self::Servers => (Icon::Server, t!("settings-page-servers")),
             Self::Shortcuts => (Icon::Keyboard, t!("settings-page-shortcuts")),
             Self::About => (Icon::Info, t!("settings-page-about")),
         }
@@ -345,6 +349,7 @@ impl App {
                             SettingsPage::Clipboard => self.clipboard_page(ui, &mut d),
                             SettingsPage::Privacy => self.privacy_page(ui, &mut d),
                             SettingsPage::Search => self.search_page(ui, &mut d),
+                            SettingsPage::Servers => self.servers_page(ui, &mut d),
                             SettingsPage::Shortcuts => {
                                 self.shortcuts_page(ui, &mut d, &mut apply_keys)
                             }

@@ -410,6 +410,7 @@ toast-images-turned-off = أُوقف إرسال الصور لهذا النموذ
 
 settings-page-general = عام
 settings-page-search = البحث والذكاء الاصطناعي
+settings-page-servers = الخوادم
 settings-page-privacy = الخصوصية
 settings-page-about = حول التطبيق
 settings-page-clipboard = الحافظة
@@ -632,7 +633,7 @@ settings-meaning-none = لا يوجد نموذج للبحث بعد
 settings-meaning-unavailable = لا يمكن استخدام نموذج البحث: تحقق من خادمه
 settings-meaning-section = البحث بالمعنى
 settings-read-section = قراءة النص في الصور
-settings-servers-section = الخوادم
+settings-servers-section = الخوادم المحفوظة
 settings-engine = المحرك
 settings-search-engine-hint = أين يعمل البحث بالمعنى
 settings-search-engine-help = معطّل: البحث بالكلمات فقط، مع النص الموجود في الصور. خادمك: نموذج على أحد خوادمك يجد العناصر بالمعنى أيضًا.

@@ -463,6 +463,15 @@ fn test_line(ui: &mut Ui, test: &Test) {
 
 impl App {
     /// The servers, below the engines: one row each, then "Add server".
+    /// Settings, Servers: the saved servers, or the editor of one (D68).
+    pub(super) fn servers_page(&mut self, ui: &mut Ui, d: &mut Config) {
+        if self.server_editor.is_some() {
+            self.server_editor_page(ui, d);
+            return;
+        }
+        self.servers_section(ui, d);
+    }
+
     pub(super) fn servers_section(&mut self, ui: &mut Ui, d: &Config) {
         section(ui, &t!("settings-servers-section"));
         if d.servers.is_empty() {
@@ -550,6 +559,7 @@ impl App {
                 .remove(&server.id)
                 .unwrap_or_else(|| ServerEditor::new(server, false));
             self.server_editor = Some(editor);
+            self.settings_page = SettingsPage::Servers;
         }
     }
 
@@ -583,6 +593,8 @@ impl App {
             ..Default::default()
         };
         self.server_editor = Some(ServerEditor::new(server, true));
+        // The editor is part of the Servers page.
+        self.settings_page = SettingsPage::Servers;
     }
 
     /// The menu that picks the model in use for searching or for reading,
@@ -751,7 +763,7 @@ impl App {
         self.settings_page = SettingsPage::Search;
     }
 
-    /// The editor of one server, drawn in place of the Search & AI page.
+    /// The editor of one server, drawn in place of the Servers page.
     pub(super) fn server_editor_page(&mut self, ui: &mut Ui, d: &mut Config) {
         let Some(mut editor) = self.server_editor.take() else {
             return;
