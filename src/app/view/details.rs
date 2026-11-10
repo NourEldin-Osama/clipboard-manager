@@ -619,7 +619,12 @@ impl App {
                 let size = tex.size_vec2();
                 let max_h = (ui.available_height() - 140.0).max(220.0);
                 let scale = (ui.available_width() / size.x).min(max_h / size.y).min(1.0);
-                ui.add(egui::Image::new((tex.id(), size * scale)).corner_radius(8.0));
+                let tint = theme::picture_tint(ui.visuals().dark_mode);
+                ui.add(
+                    egui::Image::new((tex.id(), size * scale))
+                        .tint(tint)
+                        .corner_radius(8.0),
+                );
             }
             Preview::Loading => {
                 ui.add_space(space::HUGE);

@@ -293,6 +293,7 @@ pub(super) fn paint_row(
             );
             egui::Image::new((t.id(), Vec2::splat(av)))
                 .uv(uv)
+                .tint(theme::picture_tint(v.dark_mode))
                 .corner_radius(6.0)
                 .paint_at(ui, av_rect);
         }

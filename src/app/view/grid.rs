@@ -36,6 +36,14 @@ pub(super) fn paint_card(
     };
     p.add(shadow.as_shape(rect, radius));
     p.rect_filled(rect, radius, v.extreme_bg_color);
+    if let Some(edge) = theme::card_edge(v.dark_mode) {
+        p.rect_stroke(
+            rect,
+            radius,
+            Stroke::new(1.0, edge),
+            egui::StrokeKind::Inside,
+        );
+    }
     let pad = 16.0;
     let weak = v.weak_text_color();
 
@@ -89,6 +97,7 @@ pub(super) fn paint_card(
             let k = (body.width() / s.x).min(body.height() / s.y).min(2.0);
             let img = Rect::from_center_size(body.center(), s * k);
             egui::Image::new((t.id(), s * k))
+                .tint(theme::picture_tint(v.dark_mode))
                 .corner_radius(6.0)
                 .paint_at(ui, img);
             bp.rect_stroke(

@@ -102,6 +102,22 @@ pub(crate) fn card_shadow(dark: bool, hot: bool) -> Color32 {
     })
 }
 
+/// The faint edge around a grid card in the dark theme, where its shadow
+/// doesn't show; none in the light theme.
+pub(crate) fn card_edge(dark: bool) -> Option<Color32> {
+    dark.then(|| Color32::from_gray(46))
+}
+
+/// How pictures are tinted: a little dimmer in the dark theme, so a bright
+/// picture doesn't glare next to the dark cards.
+pub(crate) fn picture_tint(dark: bool) -> Color32 {
+    if dark {
+        Color32::from_gray(222)
+    } else {
+        Color32::WHITE
+    }
+}
+
 /// The strip of buttons at the foot of a card under the pointer.
 pub(crate) fn card_footer(dark: bool) -> Color32 {
     if dark {
