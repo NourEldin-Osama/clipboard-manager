@@ -348,6 +348,10 @@ pub(crate) fn style(ctx: &egui::Context, panels: crate::config::DarkPanels) {
         ]
         .into();
         s.spacing.item_spacing = Vec2::new(8.0, 6.0);
+        // Nothing moves when Windows' "Animation effects" is off.
+        if !crate::screen::animations_on() {
+            s.animation_time = 0.0;
+        }
         s.spacing.button_padding = Vec2::new(10.0, 5.0);
         for w in [
             &mut s.visuals.widgets.noninteractive,

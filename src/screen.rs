@@ -56,6 +56,31 @@ pub fn pointer() -> Option<Pointer> {
     None
 }
 
+/// Whether Windows' "Animation effects" is on (Settings, Accessibility,
+/// Visual effects). Off, the app moves nothing either.
+#[cfg(windows)]
+pub fn animations_on() -> bool {
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        SystemParametersInfoW, SPI_GETCLIENTAREAANIMATION,
+    };
+    let mut on = 1i32;
+    // SAFETY: SPI_GETCLIENTAREAANIMATION writes one BOOL to the pointer.
+    let asked = unsafe {
+        SystemParametersInfoW(
+            SPI_GETCLIENTAREAANIMATION,
+            0,
+            (&mut on as *mut i32).cast(),
+            0,
+        )
+    };
+    asked == 0 || on != 0
+}
+
+#[cfg(not(windows))]
+pub fn animations_on() -> bool {
+    true
+}
+
 /// The top-left corner of a popup of `size` at `pointer`: right of and below
 /// the pointer, or left of it in right-to-left languages, moved to fit inside
 /// `area`.
