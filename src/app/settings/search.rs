@@ -144,7 +144,7 @@ impl App {
         engines.push((ReadEngine::Server, t!("settings-engine-server")));
         plain_setting(
             ui,
-            &t!("settings-engine"),
+            &t!("settings-read-engine"),
             &t!("settings-read-engine-hint"),
             &t!("settings-read-engine-help"),
             |ui| {
