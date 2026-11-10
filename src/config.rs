@@ -453,6 +453,15 @@ pub enum Density {
     Compact,
 }
 
+/// How tall the grid's cards are (D69).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum CardHeight {
+    /// All the same height, in rows.
+    Same,
+    /// As tall as their content, stacked in columns.
+    Fit,
+}
+
 /// Interface language. Arabic also lays the window out right to left.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Language {
@@ -603,6 +612,7 @@ pub struct Config {
     /// Lowest cosine similarity a semantic-only hit needs to be listed.
     pub min_similarity: f32,
     pub density: Density,
+    pub card_height: CardHeight,
     pub group_by_date: bool,
     /// Index into the accent palette.
     pub accent: usize,
@@ -675,6 +685,7 @@ impl Default for Config {
             search_model: None,
             min_similarity: 0.0,
             density: Density::Comfortable,
+            card_height: CardHeight::Same,
             group_by_date: true,
             accent: 0,
             view: ViewMode::Grid,

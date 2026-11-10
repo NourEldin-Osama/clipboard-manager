@@ -244,11 +244,23 @@ impl App {
         } else {
             1
         };
+        // Cards as tall as their content stack in columns: ↑ ↓ move within
+        // one, ← → to the nearest card in the next one (D69).
+        let stacked = grid && !self.grid_places.is_empty();
+        if stacked {
+            for (pressed, down) in [(down, true), (up, false)] {
+                if pressed {
+                    self.clear_marks();
+                    self.step_in_column(down);
+                    self.anchor = self.selected;
+                }
+            }
+        }
         // With Shift, Up and Down take the items passed over into the ones
         // selected together; without, one item is selected again.
         let shift = !in_popup && ctx.input(|i| i.modifiers.shift);
         for (pressed, delta) in [(down, step), (up, -step)] {
-            if !pressed {
+            if !pressed || stacked {
                 continue;
             }
             let from = self.anchor.or(self.selected);
@@ -271,11 +283,12 @@ impl App {
             if right || left {
                 self.clear_marks();
             }
-            if right {
-                self.move_selection(forward);
-            }
-            if left {
-                self.move_selection(-forward);
+            match (stacked, right, left) {
+                (true, true, _) => self.step_across(forward),
+                (true, _, true) => self.step_across(-forward),
+                (false, true, _) => self.move_selection(forward),
+                (false, _, true) => self.move_selection(-forward),
+                _ => {}
             }
         }
         if let Some(id) = quick.and_then(|n| self.results.get(n)).map(|hit| hit.id) {

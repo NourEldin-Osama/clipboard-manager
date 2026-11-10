@@ -3,6 +3,74 @@
 use super::*;
 use crate::app::programs::Program;
 
+/// Between cards, across and down.
+pub(crate) const GRID_GAP: f32 = 14.0;
+
+/// How tall a card is when cards are as tall as their content (D69): its
+/// content measured roughly, between half and 1.6 times the height cards
+/// have when they are all the same (`same`).
+fn fitted_height(it: &Item, card_w: f32, same: f32) -> f32 {
+    let pad = 16.0;
+    let body_w = (card_w - 2.0 * pad).max(1.0);
+    let tags = if it.tags.is_empty() { 0.0 } else { TAG_ROW };
+    let body = if it.kind == Kind::Image {
+        if it.width > 0 && it.height > 0 {
+            (body_w * it.height as f32 / it.width as f32).min(it.height as f32 * 2.0)
+        } else {
+            80.0
+        }
+    } else if it.kind == Kind::Text && color_in(&it.text).is_some() {
+        // The swatch, then its two lines.
+        110.0
+    } else if it.kind == Kind::Text && path_in(&it.text).is_some() {
+        // The icon, then the name and the folder.
+        80.0
+    } else {
+        let text = match it.kind {
+            Kind::Link => row_title(it),
+            _ => it.text.lines().take(14).collect::<Vec<_>>().join("\n"),
+        };
+        let code = is_code(it);
+        let short = !code && text.chars().count() <= 60 && text.lines().count() <= 2;
+        // As `paint_card` lays it out: its font, the line height and about
+        // how wide a letter is.
+        let (letter, line_h) = if code {
+            (size::SMALL * 0.6, 17.0)
+        } else if short {
+            (size::LARGE * 0.5, 23.0)
+        } else {
+            (size::BODY * 0.5, 20.0)
+        };
+        let lines: f32 = text
+            .lines()
+            .map(|l| (l.chars().count() as f32 * letter / body_w).ceil().max(1.0))
+            .sum();
+        lines.max(1.0) * line_h + 2.0
+    };
+    (pad + body + 4.0 + tags + CARD_FOOTER).clamp(same * 0.5, same * 1.6)
+}
+
+/// Cards `heights` tall stacked in `cols` columns `card_w` wide, each in
+/// the shortest column so far, the leftmost of equals: where each goes from
+/// the top left.
+fn stack(heights: &[f32], cols: usize, card_w: f32, gap: f32) -> Vec<Rect> {
+    let mut tops = vec![0.0f32; cols.max(1)];
+    heights
+        .iter()
+        .map(|&h| {
+            let col = (0..tops.len())
+                .min_by(|&a, &b| tops[a].total_cmp(&tops[b]))
+                .unwrap_or(0);
+            let place = Rect::from_min_size(
+                Pos2::new(col as f32 * (card_w + gap), tops[col]),
+                Vec2::new(card_w, h),
+            );
+            tops[col] += h + gap;
+            place
+        })
+        .collect()
+}
+
 /// Height of the action strip a card shows while hovered.
 pub(super) const CARD_FOOTER: f32 = 42.0;
 
@@ -489,18 +557,55 @@ impl App {
         let full = ui.available_width();
         self.checklist_above(ui, 0.0, full - 12.0);
         let compact = self.cfg.density == Density::Compact;
-        let gap = 14.0;
+        let gap = GRID_GAP;
         let card_h = if compact { 150.0 } else { 210.0 };
         // Leave room for the scroll bar so cards don't jump when it appears.
         let width = ui.available_width() - 12.0;
         let cols = ((width + gap) / (240.0 + gap)).floor().max(1.0) as usize;
         let card_w = (width - gap * (cols as f32 - 1.0)) / cols as f32;
         self.grid_cols = cols;
-        let rows = self.results.len().div_ceil(cols);
         let pitch = card_h + gap;
+        // Where each card goes from the grid's top left, in the results'
+        // order: in rows, or stacked in columns, each card in the shortest
+        // one (D69).
+        let fit = self.cfg.card_height == CardHeight::Fit;
+        let places: Vec<Rect> = if fit {
+            let heights: Vec<f32> = self
+                .results
+                .iter()
+                .map(|hit| {
+                    self.library
+                        .get(hit.id)
+                        .map_or(card_h, |it| fitted_height(it, card_w, card_h))
+                })
+                .collect();
+            stack(&heights, cols, card_w, gap)
+        } else {
+            (0..self.results.len())
+                .map(|r| {
+                    Rect::from_min_size(
+                        Pos2::new(
+                            (r % cols) as f32 * (card_w + gap),
+                            (r / cols) as f32 * pitch,
+                        ),
+                        Vec2::new(card_w, card_h),
+                    )
+                })
+                .collect()
+        };
+        self.grid_places = if fit {
+            self.results
+                .iter()
+                .map(|h| h.id)
+                .zip(places.iter().copied())
+                .collect()
+        } else {
+            Vec::new()
+        };
+        let grid_h = places.iter().map(|p| p.bottom() + gap).fold(0.0, f32::max);
         let weaker = self.weaker.len();
         let fold_h = if weaker > 0 { WEAKER_LINE } else { 0.0 };
-        let total = rows as f32 * pitch + fold_h;
+        let total = grid_h + fold_h;
 
         let mut sa = egui::ScrollArea::vertical().auto_shrink([false, false]);
         let (off, view_h) = self.list_view;
@@ -512,11 +617,11 @@ impl App {
                 .selected
                 .and_then(|id| self.results.iter().position(|h| h.id == id))
             {
-                let top = (i / cols) as f32 * pitch;
-                if top < off {
-                    sa = sa.vertical_scroll_offset(top);
-                } else if top + card_h > off + view_h {
-                    sa = sa.vertical_scroll_offset(top + card_h + gap - view_h);
+                let place = places[i];
+                if place.top() < off {
+                    sa = sa.vertical_scroll_offset(place.top());
+                } else if place.bottom() > off + view_h {
+                    sa = sa.vertical_scroll_offset(place.bottom() + gap - view_h);
                 }
             }
         }
@@ -560,12 +665,16 @@ impl App {
         let out = sa.show_viewport(ui, |ui, viewport| {
             ui.set_height(total);
             let origin = ui.max_rect().min;
-            let first = ((viewport.min.y / pitch).floor().max(0.0) as usize) * cols;
-            let last = (((viewport.max.y / pitch).ceil() as usize + 1) * cols).min(results.len());
-            for (r, hit) in results.iter().enumerate().take(last).skip(first) {
-                let (row, col) = (r / cols, r % cols);
+            for (hit, place) in results.iter().zip(&places) {
+                if place.bottom() < viewport.min.y || place.top() > viewport.max.y {
+                    continue;
+                }
                 // Cards fill from the reading-start side.
-                let col = if i18n::rtl() { cols - 1 - col } else { col };
+                let x = if i18n::rtl() {
+                    (cols as f32 - 1.0) * (card_w + gap) - place.left()
+                } else {
+                    place.left()
+                };
                 let ctx = ui.ctx().clone();
                 let to = |axis: &str, value: f32| {
                     ctx.animate_value_with_time(
@@ -575,11 +684,8 @@ impl App {
                     )
                 };
                 let rect = Rect::from_min_size(
-                    Pos2::new(
-                        origin.x + to("x", col as f32 * (card_w + gap)),
-                        origin.y + to("y", row as f32 * pitch) + 2.0,
-                    ),
-                    Vec2::new(card_w, card_h),
+                    Pos2::new(origin.x + to("x", x), origin.y + to("y", place.top()) + 2.0),
+                    place.size(),
                 );
                 let Some(it) = library.get(hit.id) else {
                     continue;
@@ -670,7 +776,7 @@ impl App {
                     }
                 }
             }
-            let line_top = rows as f32 * pitch;
+            let line_top = grid_h;
             if weaker > 0 && line_top <= viewport.max.y {
                 let rect = Rect::from_min_size(
                     Pos2::new(origin.x, origin.y + line_top),
@@ -685,5 +791,35 @@ impl App {
         self.apply_actions(actions);
         self.after_rows(open_menu, false);
         self.item_menu(ui, false);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn cards_stack_in_the_shortest_column() {
+        let places = stack(&[100.0, 50.0, 80.0, 30.0], 2, 200.0, 10.0);
+        let at = |i: usize| (places[i].left(), places[i].top());
+        assert_eq!(at(0), (0.0, 0.0));
+        assert_eq!(at(1), (210.0, 0.0));
+        // The second column ends at 60, the first at 110.
+        assert_eq!(at(2), (210.0, 60.0));
+        assert_eq!(at(3), (0.0, 110.0));
+    }
+
+    #[test]
+    fn a_card_fits_its_content_within_limits() {
+        let short = Item::new(1, Kind::Text, Origin::Clipboard, "Lunch at noon".into());
+        let long = Item::new(2, Kind::Text, Origin::Clipboard, "word ".repeat(400).into());
+        let same = 210.0;
+        let (short, long) = (
+            fitted_height(&short, 370.0, same),
+            fitted_height(&long, 370.0, same),
+        );
+        assert!(short < same, "{short}");
+        assert!(short >= same * 0.5, "{short}");
+        assert_eq!(long, same * 1.6);
     }
 }

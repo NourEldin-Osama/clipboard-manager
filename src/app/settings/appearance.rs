@@ -97,6 +97,24 @@ pub(super) fn appearance_page(ui: &mut Ui, d: &mut Config) {
     );
     setting_for(
         ui,
+        &t!("settings-card-height"),
+        &t!("settings-card-height-hint"),
+        "",
+        &mut d.card_height,
+        def.card_height,
+        |ui, height| {
+            segmented(
+                ui,
+                height,
+                &[
+                    (CardHeight::Same, t!("settings-card-height-same")),
+                    (CardHeight::Fit, t!("settings-card-height-fit")),
+                ],
+            )
+        },
+    );
+    setting_for(
+        ui,
         &t!("settings-pinned-on-top"),
         &t!("settings-pinned-on-top-hint"),
         &t!("settings-pinned-on-top-help"),

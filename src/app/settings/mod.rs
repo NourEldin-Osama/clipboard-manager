@@ -13,7 +13,9 @@ use super::view::{
     txt, Reacts, ACCENTS, AMBER, GREEN, PROGRESS_LINE, RED,
 };
 use super::*;
-use crate::config::{DarkPanels, Density, Language, ReaderModel, TextReader, TimeFormat};
+use crate::config::{
+    CardHeight, DarkPanels, Density, Language, ReaderModel, TextReader, TimeFormat,
+};
 
 mod about;
 mod appearance;

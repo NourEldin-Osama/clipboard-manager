@@ -673,6 +673,9 @@ pub struct App {
     details_open: bool,
     /// Cards per row in the grid, from the last frame, for ↑ ↓ navigation.
     grid_cols: usize,
+    /// With cards as tall as their content, where each one was drawn last,
+    /// from the grid's top left, for the arrow keys. Empty otherwise.
+    grid_places: Vec<(u64, egui::Rect)>,
     win: WindowCtl,
     /// Marks this as the running copy; another start shows this window.
     instance: crate::single_instance::Guard,
@@ -883,6 +886,7 @@ impl App {
             popup_moving: false,
             details_open: false,
             grid_cols: 1,
+            grid_places: Vec::new(),
             update: UpdateState::Idle,
             update_rx: None,
             update_hidden: false,
@@ -2723,6 +2727,70 @@ impl App {
         };
         self.selected = Some(self.results[next].id);
         self.scroll_to_selected = true;
+    }
+
+    /// With cards stacked in columns, selects the card below the selected
+    /// one in its column, or above it.
+    fn step_in_column(&mut self, down: bool) {
+        let Some(at) = self.selected_place() else {
+            return self.move_selection(0);
+        };
+        let next = self
+            .grid_places
+            .iter()
+            .filter(|(_, p)| (p.left() - at.left()).abs() < 1.0)
+            .filter(|(_, p)| {
+                if down {
+                    p.top() > at.top()
+                } else {
+                    p.top() < at.top()
+                }
+            })
+            .min_by(|(_, a), (_, b)| {
+                (a.top() - at.top())
+                    .abs()
+                    .total_cmp(&(b.top() - at.top()).abs())
+            })
+            .map(|(id, _)| *id);
+        // Going on from the end shows the weaker matches below.
+        if next.is_none() && down && !self.weaker.is_empty() {
+            self.show_weaker();
+        }
+        if let Some(id) = next {
+            self.selected = Some(id);
+            self.scroll_to_selected = true;
+        }
+    }
+
+    /// With cards stacked in columns, selects the card in the column
+    /// `columns` away whose middle is nearest the selected one's.
+    fn step_across(&mut self, columns: i32) {
+        let Some(at) = self.selected_place() else {
+            return self.move_selection(0);
+        };
+        let target = at.left() + columns as f32 * (at.width() + view::GRID_GAP);
+        let next = self
+            .grid_places
+            .iter()
+            .filter(|(_, p)| (p.left() - target).abs() < 1.0)
+            .min_by(|(_, a), (_, b)| {
+                let (a, b) = (a.center().y - at.center().y, b.center().y - at.center().y);
+                a.abs().total_cmp(&b.abs())
+            })
+            .map(|(id, _)| *id);
+        if let Some(id) = next {
+            self.selected = Some(id);
+            self.scroll_to_selected = true;
+        }
+    }
+
+    /// Where the selected card was drawn, with cards stacked in columns.
+    fn selected_place(&self) -> Option<egui::Rect> {
+        let id = self.selected?;
+        self.grid_places
+            .iter()
+            .find(|(i, _)| *i == id)
+            .map(|(_, p)| *p)
     }
 
     fn preview(&mut self, it: &Item) -> Preview {

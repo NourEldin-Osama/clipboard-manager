@@ -13,7 +13,7 @@ use super::bidi;
 use super::icons::{self, icon_button_at, icon_button_ex, view_icon, Icon};
 use super::shortcut;
 use super::*;
-use crate::config::Density;
+use crate::config::{CardHeight, Density};
 
 mod checklist;
 mod chrome;
@@ -43,6 +43,7 @@ use widgets::*;
 
 // The ones the rest of the app uses.
 pub(crate) use details::reveal;
+pub(crate) use grid::GRID_GAP;
 pub(crate) use items::looks_like_code;
 pub(crate) use messages::UpdateParts;
 pub(crate) use theme::{
