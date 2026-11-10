@@ -1239,11 +1239,19 @@ impl App {
                 result: Ok(r),
                 manual,
             } => {
-                if matches!(
-                    self.update,
-                    UpdateState::Downloading(..) | UpdateState::Ready(..)
-                ) {
-                    return;
+                match &self.update {
+                    UpdateState::Downloading(..) => return,
+                    // A release newer than the one waiting takes its place.
+                    // The one waiting stays on the disk until the new one is
+                    // verified, so it still installs at the next start if
+                    // this download fails.
+                    UpdateState::Ready(waiting, _)
+                        if !r.is_newer_than(waiting)
+                            || (!manual && r.key() == self.cfg.skipped_update) =>
+                    {
+                        return;
+                    }
+                    _ => {}
                 }
                 if !r.is_newer() {
                     self.update = if manual {

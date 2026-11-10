@@ -93,6 +93,12 @@ impl Release {
     pub fn is_newer(&self) -> bool {
         build().is_some_and(|b| (numbers(&self.version), self.build) > (numbers(VERSION), b))
     }
+
+    /// Newer than `other`: a later version, or a later build of the same
+    /// version.
+    pub fn is_newer_than(&self, other: &Release) -> bool {
+        (numbers(&self.version), self.build) > (numbers(&other.version), other.build)
+    }
 }
 
 /// Whether the running version is newer than `earlier`, such as "0.5.1".
@@ -419,6 +425,28 @@ mod tests {
         assert!(newer_than("0.0.1"));
         assert!(!newer_than(VERSION));
         assert!(!newer_than("999.0.0"));
+    }
+
+    #[test]
+    fn a_release_is_newer_by_its_version_then_its_build() {
+        let sha = "ab".repeat(32);
+        let release = |version: &str, build: u32| {
+            signed(&workflow_line(version, build, 1234, &sha))
+                .verify(&test_public_key())
+                .unwrap()
+        };
+        let waiting = release("0.7.1", 28);
+        assert!(release("0.7.2", 29).is_newer_than(&waiting));
+        assert!(
+            release("0.10.0", 3).is_newer_than(&waiting),
+            "by number, not text"
+        );
+        assert!(
+            release("0.7.1", 30).is_newer_than(&waiting),
+            "a later build of the same version"
+        );
+        assert!(!release("0.7.1", 28).is_newer_than(&waiting));
+        assert!(!release("0.7.0", 40).is_newer_than(&waiting));
     }
 
     /// Made with the real release key:
