@@ -130,11 +130,14 @@ pub(super) fn info(ui: &mut Ui, text: &str) {
 /// The reset button beside a changed setting.
 pub(super) const RESET_BUTTON_SIZE: f32 = 28.0;
 
+/// A part of a page: its title in SemiBold, a step larger than the
+/// settings' gray lines and above their names, with room above it.
 pub(super) fn section(ui: &mut Ui, title: &str) {
-    ui.add_space(space::LARGE);
-    let weak = ui.visuals().weak_text_color();
+    ui.add_space(space::HUGE);
+    let strong = ui.visuals().strong_text_color();
     row(ui, |ui| {
-        ui.label(section_title(&title.to_uppercase(), weak))
+        ui.add_space(space::MEDIUM);
+        title_lbl(ui, title, size::LARGE, strong)
     });
     ui.add_space(space::TINY);
 }
@@ -252,13 +255,22 @@ pub(super) fn setting_row(
     reset
 }
 
+/// A note about the settings above it, in a light box of its own so it
+/// reads as one note and not as a part of the row before it.
 pub(super) fn note(ui: &mut Ui, text: &str) {
     let weak = ui.visuals().weak_text_color();
+    let fill = ui.visuals().panel_fill;
+    ui.add_space(space::TINY);
     Frame::new()
-        .inner_margin(Margin::symmetric(10, 0))
+        .fill(fill)
+        .corner_radius(CornerRadius::same(radius::MEDIUM))
+        .inner_margin(Margin::symmetric(12, 8))
+        .outer_margin(Margin::symmetric(10, 0))
         .show(ui, |ui| {
+            ui.set_width(ui.available_width());
             super::bidi::paragraph(ui, text, FontId::proportional(size::SMALL), weak);
         });
+    ui.add_space(space::TINY);
 }
 
 pub(super) fn path_field(ui: &mut Ui, p: &mut PathBuf, ext: &[&str]) {
