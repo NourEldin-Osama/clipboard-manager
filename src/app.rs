@@ -1803,17 +1803,17 @@ impl App {
         self.prune(false);
     }
 
-    /// Deletes what is over the history size and, when it is on, what is
-    /// older than the chosen number of days.
-    /// Deletes what the history limit and delete by age remove. With
-    /// `report`, it says so, with Undo, and the items wait until the message
-    /// is gone (D60). A new copy pushing the oldest item out of a full
-    /// history is not reported.
+    /// Deletes what the history limit and delete by age remove, then warns
+    /// when the history is 90% full (D64).
     fn prune(&mut self, report: bool) {
         self.prune_now(report);
         self.check_history_fill();
     }
 
+    /// Deletes what is over the history size and, when it is on, what is
+    /// older than the chosen number of days. With `report`, it says so,
+    /// with Undo, and the items wait until the message is gone (D60). A new
+    /// copy pushing the oldest item out of a full history is not reported.
     fn prune_now(&mut self, report: bool) {
         let days = i64::from(self.cfg.delete_after_days);
         let cutoff = crate::store::now() - days * 24 * 60 * 60;
