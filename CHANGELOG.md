@@ -4,6 +4,14 @@ What changed in each version, for the people who use the app. Each release
 starts its notes with the section of the version it was built from, so add
 the notes here before a push that makes a release.
 
+## 0.7.1
+
+- A "Not saved" message, in the window or as a note on the screen, no
+  longer squeezes its text into short lines beside its buttons: the
+  buttons go under the text.
+- After Save anyway, the warning that your history is 90% full shows in
+  front of "Saved" instead of behind it.
+
 ## 0.7.0
 
 - Messages look new: cards at the bottom right of the window (bottom
