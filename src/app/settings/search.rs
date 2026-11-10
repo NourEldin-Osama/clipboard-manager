@@ -60,6 +60,7 @@ impl App {
                         )
                     });
                 let menu = egui::ComboBox::from_id_salt("strict")
+                    .icon(menu_arrow)
                     .selected_text(txt(&current, size::BODY, None))
                     .width(150.0)
                     .show_ui(ui, |ui| {

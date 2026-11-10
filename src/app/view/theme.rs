@@ -102,6 +102,16 @@ pub(crate) fn card_shadow(dark: bool, hot: bool) -> Color32 {
     })
 }
 
+/// The track behind a setting's choices, and the face of the chosen one
+/// on it. Both stay where `text_shade` keeps colored text readable.
+pub(crate) fn choice_track(dark: bool) -> (Color32, Color32) {
+    if dark {
+        (Color32::from_gray(40), Color32::from_gray(58))
+    } else {
+        (Color32::from_gray(236), Color32::WHITE)
+    }
+}
+
 /// The faint edge around a grid card in the dark theme, where its shadow
 /// doesn't show; none in the light theme.
 pub(crate) fn card_edge(dark: bool) -> Option<Color32> {

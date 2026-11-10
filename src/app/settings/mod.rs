@@ -7,10 +7,10 @@ use eframe::egui::{Frame, Margin, Pos2, Rect, Ui};
 use super::icons::{self, Icon};
 use super::shortcut;
 use super::view::{
-    accent, accent_name, button_fill, chip, cut_line, divider, far, flip, lbl, paint_progress,
-    paint_text, primary_button, radius, reveal, row, section_title, set_choice_name, set_name,
-    size, slow_spinner, space, start_anchor, text_shade, tip, title_lbl, txt, Reacts, ACCENTS,
-    AMBER, GREEN, PROGRESS_LINE, RED,
+    accent, accent_name, button_fill, chip, choice_track, cut_line, divider, far, flip, lbl,
+    paint_progress, paint_text, primary_button, radius, reveal, row, section_title,
+    set_choice_name, set_name, size, slow_spinner, space, start_anchor, text_shade, tip, title_lbl,
+    txt, Reacts, ACCENTS, AMBER, GREEN, PROGRESS_LINE, RED,
 };
 use super::*;
 use crate::config::{DarkPanels, Density, Language, ReaderModel, TextReader, TimeFormat};
@@ -31,6 +31,9 @@ use servers::*;
 use widgets::*;
 
 pub(super) use servers::{model_label, PendingSend, ServerEditor};
+
+/// How wide a settings page is at most.
+const COLUMN_WIDTH: f32 = 560.0;
 
 /// The pages, each about one question.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -319,9 +322,10 @@ impl App {
                     .id_salt(("settings", self.settings_page))
                     .auto_shrink([false, false])
                     .show(ui, |ui| {
-                        // A readable column, next to the page list (on the right in Arabic).
+                        // A readable column, next to the page list (on the right in Arabic),
+                        // narrow enough that each control stays near its name.
                         let area = ui.available_rect_before_wrap();
-                        let w = area.width().min(720.0);
+                        let w = area.width().min(COLUMN_WIDTH);
                         let x = if i18n::rtl() {
                             area.right() - w
                         } else {

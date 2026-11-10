@@ -497,6 +497,8 @@ impl App {
                             };
                             lbl(ui, &name, size::BODY, strong);
                             far(ui, |ui| {
+                                // On the settings' right edge: where a reset button goes.
+                                ui.add_space(RESET_BUTTON_SIZE + ui.spacing().item_spacing.x);
                                 if ui
                                     .button(txt(&t!("settings-server-edit"), size::CONTROL, None))
                                     .clicked()
@@ -619,6 +621,7 @@ impl App {
             let strong = ui.visuals().strong_text_color();
             let menu =
                 egui::ComboBox::from_id_salt(if search { "search-model" } else { "read-model" })
+                    .icon(menu_arrow)
                     .selected_text(txt(&current, size::BODY, None))
                     .width(280.0)
                     .show_ui(ui, |ui| {
@@ -1429,6 +1432,7 @@ fn read_settings(ui: &mut Ui, r: &mut ReadSettings) {
         &t!("settings-reader-kind-help"),
         |ui| {
             let menu = egui::ComboBox::from_id_salt("reader-kind")
+                .icon(menu_arrow)
                 .selected_text(txt(&reader_kind_label(r.kind), size::BODY, None))
                 .width(170.0)
                 .show_ui(ui, |ui| {

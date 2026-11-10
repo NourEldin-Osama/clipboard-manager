@@ -42,40 +42,58 @@ pub(super) fn toggle(ui: &mut Ui, on: &mut bool) -> egui::Response {
     resp
 }
 
-/// Options side by side; the chosen one is tinted. Called inside a setting's
-/// control area, which fills from the far end, so options are added in reverse.
+/// Options side by side on a track; the chosen one stands out on it.
+/// Called inside a setting's control area, which fills from the far end,
+/// so options are added in reverse.
 pub(super) fn segmented<T: PartialEq + Copy, L: AsRef<str>>(
     ui: &mut Ui,
     value: &mut T,
     options: &[(T, L)],
 ) -> bool {
     let mut changed = false;
-    ui.spacing_mut().item_spacing.x = 2.0;
-    for (v, label) in options.iter().rev() {
-        let sel = *value == *v;
-        let text = txt(
-            label.as_ref(),
-            size::CONTROL,
-            Some(if sel {
-                text_shade(accent(), ui.visuals().dark_mode)
-            } else {
-                ui.visuals().text_color()
-            }),
-        );
-        let b = egui::Button::new(text)
-            .frame_when_inactive(sel)
-            .fill(if sel {
-                accent().gamma_multiply(0.14)
-            } else {
-                Color32::TRANSPARENT
-            });
-        if ui.add(b).clicked() && !sel {
-            *value = *v;
-            changed = true;
-        }
-    }
+    let (track, face) = choice_track(ui.visuals().dark_mode);
+    Frame::new()
+        .fill(track)
+        .corner_radius(CornerRadius::same(radius::MEDIUM))
+        .inner_margin(Margin::same(2))
+        .show(ui, |ui| {
+            ui.spacing_mut().item_spacing.x = 2.0;
+            for (v, label) in options.iter().rev() {
+                let sel = *value == *v;
+                let text = txt(
+                    label.as_ref(),
+                    size::CONTROL,
+                    Some(if sel {
+                        text_shade(accent(), ui.visuals().dark_mode)
+                    } else {
+                        ui.visuals().text_color()
+                    }),
+                );
+                let b = egui::Button::new(text)
+                    .frame_when_inactive(sel)
+                    .corner_radius(CornerRadius::same(radius::SMALL))
+                    .fill(if sel { face } else { Color32::TRANSPARENT });
+                if ui.add(b).clicked() && !sel {
+                    *value = *v;
+                    changed = true;
+                }
+            }
+        });
     changed
 }
+
+/// The arrow of a setting's menu: the same thin one as the window's menus.
+pub(super) fn menu_arrow(ui: &Ui, rect: Rect, visuals: &egui::style::WidgetVisuals, _open: bool) {
+    icons::paint(
+        ui.painter(),
+        Rect::from_center_size(rect.center(), Vec2::splat(MENU_ARROW)),
+        Icon::Dropdown,
+        visuals.fg_stroke.color,
+    );
+}
+
+/// How big a menu's arrow is.
+const MENU_ARROW: f32 = 10.0;
 
 /// The info button beside a setting's name: a click, or Enter or Space,
 /// opens its details; screen readers read them as the button's name.
@@ -110,7 +128,7 @@ pub(super) fn info(ui: &mut Ui, text: &str) {
 }
 
 /// The reset button beside a changed setting.
-const RESET_BUTTON_SIZE: f32 = 28.0;
+pub(super) const RESET_BUTTON_SIZE: f32 = 28.0;
 
 pub(super) fn section(ui: &mut Ui, title: &str) {
     ui.add_space(space::LARGE);
