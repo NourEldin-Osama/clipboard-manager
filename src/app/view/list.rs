@@ -123,18 +123,11 @@ fn pinned_header(lines: &[Line], ys: &[f32], top: f32, header_h: f32) -> Option<
 /// reading starts, and how many rows it has at the other end.
 fn paint_header(ui: &Ui, rect: Rect, label: Group, count: usize) {
     let weak = ui.visuals().weak_text_color();
-    let (label_x, count_x, end) = if i18n::rtl() {
-        (
-            rect.right() - ROW_PADDING,
-            rect.left() + ROW_PADDING,
-            Align2::LEFT_BOTTOM,
-        )
+    let rtl = i18n::rtl();
+    let label_x = if rtl {
+        rect.right() - ROW_PADDING
     } else {
-        (
-            rect.left() + ROW_PADDING,
-            rect.right() - ROW_PADDING,
-            Align2::RIGHT_BOTTOM,
-        )
+        rect.left() + ROW_PADDING
     };
     let title = section_title(&label.text().to_uppercase(), weak).into_galley(
         ui,
@@ -142,12 +135,19 @@ fn paint_header(ui: &Ui, rect: Rect, label: Group, count: usize) {
         f32::INFINITY,
         FontId::proportional(size::SMALL),
     );
-    let at = start_anchor(egui::Align::Max)
-        .anchor_size(Pos2::new(label_x, rect.bottom() - 7.0), title.size());
+    let y = rect.bottom() - 7.0;
+    let title_w = title.size().x;
+    let at = start_anchor(egui::Align::Max).anchor_size(Pos2::new(label_x, y), title.size());
     ui.painter().galley(at.min, title, weak);
+    // The count right after its label, so the two read together.
+    let (count_at, anchor) = if rtl {
+        (Pos2::new(label_x - title_w - 6.0, y), Align2::RIGHT_BOTTOM)
+    } else {
+        (Pos2::new(label_x + title_w + 6.0, y), Align2::LEFT_BOTTOM)
+    };
     ui.painter().text(
-        Pos2::new(count_x, rect.bottom() - 7.0),
-        end,
+        count_at,
+        anchor,
         count.to_string(),
         FontId::proportional(size::SMALL),
         weak,
