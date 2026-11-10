@@ -536,6 +536,17 @@ pub(super) fn menu_width<'a>(
         .min(440.0)
 }
 
+/// A thin line between groups of a menu, as tall as egui's separator.
+pub(crate) fn divider(ui: &mut Ui) {
+    let (rect, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 6.0), Sense::hover());
+    let color = super::theme::line_color(ui.visuals().dark_mode);
+    ui.painter().hline(
+        rect.x_range().shrink(4.0),
+        rect.center().y,
+        Stroke::new(1.0, color),
+    );
+}
+
 /// Width of the small icon menus (add files, more tags).
 pub(super) const MENU_W: f32 = 220.0;
 

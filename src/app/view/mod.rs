@@ -47,8 +47,9 @@ pub(crate) use theme::{
     text_shade, ACCENTS, AMBER, GREEN, READING_WIDTH, RED,
 };
 pub(crate) use widgets::{
-    chip, cut_line, far, flip, lbl, paint_text, primary_button, row, row_layout, row_wrapped,
-    section_title, set_choice_name, set_name, slow_spinner, start_anchor, tip, title_lbl, txt,
+    chip, cut_line, divider, far, flip, lbl, paint_text, primary_button, row, row_layout,
+    row_wrapped, section_title, set_choice_name, set_name, slow_spinner, start_anchor, tip,
+    title_lbl, txt,
 };
 
 impl App {

@@ -7,9 +7,9 @@ use eframe::egui::{Frame, Margin, Pos2, Rect, Ui};
 use super::icons::{self, Icon};
 use super::shortcut;
 use super::view::{
-    accent, accent_name, button_fill, chip, cut_line, far, flip, lbl, paint_text, primary_button,
-    reveal, row, section_title, set_choice_name, set_name, size, start_anchor, text_shade, tip,
-    title_lbl, txt, ACCENTS, AMBER, GREEN, RED,
+    accent, accent_name, button_fill, chip, cut_line, divider, far, flip, lbl, paint_text,
+    primary_button, reveal, row, section_title, set_choice_name, set_name, size, start_anchor,
+    text_shade, tip, title_lbl, txt, ACCENTS, AMBER, GREEN, RED,
 };
 use super::*;
 use crate::config::{Density, Language, ReaderModel, TextReader, TimeFormat};

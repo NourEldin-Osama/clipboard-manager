@@ -245,7 +245,7 @@ use; then the look, motion and smaller changes; and the README, bug reports and 
 
 ### Phase 16. Faults (version 0.6.1)
 - [x] 16.1 Recording, thumbnails and program icons start again after a crash; if recording can't, the status bar says "Recording stopped" with Start again
-- [ ] 16.2 One soft line color: dividers in the right-click menu and the server editor, and an edge around the quick popup
+- [x] 16.2 Dividers between the groups of the right-click menu and the model menu, in a soft line color; an edge around the quick popup like the menus have
 - [ ] 16.3 Rows with no day header above them say "Yesterday" instead of only the time
 - [ ] 16.4 The search server's real state: a red dot with Try again while requests fail, and the app tries again by itself; pictures whose text couldn't be read say so, with Try again
 - [ ] 16.5 The log: no user name or password in server addresses, a new file after 10 MB; the bug form and CONTRIBUTING point to Settings, About
