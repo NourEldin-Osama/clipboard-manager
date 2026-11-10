@@ -269,7 +269,7 @@ use; then the look, motion and smaller changes; and the README, bug reports and 
 - [ ] 19.2 Filled buttons react to the pointer and to a press
 - [ ] 19.3 Nothing moves when Windows' "Animation effects" is off
 - [x] 19.4 The tray icon turns gray while recording is paused, and its tooltip says so (D59)
-- [ ] 19.5 The hover buttons' tips name their keys
+- [x] 19.5 The hover buttons' tips name their keys
 - [ ] 19.6 A server's editor keeps your draft (D61)
 
 ### Phase 20. README, bug reports and 0.7.0

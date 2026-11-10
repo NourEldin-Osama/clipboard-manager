@@ -503,6 +503,8 @@ impl App {
         // A right-click, or Shift+F10 on the selected card, opens a menu.
         let mut open_menu = None;
         let menu_key = self.menu_by_key;
+        // The hover buttons' tips name their keys.
+        let keys = self.cfg.keys.clone();
         let frame = ui.ctx().cumulative_pass_nr();
         let (library, results, thumbs, loader, selected, seen, programs, marked) = (
             &self.library,
@@ -575,15 +577,15 @@ impl App {
                         )
                     };
                     let pin = if it.pinned {
-                        (Icon::PinFilled, t!("item-unpin"))
+                        (Icon::PinFilled, hint(&t!("item-unpin"), &keys.pin))
                     } else {
-                        (Icon::Pin, t!("item-pin"))
+                        (Icon::Pin, hint(&t!("item-pin"), &keys.pin))
                     };
                     for (b, icon, tip, action) in [
                         (
                             at(rect.left() + 8.0),
                             Icon::Delete,
-                            t!("item-delete"),
+                            hint(&t!("item-delete"), &keys.delete),
                             Command::Delete(it.id),
                         ),
                         (
@@ -595,7 +597,7 @@ impl App {
                         (
                             at(rect.right() - 8.0 - 2.0 * size - 4.0),
                             Icon::Copy,
-                            t!("item-copy"),
+                            hint(&t!("item-copy"), &keys.copy_only),
                             Command::Copy(it.id, Paste::No),
                         ),
                         (
