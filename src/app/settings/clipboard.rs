@@ -63,6 +63,7 @@ impl App {
                             .join(",")
                     )
                 };
+                field_look(ui);
                 let menu = egui::ComboBox::from_id_salt("history")
                     .icon(menu_arrow)
                     .selected_text(txt(&label(*max_items), size::BODY, None))
@@ -83,6 +84,7 @@ impl App {
             &mut d.delete_after_days,
             def.delete_after_days,
             |ui, days| {
+                field_look(ui);
                 let menu = egui::ComboBox::from_id_salt("age")
                     .icon(menu_arrow)
                     .selected_text(txt(&age_label(*days), size::BODY, None))

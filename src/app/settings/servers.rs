@@ -884,6 +884,7 @@ impl App {
             let strong = ui.visuals().strong_text_color();
             // The server's logo inside the menu, before the model's name.
             let shown = txt(&current, size::BODY, None);
+            field_look(ui);
             let menu =
                 egui::ComboBox::from_id_salt(if search { "search-model" } else { "read-model" })
                     .icon(menu_arrow);
@@ -1714,6 +1715,7 @@ fn read_settings(ui: &mut Ui, r: &mut ReadSettings) {
         &t!("settings-reader-kind-hint"),
         &t!("settings-reader-kind-help"),
         |ui| {
+            field_look(ui);
             let menu = egui::ComboBox::from_id_salt("reader-kind")
                 .icon(menu_arrow)
                 .selected_text(txt(&reader_kind_label(r.kind), size::BODY, None))

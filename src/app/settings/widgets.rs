@@ -93,6 +93,17 @@ pub(super) fn segmented<T: PartialEq + Copy, L: AsRef<str>>(
     changed
 }
 
+/// Gives the menus drawn next in `ui` the look of a field: the face of a
+/// chosen option and a thin edge, so they don't read as switched off.
+pub(super) fn field_look(ui: &mut Ui) {
+    let dark = ui.visuals().dark_mode;
+    let (_, face) = choice_track(dark);
+    let w = &mut ui.visuals_mut().widgets.inactive;
+    w.weak_bg_fill = face;
+    w.bg_fill = face;
+    w.bg_stroke = Stroke::new(1.0, line_color(dark));
+}
+
 /// The arrow of a setting's menu: the same thin one as the window's menus.
 pub(super) fn menu_arrow(ui: &Ui, rect: Rect, visuals: &egui::style::WidgetVisuals, _open: bool) {
     icons::paint(

@@ -63,6 +63,7 @@ impl App {
                             value = format!("{:.2}", min_similarity)
                         )
                     });
+                field_look(ui);
                 let menu = egui::ComboBox::from_id_salt("strict")
                     .icon(menu_arrow)
                     .selected_text(txt(&current, size::BODY, None))
