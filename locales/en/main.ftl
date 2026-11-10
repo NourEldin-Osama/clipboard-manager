@@ -710,6 +710,7 @@ settings-shortcut-pin = Pin or unpin
 settings-shortcut-delete = Delete
 settings-shortcut-tag = Add a tag
 settings-shortcut-view = Switch between Grid, List and Detail
+settings-shortcut-details = Open details
 settings-shortcut-used-twice = Used twice
 settings-shortcut-move = Move through the list
 settings-shortcut-move-grid = Move between cards in the grid

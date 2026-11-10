@@ -74,7 +74,7 @@ impl App {
         }
 
         section(ui, &t!("settings-shortcuts-local"));
-        let locals: [(ShortcutField, String, String, String, KeyField); 7] = [
+        let locals: [(ShortcutField, String, String, String, KeyField); 8] = [
             (
                 ShortcutField::Paste,
                 t!("settings-shortcut-paste"),
@@ -123,6 +123,13 @@ impl App {
                 String::new(),
                 String::new(),
                 |c| &mut c.keys.view,
+            ),
+            (
+                ShortcutField::Details,
+                t!("settings-shortcut-details"),
+                String::new(),
+                String::new(),
+                |c| &mut c.keys.details,
             ),
         ];
         let current: Vec<(ShortcutField, String)> = locals

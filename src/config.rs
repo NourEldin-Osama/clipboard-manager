@@ -492,6 +492,8 @@ pub struct Keys {
     pub delete: String,
     pub tag: String,
     pub view: String,
+    /// Opens the selected item's details.
+    pub details: String,
 }
 
 impl Default for Keys {
@@ -504,6 +506,8 @@ impl Default for Keys {
             delete: "Shift+Delete".into(),
             tag: "Ctrl+T".into(),
             view: "Ctrl+L".into(),
+            // Windows' own key for an item's properties.
+            details: "Alt+Enter".into(),
         }
     }
 }

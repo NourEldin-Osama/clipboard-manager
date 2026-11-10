@@ -535,6 +535,7 @@ enum ShortcutField {
     Delete,
     Tag,
     View,
+    Details,
 }
 
 /// How long a deleted item can still be brought back.

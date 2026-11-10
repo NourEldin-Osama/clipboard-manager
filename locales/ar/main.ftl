@@ -780,6 +780,7 @@ settings-shortcut-pin = تثبيت أو إلغاء التثبيت
 settings-shortcut-delete = حذف
 settings-shortcut-tag = إضافة وسم
 settings-shortcut-view = التبديل بين الشبكة والقائمة والتفاصيل
+settings-shortcut-details = فتح التفاصيل
 settings-shortcut-used-twice = مستخدم مرتين
 settings-shortcut-move = التنقل في القائمة
 settings-shortcut-move-grid = التنقل بين البطاقات في الشبكة

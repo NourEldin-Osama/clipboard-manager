@@ -26,6 +26,7 @@ impl App {
         ]);
         if !in_popup {
             list.push((t!("settings-shortcut-tag"), k.tag.clone()));
+            list.push((t!("settings-shortcut-details"), k.details.clone()));
         }
         list.push((t!("settings-shortcut-delete"), k.delete.clone()));
         if !in_popup {

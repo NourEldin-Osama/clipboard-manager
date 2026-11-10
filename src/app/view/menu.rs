@@ -79,7 +79,7 @@ impl App {
         if !in_popup {
             main.push(entry(t!("details-add-tag-tip"), &k.tag, Action::Tag));
             if self.cfg.view != ViewMode::Detail {
-                main.push(entry(t!("item-open-details"), "", Action::Details));
+                main.push(entry(t!("item-open-details"), &k.details, Action::Details));
             }
         }
         let mut own = Vec::new();

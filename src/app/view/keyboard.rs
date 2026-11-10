@@ -181,8 +181,8 @@ impl App {
             })
         };
         let k = self.cfg.keys.clone();
-        let [paste, paste_plain, copy_only, del, pin, tag, view] = if typing {
-            [false; 7]
+        let [paste, paste_plain, copy_only, del, pin, tag, view, details] = if typing {
+            [false; 8]
         } else {
             shortcut::pressed_each(
                 ctx,
@@ -194,6 +194,7 @@ impl App {
                     &k.pin,
                     &k.tag,
                     &k.view,
+                    &k.details,
                 ],
             )
         };
@@ -232,7 +233,7 @@ impl App {
         if view && !in_popup {
             self.set_view(self.cfg.view.next());
         }
-        if copy.is_some() || del || pin || tag {
+        if copy.is_some() || del || pin || tag || details {
             // These act on the selected item: let it follow what was just typed.
             self.finish_search();
         }
@@ -321,6 +322,10 @@ impl App {
             }
             if tag && !in_popup {
                 self.start_tagging(id);
+            }
+            // The popup has no details; the key does nothing there.
+            if details && !in_popup {
+                self.run_by_key(Command::Open(id));
             }
         }
         if esc {
