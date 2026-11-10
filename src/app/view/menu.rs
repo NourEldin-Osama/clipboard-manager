@@ -211,6 +211,8 @@ impl App {
         .accessible_name(t!("item-menu"))
         .open_bool(&mut open)
         .show(|ui| {
+            // Rows close together, so the menu covers less of the list.
+            ui.spacing_mut().item_spacing.y = 2.0;
             let entries = groups.iter().flatten();
             ui.set_width(menu_width(
                 ui,
