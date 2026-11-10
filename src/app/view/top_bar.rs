@@ -27,7 +27,13 @@ impl App {
                     let w = (ui.available_width() - self.top_actions_w - gap - 3.0).max(200.0);
                     self.search_field(ui, w);
                     let used = far(ui, |ui| {
-                        if icons::icon_button(ui, Icon::Settings, &t!("top-settings")).clicked() {
+                        // On the button background of the controls beside it.
+                        let fill = Some(ui.visuals().widgets.inactive.weak_bg_fill);
+                        let size = Vec2::splat(34.0);
+                        let name = t!("top-settings");
+                        if icons::icon_button_ex(ui, Icon::Settings, &name, size, 16.0, fill, None)
+                            .clicked()
+                        {
                             self.open_settings(SettingsPage::General);
                         }
                         // Add with its word, as Pause has, so neither is a bare icon.
