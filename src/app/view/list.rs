@@ -577,7 +577,9 @@ impl App {
             };
             self.checklist_above(ui, (full - width) / 2.0, width);
         }
-        let compact = self.cfg.density == Density::Compact;
+        // The popup's rows take one line and no day headers, so its nine
+        // numbered items fit without scrolling.
+        let compact = self.cfg.density == Density::Compact || in_popup;
         let row_h = if compact { 40.0 } else { 58.0 };
         let header_h = 30.0;
         let searching = !self.query.trim().is_empty();
@@ -588,7 +590,8 @@ impl App {
         // Rows, with date/pinned headers when browsing.
         let mut lines: Vec<Line> = Vec::with_capacity(self.results.len() + 8);
         // Day headers only make sense in date order.
-        let day_headers = !searching && self.cfg.group_by_date && self.sort() == SortOrder::Recent;
+        let day_headers =
+            !searching && !in_popup && self.cfg.group_by_date && self.sort() == SortOrder::Recent;
         let pinned_first = self.cfg.pinned_first;
         if day_headers {
             lines = with_headers(self.results.iter().map(|h| {
