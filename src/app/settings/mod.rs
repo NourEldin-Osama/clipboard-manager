@@ -7,9 +7,10 @@ use eframe::egui::{Frame, Margin, Pos2, Rect, Ui};
 use super::icons::{self, Icon};
 use super::shortcut;
 use super::view::{
-    accent, accent_name, button_fill, chip, cut_line, divider, far, flip, lbl, paint_text,
-    primary_button, radius, reveal, row, section_title, set_choice_name, set_name, size, space,
-    start_anchor, text_shade, tip, title_lbl, txt, Reacts, ACCENTS, AMBER, GREEN, RED,
+    accent, accent_name, button_fill, chip, cut_line, divider, far, flip, lbl, paint_progress,
+    paint_text, primary_button, radius, reveal, row, section_title, set_choice_name, set_name,
+    size, slow_spinner, space, start_anchor, text_shade, tip, title_lbl, txt, Reacts, ACCENTS,
+    AMBER, GREEN, PROGRESS_LINE, RED,
 };
 use super::*;
 use crate::config::{DarkPanels, Density, Language, ReaderModel, TextReader, TimeFormat};

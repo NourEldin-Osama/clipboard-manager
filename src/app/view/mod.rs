@@ -44,14 +44,15 @@ use widgets::*;
 // The ones the rest of the app uses.
 pub(crate) use details::reveal;
 pub(crate) use items::looks_like_code;
+pub(crate) use messages::UpdateParts;
 pub(crate) use theme::{
     accent, accent_name, add_fonts, apply_theme, button_fill, key_cap, lit, radius, semibold,
     set_accent, size, space, style, text_shade, ACCENTS, AMBER, GREEN, READING_WIDTH, RED,
 };
 pub(crate) use widgets::{
-    chip, cut_line, divider, far, flip, lbl, paint_text, primary_button, row, row_layout,
-    row_wrapped, section_title, set_choice_name, set_name, slow_spinner, start_anchor, tip,
-    title_lbl, txt, Reacts,
+    chip, cut_line, divider, far, flip, lbl, paint_progress, paint_text, primary_button, row,
+    row_layout, row_wrapped, section_title, set_choice_name, set_name, slow_spinner, start_anchor,
+    tip, title_lbl, txt, Reacts, PROGRESS_LINE,
 };
 
 impl App {
@@ -272,11 +273,10 @@ impl eframe::App for App {
             self.settings_ui(ui);
         } else {
             self.top_bar(ui);
-            self.update_bar(ui);
             self.status_bar(ui);
             self.main_area(ui);
         }
-        self.toasts(&ctx);
+        self.toasts(&ctx, false);
         self.keys_sheet(&ctx, false);
         self.whats_new(&ctx);
         if ctx.input(|i| !i.raw.hovered_files.is_empty()) {

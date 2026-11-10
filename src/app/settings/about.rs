@@ -2,6 +2,9 @@
 
 use super::*;
 
+/// The download's progress line in the Version row.
+const PROGRESS_BAR_WIDTH: f32 = 96.0;
+
 impl App {
     pub(super) fn about_page(&mut self, ui: &mut Ui, d: &mut Config) {
         self.updates_section(ui, d);
@@ -32,38 +35,104 @@ impl App {
             toggle,
         );
         let mut check = false;
+        let mut action = None;
         plain_setting(
             ui,
             &t!("settings-version"),
             &t!("settings-version-hint"),
             "",
             |ui| {
-                if release_build
-                    && ui
-                        .add_enabled(
-                            self.update_rx.is_none(),
-                            egui::Button::new(txt(&t!("settings-check-now"), size::CONTROL, None)),
-                        )
-                        .clicked()
-                {
-                    check = true;
-                }
+                // From the far end: the update's buttons, the same as its
+                // message's (D65), then its progress and its state.
                 let weak = ui.visuals().weak_text_color();
-                let status = match &self.update {
-                    UpdateState::Checking => t!("settings-update-checking"),
-                    UpdateState::UpToDate => t!("settings-update-current"),
-                    UpdateState::Available(r) => t!("update-available", version = r.label()),
-                    UpdateState::Downloading(r, _) => {
-                        t!("update-downloading", version = r.label())
+                // The next step in the accent's color.
+                let button = |ui: &mut Ui, label: &str, main: bool| {
+                    let text = txt(label, size::CONTROL, main.then_some(Color32::WHITE));
+                    if main {
+                        ui.add(egui::Button::new(text).fill(button_fill(accent())))
+                            .react(ui)
+                            .clicked()
+                    } else {
+                        ui.button(text).clicked()
                     }
-                    UpdateState::Ready(r, _) => t!("update-ready", version = r.label()),
+                };
+                let whats_new = |ui: &mut Ui| {
+                    ui.link(txt(&t!("update-whats-new"), size::CONTROL, None))
+                        .clicked()
+                };
+                let mut red = false;
+                let status = match &self.update {
+                    UpdateState::Available(r) => {
+                        if button(ui, &t!("update-download"), true) {
+                            action = Some(UpdateAction::Download);
+                        }
+                        if whats_new(ui) {
+                            action = Some(UpdateAction::WhatsNew);
+                        }
+                        t!("update-available", version = r.label())
+                    }
+                    UpdateState::Downloading(r, p) => {
+                        let (done, total) = download_amounts(r, p);
+                        if done >= total {
+                            slow_spinner(ui, 14.0, Some(weak));
+                            t!("update-verifying", version = r.label())
+                        } else {
+                            if button(ui, &t!("common-cancel"), false) {
+                                action = Some(UpdateAction::Cancel);
+                            }
+                            let amount =
+                                t!("update-progress", done = done >> 20, total = total >> 20);
+                            ui.label(txt(&amount, size::SMALL, Some(weak)));
+                            let (bar, _) = ui.allocate_exact_size(
+                                Vec2::new(PROGRESS_BAR_WIDTH, PROGRESS_LINE),
+                                Sense::hover(),
+                            );
+                            let done = done as f32 / total as f32;
+                            paint_progress(ui.painter(), bar, done, ui.visuals().dark_mode);
+                            match p.retry_in() {
+                                Some(seconds) => t!("download-retrying", seconds = seconds),
+                                None => t!("update-downloading", version = r.label()),
+                            }
+                        }
+                    }
+                    UpdateState::Ready(r, _) => {
+                        if button(ui, &t!("update-restart"), true) {
+                            action = Some(UpdateAction::Restart);
+                        }
+                        if whats_new(ui) {
+                            action = Some(UpdateAction::WhatsNew);
+                        }
+                        t!("update-ready", version = r.label())
+                    }
                     UpdateState::Failed { error, .. } => {
+                        if button(ui, &t!("update-try-again"), false) {
+                            action = Some(UpdateAction::TryAgain);
+                        }
+                        red = true;
                         t!("update-failed", error = error.as_str())
                     }
-                    UpdateState::Idle if !release_build => {
-                        t!("settings-updates-off-dev")
+                    state => {
+                        if release_build
+                            && ui
+                                .add_enabled(
+                                    self.update_rx.is_none(),
+                                    egui::Button::new(txt(
+                                        &t!("settings-check-now"),
+                                        size::CONTROL,
+                                        None,
+                                    )),
+                                )
+                                .clicked()
+                        {
+                            check = true;
+                        }
+                        match state {
+                            UpdateState::Checking => t!("settings-update-checking"),
+                            UpdateState::UpToDate => t!("settings-update-current"),
+                            _ if !release_build => t!("settings-updates-off-dev"),
+                            _ => String::new(),
+                        }
                     }
-                    UpdateState::Idle => String::new(),
                 };
                 // The version comes after the status, so it is laid out first
                 // and the status is cut to the room it leaves.
@@ -77,22 +146,30 @@ impl App {
                 if !status.is_empty() {
                     let room =
                         ui.available_width() - version.size().x - 2.0 * ui.spacing().item_spacing.x;
+                    let color = if red {
+                        text_shade(RED, ui.visuals().dark_mode)
+                    } else {
+                        weak
+                    };
                     cut_line(
                         ui,
                         &status,
                         room.max(0.0),
                         size::SMALL,
-                        weak,
+                        color,
                         Sense::hover(),
                     );
                 }
                 ui.label(version);
             },
         );
+        let ctx = ui.ctx().clone();
         if check {
-            let ctx = ui.ctx().clone();
             self.update_hidden = false;
             self.check_for_update(true, &ctx);
+        }
+        if let Some(action) = action {
+            self.update_action(action, &ctx);
         }
     }
 

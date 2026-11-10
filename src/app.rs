@@ -246,6 +246,32 @@ pub(super) enum UpdateState {
     },
 }
 
+/// How many bytes of an update's download are done, and of how many: the
+/// release's size until the server names it.
+fn download_amounts(r: &Release, p: &Progress) -> (u64, u64) {
+    let total = match p.total.load(Ordering::Relaxed) {
+        0 => r.size,
+        total => total,
+    };
+    (p.done.load(Ordering::Relaxed), total.max(1))
+}
+
+/// What a button of the update's message, or of the Version row in
+/// Settings, About, asks for.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub(super) enum UpdateAction {
+    /// Hides the message until the update's next step.
+    Close,
+    Skip,
+    Download,
+    Cancel,
+    Restart,
+    /// Downloads again after a failed download, or checks again after a
+    /// failed check.
+    TryAgain,
+    WhatsNew,
+}
+
 enum UpdateMsg {
     Checked {
         result: Result<Release, String>,
@@ -282,6 +308,9 @@ struct Toast {
     drawn: bool,
     /// Tells the messages apart, for egui.
     id: u64,
+    /// Makes this the update's message (D65): its text, buttons and progress
+    /// follow `App::update`, and it lasts until the update is done or closed.
+    update: Option<view::UpdateParts>,
 }
 
 impl Toast {
@@ -656,7 +685,8 @@ pub struct App {
     record_problem: Option<String>,
     update: UpdateState,
     update_rx: Option<Receiver<UpdateMsg>>,
-    /// "Later" hides the update bar until the next change.
+    /// The close button hides the update's message until the update's next
+    /// step.
     update_hidden: bool,
     next_update_check: Instant,
     /// Only items carrying this tag are listed.
@@ -1077,6 +1107,7 @@ impl App {
     /// Runs every frame, including while the window is hidden.
     fn window_logic(&mut self, ctx: &egui::Context) {
         self.update_logic(ctx);
+        self.sync_update_message();
         // Versions before 0.6 saved a minimized window with no size, and
         // Windows then makes it tiny at start: it gets the first size back.
         if !self.start_size_checked {
@@ -1239,11 +1270,19 @@ impl App {
                 result: Ok(r),
                 manual,
             } => {
-                if matches!(
-                    self.update,
-                    UpdateState::Downloading(..) | UpdateState::Ready(..)
-                ) {
-                    return;
+                match &self.update {
+                    UpdateState::Downloading(..) => return,
+                    // A release newer than the one waiting takes its place.
+                    // The one waiting stays on the disk until the new one is
+                    // verified, so it still installs at the next start if
+                    // this download fails.
+                    UpdateState::Ready(waiting, _)
+                        if !r.is_newer_than(waiting)
+                            || (!manual && r.key() == self.cfg.skipped_update) =>
+                    {
+                        return;
+                    }
+                    _ => {}
                 }
                 if !r.is_newer() {
                     self.update = if manual {
@@ -1334,6 +1373,62 @@ impl App {
         }
     }
 
+    /// Carries out a button of the update's message or of the Version row in
+    /// Settings, About.
+    fn update_action(&mut self, action: UpdateAction, ctx: &egui::Context) {
+        match action {
+            UpdateAction::Close => self.update_hidden = true,
+            UpdateAction::Skip => {
+                if let UpdateState::Available(r) = &self.update {
+                    let key = r.key();
+                    // Open Settings applies its draft every frame, which
+                    // would undo this.
+                    if let Some(draft) = &mut self.draft {
+                        draft.skipped_update = key.clone();
+                    }
+                    self.cfg.skipped_update = key;
+                    self.save_config();
+                }
+                self.update = UpdateState::Idle;
+            }
+            UpdateAction::Download | UpdateAction::TryAgain => match &self.update {
+                UpdateState::Available(r)
+                | UpdateState::Failed {
+                    release: Some(r), ..
+                } => {
+                    let r = r.clone();
+                    self.download_update(r, ctx);
+                }
+                // A check that failed is made again.
+                UpdateState::Failed { release: None, .. } => {
+                    self.update_hidden = false;
+                    self.check_for_update(true, ctx);
+                }
+                _ => {}
+            },
+            UpdateAction::Cancel => {
+                if let UpdateState::Downloading(_, p) = &self.update {
+                    p.cancel.store(true, Ordering::Relaxed);
+                }
+            }
+            UpdateAction::Restart => self.restart_to_update(ctx),
+            UpdateAction::WhatsNew => {
+                let notes = match &self.update {
+                    UpdateState::Available(r)
+                    | UpdateState::Downloading(r, _)
+                    | UpdateState::Ready(r, _)
+                    | UpdateState::Failed {
+                        release: Some(r), ..
+                    } => Some(r.notes_url.clone()),
+                    _ => None,
+                };
+                if let Some(url) = notes {
+                    ctx.open_url(egui::OpenUrl::new_tab(url));
+                }
+            }
+        }
+    }
+
     /// A downloaded update not yet installed goes in on quit, for the next start.
     pub(super) fn install_on_exit(&mut self) {
         if let UpdateState::Ready(_, path) = &self.update {
@@ -1364,13 +1459,15 @@ impl App {
     }
 
     /// Adds a message in front of the others, to be given a button or a
-    /// second line. With three showing, the oldest goes; a delete it could
-    /// undo becomes final.
+    /// second line. With three showing, the oldest goes, never the update's;
+    /// a delete it could undo becomes final.
     fn toast_with(&mut self, s: impl Into<String>, how_long: Duration) -> &mut Toast {
         if self.toasts.len() >= MAX_TOASTS {
-            let oldest = self.toasts.remove(0);
-            if oldest.undoes() {
-                self.finish_delete();
+            if let Some(at) = self.toasts.iter().position(|t| t.update.is_none()) {
+                let oldest = self.toasts.remove(at);
+                if oldest.undoes() {
+                    self.finish_delete();
+                }
             }
         }
         self.toast_seq += 1;
@@ -1386,6 +1483,7 @@ impl App {
             on_screen: false,
             drawn: false,
             id: self.toast_seq,
+            update: None,
         });
         self.toasts.last_mut().expect("a message was just added")
     }

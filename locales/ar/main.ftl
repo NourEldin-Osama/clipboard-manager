@@ -158,8 +158,8 @@ update-version-label = { $version } (بناء { $build })
 update-available = الإصدار { $version } متاح
 update-verifying = جارٍ التحقق من تنزيل الإصدار { $version }…
 update-downloading = جارٍ تنزيل الإصدار { $version }…
-update-ready-restart = الإصدار { $version } جاهز. أعد التشغيل للتحديث، أو سيُثبَّت عند الخروج.
 update-failed = تعذّر التحديث: { $error }
+update-failed-title = تعذّر التحديث
 update-progress = { $done } / { $total } ميغابايت
 download-retrying =
     { $seconds ->
@@ -168,12 +168,12 @@ download-retrying =
         [few] انقطع الاتصال. إعادة المحاولة بعد { $seconds } ثوانٍ…
        *[other] انقطع الاتصال. إعادة المحاولة بعد { $seconds } ثانية…
     }
-update-later = لاحقًا
 update-skip = تخطَّ هذا الإصدار
 update-download = تنزيل
 update-restart = أعد التشغيل للتحديث
 update-try-again = حاول مجددًا
 update-whats-new = ما الجديد
+update-close = إغلاق
 common-cancel = إلغاء
 status-model-loading = جارٍ تحميل نموذج البحث…
 status-model-off = بالكلمات فقط · فعّل البحث بالمعنى
@@ -429,6 +429,7 @@ settings-check-now = تحقّق الآن
 settings-update-checking = جارٍ التحقق…
 settings-update-current = لديك أحدث إصدار
 update-ready = الإصدار { $version } جاهز
+update-ready-detail = أعد التشغيل للتحديث، أو سيُثبَّت عند الخروج.
 settings-updates-off-dev = التحديثات معطّلة في نسخ التطوير
 update-development-build = { $version } (نسخة تطوير)
 settings-look = الشكل

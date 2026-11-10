@@ -69,25 +69,46 @@ pub(crate) fn slow_spinner(ui: &mut Ui, size: f32, color: Option<Color32>) -> eg
     let (rect, response) = ui.allocate_exact_size(Vec2::splat(size), Sense::hover());
     response.widget_info(|| egui::WidgetInfo::new(egui::Role::ProgressIndicator));
     if ui.is_rect_visible(rect) {
-        ui.ctx().request_repaint_after(SPINNER_STEP);
-        let step = SPINNER_STEP.as_secs_f64();
-        let time = (ui.input(|i| i.time) / step).floor() * step;
         let color = color.unwrap_or_else(|| ui.visuals().strong_text_color());
-        let radius = rect.height().min(rect.width()) * 0.5 - 2.0;
-        let n_points = (radius.round() as u32).clamp(8, 128);
-        let start = time * std::f64::consts::TAU;
-        let end = start + 240f64.to_radians() * time.sin();
-        let points = (0..n_points)
-            .map(|i| {
-                let angle = start + (end - start) * f64::from(i) / f64::from(n_points);
-                let (sin, cos) = angle.sin_cos();
-                rect.center() + radius * Vec2::new(cos as f32, sin as f32)
-            })
-            .collect();
-        ui.painter()
-            .add(egui::Shape::line(points, Stroke::new(3.0, color)));
+        paint_spinner(ui, rect, color);
     }
     response
+}
+
+/// `slow_spinner` in `rect`, for what is placed by hand.
+pub(crate) fn paint_spinner(ui: &Ui, rect: Rect, color: Color32) {
+    ui.ctx().request_repaint_after(SPINNER_STEP);
+    let step = SPINNER_STEP.as_secs_f64();
+    let time = (ui.input(|i| i.time) / step).floor() * step;
+    let radius = rect.height().min(rect.width()) * 0.5 - 2.0;
+    let n_points = (radius.round() as u32).clamp(8, 128);
+    let start = time * std::f64::consts::TAU;
+    let end = start + 240f64.to_radians() * time.sin();
+    let points = (0..n_points)
+        .map(|i| {
+            let angle = start + (end - start) * f64::from(i) / f64::from(n_points);
+            let (sin, cos) = angle.sin_cos();
+            rect.center() + radius * Vec2::new(cos as f32, sin as f32)
+        })
+        .collect();
+    ui.painter()
+        .add(egui::Shape::line(points, Stroke::new(3.0, color)));
+}
+
+/// The height of a thin progress line.
+pub(crate) const PROGRESS_LINE: f32 = 5.0;
+
+/// A thin progress line in `track`, `done` from 0 to 1, filled from where
+/// reading starts: the accent on a pale tint of it.
+pub(crate) fn paint_progress(p: &egui::Painter, track: Rect, done: f32, dark: bool) {
+    let (tint, fill) = super::theme::progress_colors(dark);
+    let round = CornerRadius::same(radius::ROUND);
+    p.rect_filled(track, round, tint);
+    let filled = Rect::from_min_size(
+        track.min,
+        Vec2::new(track.width() * done.clamp(0.0, 1.0), track.height()),
+    );
+    p.rect_filled(flip(track, filled), round, fill);
 }
 
 /// Text for a label or button in display order. `None` keeps the widget's own colour.
