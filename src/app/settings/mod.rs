@@ -37,9 +37,6 @@ pub(super) use servers::{model_label, use_found, PendingSend, ServerEditor};
 /// How wide a settings page is at most.
 const COLUMN_WIDTH: f32 = 560.0;
 
-/// How far a settings page sits from the page list at most.
-const COLUMN_GAP: f32 = 48.0;
-
 /// The pages, each about one question.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(crate) enum SettingsPage {
@@ -332,17 +329,11 @@ impl App {
                     .id_salt(("settings", self.settings_page))
                     .auto_shrink([false, false])
                     .show(ui, |ui| {
-                        // A readable column a little apart from the page list (on the
-                        // right in Arabic), in the middle only in a very wide window,
-                        // narrow enough that each control stays near its name.
+                        // A readable column in the middle of the page, narrow enough
+                        // that each control stays near its name.
                         let area = ui.available_rect_before_wrap();
                         let w = area.width().min(COLUMN_WIDTH);
-                        let gap = ((area.width() - w) / 2.0).min(COLUMN_GAP);
-                        let x = if i18n::rtl() {
-                            area.right() - w - gap
-                        } else {
-                            area.left() + gap
-                        };
+                        let x = area.left() + (area.width() - w) / 2.0;
                         let column = Rect::from_min_size(
                             Pos2::new(x, area.top()),
                             Vec2::new(w, area.height()),
