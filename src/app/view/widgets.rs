@@ -599,7 +599,7 @@ pub(super) fn menu_width<'a>(
 /// A thin line between groups of a menu, as tall as egui's separator.
 pub(crate) fn divider(ui: &mut Ui) {
     let (rect, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 6.0), Sense::hover());
-    let color = super::theme::line_color(ui.visuals().dark_mode);
+    let color = super::theme::menu_line(ui.visuals().dark_mode);
     ui.painter().hline(
         rect.x_range().shrink(4.0),
         rect.center().y,

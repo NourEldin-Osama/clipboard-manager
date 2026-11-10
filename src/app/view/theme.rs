@@ -142,6 +142,12 @@ pub(crate) fn selected_card(accent: Color32, dark: bool) -> Color32 {
     accent.gamma_multiply(if dark { 0.16 } else { 0.05 })
 }
 
+/// The line between a menu's groups: a step stronger than the other
+/// lines, so it shows on the menu's face.
+pub(crate) fn menu_line(dark: bool) -> Color32 {
+    Color32::from_gray(if dark { 76 } else { 204 })
+}
+
 /// The faint edge around a grid card in the dark theme, where its shadow
 /// doesn't show; none in the light theme.
 pub(crate) fn card_edge(dark: bool) -> Option<Color32> {
