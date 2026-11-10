@@ -534,8 +534,9 @@ pub struct App {
     note_height: f32,
     /// Where the note's window is, from when it appeared.
     note_at: Option<egui::Pos2>,
-    /// The note's window no longer takes the keyboard when clicked.
-    note_quiet: bool,
+    /// The note's window, as Windows' handle for it, once found: its
+    /// style is kept in every frame.
+    note_window_handle: Option<isize>,
     /// The app icon, for the note.
     app_icon: Option<egui::TextureHandle>,
     /// Alt+C was pressed and its copy hasn't come yet.
@@ -782,7 +783,7 @@ impl App {
             note_hovered: false,
             note_height: 64.0,
             note_at: None,
-            note_quiet: false,
+            note_window_handle: None,
             app_icon: None,
             skip_next_armed: false,
             glide_until: None,

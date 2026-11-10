@@ -65,8 +65,8 @@ impl App {
         if self.note_toast().is_none() {
             self.note_at = None;
             self.note_hovered = false;
-            // A new window is made next time; it needs the change again.
-            self.note_quiet = false;
+            // A new window is made next time.
+            self.note_window_handle = None;
             return;
         }
         if !note_made(ctx) {
@@ -85,8 +85,16 @@ impl App {
             builder = builder.with_position(at);
         }
         ctx.show_viewport_immediate(note_id(), builder, |ui, _| self.note_ui(ui));
-        if !self.note_quiet {
-            self.note_quiet = make_quiet(&t!("note-title"));
+        // winit writes a window's whole extended style again each time one
+        // of its own flags changes, which drops the note's: it is checked in
+        // every frame.
+        if self.note_window_handle.is_none() {
+            self.note_window_handle = find_own_window(&t!("note-title"));
+        }
+        if let Some(handle) = self.note_window_handle {
+            if !keep_quiet(handle) {
+                self.note_window_handle = None;
+            }
         }
     }
 
@@ -194,20 +202,18 @@ fn quiet_time() -> bool {
     false
 }
 
-/// Makes the note's window one that a click doesn't bring to the front, so
-/// the keyboard stays with the program you were in, and gives it Windows
-/// 11's round corners. Finds the window by its title among this app's own.
-/// True once done.
+/// This app's own window with this title, as Windows' handle for it, given
+/// Windows 11's round corners. The style changes in `keep_quiet` leave
+/// those as they are.
 #[cfg(windows)]
-fn make_quiet(title: &str) -> bool {
+fn find_own_window(title: &str) -> Option<isize> {
     use windows_sys::Win32::Foundation::{HWND, LPARAM};
     use windows_sys::Win32::Graphics::Dwm::{
         DwmSetWindowAttribute, DWMWA_WINDOW_CORNER_PREFERENCE, DWMWCP_ROUND,
     };
     use windows_sys::Win32::System::Threading::GetCurrentProcessId;
     use windows_sys::Win32::UI::WindowsAndMessaging::{
-        EnumWindows, GetWindowLongPtrW, GetWindowTextW, GetWindowThreadProcessId,
-        SetWindowLongPtrW, GWL_EXSTYLE, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW,
+        EnumWindows, GetWindowTextW, GetWindowThreadProcessId,
     };
 
     struct Search {
@@ -239,30 +245,53 @@ fn make_quiet(title: &str) -> bool {
     // pointer passed here, and only during this call.
     unsafe { EnumWindows(Some(each), &mut search as *mut Search as LPARAM) };
     if search.found.is_null() {
-        return false;
+        return None;
     }
-    let hwnd = search.found;
-    // SAFETY: `hwnd` is this app's own window, found just now; the style
-    // change and the corner preference are plain Win32 calls on it.
+    let round = DWMWCP_ROUND;
+    // SAFETY: `search.found` is this app's own window, found just now.
     unsafe {
-        let style = GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
-        SetWindowLongPtrW(
-            hwnd,
-            GWL_EXSTYLE,
-            style | (WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW) as isize,
-        );
-        let round = DWMWCP_ROUND;
         DwmSetWindowAttribute(
-            hwnd,
+            search.found,
             DWMWA_WINDOW_CORNER_PREFERENCE as u32,
             (&round as *const i32).cast(),
             size_of::<i32>() as u32,
         );
     }
+    Some(search.found as isize)
+}
+
+/// Makes the note's window one that a click doesn't bring to the front, so
+/// the keyboard stays with the program you were in, and keeps it off the
+/// taskbar and Alt+Tab. False when the window is gone.
+#[cfg(windows)]
+fn keep_quiet(handle: isize) -> bool {
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        GetWindowLongPtrW, IsWindow, SetWindowLongPtrW, GWL_EXSTYLE, WS_EX_APPWINDOW,
+        WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW,
+    };
+    let hwnd = handle as windows_sys::Win32::Foundation::HWND;
+    // SAFETY: plain Win32 calls on a window handle; IsWindow checks first
+    // that it still names a window.
+    unsafe {
+        if IsWindow(hwnd) == 0 {
+            return false;
+        }
+        let style = GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
+        let quiet =
+            (style | (WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW) as isize) & !(WS_EX_APPWINDOW as isize);
+        if quiet != style {
+            SetWindowLongPtrW(hwnd, GWL_EXSTYLE, quiet);
+        }
+    }
     true
 }
 
 #[cfg(not(windows))]
-fn make_quiet(_title: &str) -> bool {
+fn find_own_window(_title: &str) -> Option<isize> {
+    None
+}
+
+#[cfg(not(windows))]
+fn keep_quiet(_handle: isize) -> bool {
     true
 }
