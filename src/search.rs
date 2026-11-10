@@ -177,18 +177,36 @@ pub struct Counts {
     pub kinds: [usize; 6],
     /// By tag, lower-cased.
     pub tags: HashMap<String, usize>,
+    /// The same without the weaker matches, which each one folds away
+    /// below its strong ones until they are shown.
+    pub kinds_folded: [usize; 6],
+    pub tags_folded: HashMap<String, usize>,
 }
 
 impl Counts {
-    pub fn kind(&self, f: Filter) -> usize {
+    /// The results filter `f` shows: without its weaker matches while
+    /// they are `folded`.
+    pub fn kind(&self, f: Filter, folded: bool) -> usize {
+        let kinds = if folded {
+            &self.kinds_folded
+        } else {
+            &self.kinds
+        };
         Filter::ALL
             .iter()
             .position(|k| *k == f)
-            .map_or(0, |i| self.kinds[i])
+            .map_or(0, |i| kinds[i])
     }
 
-    pub fn tag(&self, tag: &str) -> usize {
-        self.tags.get(&tag.to_lowercase()).copied().unwrap_or(0)
+    /// The results `tag` shows: without its weaker matches while they are
+    /// `folded`.
+    pub fn tag(&self, tag: &str, folded: bool) -> usize {
+        let tags = if folded {
+            &self.tags_folded
+        } else {
+            &self.tags
+        };
+        tags.get(&tag.to_lowercase()).copied().unwrap_or(0)
     }
 }
 
@@ -204,7 +222,8 @@ pub fn counts(s: &Snapshot, q: &Query) -> Option<Counts> {
         ..q.clone()
     };
     let mut counts = Counts::default();
-    for r in rank(s, &every) {
+    let ranked = rank(s, &every);
+    for r in &ranked {
         let it = &s.items[r.idx];
         for (n, f) in counts.kinds.iter_mut().zip(Filter::ALL) {
             if f.accepts(it) {
@@ -214,6 +233,44 @@ pub fn counts(s: &Snapshot, q: &Query) -> Option<Counts> {
         for tag in &it.tags {
             *counts.tags.entry(tag.to_lowercase()).or_default() += 1;
         }
+    }
+    if q.sort != SortOrder::BestMatch {
+        // Only the best-match order folds.
+        counts.kinds_folded = counts.kinds;
+        counts.tags_folded = counts.tags.clone();
+        return Some(counts);
+    }
+    // Each filter and tag ranks its own items, so each one's strong matches
+    // are measured against its own best, as `search` folds them.
+    let above_fold = |ranked: &[Ranked]| {
+        let strong = ranked.iter().filter(|r| r.strong).count();
+        if strong > 0 {
+            strong
+        } else {
+            ranked.len()
+        }
+    };
+    for (n, f) in counts.kinds_folded.iter_mut().zip(Filter::ALL) {
+        *n = if f == Filter::All {
+            above_fold(&ranked)
+        } else {
+            above_fold(&rank(
+                s,
+                &Query {
+                    filter: f,
+                    ..every.clone()
+                },
+            ))
+        };
+    }
+    for tag in counts.tags.keys() {
+        let only_tag = Query {
+            tag: Some(tag.clone()),
+            ..every.clone()
+        };
+        counts
+            .tags_folded
+            .insert(tag.clone(), above_fold(&rank(s, &only_tag)));
     }
     Some(counts)
 }
@@ -828,13 +885,43 @@ mod tests {
         q.filter = Filter::Images;
         q.tag = Some("work".into());
         let counts = counts(&s, &q).expect("counts while searching");
-        assert_eq!(counts.kind(Filter::All), 2);
-        assert_eq!(counts.kind(Filter::Text), 1);
-        assert_eq!(counts.kind(Filter::Links), 1);
-        assert_eq!(counts.kind(Filter::Images), 0);
-        assert_eq!(counts.tag("WORK"), 1);
-        assert_eq!(counts.tag("home"), 0);
+        for folded in [false, true] {
+            assert_eq!(counts.kind(Filter::All, folded), 2);
+            assert_eq!(counts.kind(Filter::Text, folded), 1);
+            assert_eq!(counts.kind(Filter::Links, folded), 1);
+            assert_eq!(counts.kind(Filter::Images, folded), 0);
+            assert_eq!(counts.tag("WORK", folded), 1);
+            assert_eq!(counts.tag("home", folded), 0);
+        }
         assert!(super::counts(&s, &query("  ", None, SearchMode::Keyword)).is_none());
+    }
+
+    #[test]
+    fn folded_counts_leave_out_the_weaker_matches() {
+        let mut link = item(4, "rust total", 4);
+        link.kind = Kind::Link;
+        let items = vec![
+            item(1, "invoice total", 1),
+            item(2, "invoice", 2),
+            item(3, "total", 3),
+            link,
+        ];
+        let s = snapshot(items, vec![]);
+        let q = query("invoice total", None, SearchMode::Keyword);
+        let counts = counts(&s, &q).expect("counts while searching");
+        // One item has both words; the others only one.
+        assert_eq!(counts.kind(Filter::All, true), 1);
+        assert_eq!(counts.kind(Filter::All, false), 4);
+        let shown = search(&s, &q).iter().filter(|h| !h.weak).count();
+        assert_eq!(counts.kind(Filter::All, true), shown);
+        // The link alone has no strong match, so nothing folds there.
+        assert_eq!(counts.kind(Filter::Links, true), 1);
+        let recent = Query {
+            sort: SortOrder::Recent,
+            ..q
+        };
+        let counts = super::counts(&s, &recent).expect("counts while searching");
+        assert_eq!(counts.kind(Filter::All, true), 4);
     }
 
     #[test]
@@ -847,7 +934,7 @@ mod tests {
             .wait_for(2, Duration::from_secs(10))
             .expect("results within 10 s");
         assert_eq!(ids(&hits), vec![2]);
-        assert_eq!(counts.map(|c| c.kind(Filter::All)), Some(1));
+        assert_eq!(counts.map(|c| c.kind(Filter::All, true)), Some(1));
         assert!(
             searcher.results_for(1).is_none(),
             "older results never come back"

@@ -266,6 +266,8 @@ impl App {
                     if resp.changed() {
                         self.query_changed = Some(Instant::now());
                         self.dirty = true;
+                        // New words: the selection goes to their best match.
+                        self.auto_selected = self.selected;
                     }
                     far(ui, |ui| {
                         // Search mode, quiet until needed.
@@ -323,7 +325,11 @@ impl App {
                 }
                 // While searching, a filter counts the results it would show,
                 // and one with none is dimmed (18.3).
-                let n = self.search_counts.as_ref().map_or(total, |c| c.kind(f));
+                let folded = self.weaker_folded();
+                let n = self
+                    .search_counts
+                    .as_ref()
+                    .map_or(total, |c| c.kind(f, folded));
                 let dim = self.search_counts.is_some() && n == 0 && !selected;
                 let (fg, weak) = if selected {
                     let shade = text_shade(accent(), ui.visuals().dark_mode);
@@ -416,7 +422,11 @@ impl App {
         for (t, all) in &shown {
             let sel = is_active(t);
             // While searching, the tag counts the results it would show.
-            let n = self.search_counts.as_ref().map_or(*all, |c| c.tag(t));
+            let folded = self.weaker_folded();
+            let n = self
+                .search_counts
+                .as_ref()
+                .map_or(*all, |c| c.tag(t, folded));
             let dim = self.search_counts.is_some() && n == 0 && !sel;
             let c = tag_color(t);
             let shade = text_shade(c, ui.visuals().dark_mode);

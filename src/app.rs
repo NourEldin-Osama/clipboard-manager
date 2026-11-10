@@ -591,6 +591,10 @@ pub struct App {
     search_counts: Option<search::Counts>,
     /// Weaker matches, folded under one line below the results.
     weaker: Vec<Hit>,
+    /// The item the app selected by itself for the results: until another
+    /// is picked, a better ranking that comes later moves the selection to
+    /// the best match.
+    auto_selected: Option<u64>,
     /// The search the weaker matches were shown for; another search folds
     /// them again.
     weaker_shown_for: Option<String>,
@@ -829,6 +833,7 @@ impl App {
             results: Vec::new(),
             search_counts: None,
             weaker: Vec::new(),
+            auto_selected: None,
             weaker_shown_for: None,
             dirty: true,
             searcher: {
@@ -2347,18 +2352,31 @@ impl App {
         self.searching = false;
         self.search_counts = counts;
         // Weaker matches wait under one line, unless shown for this search.
-        if self.weaker_shown_for.as_deref() == Some(self.query.trim()) {
-            (self.results, self.weaker) = (hits, Vec::new());
-        } else {
+        if self.weaker_folded() {
             (self.results, self.weaker) = hits.into_iter().partition(|h| !h.weak);
+        } else {
+            (self.results, self.weaker) = (hits, Vec::new());
         }
         let still_there = self
             .selected
             .is_some_and(|id| self.results.iter().any(|h| h.id == id));
-        if !still_there {
-            self.selected = self.results.first().map(|h| h.id);
-            self.scroll_to_selected = true;
+        // Until another item is picked, the selection follows the best match,
+        // also when a ranking by meaning comes after the one by words.
+        let searching = !self.query.trim().is_empty();
+        let untouched = searching && self.selected.is_some() && self.selected == self.auto_selected;
+        if !still_there || untouched {
+            let best = self.results.first().map(|h| h.id);
+            if best != self.selected {
+                self.scroll_to_selected = true;
+            }
+            self.selected = best;
+            self.auto_selected = best;
         }
+    }
+
+    /// Whether the weaker matches of this search wait folded under one line.
+    fn weaker_folded(&self) -> bool {
+        self.weaker_shown_for.as_deref() != Some(self.query.trim())
     }
 
     /// Takes removed items out of the list at once, before the next search
