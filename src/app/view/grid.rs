@@ -405,9 +405,9 @@ fn paint_footer(
     let mut used = age.width() + 8.0;
     if it.pinned {
         let x = if i18n::rtl() {
-            age.right() + 12.0
+            age.right() + 14.0
         } else {
-            age.left() - 12.0
+            age.left() - 14.0
         };
         icons::paint(
             &p,
