@@ -147,13 +147,13 @@ impl App {
         let v = ui.visuals();
         let p = ui.painter();
         let color = if recording {
-            if resp.hovered() {
-                p.rect_filled(
-                    rect,
-                    CornerRadius::same(radius::MEDIUM),
-                    v.widgets.hovered.weak_bg_fill,
-                );
-            }
+            // The view switcher's background, so it reads as a button.
+            let fill = if resp.hovered() {
+                v.widgets.hovered.weak_bg_fill
+            } else {
+                v.widgets.inactive.weak_bg_fill
+            };
+            p.rect_filled(rect, CornerRadius::same(radius::MEDIUM), fill);
             v.text_color()
         } else {
             p.rect_filled(rect, CornerRadius::same(radius::MEDIUM), button_fill(AMBER));
@@ -524,13 +524,13 @@ fn word_button(ui: &mut Ui, icon: Icon, word: &str) -> egui::Response {
     resp.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, word));
     let v = ui.visuals();
     let p = ui.painter();
-    if resp.hovered() {
-        p.rect_filled(
-            rect,
-            CornerRadius::same(radius::MEDIUM),
-            v.widgets.hovered.weak_bg_fill,
-        );
-    }
+    // The view switcher's background, so it reads as a button.
+    let fill = if resp.hovered() {
+        v.widgets.hovered.weak_bg_fill
+    } else {
+        v.widgets.inactive.weak_bg_fill
+    };
+    p.rect_filled(rect, CornerRadius::same(radius::MEDIUM), fill);
     icons::paint_icon_text(
         p,
         rect.shrink2(Vec2::new(pad, 0.0)),
