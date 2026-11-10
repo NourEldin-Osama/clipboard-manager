@@ -356,11 +356,7 @@ impl App {
                 self.sort_menu(ui);
                 if !self.query.trim().is_empty() {
                     let text = t!("top-results", count = self.results.len());
-                    ui.label(txt(
-                        &text,
-                        size::SMALL,
-                        Some(ui.visuals().weak_text_color()),
-                    ));
+                    ui.label(txt(&text, size::SMALL, Some(ui.visuals().text_color())));
                 }
             });
         });
