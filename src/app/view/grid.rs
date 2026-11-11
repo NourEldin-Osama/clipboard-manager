@@ -16,10 +16,6 @@ pub(crate) fn cards_per_row(width: f32) -> usize {
     ((width + GRID_GAP) / (240.0 + GRID_GAP)).floor().max(1.0) as usize
 }
 
-/// Height of the header above weaker matches shown with the strong ones,
-/// as tall as a day's header in the list.
-const WEAKER_HEADER: f32 = 30.0;
-
 /// How tall a card is when cards are as tall as their content (D69): its
 /// content measured roughly, between half and 1.6 times the height cards
 /// have when they are all the same (`same`).
@@ -589,8 +585,9 @@ impl App {
         self.grid_cols = cols;
         // Where each card goes from the grid's top left, in the results'
         // order: in rows, or stacked in columns, each card in the shortest
-        // one (D69); cards of one height make plain rows. Weaker matches
-        // shown with the strong ones start below them, under their header.
+        // one (D69); cards of one height make plain rows. The link to the
+        // weaker matches follows the strong ones, and while it is open the
+        // weaker ones start below it.
         let fit = self.cfg.card_height == CardHeight::Fit;
         let heights: Vec<f32> = self
             .results
@@ -600,19 +597,22 @@ impl App {
                 _ => card_h,
             })
             .collect();
-        let weaker_from = self.results.iter().position(|h| h.weak);
-        let split = weaker_from.unwrap_or(self.results.len());
+        let link = self.weaker_link_place();
+        let split = link
+            .and_then(|link| link.first_weak)
+            .unwrap_or(self.results.len());
         let bottom = |places: &[Rect]| places.iter().map(|p| p.bottom() + gap).fold(0.0, f32::max);
         let mut places = stack(&heights[..split], cols, card_w, gap);
         let strong_h = bottom(&places);
-        let below = Vec2::new(0.0, strong_h + WEAKER_HEADER);
+        let link_h = if link.is_some() { WEAKER_LINE } else { 0.0 };
+        let below = Vec2::new(0.0, strong_h + link_h);
         places.extend(
             stack(&heights[split..], cols, card_w, gap)
                 .into_iter()
                 .map(|p| p.translate(below)),
         );
         // Plain rows step by index; otherwise the arrow keys go by place.
-        self.grid_places = if fit || weaker_from.is_some() {
+        self.grid_places = if fit || split < self.results.len() {
             self.results
                 .iter()
                 .map(|h| h.id)
@@ -621,10 +621,7 @@ impl App {
         } else {
             Vec::new()
         };
-        let grid_h = bottom(&places);
-        let weaker = self.weaker.len();
-        let fold_h = if weaker > 0 { WEAKER_LINE } else { 0.0 };
-        let total = grid_h + fold_h;
+        let total = bottom(&places).max(strong_h + link_h);
 
         let mut sa = egui::ScrollArea::vertical().auto_shrink([false, false]);
         let (off, view_h) = self.list_view;
@@ -795,22 +792,13 @@ impl App {
                     }
                 }
             }
-            if let Some(from) = weaker_from.filter(|_| strong_h <= viewport.max.y) {
+            let link_shown = strong_h <= viewport.max.y && strong_h + link_h >= viewport.min.y;
+            if let Some(link) = link.filter(|_| link_shown) {
                 let rect = Rect::from_min_size(
                     Pos2::new(origin.x, origin.y + strong_h),
-                    Vec2::new(width, WEAKER_HEADER),
+                    Vec2::new(width, link_h),
                 );
-                paint_header(ui, rect, Group::Weaker, results.len() - from);
-            }
-            let line_top = grid_h;
-            if weaker > 0 && line_top <= viewport.max.y {
-                let rect = Rect::from_min_size(
-                    Pos2::new(origin.x, origin.y + line_top),
-                    Vec2::new(width, fold_h),
-                );
-                if weaker_line(ui, rect, weaker) {
-                    actions.push(Command::ShowWeaker);
-                }
+                actions.extend(link.clicked(ui, rect));
             }
         });
         self.list_view = (out.state.clamped_offset().y, out.inner_rect.height());

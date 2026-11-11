@@ -471,8 +471,10 @@ pub(super) enum Command {
     /// Turns off Send images for the search model with this key, after its
     /// server refused an image.
     StopSendingImages(String),
-    /// Shows the weaker matches folded below the results.
+    /// Opens the weaker matches below their link, under the strong ones.
     ShowWeaker,
+    /// Folds the weaker matches back under their link.
+    HideWeaker,
     /// Ctrl+click: adds an item to the ones selected together, or takes it
     /// out.
     ToggleMark(u64),
@@ -701,15 +703,14 @@ pub struct App {
     results: Vec<Hit>,
     /// While searching, how many results each filter and tag would show.
     search_counts: Option<search::Counts>,
-    /// Weaker matches, folded under one line below the results.
+    /// Weaker matches, folded under their link below the results.
     weaker: Vec<Hit>,
     /// The item the app selected by itself for the results: until another
     /// is picked, a better ranking that comes later moves the selection to
     /// the best match.
     auto_selected: Option<u64>,
-    /// The search the weaker matches were shown for; another search folds
-    /// them again.
-    weaker_shown_for: Option<String>,
+    /// For which search text the weaker matches are open below their link.
+    weaker_link: WeakerLink,
     /// The history or the query changed: search again.
     dirty: bool,
     searcher: Searcher,
@@ -958,7 +959,7 @@ impl App {
             search_counts: None,
             weaker: Vec::new(),
             auto_selected: None,
-            weaker_shown_for: None,
+            weaker_link: WeakerLink::default(),
             dirty: true,
             searcher: {
                 let c = ctx.clone();
@@ -1752,6 +1753,7 @@ impl App {
             }
             Command::StopSendingImages(key) => self.stop_sending_images(&key),
             Command::ShowWeaker => self.show_weaker(),
+            Command::HideWeaker => self.hide_weaker(),
             Command::ShowWhatsNew => {
                 self.win.show_full();
                 self.whats_new_open = true;
@@ -2488,11 +2490,9 @@ impl App {
     fn show_results(&mut self, (hits, counts): search::Found) {
         self.searching = false;
         self.search_counts = counts;
-        // Shown at once, the weaker matches stay for the rest of this search.
-        if weaker_at_once(&hits, self.cards_in_a_row) {
-            self.weaker_shown_for = Some(self.query.trim().to_string());
-        }
-        // Weaker matches wait under one line, unless shown for this search.
+        self.weaker_link
+            .results(self.query.trim(), &hits, self.cards_in_a_row);
+        // Weaker matches wait under their link, unless it is open.
         if self.weaker_folded() {
             (self.results, self.weaker) = hits.into_iter().partition(|h| !h.weak);
         } else {
@@ -2515,9 +2515,10 @@ impl App {
         }
     }
 
-    /// Whether the weaker matches of this search wait folded under one line.
+    /// Whether the weaker matches of this search wait folded under their
+    /// link.
     fn weaker_folded(&self) -> bool {
-        self.weaker_shown_for.as_deref() != Some(self.query.trim())
+        !self.weaker_link.is_open(self.query.trim())
     }
 
     /// Takes removed items out of the list at once, before the next search
@@ -2840,11 +2841,29 @@ impl App {
         self.group_tag = None;
     }
 
-    /// Shows the weaker matches folded below the results, until the search
-    /// changes.
+    /// Opens the weaker matches below their link, while the search text
+    /// stays the same.
     fn show_weaker(&mut self) {
-        self.weaker_shown_for = Some(self.query.trim().to_string());
+        self.weaker_link.choose(self.query.trim(), true);
         self.results.append(&mut self.weaker);
+    }
+
+    /// Folds the weaker matches back under their link, while the search
+    /// text stays the same. A weaker match that was selected gives the
+    /// selection to the last strong one, beside the link.
+    fn hide_weaker(&mut self) {
+        self.weaker_link.choose(self.query.trim(), false);
+        let (strong, weak): (Vec<Hit>, Vec<Hit>) = std::mem::take(&mut self.results)
+            .into_iter()
+            .partition(|h| !h.weak);
+        (self.results, self.weaker) = (strong, weak);
+        let hidden = self
+            .selected
+            .is_some_and(|id| self.weaker.iter().any(|h| h.id == id));
+        if hidden {
+            self.selected = self.results.last().map(|h| h.id);
+            self.scroll_to_selected = true;
+        }
     }
 
     fn move_selection(&mut self, delta: i32) {
@@ -3058,28 +3077,105 @@ fn weaker_at_once(hits: &[Hit], row: usize) -> bool {
     strong < row && strong < hits.len()
 }
 
+/// Whether the link between the strong and the weaker matches is open, so
+/// the weaker ones show below it. Closed by default; open by default when
+/// the strong matches don't fill a row of cards. A click opens or closes
+/// it, and that choice holds while the search text stays the same.
+#[derive(Default)]
+struct WeakerLink {
+    /// The search text the rest is for; another one starts from the default.
+    query: Option<String>,
+    open: bool,
+    /// The user opened or closed the link.
+    chosen: bool,
+}
+
+impl WeakerLink {
+    /// New results `hits` for `query`, with `row` cards in a row of the
+    /// grid. Open by default, the link stays open for the rest of this
+    /// search, also when later results have more strong matches.
+    fn results(&mut self, query: &str, hits: &[Hit], row: usize) {
+        self.start(query);
+        if !self.chosen && weaker_at_once(hits, row) {
+            self.open = true;
+        }
+    }
+
+    fn is_open(&self, query: &str) -> bool {
+        self.open && self.query.as_deref() == Some(query)
+    }
+
+    /// The user opens the link for `query`, or closes it.
+    fn choose(&mut self, query: &str, open: bool) {
+        self.start(query);
+        self.open = open;
+        self.chosen = true;
+    }
+
+    /// Back to the default for a new search text.
+    fn start(&mut self, query: &str) {
+        if self.query.as_deref() != Some(query) {
+            *self = Self {
+                query: Some(query.to_string()),
+                ..Self::default()
+            };
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use eframe::Storage as _;
 
+    /// Results with `strong` strong matches, then `weak` weaker ones.
+    fn hits(strong: usize, weak: usize) -> Vec<Hit> {
+        (0..strong + weak)
+            .map(|i| Hit {
+                id: i as u64,
+                closeness: None,
+                weak: i >= strong,
+            })
+            .collect()
+    }
+
     #[test]
     fn weaker_matches_show_at_once_when_the_strong_ones_dont_fill_a_row() {
-        let hits = |strong: usize, weak: usize| -> Vec<Hit> {
-            (0..strong + weak)
-                .map(|i| Hit {
-                    id: i as u64,
-                    closeness: None,
-                    weak: i >= strong,
-                })
-                .collect()
-        };
         assert!(weaker_at_once(&hits(2, 14), 4));
         // A full row of strong matches keeps the weaker ones folded.
         assert!(!weaker_at_once(&hits(4, 14), 4));
         // Nothing weaker to show.
         assert!(!weaker_at_once(&hits(2, 0), 4));
         assert!(!weaker_at_once(&hits(0, 0), 4));
+    }
+
+    #[test]
+    fn the_weaker_matches_link_keeps_the_choice_for_one_search_text() {
+        let mut link = WeakerLink::default();
+        // Open by default when the strong matches don't fill a row of 4.
+        link.results("cat", &hits(2, 14), 4);
+        assert!(link.is_open("cat"));
+        // Closed by default otherwise.
+        link.results("dog", &hits(4, 14), 4);
+        assert!(!link.is_open("dog"));
+        // A click closes an open link; more results for the same text
+        // leave it closed.
+        link.results("cat", &hits(2, 14), 4);
+        link.choose("cat", false);
+        link.results("cat", &hits(1, 14), 4);
+        assert!(!link.is_open("cat"));
+        // A new search text starts from the default again, also when it
+        // comes back.
+        link.results("cats", &hits(4, 14), 4);
+        assert!(!link.is_open("cats"));
+        link.results("cat", &hits(2, 14), 4);
+        assert!(link.is_open("cat"));
+        // A click opens a closed one, until the text changes.
+        link.results("dog", &hits(4, 14), 4);
+        link.choose("dog", true);
+        link.results("dog", &hits(4, 14), 4);
+        assert!(link.is_open("dog"));
+        assert!(!link.is_open("dogs"));
     }
 
     #[test]

@@ -11,14 +11,19 @@ const ROW_PADDING: f32 = 8.0;
 /// so the time and the pin stay near the text.
 const LIST_MAX_WIDTH: f32 = 900.0;
 
-/// Height of the line under the results that shows the weaker matches.
+/// Height of the link between the strong and the weaker matches.
 pub(super) const WEAKER_LINE: f32 = 48.0;
 
-/// The row under the results that shows the weaker matches folded there,
-/// across `rect`. Returns whether it was clicked.
-pub(super) fn weaker_line(ui: &Ui, rect: Rect, count: usize) -> bool {
-    let text = t!("list-show-weaker", count = count);
-    let resp = ui.interact(rect, egui::Id::unique("show-weaker"), Sense::click());
+/// The link between the strong matches and the `count` weaker ones,
+/// across `rect`: it shows them below it, or hides them while `open`.
+/// Returns whether it was clicked.
+pub(super) fn weaker_line(ui: &Ui, rect: Rect, count: usize, open: bool) -> bool {
+    let text = if open {
+        t!("list-hide-weaker", count = count)
+    } else {
+        t!("list-show-weaker", count = count)
+    };
+    let resp = ui.interact(rect, egui::Id::unique("weaker-link"), Sense::click());
     resp.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, &text));
     let color = ui.visuals().hyperlink_color;
     let font = FontId::proportional(size::BODY);
@@ -50,7 +55,13 @@ pub(super) fn weaker_line(ui: &Ui, rect: Rect, count: usize) -> bool {
         Pos2::new(content.left(), content.center().y - icon / 2.0),
         Vec2::splat(icon),
     );
-    icons::paint(p, flip(content, icon_rect), Icon::Dropdown, color);
+    // The arrow points down to what it shows, and up while open.
+    let icon_rect = flip(content, icon_rect);
+    if open {
+        icons::paint_turned(p, icon_rect, Icon::Dropdown, color);
+    } else {
+        icons::paint(p, icon_rect, Icon::Dropdown, color);
+    }
     let start = Pos2::new(content.left() + icon + gap, content.center().y);
     let start = flip(content, Rect::from_min_size(start, Vec2::ZERO)).min;
     paint_text(
@@ -64,6 +75,52 @@ pub(super) fn weaker_line(ui: &Ui, rect: Rect, count: usize) -> bool {
     );
     resp.on_hover_cursor(egui::CursorIcon::PointingHand)
         .clicked()
+}
+
+/// Where the link between the strong and the weaker matches goes, as the
+/// list and the grid draw it.
+#[derive(Clone, Copy)]
+pub(super) struct WeakerLinkPlace {
+    /// While the link is open: the index in the results of the first
+    /// weaker match, which follows the link. None while they are folded.
+    pub(super) first_weak: Option<usize>,
+    /// How many weaker matches there are.
+    pub(super) count: usize,
+}
+
+impl WeakerLinkPlace {
+    /// Draws the link across `rect`; when clicked, what it asks for.
+    pub(super) fn clicked(self, ui: &Ui, rect: Rect) -> Option<Command> {
+        let open = self.first_weak.is_some();
+        weaker_line(ui, rect, self.count, open).then_some(if open {
+            Command::HideWeaker
+        } else {
+            Command::ShowWeaker
+        })
+    }
+}
+
+impl App {
+    /// The link to the weaker matches, when there are any. Weaker matches
+    /// with no strong one before them are all there is, without a link.
+    pub(super) fn weaker_link_place(&self) -> Option<WeakerLinkPlace> {
+        let first_weak = self
+            .results
+            .iter()
+            .position(|h| h.weak)
+            .filter(|&first| first > 0);
+        match first_weak {
+            Some(first) => Some(WeakerLinkPlace {
+                first_weak,
+                count: self.results.len() - first,
+            }),
+            None if !self.weaker.is_empty() => Some(WeakerLinkPlace {
+                first_weak: None,
+                count: self.weaker.len(),
+            }),
+            None => None,
+        }
+    }
 }
 
 /// How close a match's meaning is to the best match's, in three steps: one
@@ -119,10 +176,8 @@ fn pinned_header(lines: &[Line], ys: &[f32], top: f32, header_h: f32) -> Option<
     Some((above, next.map_or(top, |i| top.min(ys[i] - header_h))))
 }
 
-/// A header in the list: a day's name or the weaker matches', as small
-/// section titles show them, on the side reading starts, and how many rows
-/// it has right after. The weaker matches' header goes on as a thin line to
-/// the far end, a divider between them and the strong matches.
+/// A day's header in the list, as small section titles show it, on the
+/// side reading starts, and how many rows it has right after.
 pub(super) fn paint_header(ui: &Ui, rect: Rect, label: Group, count: usize) {
     let weak = ui.visuals().weak_text_color();
     let rtl = i18n::rtl();
@@ -147,29 +202,21 @@ pub(super) fn paint_header(ui: &Ui, rect: Rect, label: Group, count: usize) {
     } else {
         (Pos2::new(label_x + title_w + 6.0, y), Align2::LEFT_BOTTOM)
     };
-    let count_rect = ui.painter().text(
+    ui.painter().text(
         count_at,
         anchor,
         count.to_string(),
         FontId::proportional(size::SMALL),
         weak,
     );
-    if label == Group::Weaker {
-        let gap = 10.0;
-        let line = if rtl {
-            rect.left() + ROW_PADDING..=count_rect.left() - gap
-        } else {
-            count_rect.right() + gap..=rect.right() - ROW_PADDING
-        };
-        let stroke = Stroke::new(1.0, line_color(ui.visuals().dark_mode));
-        ui.painter().hline(line, count_rect.center().y, stroke);
-    }
 }
 
 #[derive(Debug, PartialEq)]
 pub(super) enum Line {
     Header(Group, usize),
     Row(usize),
+    /// The link between the strong and the weaker matches.
+    WeakerLink,
 }
 
 /// One row per group, with a header above each run of equal groups that
@@ -660,12 +707,16 @@ impl App {
             }));
         } else {
             lines.extend((0..self.results.len()).map(Line::Row));
-            // Weaker matches shown with the strong ones follow under their
-            // own header.
-            if let Some(from) = self.results.iter().position(|h| h.weak) {
-                let count = self.results.len() - from;
-                lines.insert(from, Line::Header(Group::Weaker, count));
-            }
+        }
+        // The link to the weaker matches: right above them while they are
+        // open, after the results while they are folded under it.
+        let link = self.weaker_link_place();
+        if let Some(link) = link {
+            let at = link
+                .first_weak
+                .and_then(|first| lines.iter().position(|l| *l == Line::Row(first)))
+                .unwrap_or(lines.len());
+            lines.insert(at, Line::WeakerLink);
         }
         let mut ys = Vec::with_capacity(lines.len());
         let mut y = 0.0;
@@ -674,11 +725,10 @@ impl App {
             y += match l {
                 Line::Header(..) => header_h,
                 Line::Row(_) => row_h + 2.0,
+                Line::WeakerLink => WEAKER_LINE,
             };
         }
         let total = y;
-        let weaker = self.weaker.len();
-        let fold_h = if weaker > 0 { WEAKER_LINE } else { 0.0 };
 
         let mut sa = egui::ScrollArea::vertical().auto_shrink([false, false]);
         if in_popup {
@@ -750,7 +800,7 @@ impl App {
             &self.marked,
         );
         let out = sa.show_viewport(ui, |ui, viewport| {
-            ui.set_height(total + fold_h);
+            ui.set_height(total);
             let origin = ui.max_rect().min;
             let full = ui.available_width();
             let width = if centred {
@@ -760,10 +810,10 @@ impl App {
             };
             let left = origin.x + (full - width) / 2.0;
             for (i, l) in lines.iter().enumerate() {
-                let h = if matches!(l, Line::Header(..)) {
-                    header_h
-                } else {
-                    row_h
+                let h = match l {
+                    Line::Header(..) => header_h,
+                    Line::Row(_) => row_h,
+                    Line::WeakerLink => WEAKER_LINE,
                 };
                 if ys[i] + h < viewport.min.y || ys[i] > viewport.max.y {
                     continue;
@@ -774,12 +824,17 @@ impl App {
                         ys[i],
                         glide,
                     ),
-                    Line::Header(..) => ys[i],
+                    Line::Header(..) | Line::WeakerLink => ys[i],
                 };
                 let rect =
                     Rect::from_min_size(Pos2::new(left, origin.y + top), Vec2::new(width, h));
                 match l {
                     Line::Header(label, n) => paint_header(ui, rect, *label, *n),
+                    Line::WeakerLink => {
+                        if let Some(link) = link {
+                            actions.extend(link.clicked(ui, rect));
+                        }
+                    }
                     Line::Row(r) => {
                         let hit = &results[*r];
                         let Some(it) = library.get(hit.id) else {
@@ -893,15 +948,6 @@ impl App {
                             }
                         }
                     }
-                }
-            }
-            if weaker > 0 && total <= viewport.max.y {
-                let rect = Rect::from_min_size(
-                    Pos2::new(left, origin.y + total),
-                    Vec2::new(width, fold_h),
-                );
-                if weaker_line(ui, rect, weaker) {
-                    actions.push(Command::ShowWeaker);
                 }
             }
             if let Some((Line::Header(label, n), y)) =
@@ -1086,6 +1132,33 @@ mod tests {
                 Line::Row(3),
             ]
         );
+    }
+
+    /// Closed or open, a screen reader hears the link as a button with the
+    /// words it shows.
+    #[test]
+    fn the_weaker_matches_link_is_a_button_named_by_its_words() {
+        for (open, words) in [
+            (false, t!("list-show-weaker", count = 14)),
+            (true, t!("list-hide-weaker", count = 14)),
+        ] {
+            let ctx = egui::Context::default();
+            ctx.enable_accesskit();
+            let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+                let rect = Rect::from_min_size(ui.max_rect().min, Vec2::new(400.0, WEAKER_LINE));
+                weaker_line(ui, rect, 14, open);
+            });
+            // The font atlas upload no renderer takes here.
+            output.textures_delta.clear();
+            let update = output.platform_output.accesskit_update.expect("a tree");
+            let buttons: Vec<String> = update
+                .nodes
+                .iter()
+                .filter(|(_, node)| node.role() == egui::accesskit::Role::Button)
+                .filter_map(|(_, node)| node.label().map(str::to_string))
+                .collect();
+            assert_eq!(buttons, [words]);
+        }
     }
 
     #[test]

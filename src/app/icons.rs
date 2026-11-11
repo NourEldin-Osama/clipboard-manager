@@ -227,14 +227,36 @@ fn mirrored(icon: Icon) -> bool {
     matches!(icon, Icon::Back)
 }
 
+/// The parts of an icon's texture its square shows: all of it, as drawn.
+const UPRIGHT: Rect = Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0));
+/// Left and right swapped.
+const MIRRORED: Rect = Rect::from_min_max(Pos2::new(1.0, 0.0), Pos2::new(0.0, 1.0));
+/// Half a turn: left and right, and top and bottom swapped.
+const TURNED: Rect = Rect::from_min_max(Pos2::new(1.0, 1.0), Pos2::ZERO);
+
 /// Paints `icon` filling the square at the centre of `rect`, tinted `color`.
 pub(super) fn paint(p: &Painter, rect: Rect, icon: Icon, color: Color32) {
+    let uv = if mirrored(icon) && i18n::rtl() {
+        MIRRORED
+    } else {
+        UPRIGHT
+    };
+    paint_with(p, rect, icon, color, uv);
+}
+
+/// Paints `icon` as `paint` does, turned half a turn: an arrow that points
+/// down then points up.
+pub(super) fn paint_turned(p: &Painter, rect: Rect, icon: Icon, color: Color32) {
+    paint_with(p, rect, icon, color, TURNED);
+}
+
+fn paint_with(p: &Painter, rect: Rect, icon: Icon, color: Color32, uv: Rect) {
     let side = rect.width().min(rect.height());
     let square = Rect::from_center_size(rect.center(), Vec2::splat(side));
     let Some((uri, _)) = source(icon) else {
         return paint_shape(p, square, icon, color);
     };
-    paint_svg(p, square, uri, color, mirrored(icon) && i18n::rtl());
+    paint_svg(p, square, uri, color, uv);
 }
 
 /// Paints the logo of a server type filling the square at the centre of
@@ -244,7 +266,7 @@ pub(super) fn paint_logo(p: &Painter, rect: Rect, kind: ServerKind, color: Color
     let square = Rect::from_center_size(rect.center(), Vec2::splat(side));
     let ((uri, _), coloured) = logo_source(kind);
     let tint = if coloured { Color32::WHITE } else { color };
-    paint_svg(p, square, uri, tint, false);
+    paint_svg(p, square, uri, tint, UPRIGHT);
 }
 
 /// The logo of a server type as an inline widget.
@@ -254,7 +276,9 @@ pub(super) fn logo(ui: &mut Ui, kind: ServerKind, size: f32, color: Color32) -> 
     resp
 }
 
-fn paint_svg(p: &Painter, square: Rect, uri: &str, tint: Color32, mirror: bool) {
+/// Paints the SVG at `uri` into `square`, showing the part `uv` of its
+/// texture.
+fn paint_svg(p: &Painter, square: Rect, uri: &str, tint: Color32, uv: Rect) {
     let ctx = p.ctx();
     // Rasterised at the pixel size it's shown at, so edges stay sharp.
     let px = (square.width() * ctx.pixels_per_point()).round().max(1.0) as u32;
@@ -265,11 +289,6 @@ fn paint_svg(p: &Painter, square: Rect, uri: &str, tint: Color32, mirror: bool) 
     };
     match ctx.try_load_texture(uri, TextureOptions::LINEAR, hint) {
         Ok(TexturePoll::Ready { texture }) => {
-            let uv = if mirror {
-                Rect::from_min_max(Pos2::new(1.0, 0.0), Pos2::new(0.0, 1.0))
-            } else {
-                Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0))
-            };
             p.image(texture.id, square, uv, tint);
         }
         Ok(TexturePoll::Pending { .. }) => ctx.request_repaint(),
