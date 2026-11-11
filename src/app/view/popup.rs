@@ -323,27 +323,32 @@ fn paint_key_hints(ui: &mut Ui, hints: &[(String, String)]) {
     let pairs: Vec<_> = hints
         .iter()
         .map(|(keys, what)| {
-            let mut caps = Vec::new();
+            let cap = |key: &str| Piece::Cap(shortcut::keycap_label(ui, key, strong));
+            // The keys in reading order, in parts that each read left to
+            // right: a key combination, a word between keys, a key.
+            let (mut units, mut unit) = (Vec::new(), Vec::new());
             for part in keys.split('+').map(str::trim).filter(|k| !k.is_empty()) {
                 // A range such as "1 to 9" is two keys with the word between.
+                // The first key ends the combination before it, as in
+                // Ctrl+1; the word and the last key follow it.
                 let words: Vec<&str> = part.split_whitespace().collect();
                 if words.len() >= 3 {
                     let between = words[1..words.len() - 1].join(" ");
-                    caps.push(Piece::Cap(shortcut::keycap_label(ui, words[0], strong)));
-                    caps.push(Piece::Word(one_line(
-                        ui,
-                        &between,
-                        &[],
-                        font.clone(),
-                        weak,
-                        room,
-                    )));
-                    let last = words[words.len() - 1];
-                    caps.push(Piece::Cap(shortcut::keycap_label(ui, last, strong)));
+                    let word = one_line(ui, &between, &[], font.clone(), weak, room);
+                    unit.push(cap(words[0]));
+                    units.push(std::mem::take(&mut unit));
+                    units.push(vec![Piece::Word(word)]);
+                    unit.push(cap(words[words.len() - 1]));
                 } else {
-                    caps.push(Piece::Cap(shortcut::keycap_label(ui, part, strong)));
+                    unit.push(cap(part));
                 }
             }
+            units.push(unit);
+            // From the left: in Arabic the last part first.
+            if i18n::rtl() {
+                units.reverse();
+            }
+            let caps: Vec<Piece> = units.into_iter().flatten().collect();
             // What the keys do in the text color: the hints are the popup's
             // way to its keys, and grey read as switched off.
             (caps, one_line(ui, what, &[], font.clone(), strong, room))
@@ -370,8 +375,8 @@ fn paint_key_hints(ui: &mut Ui, hints: &[(String, String)]) {
     for ((caps, what), (row, start)) in pairs.iter().zip(places) {
         let y = rect.top() + line_h * (row as f32 + 0.5);
         let mut x = rect.left() + start;
-        // The keys as one group, mirrored for Arabic as a whole, so
-        // they keep the order Settings shows them in.
+        // The keys as one group, placed for Arabic as a whole; its pieces
+        // are already in their order from the left.
         let group = flip(
             rect,
             Rect::from_min_size(
@@ -520,5 +525,84 @@ mod tests {
     fn the_hints_fit_on_one_line_in_english_and_arabic() {
         check_hints_on_one_line(crate::config::Language::English);
         check_hints_on_one_line(crate::config::Language::Arabic);
+    }
+
+    /// The quick paste hint in the window's language reads Ctrl+1, the
+    /// word, 9, then what the keys do: from the left in English, from the
+    /// right in Arabic, where Ctrl+1 still reads from the left, as a key
+    /// combination is written. Checked by where each piece's centre is.
+    fn check_quick_paste_order() {
+        let ctx = egui::Context::default();
+        add_fonts(&ctx);
+        style(&ctx, crate::config::DarkPanels::Lighter);
+        // The fonts apply from the next frame.
+        ctx.run_ui(egui::RawInput::default(), |_| {})
+            .textures_delta
+            .clear();
+        let keys = t!("quick-paste-keys");
+        let word = keys.split_whitespace().nth(1).expect("a word").to_string();
+        let hints = [(keys.clone(), t!("popup-key-quick"))];
+        let line = Rect::from_min_size(Pos2::new(10.0, 10.0), Vec2::new(POPUP_SIZE.x - 20.0, 60.0));
+        let mut what = String::new();
+        let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+            // What the keys do, as the hints lay it out.
+            let font = FontId::proportional(size::SMALL);
+            what = one_line(ui, &hints[0].1, &[], font, Color32::WHITE, line.width())
+                .text()
+                .to_string();
+            ui.scope_builder(egui::UiBuilder::new().max_rect(line), |ui| {
+                paint_key_hints(ui, &hints);
+            });
+        });
+        output.textures_delta.clear();
+        let centres: Vec<(String, f32)> = output
+            .shapes
+            .iter()
+            .filter_map(|clipped| match &clipped.shape {
+                egui::Shape::Text(text) => Some((
+                    text.galley.text().to_string(),
+                    text.pos.x + text.galley.rect.center().x,
+                )),
+                _ => None,
+            })
+            .collect();
+        let at = |piece: &str| {
+            centres
+                .iter()
+                .find(|(text, _)| text == piece)
+                .map(|(_, x)| *x)
+                .unwrap_or_else(|| panic!("{piece:?} in {centres:?}"))
+        };
+        let [ctrl, one, word, nine, what] = [at("Ctrl"), at("1"), at(&word), at("9"), at(&what)];
+        let from_left = if i18n::rtl() {
+            [what, nine, word, ctrl, one]
+        } else {
+            [ctrl, one, word, nine, what]
+        };
+        assert!(
+            from_left.windows(2).all(|pair| pair[0] < pair[1]),
+            "{keys}: {centres:?}"
+        );
+    }
+
+    #[test]
+    fn the_quick_paste_hint_reads_in_order() {
+        check_quick_paste_order();
+    }
+
+    #[test]
+    fn the_quick_paste_hint_reads_in_order_right_to_left() {
+        crate::i18n::passes_in_arabic(
+            module_path!(),
+            "the_quick_paste_hint_reads_in_order_in_arabic",
+        );
+    }
+
+    #[test]
+    #[ignore = "run in a process of its own by the_quick_paste_hint_reads_in_order_right_to_left"]
+    fn the_quick_paste_hint_reads_in_order_in_arabic() {
+        if crate::i18n::arabic_run() {
+            check_quick_paste_order();
+        }
     }
 }

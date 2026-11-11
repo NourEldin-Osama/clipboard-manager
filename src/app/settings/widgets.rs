@@ -605,6 +605,7 @@ pub(super) fn path_field(ui: &mut Ui, p: &mut PathBuf, ext: &[&str]) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::i18n::arabic_run;
 
     #[test]
     fn a_switch_is_named_by_its_setting_row() {
@@ -629,37 +630,9 @@ mod tests {
         assert_eq!(switch.toggled(), Some(egui::accesskit::Toggled::True));
     }
 
-    /// Set by `passes_in_arabic` for the process it starts.
-    const ARABIC_RUN: &str = "CLIPBOARD_MANAGER_TEST_ARABIC";
-
-    /// Runs the test `name` of this module again in a process of its own,
-    /// with Arabic on, and fails if it fails there. The language is one
-    /// setting for the whole program, and the tests running beside this one
-    /// read it.
+    /// Runs the test `name` of this module again with Arabic on.
     fn passes_in_arabic(name: &str) {
-        let module = module_path!().split_once("::").map_or("", |(_, path)| path);
-        let test = format!("{module}::{name}");
-        let output = std::process::Command::new(std::env::current_exe().expect("the tests"))
-            .args([&test, "--exact", "--include-ignored", "--test-threads=1"])
-            .env(ARABIC_RUN, "1")
-            .output()
-            .expect("the tests run");
-        let said = String::from_utf8_lossy(&output.stdout);
-        assert!(
-            output.status.success() && said.contains("1 passed"),
-            "{test} in Arabic:\n{said}{}",
-            String::from_utf8_lossy(&output.stderr)
-        );
-    }
-
-    /// Turns Arabic on when this process was started by `passes_in_arabic`;
-    /// false otherwise, and the test has nothing to do.
-    fn arabic_run() -> bool {
-        let started = std::env::var_os(ARABIC_RUN).is_some();
-        if started {
-            crate::i18n::set(Language::Arabic, TimeFormat::H24);
-        }
-        started
+        crate::i18n::passes_in_arabic(module_path!(), name);
     }
 
     fn near(a: f32, b: f32) -> bool {

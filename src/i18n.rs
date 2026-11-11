@@ -201,6 +201,42 @@ pub fn month(dt: &DateTime<Local>) -> String {
     }
 }
 
+/// Set by `passes_in_arabic` for the process it starts.
+#[cfg(test)]
+const ARABIC_RUN: &str = "CLIPBOARD_MANAGER_TEST_ARABIC";
+
+/// Runs the test `name` of `module` (the test's `module_path!()`) again in
+/// a process of its own, with Arabic on, and fails if it fails there. The
+/// language is one setting for the whole program, and the tests running
+/// beside this one read it.
+#[cfg(test)]
+pub(crate) fn passes_in_arabic(module: &str, name: &str) {
+    let module = module.split_once("::").map_or("", |(_, path)| path);
+    let test = format!("{module}::{name}");
+    let output = std::process::Command::new(std::env::current_exe().expect("the tests"))
+        .args([&test, "--exact", "--include-ignored", "--test-threads=1"])
+        .env(ARABIC_RUN, "1")
+        .output()
+        .expect("the tests run");
+    let said = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        output.status.success() && said.contains("1 passed"),
+        "{test} in Arabic:\n{said}{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+/// Turns Arabic on when this process was started by `passes_in_arabic`;
+/// false otherwise, and the test has nothing to do.
+#[cfg(test)]
+pub(crate) fn arabic_run() -> bool {
+    let started = std::env::var_os(ARABIC_RUN).is_some();
+    if started {
+        set(Language::Arabic, TimeFormat::H24);
+    }
+    started
+}
+
 #[cfg(test)]
 mod tests {
     use std::collections::{BTreeMap, BTreeSet};
