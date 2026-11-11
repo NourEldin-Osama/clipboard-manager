@@ -158,10 +158,16 @@ pub(crate) fn chosen_face(accent: Color32, dark: bool) -> Color32 {
     }
 }
 
-/// The background of the words a search found: a warm tint, apart from the
-/// accent of the selection it can sit on.
+/// The background of the words a search found: a saturated amber that
+/// reads at a glance, apart from the accent of the selection. Opaque, so it
+/// looks the same on every tint it sits on, and the strong text color reads
+/// on it at 7 to 1 or more: black on a bright amber, white on a deep one.
 pub(crate) fn search_hit(dark: bool) -> Color32 {
-    AMBER.gamma_multiply(if dark { 0.40 } else { 0.30 })
+    if dark {
+        Color32::from_rgb(122, 78, 0)
+    } else {
+        Color32::from_rgb(255, 200, 70)
+    }
 }
 
 /// The status bar's fill while recording is paused: the window's gray with
@@ -797,7 +803,9 @@ mod tests {
                         );
                     }
                 }
-                // A search hit: the strong text colour on its warm tint.
+                // A search hit: the strong text colour on its amber, which
+                // covers what is under it.
+                assert_eq!(search_hit(dark).a(), 255, "{theme:?}: an opaque hit");
                 for (place, under) in [
                     ("list", panel),
                     ("card", content),
@@ -806,7 +814,7 @@ mod tests {
                 ] {
                     let ratio = contrast(v.strong_text_color(), over(search_hit(dark), under));
                     assert!(
-                        ratio >= 4.5,
+                        ratio >= 7.0,
                         "{theme:?}, {a:?}: a search hit in a {place} is {ratio:.2} to 1"
                     );
                 }
