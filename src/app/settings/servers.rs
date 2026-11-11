@@ -239,25 +239,61 @@ fn choose_kind(server: &mut Server, kind: ServerKind) {
 
 /// The type of server, as a row of tiles.
 fn kind_tiles(ui: &mut Ui, server: &mut Server) {
-    super::view::row_wrapped(ui, |ui| {
-        ui.spacing_mut().item_spacing = Vec2::new(8.0, 8.0);
-        for kind in ServerKind::ALL {
-            let selected = server.kind == kind;
-            if kind_tile(ui, kind, selected).clicked() {
-                choose_kind(server, kind);
-            }
+    let width = ui.available_width();
+    let places = tile_places(width, ServerKind::ALL.len(), i18n::rtl());
+    let height = places
+        .iter()
+        .map(|place| place.bottom())
+        .fold(0.0, f32::max);
+    let (area, _) = ui.allocate_exact_size(Vec2::new(width, height), Sense::hover());
+    for (index, (kind, place)) in ServerKind::ALL.into_iter().zip(places).enumerate() {
+        let selected = server.kind == kind;
+        let rect = place.translate(area.min.to_vec2());
+        if kind_tile(ui, rect, index, kind, selected).clicked() {
+            choose_kind(server, kind);
         }
-    });
+    }
 }
 
-/// How wide a type's tile is.
-const KIND_TILE_WIDTH: f32 = 78.0;
+/// How narrow a type's tile can be: seven fit in one row of a card in the
+/// widest settings column.
+const KIND_TILE_LEAST_WIDTH: f32 = 78.0;
 
-/// A type's logo above its name.
-fn kind_tile(ui: &mut Ui, kind: ServerKind, selected: bool) -> egui::Response {
+/// How tall a type's tile is.
+const KIND_TILE_HEIGHT: f32 = 62.0;
+
+/// Where `count` tiles go in a row `width` wide, from its top left corner:
+/// as many to a line as fit, each as wide as the line's room shared among
+/// them, so a full line's first tile starts and its last one ends on the
+/// row's edges. They are placed from the reading start, from the right
+/// when `rtl`.
+fn tile_places(width: f32, count: usize, rtl: bool) -> Vec<Rect> {
+    let gap = space::SMALL;
+    let fit = ((width + gap) / (KIND_TILE_LEAST_WIDTH + gap)).floor() as usize;
+    let per_line = fit.clamp(1, count.max(1));
+    let tile = ((width - gap * (per_line - 1) as f32) / per_line as f32).max(0.0);
+    (0..count)
+        .map(|index| {
+            let (line, place) = (index / per_line, index % per_line);
+            let x = place as f32 * (tile + gap);
+            let x = if rtl { width - x - tile } else { x };
+            let y = line as f32 * (KIND_TILE_HEIGHT + gap);
+            Rect::from_min_size(Pos2::new(x, y), Vec2::new(tile, KIND_TILE_HEIGHT))
+        })
+        .collect()
+}
+
+/// A type's logo above its name, in `rect`, the `index`th of the tiles.
+fn kind_tile(
+    ui: &mut Ui,
+    rect: Rect,
+    index: usize,
+    kind: ServerKind,
+    selected: bool,
+) -> egui::Response {
     let name = kind_name(kind);
-    // Seven fit in one row of a card in the widest settings column.
-    let (rect, resp) = ui.allocate_exact_size(Vec2::new(KIND_TILE_WIDTH, 62.0), Sense::click());
+    let id = ui.scope_id().with(("server-kind", index));
+    let resp = ui.interact(rect, id, Sense::click());
     resp.widget_info(|| egui::WidgetInfo::selected(egui::Role::RadioButton, true, selected, &name));
     let v = ui.visuals();
     let (fill, stroke, color) = if selected {
@@ -1905,7 +1941,8 @@ mod tests {
     }
 
     /// In a card of the widest settings column, the seven types of server
-    /// fit in one row of tiles.
+    /// fit in one row of tiles, which reaches from the row's start to its
+    /// end.
     #[test]
     fn the_server_types_fit_in_one_row() {
         let ctx = egui::Context::default();
@@ -1918,6 +1955,7 @@ mod tests {
             .textures_delta
             .clear();
         let mut server = Server::default();
+        let mut row = Rect::NOTHING;
         let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
             let column = Rect::from_min_size(
                 ui.max_rect().min,
@@ -1925,7 +1963,10 @@ mod tests {
             );
             ui.scope_builder(egui::UiBuilder::new().max_rect(column), |ui| {
                 card(ui, |ui| {
-                    card_row(ui, false, |ui| kind_tiles(ui, &mut server))
+                    row = card_row(ui, false, |ui| {
+                        kind_tiles(ui, &mut server);
+                        ui.max_rect()
+                    });
                 });
             });
         });
@@ -1939,6 +1980,40 @@ mod tests {
             .collect();
         assert_eq!(tops.len(), ServerKind::ALL.len());
         assert!(tops.iter().all(|top| *top == tops[0]), "{tops:?}");
+        let tiles = update
+            .nodes
+            .iter()
+            .filter(|(_, node)| node.role() == egui::accesskit::Role::RadioButton)
+            .filter_map(|(_, node)| node.bounds());
+        let (start, end) = tiles.fold((f64::INFINITY, f64::NEG_INFINITY), |(start, end), b| {
+            (start.min(b.x0), end.max(b.x1))
+        });
+        assert!((start as f32 - row.left()).abs() <= 0.5, "{start} {row:?}");
+        assert!((end as f32 - row.right()).abs() <= 0.5, "{end} {row:?}");
+    }
+
+    #[test]
+    fn type_tiles_share_their_lines_from_the_reading_start() {
+        let lines = |places: &[Rect]| {
+            let mut tops: Vec<f32> = places.iter().map(|place| place.top()).collect();
+            tops.dedup();
+            tops.len()
+        };
+        for rtl in [false, true] {
+            let places = tile_places(606.0, 7, rtl);
+            assert_eq!(lines(&places), 1);
+            let (first, last) = (places[0], places[6]);
+            let (start, end) = if rtl {
+                (606.0 - first.right(), last.left())
+            } else {
+                (first.left(), 606.0 - last.right())
+            };
+            assert!(start.abs() < 0.01 && end.abs() < 0.01, "{places:?}");
+            // In a narrow column, two to a line, the last alone.
+            let places = tile_places(242.0, 7, rtl);
+            assert_eq!(lines(&places), 4);
+            assert!((places[1].width() - (242.0 - space::SMALL) / 2.0).abs() < 0.01);
+        }
     }
 
     #[test]
