@@ -130,6 +130,12 @@ pub(crate) fn note_fill(dark: bool) -> Color32 {
     }
 }
 
+/// The faint amber tint behind a warning in a settings card, where its
+/// icon takes the amber's text shade.
+pub(crate) fn warning_fill(dark: bool) -> Color32 {
+    AMBER.gamma_multiply(if dark { 0.14 } else { 0.10 })
+}
+
 /// The track behind a setting's choices, and the face of the chosen one
 /// on it. Both stay where `text_shade` keeps colored text readable.
 pub(crate) fn choice_track(dark: bool) -> (Color32, Color32) {
@@ -788,6 +794,7 @@ mod tests {
                     ),
                     ("gray chip", over(weak.gamma_multiply(0.14), content)),
                     ("settings note", over(note_fill(dark), content)),
+                    ("settings warning", over(warning_fill(dark), content)),
                     ("status bar while paused", paused_bar(panel, dark)),
                 ];
                 // Gray text a step above the least in the dark theme.
@@ -871,6 +878,11 @@ mod tests {
             let paused = paused_bar(panel, dark);
             // (what and where, text colour, background)
             let mut cases: Vec<(String, Color32, Color32)> = Vec::new();
+            cases.push((
+                "a warning's icon on its tint".to_string(),
+                text_shade(AMBER, dark),
+                over(warning_fill(dark), content),
+            ));
             let kinds = [Kind::Text, Kind::Link, Kind::Image, Kind::Files].map(kind_color);
             let tint = if dark { 0.3 } else { 0.13 };
             for c in kinds {

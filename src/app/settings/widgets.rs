@@ -511,22 +511,23 @@ pub(super) fn setting_content(
 
 /// A note about the settings above it, as a callout in their card.
 pub(super) fn note(ui: &mut Ui, text: &str) {
-    callout(ui, Icon::Info, text);
+    callout(ui, Icon::Info, text, false);
 }
 
 /// A note that warns, as a callout in the card of the settings it is about.
 pub(super) fn warning(ui: &mut Ui, text: &str) {
-    callout(ui, Icon::Warning, text);
+    callout(ui, Icon::Warning, text, true);
 }
 
 /// How big a note's icon is.
 const NOTE_ICON: f32 = 14.0;
 
 /// A note in a card: its icon at the reading start and its text, in the
-/// gray of the rows' lines, on a faint tint. It is set in as far as the
-/// rows' text and has no line above or below it, so it reads as one note
-/// about the rows around it and not as a row, a field or a button.
-fn callout(ui: &mut Ui, icon: Icon, text: &str) {
+/// gray of the rows' lines, on a faint tint; one that `warns` has its icon
+/// in amber on a faint amber tint. It is set in as far as the rows' text
+/// and has no line above or below it, so it reads as one note about the
+/// rows around it and not as a row, a field or a button.
+fn callout(ui: &mut Ui, icon: Icon, text: &str, warns: bool) {
     let state = card_state(ui);
     // A row before it has its room below.
     let above = match state.and_then(|s| s.last) {
@@ -542,9 +543,15 @@ fn callout(ui: &mut Ui, icon: Icon, text: &str) {
         (start, ROW_SIDE_PADDING)
     };
     let weak = ui.visuals().weak_text_color();
+    let dark = ui.visuals().dark_mode;
+    let (fill, icon_color) = if warns {
+        (warning_fill(dark), text_shade(AMBER, dark))
+    } else {
+        (note_fill(dark), weak)
+    };
     let font = FontId::proportional(size::SMALL);
     Frame::new()
-        .fill(note_fill(ui.visuals().dark_mode))
+        .fill(fill)
         .corner_radius(CornerRadius::same(radius::MEDIUM))
         .inner_margin(Margin::symmetric(space::MEDIUM as i8, space::SMALL as i8))
         .outer_margin(Margin {
@@ -561,7 +568,7 @@ fn callout(ui: &mut Ui, icon: Icon, text: &str) {
                 let line = ui.fonts_mut(|f| f.row_height(&font));
                 let (place, _) = ui.allocate_exact_size(Vec2::new(NOTE_ICON, line), Sense::hover());
                 let at = Rect::from_center_size(place.center(), Vec2::splat(NOTE_ICON));
-                icons::paint(ui.painter(), at, icon, weak);
+                icons::paint(ui.painter(), at, icon, icon_color);
                 super::bidi::paragraph(ui, text, font, weak);
             });
         });
@@ -1149,8 +1156,13 @@ mod tests {
             found.sort_by(|a, b| a.top().total_cmp(&b.top()));
             found
         };
-        let notes = filled(note_fill(false));
-        assert_eq!(notes.len(), 2);
+        let (note, warning) = (filled(note_fill(false)), filled(warning_fill(false)));
+        assert_eq!(
+            (note.len(), warning.len()),
+            (1, 1),
+            "a gray note, an amber warning"
+        );
+        let notes = [note[0], warning[0]];
         let room = ROW_VERTICAL_PADDING;
         for (row, note) in rows.iter().zip(&notes) {
             assert!(near(note.left(), row.left()) && near(note.right(), row.right()));
