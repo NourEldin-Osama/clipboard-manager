@@ -381,35 +381,55 @@ pub(crate) fn semibold(size: f32) -> FontId {
     FontId::new(size, egui::FontFamily::Name(SEMIBOLD.into()))
 }
 
+/// How much larger Arabic is drawn than Latin text of the same size: at one
+/// size, Noto Sans Arabic looks smaller than the Noto Sans beside it.
+/// egui takes a line's height from its first font, Noto Sans, so lines keep
+/// their height, and it centres the taller Arabic face in them: scaled, the
+/// Arabic stays centred and its baseline moves a little toward the Latin
+/// one, so no vertical offset is needed.
+const ARABIC_SCALE: f32 = 1.1;
+
 /// The bundled fonts: Noto Sans (Latin, Greek and Cyrillic) and Noto Sans
 /// Arabic, each in Regular and SemiBold, so both scripts look alike in one
 /// weight whatever fonts the PC has. egui's own fonts stay after them for
 /// symbols and emoji, and code keeps its monospace font.
 pub(crate) fn add_fonts(ctx: &egui::Context) {
-    use eframe::egui::{FontData, FontDefinitions, FontFamily};
+    ctx.set_fonts(font_definitions());
+}
+
+fn font_definitions() -> egui::FontDefinitions {
+    use eframe::egui::{FontData, FontDefinitions, FontFamily, FontTweak};
     let mut fonts = FontDefinitions::default();
-    let bundled: [(&str, &'static [u8]); 4] = [
+    let bundled: [(&str, &'static [u8], f32); 4] = [
         (
             "noto-sans",
             include_bytes!("../../../assets/fonts/NotoSans-Regular.ttf"),
+            1.0,
         ),
         (
             "noto-sans-semibold",
             include_bytes!("../../../assets/fonts/NotoSans-SemiBold.ttf"),
+            1.0,
         ),
         (
             "noto-sans-arabic",
             include_bytes!("../../../assets/fonts/NotoSansArabic-Regular.ttf"),
+            ARABIC_SCALE,
         ),
         (
             "noto-sans-arabic-semibold",
             include_bytes!("../../../assets/fonts/NotoSansArabic-SemiBold.ttf"),
+            ARABIC_SCALE,
         ),
     ];
-    for (name, bytes) in bundled {
+    for (name, bytes, scale) in bundled {
+        let tweak = FontTweak {
+            scale,
+            ..FontTweak::default()
+        };
         fonts.font_data.insert(
             name.into(),
-            std::sync::Arc::new(FontData::from_static(bytes)),
+            std::sync::Arc::new(FontData::from_static(bytes).tweak(tweak)),
         );
     }
     let fallbacks: Vec<String> = fonts.families[&FontFamily::Proportional]
@@ -439,7 +459,7 @@ pub(crate) fn add_fonts(ctx: &egui::Context) {
             .map_or(code.len(), |at| at + 1);
         code.insert(after_text_fonts, "noto-sans-arabic".into());
     }
-    ctx.set_fonts(fonts);
+    fonts
 }
 
 pub(crate) fn style(ctx: &egui::Context, panels: crate::config::DarkPanels) {
@@ -580,6 +600,100 @@ mod tests {
             "raw sizes or colors:\n{}",
             found.join("\n")
         );
+    }
+
+    /// `lay_out` in a frame of a window with the fonts `fonts`, at `scale`
+    /// pixels per point.
+    fn with_fonts<T>(
+        fonts: egui::FontDefinitions,
+        scale: f32,
+        lay_out: impl Fn(&mut egui::Ui) -> T,
+    ) -> T {
+        let ctx = egui::Context::default();
+        ctx.set_pixels_per_point(scale);
+        ctx.set_fonts(fonts);
+        // The fonts apply from the next frame; the font atlas uploads no
+        // renderer takes here are dropped.
+        ctx.run_ui(egui::RawInput::default(), |_| {})
+            .textures_delta
+            .clear();
+        let mut laid = None;
+        ctx.run_ui(egui::RawInput::default(), |ui| laid = Some(lay_out(ui)))
+            .textures_delta
+            .clear();
+        laid.expect("one frame")
+    }
+
+    /// Arabic is drawn 10% larger. Latin text is laid out exactly as
+    /// without that, lines keep their height, and Arabic beside Latin keeps
+    /// its baseline or comes nearer to the Latin one.
+    #[test]
+    fn arabic_is_larger_and_latin_text_does_not_change() {
+        // The bundled fonts as they were: none of them tweaked.
+        let mut unscaled = font_definitions();
+        let bundled = [
+            "noto-sans",
+            "noto-sans-semibold",
+            "noto-sans-arabic",
+            "noto-sans-arabic-semibold",
+        ];
+        for name in bundled {
+            let mut data = unscaled.font_data[name].as_ref().clone();
+            data.tweak = egui::FontTweak::default();
+            unscaled
+                .font_data
+                .insert(name.into(), std::sync::Arc::new(data));
+        }
+        let fonts = [
+            FontId::proportional(size::SMALL),
+            FontId::proportional(size::CONTROL),
+            FontId::proportional(size::BODY),
+            FontId::proportional(size::LARGE),
+            FontId::proportional(size::TITLE),
+            semibold(size::TITLE),
+            FontId::monospace(size::CONTROL),
+        ];
+        // For each font: the Latin text's size and where each letter goes,
+        // the Arabic text's size, and in a line of both, where the Latin
+        // and the Arabic letters stand.
+        type Laid = (Vec2, Vec<Pos2>, Vec2, (f32, f32));
+        let lay_out = |ui: &mut egui::Ui| -> Vec<Laid> {
+            let galley = |text: &str, font: &FontId| {
+                ui.fonts_mut(|f| f.layout_no_wrap(text.into(), font.clone(), Color32::WHITE))
+            };
+            fonts
+                .iter()
+                .map(|font| {
+                    let latin = galley("The quick brown fox jumps over 12 lazy dogs!", font);
+                    let arabic = galley("موعد الاجتماع يوم الخميس", font);
+                    let both = galley("Hx مرحبًا", font);
+                    let glyphs = &both.rows[0].glyphs;
+                    let baselines = (glyphs[0].pos.y, glyphs[glyphs.len() - 1].pos.y);
+                    let letters = latin.rows[0].glyphs.iter().map(|g| g.pos).collect();
+                    (latin.size(), letters, arabic.size(), baselines)
+                })
+                .collect()
+        };
+        for scale in [1.0, 1.25, 1.5] {
+            let before = with_fonts(unscaled.clone(), scale, lay_out);
+            let after = with_fonts(font_definitions(), scale, lay_out);
+            for (font, (before, after)) in fonts.iter().zip(before.iter().zip(&after)) {
+                let case = format!("{font:?} at {scale}");
+                assert_eq!(before.0, after.0, "{case}: the Latin text's size");
+                assert_eq!(before.1, after.1, "{case}: the Latin letters");
+                // The Arabic words grow by a tenth; its spaces are Latin.
+                let wider = after.2.x / before.2.x;
+                assert!((1.07..=1.1).contains(&wider), "{case}: {wider}");
+                assert_eq!(before.2.y, after.2.y, "{case}: the line's height");
+                let (latin, arabic) = (before.3 .0, before.3 .1);
+                assert_eq!(after.3 .0, latin, "{case}: the Latin baseline");
+                let apart = |at: f32| (at - latin).abs();
+                assert!(
+                    apart(after.3 .1) <= apart(arabic),
+                    "{case}: {before:?} {after:?}"
+                );
+            }
+        }
     }
 
     /// A context styled with each dark-panels choice, in each theme.

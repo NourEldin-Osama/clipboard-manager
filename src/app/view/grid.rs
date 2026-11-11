@@ -365,10 +365,13 @@ pub(super) fn paint_card(
         }
         _ => {
             let (lines, color) = card_text(ui, it, terms, body.size());
-            // Arabic letters reach a little above and below their lines,
-            // and a card as tall as its text ends at its last line: the
-            // room around the text keeps them whole.
-            let clip = body.expand2(Vec2::new(0.0, BELOW_CONTENT));
+            // Arabic letters and their marks reach above and below their
+            // lines, and a card as tall as its text ends at its last line:
+            // the room around the text keeps them whole.
+            let clip = Rect::from_min_max(
+                body.min - Vec2::new(0.0, CARD_PADDING / 2.0),
+                body.max + Vec2::new(0.0, BELOW_CONTENT),
+            );
             bidi::paint(&ui.painter_at(clip), body, lines, color, None, 0.0);
         }
     }
