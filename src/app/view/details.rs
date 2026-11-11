@@ -136,8 +136,26 @@ fn content_over_foot<T>(
     }
 }
 
-/// Between the facts of the details.
-const FACTS_GAP: &str = "  ·  ";
+/// Between two facts of the details.
+const FACTS_DOT: &str = "·";
+
+/// Facts one after another in reading order, a dot between each two. Each
+/// fact is a label of its own, in its own direction, so in Arabic a name
+/// and the number of the next fact don't run together. In a wrapped row a
+/// fact that doesn't fit starts the next line; a dot never starts one.
+fn facts_line(ui: &mut Ui, facts: &[String], color: Color32) {
+    let font = FontId::proportional(size::SMALL);
+    let dot_width = ui
+        .fonts_mut(|f| f.layout_no_wrap(FACTS_DOT.into(), font, color))
+        .size()
+        .x;
+    for (n, fact) in facts.iter().enumerate() {
+        if n > 0 && ui.available_size_before_wrap().x >= dot_width {
+            lbl(ui, FACTS_DOT, size::SMALL, color);
+        }
+        lbl(ui, fact, size::SMALL, color);
+    }
+}
 
 /// How big the details show a text: short ones larger, so they read first.
 fn content_size(text: &str) -> f32 {
@@ -605,7 +623,8 @@ impl App {
             }
             Kind::Text => {
                 if let Some(color) = color_in(&it.text) {
-                    let line = t!("item-color", value = color_other_way(&it.text, color));
+                    let value = bidi::isolate(&color_other_way(&it.text, color));
+                    let line = t!("item-color", value = value);
                     row(ui, |ui| {
                         let (swatch, _) = ui.allocate_exact_size(Vec2::splat(48.0), Sense::hover());
                         let edge = ui.visuals().weak_text_color().gamma_multiply(0.3);
@@ -735,7 +754,7 @@ impl App {
         let weak = ui.visuals().weak_text_color();
         let read_failed = it.ocr.is_none() && self.ocr_failed.contains(&it.id);
         let read_again = row_wrapped(ui, |ui| {
-            ui.label(txt(&facts.join(FACTS_GAP), size::SMALL, Some(weak)));
+            facts_line(ui, &facts, weak);
             read_failed
                 && ui
                     .link(txt(&t!("details-read-again"), size::SMALL, None))
@@ -1011,6 +1030,116 @@ mod tests {
             bar.x1 as f32 <= pane.right() + 20.0,
             "{bar:?} in the margin"
         );
+    }
+
+    /// The facts line in a wrapped row in a window `width` wide, as drawn:
+    /// each line of each of its labels, with its text and its place, in
+    /// reading order: line by line, each from its reading start.
+    fn facts_drawn(ctx: &egui::Context, facts: &[String], width: f32) -> Vec<(String, Rect)> {
+        let mut output = ctx.run_ui(input(Vec2::new(width, 300.0)), |ui| {
+            row_wrapped(ui, |ui| facts_line(ui, facts, Color32::GRAY));
+        });
+        output.textures_delta.clear();
+        let mut drawn = Vec::new();
+        for clipped in &output.shapes {
+            let egui::Shape::Text(text) = &clipped.shape else {
+                continue;
+            };
+            // A label that goes on in the next line can leave its first
+            // line empty.
+            for row in &text.galley.rows {
+                if !row.row.glyphs.is_empty() {
+                    let rect = row.rect_without_leading_space();
+                    drawn.push((row.row.text(), rect.translate(text.pos.to_vec2())));
+                }
+            }
+        }
+        let rtl = i18n::rtl();
+        drawn.sort_by(|(_, a), (_, b)| {
+            if (a.center().y - b.center().y).abs() > 1.0 {
+                a.center().y.total_cmp(&b.center().y)
+            } else if rtl {
+                b.center().x.total_cmp(&a.center().x)
+            } else {
+                a.center().x.total_cmp(&b.center().x)
+            }
+        });
+        drawn
+    }
+
+    /// The facts in the window's language: the time, an Arabic fact with a
+    /// Latin name, and two with numbers. In reading order, from the left
+    /// in English and from the right in Arabic: on one line, each fact
+    /// whole with a dot between each two, so the name and the number never
+    /// stand side by side; wrapped onto more lines, still in order, and no
+    /// line starts with a dot.
+    fn check_facts_in_reading_order() {
+        let ctx = egui::Context::default();
+        add_fonts(&ctx);
+        // The fonts apply from the next frame.
+        ctx.run_ui(egui::RawInput::default(), |_| {})
+            .textures_delta
+            .clear();
+        let facts = [
+            t!("time-today-at", time = "5:31"),
+            t!("details-copied-from", app = "Microsoft Teams"),
+            t!("details-characters", count = 44),
+            t!("details-words", count = 8),
+        ];
+        let wide = facts_drawn(&ctx, &facts, 800.0);
+        let texts: Vec<&str> = wide.iter().map(|(text, _)| text.as_str()).collect();
+        assert_eq!(texts.len(), 7, "{texts:?}");
+        for (at, mark) in ["5:31", "Microsoft Teams", "44", "8"].iter().enumerate() {
+            assert!(texts[2 * at].contains(mark), "{mark} in {texts:?}");
+        }
+        for at in [1, 3, 5] {
+            assert_eq!(texts[at], FACTS_DOT, "{texts:?}");
+        }
+        let top = wide[0].1.center().y;
+        assert!(wide.iter().all(|(_, r)| (r.center().y - top).abs() <= 1.0));
+
+        let mut wrapped_at = 0;
+        for width in (120..=400).step_by(4).map(|w| w as f32) {
+            let drawn = facts_drawn(&ctx, &facts, width);
+            let line_starts: Vec<&str> = drawn
+                .iter()
+                .enumerate()
+                .filter(|(at, (_, r))| {
+                    *at == 0 || (r.center().y - drawn[at - 1].1.center().y).abs() > 1.0
+                })
+                .map(|(_, (text, _))| text.as_str())
+                .collect();
+            if line_starts.len() > 1 {
+                wrapped_at += 1;
+            }
+            assert!(!line_starts.contains(&FACTS_DOT), "{width}: {drawn:?}");
+            let read: String = drawn.iter().map(|(text, _)| text.as_str()).collect();
+            let mut from = 0;
+            for mark in ["5:31", "Microsoft", "44", "8"] {
+                let at = read[from..].find(mark);
+                let at = at.unwrap_or_else(|| panic!("{width}: {mark} in {read}"));
+                from += at + mark.len();
+            }
+        }
+        assert!(wrapped_at > 0, "the facts wrap in a narrow pane");
+    }
+
+    #[test]
+    fn the_facts_read_in_order() {
+        check_facts_in_reading_order();
+    }
+
+    #[test]
+    fn the_facts_read_in_order_right_to_left() {
+        crate::i18n::passes_in_arabic(module_path!(), "the_facts_read_in_order_in_arabic");
+    }
+
+    #[test]
+    #[ignore = "run in a process of its own by the_facts_read_in_order_right_to_left"]
+    fn the_facts_read_in_order_in_arabic() {
+        if crate::i18n::arabic_run() {
+            check_facts_in_reading_order();
+        }
     }
 
     #[test]

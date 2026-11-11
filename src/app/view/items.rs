@@ -223,7 +223,9 @@ pub(super) fn subtitle(it: &Item) -> String {
     if detail.is_empty() {
         tags
     } else {
-        format!("{tags}  ·  {detail}")
+        // Each in its own direction, so a Latin tag keeps its "#" before
+        // Arabic text.
+        format!("{}  ·  {}", bidi::isolate(&tags), bidi::isolate(&detail))
     }
 }
 
@@ -246,7 +248,8 @@ pub(super) fn subtitle_detail(it: &Item) -> String {
         }
         Kind::Text => {
             if let Some(color) = color_in(&it.text) {
-                return t!("item-color", value = color_other_way(&it.text, color));
+                let value = bidi::isolate(&color_other_way(&it.text, color));
+                return t!("item-color", value = value);
             }
             if let Some(path) = path_in(&it.text) {
                 return path

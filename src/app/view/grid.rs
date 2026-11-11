@@ -324,7 +324,10 @@ pub(super) fn paint_card(
                     v.strong_text_color(),
                 ),
                 (
-                    t!("item-color", value = color_other_way(&it.text, color)),
+                    t!(
+                        "item-color",
+                        value = bidi::isolate(&color_other_way(&it.text, color))
+                    ),
                     size::SMALL,
                     weak,
                 ),

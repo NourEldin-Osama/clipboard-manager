@@ -567,9 +567,11 @@ fn test_result(ui: &mut Ui, result: &Result<Tested, String>) {
                 icons::chip(
                     ui,
                     if read { Icon::Check } else { Icon::Warning },
+                    // The text read in its own direction, so its words don't
+                    // run into the seconds after it.
                     &t!(
                         "settings-model-test-read",
-                        text = shown,
+                        text = super::bidi::isolate(&shown),
                         seconds = seconds(took)
                     ),
                     if read { GREEN } else { AMBER },

@@ -1960,7 +1960,10 @@ impl App {
         });
         let toast = self.toast_with(title, how_long);
         toast.icon = Some(icons::Icon::Lock);
-        toast.detail = (!detail.is_empty()).then(|| detail.join(" · "));
+        // Each part in its own direction, so in Arabic a program's name
+        // and a hint after it don't run together.
+        let parts: Vec<String> = detail.iter().map(|part| bidi::isolate(part)).collect();
+        toast.detail = (!parts.is_empty()).then(|| parts.join(" · "));
         toast.secret = secret;
         toast.action = kept.map(|c| (t!("toast-save-anyway"), Command::SaveSkipped(c)));
         let on_screen = self.note_wanted();

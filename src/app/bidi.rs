@@ -83,6 +83,25 @@ pub(super) fn starts_rtl(s: &str, fallback: bool) -> bool {
     }
 }
 
+/// Unicode's direction isolates: invisible marks around a part of a line
+/// that keeps its own direction, left to right or right to left, and the
+/// mark that ends the part. egui draws them as nothing.
+const LTR_ISOLATE: char = '\u{2066}';
+const RTL_ISOLATE: char = '\u{2067}';
+const ISOLATE_END: char = '\u{2069}';
+
+/// `text` as a part of a line that keeps its own direction: that of its
+/// first letter, or the window's when it has none. A name or a value
+/// beside Arabic then doesn't run into the words and numbers around it.
+pub(super) fn isolate(text: &str) -> String {
+    let start = if starts_rtl(text, crate::i18n::rtl()) {
+        RTL_ISOLATE
+    } else {
+        LTR_ISOLATE
+    };
+    format!("{start}{text}{ISOLATE_END}")
+}
+
 fn mirror(c: char) -> char {
     match c {
         '(' => ')',
@@ -429,6 +448,28 @@ mod tests {
         });
         assert_eq!(names.iter().filter(|n| *n == text).count(), 2, "{names:?}");
         assert!(!names.contains(&shown), "{names:?}");
+    }
+
+    /// A part set apart keeps its own direction beside Arabic: a colour's
+    /// "#" stays before its digits, a Latin tag's before its word, and a
+    /// program's name doesn't take in the hint after it. Each line as
+    /// drawn, from the left, without the invisible marks.
+    #[test]
+    fn a_part_keeps_its_own_direction() {
+        let plain = TextFormat::default();
+        let shown = |text: &str, rtl: bool| -> String {
+            let mut job = LayoutJob::default();
+            append_line(&mut job, text, rtl, &plain, &plain, &[]);
+            let marks = [LTR_ISOLATE, RTL_ISOLATE, ISOLATE_END];
+            job.text.chars().filter(|c| !marks.contains(c)).collect()
+        };
+        let color = format!("لون · {}", isolate("#5865F2"));
+        assert_eq!(shown(&color, true), "#5865F2 · لون");
+        let tagged = format!("{}  ·  {}", isolate("#work"), isolate("مرحبا بكم"));
+        assert_eq!(shown(&tagged, true), "بكم مرحبا  ·  #work");
+        assert_eq!(shown(&tagged, false), "#work  ·  بكم مرحبا");
+        let skipped = [isolate("من Visual Studio Code"), isolate("sk-…6789")].join(" · ");
+        assert_eq!(shown(&skipped, true), "sk-…6789 · Visual Studio Code من");
     }
 
     #[test]
