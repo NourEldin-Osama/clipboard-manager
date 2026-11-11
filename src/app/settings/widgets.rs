@@ -168,7 +168,7 @@ pub(super) fn info(ui: &mut Ui, text: &str) {
 pub(super) const MENU_WIDTH: f32 = 280.0;
 
 /// The reset button beside a changed setting.
-pub(super) const RESET_BUTTON_SIZE: f32 = 28.0;
+const RESET_BUTTON_SIZE: f32 = 28.0;
 
 /// The room inside a card's rows at their sides, where their text and
 /// their controls end.
@@ -462,10 +462,19 @@ pub(super) fn setting_content(
             info(ui, details);
         }
         far(ui, |ui| {
-            // The reset button's space is kept when it's hidden, so controls stay in one column.
+            // The control ends on the row's far edge whether the reset shows
+            // or not, so the controls of a card share one edge. The reset
+            // sits on the control's reading-start side and comes before it
+            // for the keyboard, as it reads: it is placed first, by the
+            // control's width from the frame before, and kept off the row's
+            // layout so the control doesn't move.
+            let width_id = ui.unique_id().with("control width");
+            let width = ui.ctx().data(|d| d.get_temp::<f32>(width_id));
+            let mut slot = ui.new_child(egui::UiBuilder::new());
             if resettable {
+                slot.add_space(width.unwrap_or_default() + ui.spacing().item_spacing.x);
                 if icons::icon_button_ex(
-                    ui,
+                    &mut slot,
                     Icon::Reset,
                     &t!("settings-back-to-default"),
                     Vec2::splat(RESET_BUTTON_SIZE),
@@ -477,14 +486,19 @@ pub(super) fn setting_content(
                 {
                     reset = true;
                 }
-            } else {
-                // Keeps the row's control where it is when there is no reset.
-                ui.add_space(RESET_BUTTON_SIZE + ui.spacing().item_spacing.x);
             }
             ui.ctx()
                 .data_mut(|d| d.insert_temp(row_title_id(), label.to_string()));
             control(ui);
             ui.ctx().data_mut(|d| d.remove::<String>(row_title_id()));
+            let used = ui.min_rect().width();
+            if width.is_none_or(|width| (width - used).abs() > 0.5) {
+                ui.ctx().data_mut(|d| d.insert_temp(width_id, used));
+                if resettable {
+                    ui.ctx()
+                        .request_discard("a reset button follows its control's width");
+                }
+            }
         });
     });
     if !line.is_empty() {
@@ -646,20 +660,62 @@ mod tests {
         (a - b).abs() < 0.01
     }
 
-    /// One frame of `draw` in the light theme with the app's fonts and
-    /// style, and the shapes it painted.
-    fn painted(mut draw: impl FnMut(&mut Ui)) -> Vec<egui::Shape> {
+    /// A window in the light theme with the app's fonts and style, which
+    /// tells a screen reader what it shows.
+    fn window() -> egui::Context {
         let ctx = egui::Context::default();
         crate::app::view::add_fonts(&ctx);
         crate::app::view::style(&ctx, DarkPanels::Lighter);
         ctx.set_theme(egui::Theme::Light);
-        // The fonts take effect from the next frame. The font atlas uploads
-        // no renderer takes here are dropped.
-        ctx.run_ui(egui::RawInput::default(), |_| {})
-            .textures_delta
-            .clear();
-        let mut output = ctx.run_ui(egui::RawInput::default(), |ui| draw(ui));
+        ctx.enable_accesskit();
+        // The fonts take effect from the next frame.
+        frame(&ctx, egui::RawInput::default(), |_| {});
+        ctx
+    }
+
+    /// One frame of `draw` with `input`, as the app runs it.
+    fn frame(
+        ctx: &egui::Context,
+        input: egui::RawInput,
+        mut draw: impl FnMut(&mut Ui),
+    ) -> egui::FullOutput {
+        let mut output = ctx.run_ui(input, |ui| {
+            // As in the settings' column, where the pages set their gaps.
+            ui.spacing_mut().item_spacing.y = 0.0;
+            draw(ui);
+        });
+        // The font atlas upload no renderer takes here.
         output.textures_delta.clear();
+        output
+    }
+
+    /// The screen reader's view of a frame: what has the focus, and each
+    /// thing's name and place.
+    fn spoken(output: egui::FullOutput) -> (Option<String>, Vec<(String, Rect)>) {
+        let update = output.platform_output.accesskit_update.expect("a tree");
+        let named: Vec<(egui::accesskit::NodeId, String, Rect)> = update
+            .nodes
+            .iter()
+            .filter_map(|(id, node)| {
+                let bounds = node.bounds()?;
+                let rect = Rect::from_min_max(
+                    Pos2::new(bounds.x0 as f32, bounds.y0 as f32),
+                    Pos2::new(bounds.x1 as f32, bounds.y1 as f32),
+                );
+                Some((*id, node.label()?.to_string(), rect))
+            })
+            .collect();
+        let focused = named
+            .iter()
+            .find(|(id, _, _)| *id == update.focus)
+            .map(|(_, name, _)| name.clone());
+        let places = named.into_iter().map(|(_, name, rect)| (name, rect));
+        (focused, places.collect())
+    }
+
+    /// One frame of `draw` in a new window, and the shapes it painted.
+    fn painted(draw: impl FnMut(&mut Ui)) -> Vec<egui::Shape> {
+        let mut output = frame(&window(), egui::RawInput::default(), draw);
         let mut shapes = Vec::new();
         let mut left: Vec<egui::Shape> = std::mem::take(&mut output.shapes)
             .into_iter()
@@ -879,5 +935,185 @@ mod tests {
         if arabic_run() {
             check_title_on_the_cards_edge();
         }
+    }
+
+    /// The row's far edge: where its controls end.
+    fn far_edge(rect: Rect) -> f32 {
+        if i18n::rtl() {
+            rect.left()
+        } else {
+            rect.right()
+        }
+    }
+
+    /// A card of a switch row, then a changed switch row and a changed menu
+    /// row with their resets showing, over two frames: every control ends on
+    /// the rows' far edge, each reset sits beside its own control, and the
+    /// second frame needs no pass again.
+    fn check_controls_share_one_edge() {
+        let ctx = window();
+        let (mut on, mut size) = (true, 1);
+        let mut controls = [Rect::NOTHING; 3];
+        let mut inside = Rect::NOTHING;
+        let mut draw = |ui: &mut Ui| {
+            card(ui, |ui| {
+                let _ = setting_row(ui, "Tray", "Keeps running", "", false, false, |ui| {
+                    controls[0] = toggle(ui, &mut on).rect;
+                });
+                let _ = setting_row(ui, "Start", "At sign-in", "", true, true, |ui| {
+                    controls[1] = toggle(ui, &mut on).rect;
+                });
+                inside = card_row(ui, true, |ui| {
+                    setting_content(ui, "Keep up to", "Items", "", true, true, |ui| {
+                        controls[2] = egui::ComboBox::from_id_salt("size")
+                            .width(MENU_WIDTH)
+                            .selected_text("1,000")
+                            .show_ui(ui, |ui| {
+                                ui.selectable_value(&mut size, 1, "1,000");
+                            })
+                            .response
+                            .rect;
+                    });
+                    ui.min_rect()
+                });
+            });
+        };
+        frame(&ctx, egui::RawInput::default(), &mut draw);
+        let output = frame(&ctx, egui::RawInput::default(), &mut draw);
+        assert!(!output.platform_output.requested_discard(), "steady");
+        let edge = far_edge(inside);
+        for control in controls {
+            assert!(near(far_edge(control), edge), "{control:?} ends at {edge}");
+        }
+        let gap = ctx.global_style().spacing.item_spacing.x;
+        let reset = t!("settings-back-to-default");
+        let (_, places) = spoken(output);
+        let mut resets: Vec<Pos2> = places
+            .into_iter()
+            .filter(|(name, _)| *name == reset)
+            .map(|(_, rect)| rect.min)
+            .collect();
+        resets.sort_by(|a, b| a.y.total_cmp(&b.y));
+        let beside = [reset_min(controls[1], gap), reset_min(controls[2], gap)];
+        assert_eq!(resets, beside);
+    }
+
+    #[test]
+    fn controls_share_one_edge() {
+        check_controls_share_one_edge();
+    }
+
+    #[test]
+    fn controls_share_one_edge_right_to_left() {
+        passes_in_arabic("controls_share_one_edge_in_arabic");
+    }
+
+    #[test]
+    #[ignore = "run in a process of its own by controls_share_one_edge_right_to_left"]
+    fn controls_share_one_edge_in_arabic() {
+        if arabic_run() {
+            check_controls_share_one_edge();
+        }
+    }
+
+    /// A setting before and after it changes: its switch, and its reset
+    /// button when it shows.
+    fn switch_and_reset(ctx: &egui::Context, changed: bool) -> (Rect, Option<Rect>) {
+        let mut on = true;
+        let mut switch = Rect::NOTHING;
+        let output = frame(ctx, egui::RawInput::default(), |ui| {
+            card(ui, |ui| {
+                let _ = setting_row(ui, "Tray", "Keeps running", "", changed, changed, |ui| {
+                    switch = toggle(ui, &mut on).rect;
+                });
+            });
+        });
+        let reset = t!("settings-back-to-default");
+        let (_, places) = spoken(output);
+        let found = places.into_iter().find(|(name, _)| *name == reset);
+        (switch, found.map(|(_, rect)| rect))
+    }
+
+    fn check_reset_beside_its_control() {
+        let ctx = window();
+        let (before, none) = switch_and_reset(&ctx, false);
+        assert!(none.is_none(), "no reset for a default value");
+        let (after, reset) = switch_and_reset(&ctx, true);
+        assert_eq!(before, after, "the switch stays where it was");
+        let reset = reset.expect("a reset button");
+        // On the switch's reading-start side, the usual gap from it, on its line.
+        let gap = ctx.global_style().spacing.item_spacing.x;
+        let apart = if i18n::rtl() {
+            reset.left() - after.right()
+        } else {
+            after.left() - reset.right()
+        };
+        assert!(near(apart, gap), "{reset:?} beside {after:?}");
+        assert!(near(reset.center().y, after.center().y));
+        // The same in a new window, whose first frame has measured nothing.
+        let (first, reset) = switch_and_reset(&window(), true);
+        assert_eq!(
+            (first, reset.map(|r| r.min)),
+            (after, Some(reset_min(after, gap)))
+        );
+    }
+
+    /// Where the reset button's corner goes beside `control`.
+    fn reset_min(control: Rect, gap: f32) -> Pos2 {
+        let x = if i18n::rtl() {
+            control.right() + gap
+        } else {
+            control.left() - gap - RESET_BUTTON_SIZE
+        };
+        Pos2::new(x, control.center().y - RESET_BUTTON_SIZE / 2.0)
+    }
+
+    #[test]
+    fn a_reset_shows_beside_its_control_without_moving_it() {
+        check_reset_beside_its_control();
+    }
+
+    #[test]
+    fn a_reset_shows_beside_its_control_right_to_left() {
+        passes_in_arabic("a_reset_shows_beside_its_control_in_arabic");
+    }
+
+    #[test]
+    #[ignore = "run in a process of its own by a_reset_shows_beside_its_control_right_to_left"]
+    fn a_reset_shows_beside_its_control_in_arabic() {
+        if arabic_run() {
+            check_reset_beside_its_control();
+        }
+    }
+
+    /// Tab goes through a changed row as it reads: the details, the reset,
+    /// then the control.
+    #[test]
+    fn the_keyboard_reaches_a_reset_before_its_control() {
+        let ctx = window();
+        let mut on = true;
+        let tab = egui::RawInput {
+            events: vec![egui::Event::Key {
+                key: egui::Key::Tab,
+                physical_key: None,
+                pressed: true,
+                repeat: false,
+                modifiers: egui::Modifiers::NONE,
+            }],
+            ..Default::default()
+        };
+        let mut order = Vec::new();
+        for _ in 0..3 {
+            let output = frame(&ctx, tab.clone(), |ui| {
+                card(ui, |ui| {
+                    let _ = setting_row(ui, "Tray", "", "Details", true, true, |ui| {
+                        toggle(ui, &mut on);
+                    });
+                });
+            });
+            order.push(spoken(output).0.unwrap_or_default());
+        }
+        let reset = t!("settings-back-to-default");
+        assert_eq!(order, ["Details", reset.as_str(), "Tray"]);
     }
 }

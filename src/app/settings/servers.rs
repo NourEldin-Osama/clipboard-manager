@@ -612,8 +612,6 @@ impl App {
                     let running = t!("settings-found-running", server = server.kind.name());
                     title_lbl(ui, &running, size::BODY, v.strong_text_color());
                     far(ui, |ui| {
-                        // Where the settings' controls end, past the reset button's room.
-                        ui.add_space(RESET_BUTTON_SIZE + ui.spacing().item_spacing.x);
                         let host = crate::net::host(&server.base_url);
                         lbl(ui, host, size::SMALL, v.weak_text_color());
                     });
@@ -627,7 +625,6 @@ impl App {
                         lbl(ui, model, size::BODY, v.text_color());
                         chip(ui, t!("settings-found-search"), accent());
                         far(ui, |ui| {
-                            ui.add_space(RESET_BUTTON_SIZE + ui.spacing().item_spacing.x);
                             let text = t!("settings-found-use");
                             let r = if i == 0 {
                                 primary_button(ui, &text)
@@ -666,7 +663,6 @@ impl App {
                         ui.add_space(space::TINY);
                         lbl(ui, server.kind.name(), size::BODY, strong);
                         far(ui, |ui| {
-                            ui.add_space(RESET_BUTTON_SIZE + ui.spacing().item_spacing.x);
                             if ui
                                 .button(txt(&t!("settings-found-add"), size::CONTROL, None))
                                 .clicked()
@@ -725,8 +721,6 @@ impl App {
                             };
                             lbl(ui, &name, size::BODY, strong);
                             far(ui, |ui| {
-                                // On the settings' right edge: where a reset button goes.
-                                ui.add_space(RESET_BUTTON_SIZE + ui.spacing().item_spacing.x);
                                 if ui
                                     .button(txt(&t!("settings-server-edit"), size::CONTROL, None))
                                     .clicked()
