@@ -443,19 +443,15 @@ pub(super) fn paint_row(
 
     let x = rect.left() + ROW_PADDING + gutter + av + 12.0;
     let sub = if compact { String::new() } else { subtitle(it) };
-    // On one line the pin and the relevance bars sit before the time, so
-    // the text ends before them.
-    let badges = if compact || sub.is_empty() {
-        let pin = if show_pin { PIN_SIZE + 5.0 } else { 0.0 };
-        let bars = if relevance_level(hit).is_some() {
-            22.0
-        } else {
-            0.0
-        };
-        pin + bars
+    // The pin and the relevance bars sit before the time on the first
+    // line, so the title ends before them.
+    let pin = if show_pin { PIN_SIZE + 5.0 } else { 0.0 };
+    let bars = if relevance_level(hit).is_some() {
+        22.0
     } else {
         0.0
     };
+    let badges = pin + bars;
     // The time's column: as wide as a clock time, wider for a long weekday
     // or a date with its year.
     let time = row_time(it.created, dated);
@@ -470,8 +466,14 @@ pub(super) fn paint_row(
         .size()
         .x
         .max(TIME_COLUMN);
-    let right_w = if hot { 150.0 } else { time_w + 8.0 + badges };
+    let right_w = if hot { 150.0 } else { time_w + 8.0 };
     let text_w = (rect.right() - x - right_w - 8.0).max(40.0);
+    // While hovered, the buttons take the far end instead.
+    let title_w = if hot {
+        text_w
+    } else {
+        (text_w - badges).max(40.0)
+    };
     // The text column, mirrored with the rest; lines start at its reading edge.
     let column = m(Rect::from_min_size(
         Pos2::new(x, rect.top()),
@@ -495,7 +497,7 @@ pub(super) fn paint_row(
         terms,
         FontId::proportional(size::BODY),
         title_color,
-        text_w,
+        title_w,
     );
     // One line sits on the row's midline, beside the icon; two lines share it.
     let title_y = if sub.is_empty() {
@@ -526,7 +528,8 @@ pub(super) fn paint_row(
     if hot {
         return;
     }
-    // Far edge: time, then pinned star and relevance.
+    // Far edge, on the first line: the time, then the pin and the
+    // relevance bars before it.
     let one_line_row = compact || sub.is_empty();
     let time_y = if one_line_row {
         rect.center().y
@@ -552,16 +555,8 @@ pub(super) fn paint_row(
         FontId::proportional(size::SMALL),
         weak,
     );
-    let mut ix = rect.right() - ROW_PADDING;
-    // On one line the badges sit before the time instead of under it.
-    let iy = if one_line_row {
-        rect.center().y
-    } else {
-        rect.top() + 40.0
-    };
-    if one_line_row {
-        ix -= time_w;
-    }
+    let mut ix = rect.right() - ROW_PADDING - time_w;
+    let iy = time_y;
     if show_pin {
         icons::paint(
             &p,
@@ -1132,6 +1127,93 @@ mod tests {
                 Line::Row(3),
             ]
         );
+    }
+
+    /// Where the parts of a pinned row with a second line go: its title's
+    /// and its time's text, its relevance bars, and the row. A `compact`
+    /// row shows one line.
+    fn row_parts(compact: bool) -> (Rect, Rect, Vec<Rect>, Rect) {
+        let ctx = egui::Context::default();
+        add_fonts(&ctx);
+        // The fonts apply from the next frame.
+        ctx.run_ui(egui::RawInput::default(), |_| {})
+            .textures_delta
+            .clear();
+        let mut it = Item::new(
+            1,
+            Kind::Text,
+            Origin::Clipboard,
+            "Meeting moved to Thursday\nRoom 4B, at 10:30".into(),
+        );
+        it.pinned = true;
+        let hit = Hit {
+            id: 1,
+            closeness: Some(1.0),
+            weak: false,
+        };
+        let row_h = if compact { 40.0 } else { 58.0 };
+        let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+            let rect = Rect::from_min_size(Pos2::new(0.0, 100.0), Vec2::new(600.0, row_h));
+            let (thumb, program, numbered, number) = (None, None, false, None);
+            paint_row(
+                ui,
+                rect,
+                false,
+                &it,
+                &hit,
+                thumb,
+                program,
+                false,
+                compact,
+                &[],
+                numbered,
+                number,
+                false,
+                false,
+            );
+        });
+        output.textures_delta.clear();
+        let mut texts = Vec::new();
+        let mut bars = Vec::new();
+        for clipped in &output.shapes {
+            match &clipped.shape {
+                egui::Shape::Text(text) => {
+                    texts.push((text.galley.text().to_string(), text.visual_bounding_rect()));
+                }
+                egui::Shape::Rect(shape) if shape.rect.width() == 4.0 => bars.push(shape.rect),
+                _ => {}
+            }
+        }
+        let find = |words: &str| {
+            texts
+                .iter()
+                .find(|(text, _)| text.starts_with(words))
+                .map(|(_, at)| *at)
+                .expect(words)
+        };
+        let time = row_time(it.created, false);
+        let row = Rect::from_min_size(Pos2::new(0.0, 100.0), Vec2::new(600.0, row_h));
+        (find("Meeting"), find(&time), bars, row)
+    }
+
+    /// The pin and the relevance bars come before the time on a row's
+    /// first line, also when the row has a second line: in reading order,
+    /// bars, pin, time, after the title.
+    #[test]
+    fn a_rows_relevance_bars_sit_on_its_first_line() {
+        for compact in [false, true] {
+            let (title, time, bars, row) = row_parts(compact);
+            assert_eq!(bars.len(), 3, "three bars");
+            for bar in &bars {
+                // On the title's line, beside the time.
+                assert!(bar.bottom() <= title.bottom(), "{bar:?} {title:?}");
+                assert!(bar.bottom() >= time.top(), "{bar:?} {time:?}");
+                assert!(bar.top() >= row.top(), "{bar:?} {row:?}");
+                // After the title and before the time, with the pin between.
+                assert!(bar.left() > title.right(), "{bar:?} {title:?}");
+                assert!(bar.right() + PIN_SIZE <= time.left(), "{bar:?} {time:?}");
+            }
+        }
     }
 
     /// Closed or open, a screen reader hears the link as a button with the
