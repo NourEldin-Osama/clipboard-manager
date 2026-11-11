@@ -25,6 +25,13 @@ enum Action {
     DeleteGroup,
 }
 
+/// The entry that asks before never recording from the program `name`.
+/// The name keeps its own direction, so in Arabic "Notepad++" keeps its
+/// "++" after "Notepad".
+fn never_record_entry(name: &str) -> String {
+    t!("item-ignore-app", app = bidi::isolate(name))
+}
+
 /// One entry: its text, its keys and what it does.
 struct Entry {
     text: String,
@@ -103,7 +110,7 @@ impl App {
                 // The program's own name once it is known, else its file name.
                 let program = it.program.as_deref().and_then(|p| self.programs.get(p));
                 let name = crate::app::programs::shown_name(app, program);
-                let text = t!("item-ignore-app", app = name.as_str());
+                let text = never_record_entry(&name);
                 rule.push(entry(text, "", Action::IgnoreApp(app.to_string())));
             }
         }
@@ -305,6 +312,71 @@ impl App {
             Action::PinGroup => self.run(Command::PinGroup(self.group())),
             Action::TagGroup => self.group_tag = Some(String::new()),
             Action::DeleteGroup => self.run(Command::DeleteGroup(self.group())),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A menu entry with `text` as drawn: its text from the left, without
+    /// the invisible marks that set a part apart.
+    fn drawn_entry(text: &str) -> String {
+        let ctx = egui::Context::default();
+        add_fonts(&ctx);
+        // The fonts apply from the next frame.
+        ctx.run_ui(egui::RawInput::default(), |_| {})
+            .textures_delta
+            .clear();
+        let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+            menu_entry(ui, text, "", None, Some(Icon::EyeOff));
+        });
+        output.textures_delta.clear();
+        let marks = ['\u{2066}', '\u{2067}', '\u{2068}', '\u{2069}'];
+        output
+            .shapes
+            .iter()
+            .find_map(|clipped| match &clipped.shape {
+                egui::Shape::Text(shape) => Some(shape.galley.text().to_string()),
+                _ => None,
+            })
+            .expect("the entry's text")
+            .chars()
+            .filter(|c| !marks.contains(c))
+            .collect()
+    }
+
+    /// Never record from Notepad++ keeps "++" right after "Notepad", also
+    /// in an Arabic sentence, where without the marks it went to the
+    /// name's other end.
+    fn check_program_name_keeps_its_order() {
+        let shown = drawn_entry(&never_record_entry("Notepad++"));
+        assert!(shown.contains("Notepad++"), "{shown}");
+        if i18n::rtl() {
+            let bare = drawn_entry(&t!("item-ignore-app", app = "Notepad++"));
+            assert!(
+                bare.contains("++Notepad"),
+                "the test sees the fault: {bare}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_program_name_keeps_its_order() {
+        check_program_name_keeps_its_order();
+    }
+
+    #[test]
+    fn a_program_name_keeps_its_order_right_to_left() {
+        crate::i18n::passes_in_arabic(module_path!(), "a_program_name_keeps_its_order_in_arabic");
+    }
+
+    #[test]
+    #[ignore = "run in a process of its own by a_program_name_keeps_its_order_right_to_left"]
+    fn a_program_name_keeps_its_order_in_arabic() {
+        if crate::i18n::arabic_run() {
+            check_program_name_keeps_its_order();
         }
     }
 }

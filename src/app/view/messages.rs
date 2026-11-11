@@ -88,7 +88,7 @@ pub(super) fn ask_to_ignore(
     in_popup: bool,
     by_key: bool,
 ) {
-    toast.text = t!("toast-never-record-question", app = name);
+    toast.text = t!("toast-never-record-question", app = bidi::isolate(name));
     toast.how_long = Duration::MAX;
     let rule = Command::IgnoreApp(app.to_string(), name.to_string());
     toast.action = Some((t!("toast-never-record"), rule));

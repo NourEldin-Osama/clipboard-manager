@@ -1858,15 +1858,15 @@ impl App {
                 // Its program asked for it not to be kept: only its name.
                 (SkipReason::Private, _) => (
                     t!("toast-skipped-private"),
-                    from.map(|p| t!("toast-skipped-by", program = p)),
+                    from.map(|p| t!("toast-skipped-by", program = bidi::isolate(&p))),
                 ),
                 (SkipReason::Secret, Some(secret)) => (
                     secret_title(secret.kind),
-                    from.map(|p| t!("toast-skipped-from", program = p)),
+                    from.map(|p| t!("toast-skipped-from", program = bidi::isolate(&p))),
                 ),
                 (SkipReason::Secret, None) => (
                     secret_title(crate::privacy::SecretKind::Key),
-                    from.map(|p| t!("toast-skipped-from", program = p)),
+                    from.map(|p| t!("toast-skipped-from", program = bidi::isolate(&p))),
                 ),
             };
             let hint = found.map(|s| hint_text(&s.hint));
@@ -1888,7 +1888,7 @@ impl App {
             log::info!("copy not saved: a rule matched");
             let from = self.program_name(app.as_deref(), program.as_deref());
             let detail = from
-                .map(|p| t!("toast-skipped-from", program = p))
+                .map(|p| t!("toast-skipped-from", program = bidi::isolate(&p)))
                 .into_iter()
                 .collect();
             let kept = Capture {
@@ -1914,7 +1914,10 @@ impl App {
         let d = ignoring_app(&self.cfg, app);
         let ctx = self.win.ctx.clone();
         self.apply_settings(d, &ctx, false);
-        let toast = self.toast_with(t!("toast-app-ignored", app = name), Duration::from_secs(8));
+        let toast = self.toast_with(
+            t!("toast-app-ignored", app = bidi::isolate(name)),
+            Duration::from_secs(8),
+        );
         toast.action = Some((t!("toast-undo"), Command::RecordAppAgain(app.to_string())));
     }
 
@@ -1933,7 +1936,7 @@ impl App {
             return ways;
         }
         let paste = match self.paste_target_name(window) {
-            Some(name) => t!("item-paste-into", app = name.as_str()),
+            Some(name) => t!("item-paste-into", app = bidi::isolate(&name)),
             None => t!("item-paste"),
         };
         let mut ways = vec![way(paste, keys.paste, Paste::Yes)];

@@ -374,7 +374,10 @@ fn model_field(ui: &mut Ui, model: &mut String, listed: &[String], default: Opti
         });
     }
     let hint = match default {
-        Some(name) if !name.is_empty() => t!("settings-server-default-hint", model = name),
+        Some(name) if !name.is_empty() => t!(
+            "settings-server-default-hint",
+            model = super::bidi::isolate(name)
+        ),
         _ => t!("settings-server-default"),
     };
     let field = ui.add(
@@ -431,7 +434,10 @@ fn start_fill(model: &mut Model, name: &str, kind: ServerKind, ctx: &egui::Conte
                 if r.kind != known {
                     r.kind = known;
                     r.prompt = known.prompt().into();
-                    said.push(t!("settings-model-fill-kind", model = known.name()));
+                    said.push(t!(
+                        "settings-model-fill-kind",
+                        model = super::bidi::isolate(known.name())
+                    ));
                 }
             }
         }
@@ -466,13 +472,13 @@ fn finish_fill(model: &mut Model, found: Result<Option<catalog::Entry>, String>)
             said.push(if entry.limit.context > 0 {
                 t!(
                     "settings-model-fill-found",
-                    name = entry.name.as_str(),
+                    name = super::bidi::isolate(&entry.name),
                     tokens = thousands(entry.limit.context)
                 )
             } else {
                 t!(
                     "settings-model-fill-found-no-limit",
-                    name = entry.name.as_str()
+                    name = super::bidi::isolate(&entry.name)
                 )
             });
             match (&model.job, entry.takes_images()) {
@@ -501,12 +507,18 @@ fn send_question_row(
         let font = FontId::proportional(size::CONTROL);
         if let Some(url) = search {
             let host = crate::net::host(url);
-            let question = t!("settings-server-send-question", host = host);
+            let question = t!(
+                "settings-server-send-question",
+                host = super::bidi::isolate(host)
+            );
             super::bidi::paragraph(ui, &question, font.clone(), strong);
         }
         if let Some(url) = reader {
             let host = crate::net::host(url);
-            let question = t!("settings-reader-send-question", host = host);
+            let question = t!(
+                "settings-reader-send-question",
+                host = super::bidi::isolate(host)
+            );
             super::bidi::paragraph(ui, &question, font, strong);
         }
         row(ui, |ui| {
@@ -650,7 +662,10 @@ impl App {
             card_row(ui, false, |ui| {
                 row(ui, |ui| {
                     icons::logo(ui, server.kind, 20.0, v.strong_text_color());
-                    let running = t!("settings-found-running", server = server.kind.name());
+                    let running = t!(
+                        "settings-found-running",
+                        server = super::bidi::isolate(server.kind.name())
+                    );
                     title_lbl(ui, &running, size::BODY, v.strong_text_color());
                     far(ui, |ui| {
                         let host = crate::net::host(&server.base_url);
@@ -863,8 +878,8 @@ impl App {
             .map(|(server, m)| {
                 t!(
                     "settings-model-on-server",
-                    model = model_label(m),
-                    server = server.label()
+                    model = super::bidi::isolate(&model_label(m)),
+                    server = super::bidi::isolate(server.label())
                 )
             })
             .unwrap_or_else(|| t!("settings-model-choose"));
@@ -1211,9 +1226,12 @@ impl App {
                     .to_ascii_lowercase()
                     .starts_with("http://")
                 {
-                    t!("settings-server-remote-http", host = host)
+                    t!(
+                        "settings-server-remote-http",
+                        host = super::bidi::isolate(host)
+                    )
                 } else {
-                    t!("settings-server-remote", host = host)
+                    t!("settings-server-remote", host = super::bidi::isolate(host))
                 };
                 warning(ui, &text);
             }
@@ -1454,7 +1472,7 @@ impl App {
                 if editor.deleting {
                     let question = t!(
                         "settings-server-delete-question",
-                        name = editor.server.label()
+                        name = super::bidi::isolate(editor.server.label())
                     );
                     lbl(ui, &question, size::CONTROL, strong);
                     if ui

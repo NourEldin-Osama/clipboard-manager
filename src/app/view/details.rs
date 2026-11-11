@@ -760,7 +760,7 @@ impl App {
             // The program's own name once it is known, else its file name.
             let program = it.program.as_deref().and_then(|p| self.programs.get(p));
             let name = crate::app::programs::shown_name(app, program);
-            facts.push(t!("details-copied-from", app = name.as_str()));
+            facts.push(t!("details-copied-from", app = bidi::isolate(&name)));
         }
         facts.extend(parts);
         if it.origin == Origin::Imported {

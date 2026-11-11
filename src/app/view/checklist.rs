@@ -87,8 +87,10 @@ impl App {
                         };
                         match (&found, i == 3 && !*done) {
                             (Some((server, _)), true) => {
-                                let text =
-                                    t!("checklist-meaning-found", server = server.kind.name());
+                                let text = t!(
+                                    "checklist-meaning-found",
+                                    server = bidi::isolate(server.kind.name())
+                                );
                                 lbl(ui, &text, size::CONTROL, color);
                                 let link = txt(&t!("checklist-turn-on"), size::CONTROL, None);
                                 turn_on = ui.link(link).clicked();

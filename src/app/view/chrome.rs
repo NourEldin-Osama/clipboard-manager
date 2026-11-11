@@ -82,7 +82,11 @@ impl App {
         }
         match self.search_model_names() {
             Some((_, server, id)) if matches!(self.backend, BackendState::Ready { .. }) => {
-                t!("status-model-tip-named", model = id, server = server)
+                t!(
+                    "status-model-tip-named",
+                    model = bidi::isolate(&id),
+                    server = bidi::isolate(&server)
+                )
             }
             _ => t!("status-model-tip"),
         }

@@ -134,7 +134,10 @@ impl App {
                 (t!("settings-data-on-pc"), weak)
             } else {
                 let host = crate::net::host(url);
-                (t!("settings-data-sent", host = host), warn)
+                (
+                    t!("settings-data-sent", host = super::bidi::isolate(host)),
+                    warn,
+                )
             }
         };
         let history = if self.library.store().is_encrypted() {
