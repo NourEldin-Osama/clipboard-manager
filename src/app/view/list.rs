@@ -1,6 +1,7 @@
 //! The list view and the rows it paints.
 
 use super::*;
+use crate::app::programs::Program;
 
 /// Room between a row's edge and what it shows. With the list panel's
 /// margin, the content lines up 16 points from the window's edge, as the
@@ -281,8 +282,10 @@ pub(super) fn thumbs_to_drop(
 }
 
 /// `hot` while the pointer is over the row: its hover buttons then take the
-/// right edge, so the time and badges are left out. `numbered` rows leave
-/// room at the start for the numbers of quick paste, and show `number`.
+/// right edge, so the time and badges are left out. A row with two lines
+/// names the `program` the item came from on its second line. `numbered`
+/// rows leave room at the start for the numbers of quick paste, and show
+/// `number`.
 /// `dated` rows sit under a day header, which gives their day; rows
 /// `under_pinned` sit under the Pinned header, which says they are pinned.
 /// The rows share a time column `time_column` wide, and each keeps the
@@ -296,7 +299,7 @@ pub(super) fn paint_row(
     it: &Item,
     hit: &Hit,
     thumb: Option<TextureHandle>,
-    program_icon: Option<&TextureHandle>,
+    program: Option<&Program>,
     selected: bool,
     compact: bool,
     terms: &[String],
@@ -428,29 +431,14 @@ pub(super) fn paint_row(
         }
         None => symbol(kind_color(it.kind), item_icon(it)),
     }
-    // The program it came from as a small badge on the symbol's lower corner,
-    // ringed in the row's color, the plain program icon when it has none of
-    // its own; one line has no room for it.
-    if !compact {
-        let badge = m(Rect::from_center_size(
-            Pos2::new(
-                rect.left() + ROW_PADDING + gutter + av - 4.0,
-                rect.center().y + av / 2.0 - 4.0,
-            ),
-            Vec2::splat(PROGRAM_BADGE),
-        ));
-        let under = fill.map_or(v.panel_fill, |fill| v.panel_fill.blend(fill));
-        p.rect_filled(badge.expand(2.0), CornerRadius::same(radius::SMALL), under);
-        match program_icon {
-            Some(icon) => {
-                egui::Image::new((icon.id(), Vec2::splat(PROGRAM_BADGE))).paint_at(ui, badge);
-            }
-            None => icons::paint(&p, badge, Icon::AppGeneric, v.weak_text_color()),
-        }
-    }
-
     let x = rect.left() + ROW_PADDING + gutter + av + 12.0;
-    let sub = if compact { String::new() } else { subtitle(it) };
+    // Two lines name the program under the title, with a fact and the
+    // tags; one line has no room for them.
+    let second = if compact {
+        None
+    } else {
+        SecondLine::of(it, program)
+    };
     // The pin and the relevance bars sit before the time on the first
     // line, so the title ends before them. The bars keep the pin's slot
     // free when there is no pin, so they line up with the bars below.
@@ -484,7 +472,7 @@ pub(super) fn paint_row(
     let title = row_title(it);
     let title = if title.is_empty() {
         t!("item-empty")
-    } else if compact && it.kind == Kind::Image && sub.is_empty() {
+    } else if compact && it.kind == Kind::Image {
         // One line has no room for the size under the title: it follows it.
         format!("{title} · {}", subtitle(it))
     } else {
@@ -500,7 +488,7 @@ pub(super) fn paint_row(
         title_w,
     );
     // One line sits on the row's midline, beside the icon; two lines share it.
-    let title_y = if sub.is_empty() {
+    let title_y = if second.is_none() {
         rect.center().y - tg.size().y / 2.0
     } else {
         rect.top() + 10.0
@@ -513,16 +501,8 @@ pub(super) fn paint_row(
         }
     };
     p.galley(Pos2::new(line_x(tg.size().x), title_y), tg, title_color);
-    if !sub.is_empty() {
-        let sg = one_line(
-            ui,
-            &sub,
-            terms,
-            FontId::proportional(size::SMALL),
-            weak,
-            text_w,
-        );
-        p.galley(Pos2::new(line_x(sg.size().x), rect.top() + 32.0), sg, weak);
+    if let Some(second) = &second {
+        second.paint(ui, &p, column, rect.top() + 32.0, terms);
     }
 
     if hot {
@@ -530,7 +510,7 @@ pub(super) fn paint_row(
     }
     // Far edge, on the first line: the time, then the pin and the
     // relevance bars before it.
-    let one_line_row = compact || sub.is_empty();
+    let one_line_row = compact || second.is_none();
     let time_y = if one_line_row {
         rect.center().y
     } else {
@@ -596,8 +576,132 @@ fn time_column<'a>(ui: &Ui, rows: impl Iterator<Item = (&'a Item, bool)>) -> f32
         .fold(0.0, f32::max)
 }
 
-/// How big the program's icon is on a row's symbol.
-const PROGRAM_BADGE: f32 = 16.0;
+/// How big the program's icon is on a row's second line.
+const PROGRAM_ICON: f32 = 16.0;
+
+/// Room in a row's tag chip above and below its text, so the chip is about
+/// as tall as the line.
+const ROW_CHIP_PADDING: f32 = 1.0;
+
+/// How strong the gray tint behind a row's "+N tags" is: a little fainter
+/// than on a card, so the gray text keeps the dark theme's contrast on the
+/// list's panel, which can be lighter than a card.
+const ROW_REST_TINT: f32 = 0.12;
+
+/// The least room a fact gets on a row's second line, a few letters and
+/// "…"; with less it is left out.
+const LEAST_FACT: f32 = 24.0;
+
+/// A two-line row's second line: the program the item came from with its
+/// icon, one fact about the item, and its tags.
+struct SecondLine<'a> {
+    /// The program's name, and its own icon when it has one.
+    program: Option<(String, Option<&'a TextureHandle>)>,
+    fact: Option<String>,
+    tags: &'a [String],
+}
+
+impl<'a> SecondLine<'a> {
+    /// What the second line of `it`'s row shows, `program` being the
+    /// program it came from once that has been read. None when there is
+    /// nothing to show: the row then has one line.
+    fn of(it: &'a Item, program: Option<&'a Program>) -> Option<Self> {
+        let line = Self {
+            program: it.app.as_deref().map(|app| {
+                let icon = program.and_then(|p| p.icon.as_ref());
+                (crate::app::programs::shown_name(app, program), icon)
+            }),
+            fact: row_fact(it),
+            tags: &it.tags,
+        };
+        let shows = line.program.is_some() || line.fact.is_some() || !line.tags.is_empty();
+        shows.then_some(line)
+    }
+
+    /// Paints the line in the text `column` from `top`, in the row's small
+    /// gray. From the reading start: the program's icon, its plain icon
+    /// when it has none of its own, and its name; a dot and the fact, its
+    /// found words marked; then the tags as chips. Laid out left to right,
+    /// then mirrored with the row, the name and the fact each in their own
+    /// direction. Text that doesn't fit is cut with "…", and the tags keep
+    /// room for their first chip or "+N tags".
+    fn paint(&self, ui: &Ui, p: &egui::Painter, column: Rect, top: f32, terms: &[String]) {
+        let weak = ui.visuals().weak_text_color();
+        let font = FontId::proportional(size::SMALL);
+        let line_height = ui
+            .fonts_mut(|f| f.layout_no_wrap(String::new(), font.clone(), weak))
+            .size()
+            .y;
+        let middle = top + line_height / 2.0;
+        // A part `size` big at `x` from the column's start, on the line.
+        let place = |x: f32, size: Vec2| {
+            let at = Pos2::new(x, middle - size.y / 2.0);
+            flip(column, Rect::from_min_size(at, size))
+        };
+        let paint_text = |x: &mut f32, galley: Arc<egui::Galley>| {
+            let at = place(*x, galley.size()).min;
+            *x += galley.size().x;
+            p.galley(at, galley, weak);
+        };
+        let tags_room = if self.tags.is_empty() {
+            0.0
+        } else {
+            let least = space::SMALL + grid::tags_least_width(ui, self.tags);
+            least.min(column.width() / 2.0)
+        };
+        let text_end = column.right() - tags_room;
+        let mut x = column.left();
+        if let Some((name, icon)) = &self.program {
+            let at = place(x, Vec2::splat(PROGRAM_ICON));
+            match icon {
+                Some(icon) => egui::Image::new((icon.id(), at.size())).paint_at(ui, at),
+                None => icons::paint(p, at, Icon::AppGeneric, weak),
+            }
+            x += PROGRAM_ICON + space::TINY;
+            let room = (text_end - x).max(0.0);
+            paint_text(&mut x, one_line(ui, name, &[], font.clone(), weak, room));
+        }
+        if let Some(fact) = &self.fact {
+            let dot = self.program.is_some().then(|| {
+                ui.fonts_mut(|f| f.layout_no_wrap(details::FACTS_DOT.into(), font.clone(), weak))
+            });
+            let before = dot
+                .as_ref()
+                .map_or(0.0, |dot| dot.size().x + 2.0 * space::TINY);
+            let room = text_end - x - before;
+            if room >= LEAST_FACT {
+                if let Some(dot) = dot {
+                    x += space::TINY;
+                    paint_text(&mut x, dot);
+                    x += space::TINY;
+                }
+                paint_text(&mut x, one_line(ui, fact, terms, font.clone(), weak, room));
+            }
+        }
+        if !self.tags.is_empty() {
+            if x > column.left() {
+                x += space::SMALL;
+            }
+            // Opaque, so a tag reads the same on a selected row and under
+            // the pointer.
+            let panel = ui.visuals().panel_fill;
+            let chips = grid::tag_chips(ui, self.tags, column.right() - x, ROW_REST_TINT)
+                .into_iter()
+                .map(|(text, color, fill)| (text, color, panel.blend(fill)))
+                .collect();
+            // Never past the column, under the time or the hover buttons.
+            let within = (i18n::rtl(), column);
+            let start = Pos2::new(x, middle);
+            grid::paint_chips(
+                &p.with_clip_rect(column),
+                chips,
+                start,
+                ROW_CHIP_PADDING,
+                within,
+            );
+        }
+    }
+}
 
 /// How big the numbers of quick paste are, drawn as keys.
 const NUMBER_CAP: f32 = 20.0;
@@ -901,7 +1005,7 @@ impl App {
                                 egui::Role::ListBoxOption,
                                 true,
                                 lit,
-                                item_name(it),
+                                item_name(it, program),
                             )
                         });
                         let hot = !menu_open && ui.rect_contains_pointer(rect);
@@ -912,7 +1016,7 @@ impl App {
                             it,
                             hit,
                             thumb,
-                            program.and_then(|p| p.icon.as_ref()),
+                            program,
                             lit,
                             compact,
                             &terms,
@@ -1190,6 +1294,7 @@ mod tests {
     fn row_parts(compact: bool) -> (Rect, Rect, Vec<Rect>, Rect) {
         let ctx = egui::Context::default();
         add_fonts(&ctx);
+        icons::register(&ctx);
         // The fonts apply from the next frame.
         ctx.run_ui(egui::RawInput::default(), |_| {})
             .textures_delta
@@ -1201,6 +1306,8 @@ mod tests {
             "Meeting moved to Thursday\nRoom 4B, at 10:30".into(),
         );
         it.pinned = true;
+        // Its program on the second line.
+        it.app = Some("Teams.exe".into());
         let hit = Hit {
             id: 1,
             closeness: Some(1.0),
@@ -1538,6 +1645,310 @@ mod tests {
                 .filter_map(|(_, node)| node.label().map(str::to_string))
                 .collect();
             assert_eq!(buttons, [words]);
+        }
+    }
+
+    /// What one row painted: each text with where its laid-out lines go,
+    /// each picture or icon, and each plain filled rect.
+    struct Painted {
+        row: Rect,
+        /// The program's own icon, when it has one.
+        icon: Option<egui::TextureId>,
+        texts: Vec<(String, Rect)>,
+        /// The texts cut with "…".
+        cut: Vec<String>,
+        textures: Vec<(egui::TextureId, Rect)>,
+        fills: Vec<Rect>,
+    }
+
+    impl Painted {
+        fn text(&self, words: &str) -> Rect {
+            let found = self.texts.iter().find(|(text, _)| text.starts_with(words));
+            found
+                .unwrap_or_else(|| panic!("{words:?} in {:?}", self.texts))
+                .1
+        }
+    }
+
+    /// `it`'s row as the List view paints it, 600 points wide, with the
+    /// program it came from named `program`, with an icon of its own when
+    /// asked. `hot` while the pointer is over it.
+    fn painted_row(it: &Item, program: Option<(&str, bool)>, hot: bool) -> Painted {
+        let ctx = egui::Context::default();
+        add_fonts(&ctx);
+        icons::register(&ctx);
+        // The fonts apply from the next frame.
+        ctx.run_ui(egui::RawInput::default(), |_| {})
+            .textures_delta
+            .clear();
+        let red = egui::ColorImage::filled([16, 16], Color32::RED);
+        let icon = program
+            .filter(|(_, own_icon)| *own_icon)
+            .map(|_| ctx.load_texture("program", red, Default::default()));
+        let program = program.map(|(name, _)| Program {
+            name: name.into(),
+            icon: icon.clone(),
+        });
+        let hit = Hit {
+            id: it.id,
+            closeness: None,
+            weak: false,
+        };
+        let row = Rect::from_min_size(Pos2::new(0.0, 100.0), Vec2::new(600.0, 58.0));
+        let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+            let column = time_column(ui, std::iter::once((it, false)));
+            let (selected, compact, numbered, dated, under_pinned) =
+                (false, false, false, false, false);
+            paint_row(
+                ui,
+                row,
+                hot,
+                it,
+                &hit,
+                None,
+                program.as_ref(),
+                selected,
+                compact,
+                &[],
+                numbered,
+                None,
+                dated,
+                under_pinned,
+                column,
+            );
+        });
+        output.textures_delta.clear();
+        let mut painted = Painted {
+            row,
+            icon: icon.map(|icon| icon.id()),
+            texts: Vec::new(),
+            cut: Vec::new(),
+            textures: Vec::new(),
+            fills: Vec::new(),
+        };
+        for clipped in &output.shapes {
+            match &clipped.shape {
+                egui::Shape::Text(text) => {
+                    let at = text.galley.rect.translate(text.pos.to_vec2());
+                    let words = text.galley.text().to_string();
+                    // egui cuts left-to-right text itself; Arabic is cut
+                    // in its words, as `bidi::lines` does it.
+                    if text.galley.elided || words.contains('…') {
+                        painted.cut.push(words.clone());
+                    }
+                    painted.texts.push((words, at));
+                }
+                egui::Shape::Mesh(mesh) => {
+                    painted.textures.push((mesh.texture_id, mesh.calc_bounds()))
+                }
+                egui::Shape::Rect(shape) => match &shape.brush {
+                    Some(brush) => painted.textures.push((brush.fill_texture_id, shape.rect)),
+                    None => painted.fills.push(shape.rect),
+                },
+                _ => {}
+            }
+        }
+        painted
+    }
+
+    /// A row with two lines names its program on the second: the
+    /// program's icon at the text column's reading edge, under the title,
+    /// and its name 4 points after it, then a dot and one fact for some
+    /// kinds, then the tags as chips 8 points on; nothing on the kind's
+    /// tile. A row with nothing to say there keeps one line. From the left,
+    /// or in Arabic from the right.
+    fn check_second_line() {
+        let rtl = i18n::rtl();
+        // Where a rect starts and ends in reading order.
+        let along = |r: Rect| {
+            if rtl {
+                (-r.right(), -r.left())
+            } else {
+                (r.left(), r.right())
+            }
+        };
+        let near = |a: f32, b: f32| (a - b).abs() <= 0.5;
+        let from_teams = |kind: Kind, text: &str| {
+            let mut it = Item::new(1, kind, Origin::Clipboard, text.into());
+            it.app = Some("Teams.exe".into());
+            it
+        };
+        // The texts on the second line, in reading order.
+        let second_line = |painted: &Painted, title: Rect| {
+            let mut texts: Vec<&(String, Rect)> = painted
+                .texts
+                .iter()
+                .filter(|(_, at)| at.center().y > title.bottom())
+                .collect();
+            texts.sort_by(|a, b| along(a.1).0.total_cmp(&along(b.1).0));
+            texts
+                .into_iter()
+                .map(|(text, _)| text.clone())
+                .collect::<Vec<_>>()
+        };
+
+        let note = from_teams(Kind::Text, "Meeting moved to Thursday\nRoom 4B, at 10:30");
+        for own_icon in [true, false] {
+            let painted = painted_row(&note, Some(("Microsoft Teams", own_icon)), false);
+            let case = format!("rtl {rtl}, own icon {own_icon}");
+            let title = painted.text("Meeting");
+            // Its own icon, or the plain one of a program without its own,
+            // 16 points on the second line.
+            let icons: Vec<Rect> = painted
+                .textures
+                .iter()
+                .filter(|(id, at)| match painted.icon {
+                    Some(own) => *id == own,
+                    None => at.width() == PROGRAM_ICON,
+                })
+                .map(|(_, at)| *at)
+                .collect();
+            assert_eq!(icons.len(), 1, "{case}: {icons:?}");
+            let icon = icons[0];
+            assert_eq!(icon.size(), Vec2::splat(PROGRAM_ICON), "{case}");
+            assert!(icon.top() > title.center().y, "{case}: {icon:?} {title:?}");
+            assert!(
+                near(along(icon).0, along(title).0),
+                "{case}: {icon:?} {title:?}"
+            );
+            let name = painted.text("Microsoft Teams");
+            assert!(near(along(name).0, along(icon).1 + 4.0), "{case}: {name:?}");
+            assert!((name.center().y - icon.center().y).abs() <= 1.0, "{case}");
+            // A plain text gives no fact: the name alone.
+            assert_eq!(second_line(&painted, title), ["Microsoft Teams"], "{case}");
+            // The kind's tile holds its symbol and nothing else.
+            let tile = painted
+                .fills
+                .iter()
+                .copied()
+                .find(|at| at.size() == Vec2::splat(38.0))
+                .expect("the kind's tile");
+            let on_tile = |at: &Rect| at.intersects(tile);
+            assert_eq!(
+                painted.fills.iter().filter(|at| on_tile(at)).count(),
+                1,
+                "{case}"
+            );
+            let symbols: Vec<&(egui::TextureId, Rect)> = painted
+                .textures
+                .iter()
+                .filter(|(_, at)| on_tile(at))
+                .collect();
+            assert_eq!(symbols.len(), 1, "{case}: {symbols:?}");
+            assert!(tile.contains_rect(symbols[0].1), "{case}");
+        }
+
+        // A link's title is its address: the program alone.
+        let link = from_teams(Kind::Link, "https://rust-lang.org/learn");
+        let painted = painted_row(&link, Some(("Google Chrome", true)), false);
+        let title = painted.text("rust-lang.org");
+        assert_eq!(second_line(&painted, title), ["Google Chrome"], "rtl {rtl}");
+
+        // A picture: the program, a dot and its size.
+        let mut picture = from_teams(Kind::Image, "");
+        (picture.width, picture.height) = (480, 320);
+        let painted = painted_row(&picture, Some(("Snipping Tool", true)), false);
+        let title = painted.text(&row_title(&picture));
+        assert_eq!(
+            second_line(&painted, title),
+            ["Snipping Tool", "·", "480 × 320"],
+            "rtl {rtl}"
+        );
+
+        // Tags as chips, 8 points after the text before them.
+        let mut tagged = from_teams(Kind::Text, "Invoice 4821: 3 boxes of paper");
+        tagged.tags = vec!["work".into()];
+        let painted = painted_row(&tagged, Some(("Microsoft Outlook", true)), false);
+        let name = painted.text("Microsoft Outlook");
+        let words = painted.text("# work");
+        let chip = painted
+            .fills
+            .iter()
+            .copied()
+            .find(|at| at.contains_rect(words))
+            .expect("the tag's chip");
+        assert!(
+            near(along(chip).0, along(name).1 + 8.0),
+            "rtl {rtl}: {chip:?} {name:?}"
+        );
+        assert!(
+            (chip.center().y - name.center().y).abs() <= 1.0,
+            "rtl {rtl}"
+        );
+
+        // No program and nothing else to say: one line, in the middle.
+        let plain = Item::new(
+            1,
+            Kind::Text,
+            Origin::Clipboard,
+            "Lunch at noon\nAt the usual place".into(),
+        );
+        let painted = painted_row(&plain, None, false);
+        let title = painted.text("Lunch at noon");
+        assert!(
+            near(title.center().y, painted.row.center().y),
+            "rtl {rtl}: {title:?}"
+        );
+        assert_eq!(
+            second_line(&painted, title),
+            Vec::<String>::new(),
+            "rtl {rtl}"
+        );
+
+        // A long name, fact and tags are cut before the time, or under the
+        // pointer before the hover buttons.
+        let mut long = from_teams(
+            Kind::Text,
+            "C:/Users/Public/Documents/Quarterly reports/2026/Second quarter/summary.pdf",
+        );
+        long.tags = vec!["finance".into(), "quarterly".into(), "to read".into()];
+        let program =
+            "Inventory and Order Tracker Desktop for Small and Medium Businesses Worldwide";
+        let time = row_time(long.created, false);
+        for hot in [false, true] {
+            let painted = painted_row(&long, Some((program, true)), hot);
+            let title = painted.text("summary.pdf");
+            let far_end = if hot {
+                // The hover buttons' room.
+                along(painted.row).1 - 150.0
+            } else {
+                along(painted.text(&time)).0
+            };
+            let parts = painted
+                .texts
+                .iter()
+                .map(|(_, at)| *at)
+                .chain(painted.fills.iter().copied())
+                .chain(painted.textures.iter().map(|(_, at)| *at))
+                .filter(|at| at.top() > title.bottom() - 2.0);
+            for part in parts {
+                assert!(
+                    along(part).1 <= far_end + 0.5,
+                    "rtl {rtl}, hot {hot}: {part:?}"
+                );
+            }
+            assert_eq!(painted.cut, [program], "rtl {rtl}, hot {hot}");
+        }
+    }
+
+    #[test]
+    fn a_rows_second_line_names_its_program() {
+        check_second_line();
+    }
+
+    #[test]
+    fn a_rows_second_line_names_its_program_right_to_left() {
+        crate::i18n::passes_in_arabic(
+            module_path!(),
+            "a_rows_second_line_names_its_program_in_arabic",
+        );
+    }
+
+    #[test]
+    #[ignore = "run in a process of its own by a_rows_second_line_names_its_program_right_to_left"]
+    fn a_rows_second_line_names_its_program_in_arabic() {
+        if crate::i18n::arabic_run() {
+            check_second_line();
         }
     }
 

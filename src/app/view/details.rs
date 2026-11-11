@@ -136,8 +136,8 @@ fn content_over_foot<T>(
     }
 }
 
-/// Between two facts of the details.
-const FACTS_DOT: &str = "·";
+/// Between two facts of the details, and on a list row's second line.
+pub(super) const FACTS_DOT: &str = "·";
 
 /// Facts one after another in reading order, a dot between each two. Each
 /// fact is a label of its own, in its own direction, so in Arabic a name

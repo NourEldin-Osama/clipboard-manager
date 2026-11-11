@@ -1,6 +1,7 @@
 //! How an item is described: titles, subtitles and highlighted search terms.
 
 use super::*;
+use crate::app::programs::Program;
 
 pub(crate) fn looks_like_code(s: &str) -> bool {
     let sample: String = s.chars().take(2000).collect();
@@ -232,36 +233,13 @@ pub(super) fn subtitle(it: &Item) -> String {
 pub(super) fn subtitle_detail(it: &Item) -> String {
     match it.kind {
         Kind::Link => domain(&it.text).to_string(),
-        // The title is the read text, the file name or "Image": the size
-        // is what the second line adds, without repeating the text.
-        Kind::Image => format!("{} × {}", it.width, it.height),
-        Kind::Files => {
-            let n = it.text.lines().count();
-            if n == 1 {
-                std::path::Path::new(it.text.trim())
-                    .parent()
-                    .map(|p| p.display().to_string())
-                    .unwrap_or_default()
-            } else {
-                t!("item-files-count", count = n)
-            }
-        }
         Kind::Text => {
             if let Some(color) = color_in(&it.text) {
                 let value = bidi::isolate(&color_other_way(&it.text, color));
                 return t!("item-color", value = value);
             }
-            if let Some(path) = path_in(&it.text) {
-                return path
-                    .parent()
-                    .map(|p| p.display().to_string())
-                    .unwrap_or_default();
-            }
-            if let Some(src) = &it.source {
-                return src
-                    .file_name()
-                    .map(|f| f.to_string_lossy().into_owned())
-                    .unwrap_or_default();
+            if path_in(&it.text).is_some() || it.source.is_some() {
+                return row_fact(it).unwrap_or_default();
             }
             let mut lines = it.text.lines().map(str::trim).filter(|l| !l.is_empty());
             lines.next();
@@ -270,12 +248,46 @@ pub(super) fn subtitle_detail(it: &Item) -> String {
                 .map(|l| l.chars().take(140).collect())
                 .unwrap_or_default()
         }
+        Kind::Image | Kind::Files => row_fact(it).unwrap_or_default(),
+    }
+}
+
+/// The one fact a list row's second line gives after the program: a
+/// picture's size, a color written the other usual way, the folder of a
+/// file or a path, how many files, or the file a text came from. None for
+/// a link, whose title is its address, and for plain text.
+pub(super) fn row_fact(it: &Item) -> Option<String> {
+    let folder = |path: &std::path::Path| {
+        path.parent()
+            .map(|p| p.display().to_string())
+            .filter(|p| !p.is_empty())
+    };
+    match it.kind {
+        Kind::Link => None,
+        // The title is the read text, the file name or "Image": the size
+        // is what the second line adds, without repeating the text.
+        Kind::Image => Some(format!("{} × {}", it.width, it.height)),
+        Kind::Files => match it.text.lines().count() {
+            1 => folder(std::path::Path::new(it.text.trim())),
+            n => Some(t!("item-files-count", count = n)),
+        },
+        Kind::Text => {
+            if let Some(color) = color_in(&it.text) {
+                return Some(color_other_way(&it.text, color));
+            }
+            if let Some(path) = path_in(&it.text) {
+                return folder(path);
+            }
+            let source = it.source.as_deref()?.file_name()?;
+            Some(source.to_string_lossy().into_owned())
+        }
     }
 }
 
 /// What a screen reader says for an item's row or card: its kind, title,
-/// details, whether it is pinned, and when it was copied.
-pub(super) fn item_name(it: &Item) -> String {
+/// the program it came from, details, whether it is pinned, and when it
+/// was copied.
+pub(super) fn item_name(it: &Item, program: Option<&Program>) -> String {
     let title = row_title(it);
     // An image with no read text and no file name has the plain title
     // "Image", which its kind already says.
@@ -285,6 +297,9 @@ pub(super) fn item_name(it: &Item) -> String {
         format!("{}: {}", it.kind.label(), title)
     };
     let mut parts = vec![first];
+    if let Some(app) = &it.app {
+        parts.push(crate::app::programs::shown_name(app, program));
+    }
     let detail = subtitle_detail(it);
     if !detail.trim().is_empty() {
         parts.push(detail);
@@ -369,14 +384,62 @@ mod tests {
         it.width = 420;
         it.height = 90;
         let size = format!("{} × {}", it.width, it.height);
-        let name = item_name(&it);
+        let name = item_name(&it, None);
         assert_eq!(name.matches("420").count(), 1, "{name}");
         it.ocr = Some("Frame test 007".into());
-        let name = item_name(&it);
+        let name = item_name(&it, None);
         assert!(
             name.contains("Frame test 007") && name.contains(&size),
             "{name}"
         );
         assert_eq!(name.matches("Frame test 007").count(), 1, "{name}");
+    }
+
+    /// A screen reader hears the program an item came from right after
+    /// its title: its own name once it has been read, else its file name
+    /// tidied.
+    #[test]
+    fn a_rows_name_says_its_program_after_its_title() {
+        let mut it = Item::new(1, Kind::Text, Origin::Clipboard, "Lunch at noon".into());
+        it.app = Some("Teams.exe".into());
+        let name = item_name(&it, None);
+        let (title, program) = (name.find("Lunch at noon"), name.find("Microsoft Teams"));
+        assert!(title.is_some() && program > title, "{name}");
+        let read = Program {
+            name: "Teams (work or school)".into(),
+            icon: None,
+        };
+        let name = item_name(&it, Some(&read));
+        let (title, program) = (name.find("Lunch at noon"), name.find("Teams (work"));
+        assert!(title.is_some() && program > title, "{name}");
+        // Without a program, nothing in its place.
+        it.app = None;
+        assert!(!item_name(&it, None).contains("Teams"));
+    }
+
+    /// The fact a row's second line gives, kind by kind.
+    #[test]
+    fn a_row_gives_one_fact_for_its_kind() {
+        let item = |kind: Kind, text: &str| Item::new(1, kind, Origin::Clipboard, text.into());
+        let mut picture = item(Kind::Image, "");
+        (picture.width, picture.height) = (480, 320);
+        assert_eq!(row_fact(&picture).as_deref(), Some("480 × 320"));
+        let color = item(Kind::Text, "#5865F2");
+        assert_eq!(row_fact(&color).as_deref(), Some("rgb(88, 101, 242)"));
+        // Paths with forward slashes, which every system takes apart.
+        let one = item(Kind::Files, "C:/Reports/May.pdf");
+        assert_eq!(row_fact(&one).as_deref(), Some("C:/Reports"));
+        let several = item(Kind::Files, "C:/Reports/May.pdf\nC:/Reports/June.pdf");
+        assert_eq!(row_fact(&several), Some(t!("item-files-count", count = 2)));
+        let path = item(Kind::Text, "C:/Users/Public/report.pdf");
+        assert_eq!(row_fact(&path).as_deref(), Some("C:/Users/Public"));
+        let mut from_file = item(Kind::Text, "Total due on the 15th");
+        from_file.source = Some("C:/Notes/invoice.txt".into());
+        assert_eq!(row_fact(&from_file).as_deref(), Some("invoice.txt"));
+        // A link's title is its address; plain text shows no line of its
+        // own there.
+        let link = item(Kind::Link, "https://rust-lang.org/learn");
+        assert_eq!(row_fact(&link), None);
+        assert_eq!(row_fact(&item(Kind::Text, "Lunch\nat noon")), None);
     }
 }

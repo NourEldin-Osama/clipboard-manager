@@ -550,74 +550,128 @@ fn paint_footer(
 
 /// The tags row: as many tags as fit, then "+N tags".
 fn paint_tags(ui: &Ui, rect: Rect, it: &Item, pad: f32, tags_top: f32, strip_top: f32) {
-    let v = ui.visuals();
-    let weak = v.weak_text_color();
     let row = Rect::from_min_max(
         Pos2::new(rect.left() + pad, tags_top),
         Pos2::new(rect.right() - pad, strip_top - 2.0),
     );
-    let tp = ui.painter_at(row);
-    let pill = |text: &str, c: Color32| {
-        ui.fonts_mut(|f| f.layout_job(bidi::job(text, FontId::proportional(size::SMALL), c)))
-    };
-    let galleys: Vec<_> = it
-        .tags
-        .iter()
-        .map(|t| {
-            let c = tag_color(t);
-            (pill(&format!("# {t}"), tag_shade(c, v.dark_mode)), c)
-        })
-        .collect();
-    // As many tags as fit on the row; the rest become "+N tags".
-    let gap = 6.0;
-    let widths: Vec<f32> = galleys.iter().map(|(g, _)| g.size().x + 14.0).collect();
-    let more_w = |n: usize| pill(&t!("tags-more", count = n), weak).size().x + 14.0;
-    let mut shown = galleys.len();
-    while shown > 0 {
-        let used: f32 = widths[..shown].iter().sum::<f32>() + gap * shown.saturating_sub(1) as f32;
-        let extra = if shown < galleys.len() {
-            gap + more_w(galleys.len() - shown)
-        } else {
-            0.0
-        };
-        if used + extra <= row.width() {
-            break;
-        }
-        shown -= 1;
-    }
+    let chips = tag_chips(ui, &it.tags, row.width(), CARD_REST_TINT);
     // The row starts on the side its first tag is written from.
     let rtl = it
         .tags
         .first()
         .is_some_and(|t| bidi::starts_rtl(t, i18n::rtl()));
-    let mut x = row.left();
-    let mut place = |g: Arc<egui::Galley>, c: Color32, fill: Color32| {
-        let r = flip_if(
-            rtl,
-            rect,
-            Rect::from_min_size(
-                Pos2::new(x, row.center().y - (g.size().y + 6.0) / 2.0),
-                g.size() + Vec2::new(14.0, 6.0),
-            ),
-        );
-        tp.rect_filled(r, CornerRadius::same(radius::MEDIUM), fill);
-        x += r.width() + gap;
-        tp.galley(r.min + Vec2::new(7.0, 3.0), g, c);
+    let at = Pos2::new(row.left(), row.center().y);
+    paint_chips(
+        &ui.painter_at(row),
+        chips,
+        at,
+        CARD_CHIP_PADDING,
+        (rtl, rect),
+    );
+}
+
+/// Room in a tag's chip beside its text.
+const CHIP_SIDE: f32 = 7.0;
+
+/// Between two tags' chips.
+const CHIP_GAP: f32 = 6.0;
+
+/// Room in a card's tag chip above and below its text.
+const CARD_CHIP_PADDING: f32 = 3.0;
+
+/// How strong the gray tint behind a card's "+N tags" is.
+const CARD_REST_TINT: f32 = 0.15;
+
+/// A tag's chip: its text laid out, the text's color and the chip's fill.
+pub(super) type Chip = (Arc<egui::Galley>, Color32, Color32);
+
+/// The chips of `tags`: each "# tag" in the tag's text shade on a tint of
+/// its color, as many as fit in `room`, then "+N tags" for the rest, in
+/// gray on a gray tint `rest_tint` strong.
+pub(super) fn tag_chips(ui: &Ui, tags: &[String], room: f32, rest_tint: f32) -> Vec<Chip> {
+    let v = ui.visuals();
+    let weak = v.weak_text_color();
+    let text = |text: &str, c: Color32| {
+        ui.fonts_mut(|f| f.layout_job(bidi::job(text, FontId::proportional(size::SMALL), c)))
     };
-    for (g, c) in galleys.iter().take(shown) {
-        place(
-            g.clone(),
-            *c,
-            c.gamma_multiply(if v.dark_mode { 0.3 } else { 0.13 }),
-        );
-    }
-    if shown < galleys.len() {
-        let rest = galleys.len() - shown;
-        place(
-            pill(&t!("tags-more", count = rest), weak),
+    let mut chips: Vec<Chip> = tags
+        .iter()
+        .map(|t| {
+            let c = tag_color(t);
+            let shade = tag_shade(c, v.dark_mode);
+            let fill = c.gamma_multiply(if v.dark_mode { 0.3 } else { 0.13 });
+            (text(&format!("# {t}"), shade), shade, fill)
+        })
+        .collect();
+    let more = |n: usize| -> Chip {
+        (
+            text(&t!("tags-more", count = n), weak),
             weak,
-            weak.gamma_multiply(0.15),
+            weak.gamma_multiply(rest_tint),
+        )
+    };
+    let all = chips.len();
+    let mut shown = all;
+    while shown > 0 {
+        let rest = (shown < all).then(|| more(all - shown));
+        if chips_width(chips[..shown].iter().chain(&rest)) <= room {
+            break;
+        }
+        shown -= 1;
+    }
+    chips.truncate(shown);
+    if shown < all {
+        chips.push(more(all - shown));
+    }
+    chips
+}
+
+/// How wide `chips` are side by side.
+pub(super) fn chips_width<'a>(chips: impl IntoIterator<Item = &'a Chip>) -> f32 {
+    let (mut width, mut count) = (0.0, 0);
+    for (text, _, _) in chips {
+        width += text.size().x + 2.0 * CHIP_SIDE;
+        count += 1;
+    }
+    width + CHIP_GAP * (count as f32 - 1.0).max(0.0)
+}
+
+/// The least room `tags` need as chips: all of them, or, when that is
+/// wider, the first one and "+N tags" for the others.
+pub(super) fn tags_least_width(ui: &Ui, tags: &[String]) -> f32 {
+    let width =
+        |tags: &[String], room: f32| chips_width(&tag_chips(ui, tags, room, CARD_REST_TINT));
+    let Some(first) = tags.get(..1) else {
+        return 0.0;
+    };
+    let mut first_and_rest = width(first, f32::INFINITY);
+    if tags.len() > 1 {
+        first_and_rest += CHIP_GAP + width(&tags[1..], 0.0);
+    }
+    width(tags, f32::INFINITY).min(first_and_rest)
+}
+
+/// Paints `chips` side by side from `start`, their middle on its height,
+/// each as tall as its text with `padding` above and below. Placed left to
+/// right, then mirrored in `within` when `rtl`.
+pub(super) fn paint_chips(
+    p: &egui::Painter,
+    chips: Vec<Chip>,
+    start: Pos2,
+    padding: f32,
+    (rtl, within): (bool, Rect),
+) {
+    let mut x = start.x;
+    for (text, color, fill) in chips {
+        let size = text.size() + Vec2::new(2.0 * CHIP_SIDE, 2.0 * padding);
+        let chip = flip_if(
+            rtl,
+            within,
+            Rect::from_min_size(Pos2::new(x, start.y - size.y / 2.0), size),
         );
+        p.rect_filled(chip, CornerRadius::same(radius::MEDIUM), fill);
+        p.galley(chip.min + Vec2::new(CHIP_SIDE, padding), text, color);
+        x += size.x + CHIP_GAP;
     }
 }
 
@@ -891,11 +945,12 @@ impl App {
                 let chosen = Some(it.id) == selected;
                 // Selected alone or together with others.
                 let lit = chosen || marked.contains(&it.id);
+                let program = it.program.as_deref().and_then(|p| programs.get(p));
                 resp.widget_info(|| {
-                    egui::WidgetInfo::selected(egui::Role::ListBoxOption, true, lit, item_name(it))
+                    let name = item_name(it, program);
+                    egui::WidgetInfo::selected(egui::Role::ListBoxOption, true, lit, name)
                 });
                 let hot = !menu_open && ui.rect_contains_pointer(rect);
-                let program = it.program.as_deref().and_then(|p| programs.get(p));
                 let relevance = relevance_level(hit);
                 paint_card(ui, rect, hot, it, thumb, program, relevance, lit, &terms);
                 if resp.clicked() {

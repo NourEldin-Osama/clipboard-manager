@@ -793,6 +793,9 @@ mod tests {
                         ),
                     ),
                     ("gray chip", over(weak.gamma_multiply(0.14), content)),
+                    // "+N tags" on a list row: opaque, the same on a
+                    // selected row and under the pointer.
+                    ("more tags on a row", over(weak.gamma_multiply(0.12), panel)),
                     ("settings note", over(note_fill(dark), content)),
                     ("settings warning", over(warning_fill(dark), content)),
                     ("status bar while paused", paused_bar(panel, dark)),
@@ -909,6 +912,9 @@ mod tests {
                     let place = format!("tag on a card selected in {a:?}");
                     grounds.push((place, over(c.gamma_multiply(tint), card)));
                 }
+                // A list row's tag: opaque, the same on a selected row and
+                // under the pointer.
+                grounds.push(("tag on a row".into(), over(c.gamma_multiply(tint), panel)));
                 for (place, background) in grounds {
                     cases.push((format!("{c:?} on {place}"), text, background));
                 }
