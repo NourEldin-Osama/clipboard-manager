@@ -323,6 +323,15 @@ pub(crate) fn pill_job(
     job
 }
 
+/// One line of text laid out in display order, as `paint_text` draws it.
+pub(super) fn line_galley(ui: &Ui, text: &str, font: FontId, color: Color32) -> Arc<egui::Galley> {
+    if bidi::has_rtl(text) {
+        ui.fonts_mut(|f| f.layout_job(bidi::job(text, font, color)))
+    } else {
+        ui.fonts_mut(|f| f.layout_no_wrap(text.to_string(), font, color))
+    }
+}
+
 /// Paints one line of text anchored at `pos`, in display order. Returns its rect.
 pub(crate) fn paint_text(
     ui: &Ui,
@@ -333,11 +342,7 @@ pub(crate) fn paint_text(
     font: FontId,
     color: Color32,
 ) -> Rect {
-    let g = if bidi::has_rtl(text) {
-        ui.fonts_mut(|f| f.layout_job(bidi::job(text, font, color)))
-    } else {
-        ui.fonts_mut(|f| f.layout_no_wrap(text.to_string(), font, color))
-    };
+    let g = line_galley(ui, text, font, color);
     let rect = anchor.anchor_size(pos, g.size());
     p.galley(rect.min, g, color);
     rect

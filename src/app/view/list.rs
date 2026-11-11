@@ -589,7 +589,7 @@ pub(super) fn paint_row(
         icons::paint(
             &p,
             m(Rect::from_center_size(
-                Pos2::new(ix - PIN_SIZE / 2.0, iy),
+                Pos2::new(ix - PIN_GAP - PIN_SIZE / 2.0, iy),
                 Vec2::splat(PIN_SIZE),
             )),
             Icon::PinFilled,
@@ -619,15 +619,21 @@ pub(super) fn small_picture_tint(ui: &Ui, id: egui::Id, lit: bool) -> Color32 {
 /// read as a pin.
 pub(super) const PIN_SIZE: f32 = 15.0;
 
-/// The pin's place before a row's time, with its gap.
-const PIN_SLOT: f32 = PIN_SIZE + 5.0;
+/// Between a row's pin and its time column, so the pin keeps clear of the
+/// widest time.
+const PIN_GAP: f32 = space::TINY;
 
-/// How wide a row's time is drawn.
+/// The pin's place before a row's time, with its gaps: from the time, and
+/// from the relevance bars before it.
+const PIN_SLOT: f32 = PIN_GAP + PIN_SIZE + 5.0;
+
+/// How wide a row's time is drawn: its line, laid out as `paint_text` lays
+/// it out, and any letter that reaches past the line's ends, as an Arabic
+/// letter can at its reading start.
 fn time_width(ui: &Ui, time: &str) -> f32 {
     let color = ui.visuals().weak_text_color();
-    ui.fonts_mut(|f| f.layout_no_wrap(time.to_string(), FontId::proportional(size::SMALL), color))
-        .size()
-        .x
+    let line = line_galley(ui, time, FontId::proportional(size::SMALL), color);
+    line.rect.union(line.mesh_bounds).width()
 }
 
 /// The time column rows share: as wide as the widest of their times, each
@@ -2372,6 +2378,113 @@ mod tests {
     fn rows_keep_clear_of_the_scroll_handle_in_arabic() {
         if crate::i18n::arabic_run() {
             check_rows_clear_of_the_handle();
+        }
+    }
+
+    /// A pinned row's pin keeps at least 4 points of room before its time,
+    /// also when that time is the widest on screen, as in the popup (one
+    /// line) and the list (two lines), for times in words: "Yesterday" and
+    /// a weekday. Its gap from the time is then the same in every language.
+    /// Measured at the screen's usual scales, from the pin's rect to the
+    /// time as painted: its laid-out line and the letters drawn.
+    fn check_pin_gap() {
+        let rtl = i18n::rtl();
+        for scale in [1.0, 1.25, 1.5] {
+            let ctx = egui::Context::default();
+            ctx.set_pixels_per_point(scale);
+            add_fonts(&ctx);
+            icons::register(&ctx);
+            // The fonts apply from the next frame.
+            ctx.run_ui(egui::RawInput::default(), |_| {})
+                .textures_delta
+                .clear();
+            for days_ago in [1, 3] {
+                let mut it = Item::new(1, Kind::Text, Origin::Clipboard, "Lunch at noon".into());
+                it.created -= days_ago * 86_400;
+                it.pinned = true;
+                it.app = Some("Teams.exe".into());
+                let time = row_time(it.created, false);
+                let shown = match bidi::has_rtl(&time) {
+                    true => bidi::job(&time, FontId::proportional(size::SMALL), Color32::GRAY).text,
+                    false => time.clone(),
+                };
+                for compact in [true, false] {
+                    let case = format!("rtl {rtl}, scale {scale}, {time:?}, compact {compact}");
+                    let row_h = if compact { 40.0 } else { 58.0 };
+                    let hit = Hit {
+                        id: 1,
+                        closeness: None,
+                        weak: false,
+                    };
+                    let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+                        let rect =
+                            Rect::from_min_size(Pos2::new(0.0, 100.0), Vec2::new(420.0, row_h));
+                        // Its time is the widest on screen.
+                        let column = time_column(ui, std::iter::once((&it, false)));
+                        paint_row(
+                            ui,
+                            rect,
+                            false,
+                            &it,
+                            &hit,
+                            None,
+                            None,
+                            false,
+                            compact,
+                            &[],
+                            compact,
+                            compact.then_some(1),
+                            false,
+                            false,
+                            column,
+                        );
+                    });
+                    output.textures_delta.clear();
+                    let (mut pin, mut painted) = (None, None);
+                    for clipped in &output.shapes {
+                        match &clipped.shape {
+                            egui::Shape::Mesh(mesh)
+                                if (mesh.calc_bounds().width() - PIN_SIZE).abs() < 0.01 =>
+                            {
+                                pin = Some(mesh.calc_bounds());
+                            }
+                            egui::Shape::Text(text) if text.galley.text() == shown => {
+                                let laid_out = text.galley.rect.translate(text.pos.to_vec2());
+                                painted = Some(laid_out.union(text.visual_bounding_rect()));
+                            }
+                            _ => {}
+                        }
+                    }
+                    let (pin, painted) = (pin.expect(&case), painted.expect(&case));
+                    let gap = if rtl {
+                        pin.left() - painted.right()
+                    } else {
+                        painted.left() - pin.right()
+                    };
+                    assert!(gap >= 4.0 - 0.01, "{case}: {gap}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn a_pin_keeps_its_gap_before_the_time() {
+        check_pin_gap();
+    }
+
+    #[test]
+    fn a_pin_keeps_its_gap_before_the_time_right_to_left() {
+        crate::i18n::passes_in_arabic(
+            module_path!(),
+            "a_pin_keeps_its_gap_before_the_time_in_arabic",
+        );
+    }
+
+    #[test]
+    #[ignore = "run in a process of its own by a_pin_keeps_its_gap_before_the_time_right_to_left"]
+    fn a_pin_keeps_its_gap_before_the_time_in_arabic() {
+        if crate::i18n::arabic_run() {
+            check_pin_gap();
         }
     }
 
