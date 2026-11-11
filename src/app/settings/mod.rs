@@ -8,9 +8,10 @@ use super::icons::{self, Icon};
 use super::shortcut;
 use super::view::{
     accent, accent_name, button_fill, card_frame, chip, choice_track, chosen_face, cut_line,
-    divider, far, flip, lbl, line_color, paint_progress, paint_text, pill_job, primary_button,
-    radius, reveal, row, set_choice_name, set_name, size, slow_spinner, space, start_anchor,
-    text_shade, tip, title_lbl, txt, Reacts, ACCENTS, AMBER, GREEN, PROGRESS_LINE, RED,
+    divider, far, flip, lbl, line_color, note_fill, paint_progress, paint_text, pill_job,
+    primary_button, radius, reveal, row, row_layout, set_choice_name, set_name, size, slow_spinner,
+    space, start_anchor, text_shade, tip, title_lbl, txt, Reacts, ACCENTS, AMBER, GREEN,
+    PROGRESS_LINE, RED,
 };
 use super::*;
 use crate::config::{

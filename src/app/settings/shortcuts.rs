@@ -96,7 +96,7 @@ impl App {
             }
         }
         if let Some(e) = &self.hotkey_error {
-            note(ui, &format!("⚠ {e}"));
+            warning(ui, e);
         }
     }
 

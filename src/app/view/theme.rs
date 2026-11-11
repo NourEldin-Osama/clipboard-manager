@@ -120,6 +120,16 @@ pub(crate) fn card_frame(v: &egui::Visuals, hot: bool) -> egui::Frame {
         })
 }
 
+/// The faint neutral tint behind a note in a settings card: a little darker
+/// than the card in the light theme, a little lighter in the dark one.
+pub(crate) fn note_fill(dark: bool) -> Color32 {
+    if dark {
+        Color32::from_white_alpha(12)
+    } else {
+        Color32::from_black_alpha(12)
+    }
+}
+
 /// The track behind a setting's choices, and the face of the chosen one
 /// on it. Both stay where `text_shade` keeps colored text readable.
 pub(crate) fn choice_track(dark: bool) -> (Color32, Color32) {
@@ -587,7 +597,8 @@ mod tests {
 
     /// Every place gray text sits on, per accent: the plain backgrounds, the
     /// tints of a selected row (`list`), a chosen search mode (`mode_option`)
-    /// and a changed setting (`setting_row`), a gray chip, and search hits.
+    /// and a changed setting (`card_row`), a gray chip, a note in a settings
+    /// card, and search hits.
     #[test]
     fn gray_text_is_readable_on_every_background() {
         for (ctx, theme) in styled() {
@@ -619,6 +630,7 @@ mod tests {
                         ),
                     ),
                     ("gray chip", over(weak.gamma_multiply(0.14), content)),
+                    ("settings note", over(note_fill(dark), content)),
                 ];
                 for (text, color) in [("normal", v.text_color()), ("weak", weak)] {
                     for (place, background) in backgrounds {

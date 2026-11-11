@@ -1174,7 +1174,7 @@ impl App {
                 } else {
                     t!("settings-server-remote", host = host)
                 };
-                note(ui, &format!("⚠ {text}"));
+                warning(ui, &text);
             }
             plain_setting(
                 ui,
@@ -1384,7 +1384,7 @@ impl App {
             let search_gone = d.search_engine == SearchEngine::Server && gone(d.search_model, true);
             let read_gone = d.read_engine == ReadEngine::Server && gone(d.read_model, false);
             if !editor.is_new && (search_gone || read_gone) {
-                note(ui, &format!("⚠ {}", t!("settings-server-in-use-removed")));
+                warning(ui, &t!("settings-server-in-use-removed"));
             }
             (search_gone, read_gone)
         });

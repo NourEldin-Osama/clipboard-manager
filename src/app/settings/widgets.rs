@@ -509,69 +509,68 @@ pub(super) fn setting_content(
     reset
 }
 
-/// A note about the settings above it in their card, marked by a thin bar
-/// at its start so it reads as one note and not as a part of the row before
-/// it, and not as a field or a button. It has no line above or below it.
+/// A note about the settings above it, as a callout in their card.
 pub(super) fn note(ui: &mut Ui, text: &str) {
-    let rtl = i18n::rtl();
-    let weak = ui.visuals().weak_text_color();
+    callout(ui, Icon::Info, text);
+}
+
+/// A note that warns, as a callout in the card of the settings it is about.
+pub(super) fn warning(ui: &mut Ui, text: &str) {
+    callout(ui, Icon::Warning, text);
+}
+
+/// How big a note's icon is.
+const NOTE_ICON: f32 = 14.0;
+
+/// A note in a card: its icon at the reading start and its text, in the
+/// gray of the rows' lines, on a faint tint. It is set in as far as the
+/// rows' text and has no line above or below it, so it reads as one note
+/// about the rows around it and not as a row, a field or a button.
+fn callout(ui: &mut Ui, icon: Icon, text: &str) {
     let state = card_state(ui);
-    // A row before it has its own room below.
+    // A row before it has its room below.
     let above = match state.and_then(|s| s.last) {
         Some(Part::Row) => 0.0,
         Some(Part::Note) => space::SMALL,
         None => ROW_VERTICAL_PADDING,
     };
     ui.add_space(above);
-    // The bar where the rows' text starts, the text a little apart from it.
-    let start = (ROW_SIDE_PADDING + state.map_or(0.0, |s| s.indent)) as i8;
-    let end = ROW_SIDE_PADDING as i8;
-    let (left, right) = if rtl { (end, start) } else { (start, end) };
-    let gap = 12;
-    let (inner_left, inner_right) = if rtl { (0, gap) } else { (gap, 0) };
-    let content = Frame::new()
-        .inner_margin(Margin {
-            left: inner_left,
-            right: inner_right,
-            top: 2,
-            bottom: 2,
-        })
+    let start = ROW_SIDE_PADDING + state.map_or(0.0, |s| s.indent);
+    let (left, right) = if i18n::rtl() {
+        (ROW_SIDE_PADDING, start)
+    } else {
+        (start, ROW_SIDE_PADDING)
+    };
+    let weak = ui.visuals().weak_text_color();
+    let font = FontId::proportional(size::SMALL);
+    Frame::new()
+        .fill(note_fill(ui.visuals().dark_mode))
+        .corner_radius(CornerRadius::same(radius::MEDIUM))
+        .inner_margin(Margin::symmetric(space::MEDIUM as i8, space::SMALL as i8))
         .outer_margin(Margin {
-            left,
-            right,
+            left: left as i8,
+            right: right as i8,
             top: 0,
             bottom: 0,
         })
         .show(ui, |ui| {
             ui.set_width(ui.available_width());
-            super::bidi::paragraph(ui, text, FontId::proportional(size::SMALL), weak);
-            ui.min_rect()
-        })
-        .inner
-        .expand2(Vec2::new(0.0, 2.0));
-    let x = if rtl {
-        content.right() + f32::from(gap) - NOTE_BAR
-    } else {
-        content.left() - f32::from(gap)
-    };
-    let bar = Rect::from_min_size(
-        Pos2::new(x, content.top()),
-        Vec2::new(NOTE_BAR, content.height()),
-    );
-    ui.painter().rect_filled(
-        bar,
-        CornerRadius::same(radius::SMALL),
-        weak.gamma_multiply(0.35),
-    );
+            ui.with_layout(row_layout().with_cross_align(egui::Align::Min), |ui| {
+                ui.spacing_mut().item_spacing.x = space::SMALL;
+                // On the middle of the text's first line.
+                let line = ui.fonts_mut(|f| f.row_height(&font));
+                let (place, _) = ui.allocate_exact_size(Vec2::new(NOTE_ICON, line), Sense::hover());
+                let at = Rect::from_center_size(place.center(), Vec2::splat(NOTE_ICON));
+                icons::paint(ui.painter(), at, icon, weak);
+                super::bidi::paragraph(ui, text, font, weak);
+            });
+        });
     if let Some(mut state) = state {
         state.last = Some(Part::Note);
         state.tint = None;
         set_card_state(ui, Some(state));
     }
 }
-
-/// How wide the bar at a note's start is.
-const NOTE_BAR: f32 = 3.0;
 
 pub(super) fn path_field(ui: &mut Ui, p: &mut PathBuf, ext: &[&str]) {
     if ui
@@ -1115,5 +1114,96 @@ mod tests {
         }
         let reset = t!("settings-back-to-default");
         assert_eq!(order, ["Details", reset.as_str(), "Tray"]);
+    }
+
+    /// A row, a note, a row and a last note that warns, in a card: the
+    /// notes keep the rows' room and inset, have no lines beside them, and
+    /// their text follows their icon from the reading-start side.
+    fn check_notes_in_a_card() {
+        let mut rows = Vec::new();
+        let shapes = painted(|ui| {
+            rows.clear();
+            card(ui, |ui| {
+                for (name, about) in [("Tray", "A note."), ("Start", "A warning.")] {
+                    let held = card_row(ui, false, |ui| {
+                        lbl(ui, name, size::BODY, Color32::GRAY);
+                        ui.min_rect()
+                    });
+                    rows.push(held);
+                    if name == "Tray" {
+                        note(ui, about);
+                    } else {
+                        warning(ui, about);
+                    }
+                }
+            });
+        });
+        let filled = |fill: Color32| -> Vec<Rect> {
+            let mut found: Vec<Rect> = shapes
+                .iter()
+                .filter_map(|shape| match shape {
+                    egui::Shape::Rect(rect) if rect.fill == fill => Some(rect.rect),
+                    _ => None,
+                })
+                .collect();
+            found.sort_by(|a, b| a.top().total_cmp(&b.top()));
+            found
+        };
+        let notes = filled(note_fill(false));
+        assert_eq!(notes.len(), 2);
+        let room = ROW_VERTICAL_PADDING;
+        for (row, note) in rows.iter().zip(&notes) {
+            assert!(near(note.left(), row.left()) && near(note.right(), row.right()));
+            assert!(
+                near(note.top(), row.bottom() + room),
+                "{note:?} under {row:?}"
+            );
+        }
+        assert!(near(rows[1].top(), notes[0].bottom() + room));
+        // The card ends a row's room under its last note, past its edge.
+        let card = filled(Color32::WHITE)
+            .into_iter()
+            .find(|rect| rect.width() > notes[1].width())
+            .expect("a card");
+        assert!(near(card.bottom(), notes[1].bottom() + room + 1.0));
+        let color = line_color(false);
+        let lines = shapes.iter().filter(|shape| {
+            matches!(shape, egui::Shape::LineSegment { stroke, .. } if stroke.color == color)
+        });
+        assert_eq!(lines.count(), 0, "no line next to a note");
+        let text = shapes
+            .iter()
+            .find_map(|shape| match shape {
+                egui::Shape::Text(text) if text.galley.text() == "A note." => {
+                    Some(text.galley.rect.translate(text.pos.to_vec2()))
+                }
+                _ => None,
+            })
+            .expect("the note's text");
+        let past_icon = space::MEDIUM + NOTE_ICON + space::SMALL;
+        let off = if i18n::rtl() {
+            notes[0].right() - past_icon - text.right()
+        } else {
+            text.left() - notes[0].left() - past_icon
+        };
+        assert!(off.abs() <= 0.5, "{text:?} in {:?}", notes[0]);
+    }
+
+    #[test]
+    fn notes_sit_in_their_card() {
+        check_notes_in_a_card();
+    }
+
+    #[test]
+    fn notes_sit_in_their_card_right_to_left() {
+        passes_in_arabic("notes_sit_in_their_card_in_arabic");
+    }
+
+    #[test]
+    #[ignore = "run in a process of its own by notes_sit_in_their_card_right_to_left"]
+    fn notes_sit_in_their_card_in_arabic() {
+        if arabic_run() {
+            check_notes_in_a_card();
+        }
     }
 }

@@ -289,13 +289,9 @@ fn rule_rows(ui: &mut Ui, d: &mut Config) {
             });
             match rule.compile() {
                 Err(crate::rules::Problem::Empty) => note(ui, &t!("settings-rule-needs")),
-                Err(crate::rules::Problem::BadPattern(error)) => note(
-                    ui,
-                    &format!(
-                        "⚠ {}",
-                        t!("settings-rule-bad-pattern", error = error.as_str())
-                    ),
-                ),
+                Err(crate::rules::Problem::BadPattern(error)) => {
+                    warning(ui, &t!("settings-rule-bad-pattern", error = error.as_str()))
+                }
                 Ok(_) => {}
             }
         });
