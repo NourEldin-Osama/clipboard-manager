@@ -1092,6 +1092,56 @@ mod tests {
         }
     }
 
+    /// A weaker match's card shows no bars, and its program's name takes
+    /// their room, as on the card of a match without a meaning score. A
+    /// strong match's card shows its bars.
+    #[test]
+    fn a_weaker_match_shows_no_bars_on_its_card() {
+        let ctx = egui::Context::default();
+        add_fonts(&ctx);
+        // The fonts apply from the next frame.
+        ctx.run_ui(egui::RawInput::default(), |_| {})
+            .textures_delta
+            .clear();
+        let mut it = Item::new(1, Kind::Text, Origin::Clipboard, "Lunch at noon".into());
+        it.app = Some("Inventory and Order Tracker Desktop.exe".into());
+        // How many bars the card shows, and its program's name as shown.
+        let card = |closeness: Option<f32>, weak: bool| {
+            let hit = Hit {
+                id: 1,
+                closeness,
+                weak,
+            };
+            let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+                let rect = Rect::from_min_size(Pos2::new(0.0, 100.0), Vec2::new(240.0, 210.0));
+                let relevance = relevance_level(&hit);
+                paint_card(ui, rect, false, &it, None, None, relevance, false, &[]);
+            });
+            output.textures_delta.clear();
+            let mut bars = 0;
+            let mut name = None;
+            for clipped in &output.shapes {
+                match &clipped.shape {
+                    egui::Shape::Rect(shape) if shape.rect.width() == 4.0 => bars += 1,
+                    egui::Shape::Text(text) if text.galley.text().starts_with("Inventory") => {
+                        name = Some(text.galley.text().to_string());
+                    }
+                    _ => {}
+                }
+            }
+            (bars, name.expect("the program's name"))
+        };
+        let (strong, strong_name) = card(Some(1.0), false);
+        let (weak, weak_name) = card(Some(0.2), true);
+        let (plain, plain_name) = card(None, false);
+        assert_eq!((strong, weak, plain), (3, 0, 0), "bars");
+        assert_eq!(weak_name, plain_name);
+        assert!(
+            weak_name.chars().count() > strong_name.chars().count(),
+            "{weak_name} {strong_name}"
+        );
+    }
+
     #[test]
     fn a_card_is_measured_once_for_each_layout() {
         let mut heights = CardHeights::default();

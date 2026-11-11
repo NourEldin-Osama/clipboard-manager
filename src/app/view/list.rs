@@ -125,8 +125,12 @@ impl App {
 
 /// How close a match's meaning is to the best match's, in three steps: one
 /// bar below the strong matches, two from there, three near the best.
-/// `None` without a meaning score.
+/// `None` without a meaning score, and for a weaker match: each of them
+/// would show the same one bar, which says nothing and takes room.
 pub(super) fn relevance_level(hit: &Hit) -> Option<usize> {
+    if hit.weak {
+        return None;
+    }
     let closeness = hit.closeness?;
     Some(if closeness >= 0.75 {
         3
@@ -1271,10 +1275,11 @@ mod tests {
 
     /// Rows sharing their time column, as the popup draws them (one line,
     /// numbered) and as the list does (two lines): a pinned row copied
-    /// now, a pinned one copied over a year ago, whose time is longer, and
-    /// one copied three days ago, without a pin. Their pins, their
-    /// relevance bars and the far ends of their times line up, in reading
-    /// order bars, pin, time: from the left, or in Arabic from the right.
+    /// now, a pinned one copied over a year ago, whose time is longer, one
+    /// copied three days ago, without a pin, and two weaker matches, one
+    /// pinned and one not, which show no bars. Their pins, the relevance
+    /// bars and the far ends of their times line up, in reading order
+    /// bars, pin, time: from the left, or in Arabic from the right.
     fn check_rows_line_up() {
         let ctx = egui::Context::default();
         add_fonts(&ctx);
@@ -1290,7 +1295,15 @@ mod tests {
             it.pinned = pinned;
             it
         };
-        let rows = [item(1, 0, true), item(2, 400, true), item(3, 3, false)];
+        let rows = [
+            item(1, 0, true),
+            item(2, 400, true),
+            item(3, 3, false),
+            item(4, 1, true),
+            item(5, 30, false),
+        ];
+        // The last two are weaker matches.
+        let weak = |n: usize| n >= 3;
         let rtl = i18n::rtl();
         // Each row's time as drawn, in display order.
         let times: Vec<String> = rows
@@ -1308,8 +1321,8 @@ mod tests {
                 for (n, it) in rows.iter().enumerate() {
                     let hit = Hit {
                         id: it.id,
-                        closeness: Some(1.0),
-                        weak: false,
+                        closeness: Some(if weak(n) { 0.2 } else { 1.0 }),
+                        weak: weak(n),
                     };
                     let top = 100.0 + (row_h + 2.0) * n as f32;
                     let rect = Rect::from_min_size(Pos2::new(0.0, top), Vec2::new(420.0, row_h));
@@ -1336,8 +1349,12 @@ mod tests {
             output.textures_delta.clear();
             // Each row's pin, bars and time, by the row they are in.
             let row_of = |r: Rect| ((r.center().y - 100.0) / (row_h + 2.0)).floor() as usize;
-            let (mut pins, mut bars, mut drawn_times) =
-                (vec![None; 3], vec![Vec::new(); 3], vec![None; 3]);
+            let count = rows.len();
+            let (mut pins, mut bars, mut drawn_times) = (
+                vec![None; count],
+                vec![Vec::new(); count],
+                vec![None; count],
+            );
             for clipped in &output.shapes {
                 match &clipped.shape {
                     egui::Shape::Rect(shape) if shape.rect.width() == 4.0 => {
@@ -1359,10 +1376,14 @@ mod tests {
                 }
             }
             let case = format!("compact {compact}, rtl {rtl}: {times:?}");
-            let (Some(pin), Some(old_pin), None) = (pins[0], pins[1], pins[2]) else {
-                panic!("{case}: pins {pins:?}");
-            };
-            assert_eq!(pin.x_range(), old_pin.x_range(), "{case}");
+            // A pin on each pinned row, all in one place.
+            let pinned: Vec<bool> = rows.iter().map(|it| it.pinned).collect();
+            let has_pin: Vec<bool> = pins.iter().map(Option::is_some).collect();
+            assert_eq!(has_pin, pinned, "{case}: pins {pins:?}");
+            let pin = pins[0].expect(&case);
+            for other in pins.iter().flatten() {
+                assert_eq!(other.x_range(), pin.x_range(), "{case}");
+            }
             // Where a rect starts and ends in reading order.
             let along = |r: Rect| {
                 if rtl {
@@ -1377,19 +1398,23 @@ mod tests {
                 x
             };
             let first_time = drawn_times[0].expect(&case);
-            for (row_bars, time) in bars.iter().zip(&drawn_times) {
+            for (n, (row_bars, time)) in bars.iter().zip(&drawn_times).enumerate() {
                 let time = time.expect(&case);
+                assert!((along(time).1 - along(first_time).1).abs() <= 0.5, "{case}");
+                // In reading order: the bars, the pin's place, the time.
+                assert!(along(pin).1 <= along(time).0, "{case}");
+                if weak(n) {
+                    assert!(row_bars.is_empty(), "{case}: bars on a weaker match");
+                    continue;
+                }
                 assert_eq!(row_bars.len(), 3, "{case}: three bars a row");
                 // Bar by bar, each row's under the first's.
                 assert_eq!(lefts(row_bars), lefts(&bars[0]), "{case}");
-                assert!((along(time).1 - along(first_time).1).abs() <= 0.5, "{case}");
-                // In reading order: the bars, the pin's place, the time.
                 let bars_end = row_bars
                     .iter()
                     .map(|bar| along(*bar).1)
                     .fold(f32::MIN, f32::max);
                 assert!(bars_end <= along(pin).0, "{case}");
-                assert!(along(pin).1 <= along(time).0, "{case}");
             }
         }
     }
@@ -1412,6 +1437,80 @@ mod tests {
     fn rows_line_up_their_pins_bars_and_times_in_arabic() {
         if crate::i18n::arabic_run() {
             check_rows_line_up();
+        }
+    }
+
+    /// A weaker match's row shows no bars, as the popup draws it (one
+    /// line, numbered) and as the list does (two lines), and its title
+    /// takes their room, as in the row of a match without a meaning score.
+    /// A strong match's row shows its bars.
+    #[test]
+    fn a_weaker_match_shows_no_bars_on_its_row() {
+        let ctx = egui::Context::default();
+        add_fonts(&ctx);
+        // The fonts apply from the next frame.
+        ctx.run_ui(egui::RawInput::default(), |_| {})
+            .textures_delta
+            .clear();
+        let text = format!("{}\nIts second line", "word ".repeat(40));
+        let it = Item::new(1, Kind::Text, Origin::Clipboard, text.into());
+        for (compact, numbered) in [(true, true), (false, false)] {
+            let row_h = if compact { 40.0 } else { 58.0 };
+            // How many bars the row shows, and where its title ends.
+            let row = |closeness: Option<f32>, weak: bool| {
+                let hit = Hit {
+                    id: 1,
+                    closeness,
+                    weak,
+                };
+                let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+                    let rect = Rect::from_min_size(Pos2::new(0.0, 100.0), Vec2::new(600.0, row_h));
+                    let column = time_column(ui, std::iter::once((&it, false)));
+                    let number = numbered.then_some(1);
+                    paint_row(
+                        ui,
+                        rect,
+                        false,
+                        &it,
+                        &hit,
+                        None,
+                        None,
+                        false,
+                        compact,
+                        &[],
+                        numbered,
+                        number,
+                        false,
+                        false,
+                        column,
+                    );
+                });
+                output.textures_delta.clear();
+                let mut bars = 0;
+                let mut title_end = None;
+                for clipped in &output.shapes {
+                    match &clipped.shape {
+                        egui::Shape::Rect(shape) if shape.rect.width() == 4.0 => bars += 1,
+                        egui::Shape::Text(text) if text.galley.text().starts_with("word") => {
+                            title_end = Some(text.visual_bounding_rect().right());
+                        }
+                        _ => {}
+                    }
+                }
+                (bars, title_end.expect("the title"))
+            };
+            let (strong, strong_end) = row(Some(1.0), false);
+            let (weak, weak_end) = row(Some(0.2), true);
+            let (plain, plain_end) = row(None, false);
+            let case = format!("compact {compact}");
+            assert_eq!((strong, weak, plain), (3, 0, 0), "{case}: bars");
+            assert_eq!(weak_end, plain_end, "{case}");
+            // Further by the bars and the pin's slot before them, give or
+            // take a letter the cut takes.
+            assert!(
+                weak_end > strong_end + 20.0,
+                "{case}: {weak_end} {strong_end}"
+            );
         }
     }
 
