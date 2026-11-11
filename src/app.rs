@@ -798,6 +798,9 @@ pub struct App {
     /// of their own, where each card was drawn last, from the grid's top
     /// left, for the arrow keys. Empty otherwise.
     grid_places: Vec<(u64, egui::Rect)>,
+    /// The heights of cards as tall as their content, measured once for
+    /// each layout of the grid.
+    card_heights: view::CardHeights,
     win: WindowCtl,
     /// Marks this as the running copy; another start shows this window.
     instance: crate::single_instance::Guard,
@@ -1012,6 +1015,7 @@ impl App {
             grid_cols: 1,
             cards_in_a_row: view::cards_per_row(WINDOW_SIZE[0] - view::GRID_SIDES),
             grid_places: Vec::new(),
+            card_heights: view::CardHeights::default(),
             update: UpdateState::Idle,
             update_rx: None,
             update_hidden: false,

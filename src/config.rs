@@ -458,7 +458,7 @@ pub enum Density {
 pub enum CardHeight {
     /// All the same height, in rows.
     Same,
-    /// As tall as their content, stacked in columns.
+    /// As tall as their content, stacked in columns: the default.
     Fit,
 }
 
@@ -689,7 +689,7 @@ impl Default for Config {
             search_model: None,
             min_similarity: 0.0,
             density: Density::Comfortable,
-            card_height: CardHeight::Same,
+            card_height: CardHeight::Fit,
             group_by_date: true,
             accent: 0,
             view: ViewMode::Grid,

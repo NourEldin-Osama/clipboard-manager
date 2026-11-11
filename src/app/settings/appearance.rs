@@ -108,8 +108,8 @@ pub(super) fn appearance_page(ui: &mut Ui, d: &mut Config) {
                     ui,
                     height,
                     &[
-                        (CardHeight::Same, t!("settings-card-height-same")),
                         (CardHeight::Fit, t!("settings-card-height-fit")),
+                        (CardHeight::Same, t!("settings-card-height-same")),
                     ],
                 )
             },

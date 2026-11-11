@@ -17,47 +17,167 @@ pub(crate) fn cards_per_row(width: f32) -> usize {
 }
 
 /// How tall a card is when cards are as tall as their content (D69): its
-/// content measured roughly, between half and 1.6 times the height cards
-/// have when they are all the same (`same`).
-fn fitted_height(it: &Item, card_w: f32, same: f32) -> f32 {
-    let pad = 16.0;
-    let body_w = (card_w - 2.0 * pad).max(1.0);
-    let tags = if it.tags.is_empty() { 0.0 } else { TAG_ROW };
+/// content as `paint_card` lays it out in a card `card_w` wide, with the
+/// tags row when it has tags and the footer. A picture's card is at least
+/// as tall as a card with one line of text; no card is taller than 1.6
+/// times the height cards have when they are all the same (`same`), and
+/// longer text is cut there.
+fn fitted_height(ui: &Ui, it: &Item, card_w: f32, same: f32) -> f32 {
+    let probe = Rect::from_min_size(Pos2::ZERO, Vec2::new(card_w, same * 1.6));
+    let most = card_body(probe, !it.tags.is_empty());
+    let around = probe.height() - most.height();
     let body = if it.kind == Kind::Image {
-        if it.width > 0 && it.height > 0 {
-            (body_w * it.height as f32 / it.width as f32).min(it.height as f32 * 2.0)
+        let picture = if it.width > 0 && it.height > 0 {
+            (most.width() * it.height as f32 / it.width as f32).min(it.height as f32 * 2.0)
         } else {
             80.0
-        }
+        };
+        picture.max(line_height(ui, &FontId::proportional(size::BODY)))
     } else if it.kind == Kind::Text && color_in(&it.text).is_some() {
         // The swatch, then its two lines.
         110.0
     } else if it.kind == Kind::Text && path_in(&it.text).is_some() {
-        // The icon, then the name and the folder.
-        80.0
+        // The icon, then the name and the folder, as `paint_lines` puts them.
+        PATH_ICON
+            + PATH_ICON_GAP
+            + line_height(ui, &FontId::proportional(size::LARGE))
+            + LINE_GAP
+            + line_height(ui, &FontId::proportional(size::SMALL))
     } else {
-        let text = match it.kind {
-            Kind::Link => row_title(it),
-            _ => it.text.lines().take(14).collect::<Vec<_>>().join("\n"),
-        };
-        let code = is_code(it);
-        let short = !code && text.chars().count() <= 60 && text.lines().count() <= 2;
-        // As `paint_card` lays it out: its font, the line height and about
-        // how wide a letter is.
-        let (letter, line_h) = if code {
-            (size::SMALL * 0.6, 17.0)
-        } else if short {
-            (size::LARGE * 0.5, 23.0)
-        } else {
-            (size::BODY * 0.5, 20.0)
-        };
-        let lines: f32 = text
-            .lines()
-            .map(|l| (l.chars().count() as f32 * letter / body_w).ceil().max(1.0))
-            .sum();
-        lines.max(1.0) * line_h + 2.0
+        let (lines, _) = card_text(ui, it, &[], most.size());
+        lines.iter().map(|(g, _)| g.size().y).sum()
     };
-    (pad + body + 4.0 + tags + CARD_FOOTER).clamp(same * 0.5, same * 1.6)
+    around + body.min(most.height())
+}
+
+/// Room around a card's content, and beside its tags and footer.
+const CARD_PADDING: f32 = 16.0;
+
+/// Between a card's content and its tags row or footer.
+const BELOW_CONTENT: f32 = 4.0;
+
+/// The icon of a card that shows a path, and the room below it.
+const PATH_ICON: f32 = 28.0;
+const PATH_ICON_GAP: f32 = 10.0;
+
+/// Between the lines of a color's or a path's card.
+const LINE_GAP: f32 = 2.0;
+
+/// Where a card's content goes in `rect`: inside its padding, above its
+/// tags row when it is `tagged`, and above its footer.
+fn card_body(rect: Rect, tagged: bool) -> Rect {
+    let tags = if tagged { TAG_ROW } else { 0.0 };
+    Rect::from_min_max(
+        rect.min + Vec2::splat(CARD_PADDING),
+        Pos2::new(
+            rect.right() - CARD_PADDING,
+            rect.bottom() - CARD_FOOTER - tags - BELOW_CONTENT,
+        ),
+    )
+}
+
+/// The height of one line of text in `font`, as egui lays it out: on whole
+/// pixels, so at the screen's scale.
+fn line_height(ui: &Ui, font: &FontId) -> f32 {
+    ui.fonts_mut(|f| f.layout_no_wrap(String::new(), font.clone(), Color32::WHITE))
+        .size()
+        .y
+}
+
+/// How many lines of `font` fit in `height`, at least one.
+fn lines_that_fit(ui: &Ui, font: &FontId, height: f32) -> usize {
+    // egui puts lines on whole pixels but sizes text in steps of 1/32 of a
+    // point, so the height of some lines is not quite that many times one
+    // line's: half a point over counts every line of a height laid out
+    // for them. A line can then go past `height` by that much, which the
+    // room below a card's text takes.
+    ((height + 0.5) / line_height(ui, font)).floor().max(1.0) as usize
+}
+
+/// The text of a card that shows text, laid out as the card shows it in
+/// `size`: as many lines as fit, the last cut with "…" when there are
+/// more. Text with Arabic comes line by line, each with whether it reads
+/// right to left; other text is one galley. With the text's color.
+fn card_text(
+    ui: &Ui,
+    it: &Item,
+    terms: &[String],
+    size: Vec2,
+) -> (Vec<(Arc<egui::Galley>, bool)>, Color32) {
+    let v = ui.visuals();
+    let code = is_code(it);
+    let text: String = match it.kind {
+        Kind::Files => it
+            .text
+            .lines()
+            .map(|l| {
+                std::path::Path::new(l)
+                    .file_name()
+                    .map(|f| f.to_string_lossy().into_owned())
+                    .unwrap_or_else(|| l.to_string())
+            })
+            .collect::<Vec<_>>()
+            .join("\n"),
+        // As rows show it: without https:// and www., letters decoded.
+        Kind::Link => row_title(it),
+        _ => it
+            .text
+            .lines()
+            .take(14)
+            .collect::<Vec<_>>()
+            .join("\n")
+            .chars()
+            .take(900)
+            .collect(),
+    };
+    let text = if text.trim().is_empty() {
+        t!("item-empty")
+    } else {
+        text
+    };
+    // Short text shows larger, so the card is used.
+    let short = !code && text.chars().count() <= 60 && text.lines().count() <= 2;
+    // Code a step smaller than text, not two, so it reads as easily.
+    let font = if code {
+        FontId::monospace(size::CONTROL)
+    } else if short {
+        FontId::proportional(size::LARGE)
+    } else {
+        FontId::proportional(size::BODY)
+    };
+    let color = if it.kind == Kind::Link {
+        v.hyperlink_color
+    } else {
+        v.strong_text_color()
+    };
+    let rows = lines_that_fit(ui, &font, size.y);
+    let hit = theme::search_hit(v.dark_mode);
+    let lines = if bidi::has_rtl(&text) {
+        // Each line lines up with its own reading edge.
+        bidi::lines(
+            ui,
+            text.trim_end(),
+            terms,
+            font,
+            color,
+            hit,
+            size.x,
+            rows,
+            None,
+        )
+    } else {
+        let job = highlighted(
+            text.trim_end(),
+            terms,
+            font,
+            color,
+            (v.strong_text_color(), hit),
+            size.x,
+            rows,
+        );
+        vec![(ui.fonts_mut(|f| f.layout_job(job)), false)]
+    };
+    (lines, color)
 }
 
 /// Cards `heights` tall stacked in `cols` columns `card_w` wide, each in
@@ -114,7 +234,7 @@ pub(super) fn paint_card(
     if selected {
         p.rect_filled(rect, radius, theme::selected_card(a, v.dark_mode));
     }
-    let pad = 16.0;
+    let pad = CARD_PADDING;
     let weak = v.weak_text_color();
 
     // Bottom up: the footer, the tags row above it when there are tags,
@@ -151,10 +271,7 @@ pub(super) fn paint_card(
     if !it.tags.is_empty() {
         paint_tags(ui, rect, it, pad, tags_top, strip_top);
     }
-    let body = Rect::from_min_max(
-        Pos2::new(rect.left() + pad, rect.top() + pad),
-        Pos2::new(rect.right() - pad, tags_top - 4.0),
-    );
+    let body = card_body(rect, !it.tags.is_empty());
     let bp = ui.painter_at(body);
     let color = (it.kind == Kind::Text)
         .then(|| color_in(&it.text))
@@ -225,7 +342,11 @@ pub(super) fn paint_card(
             };
             // On the side the path is written from, like its name.
             let rtl = bidi::starts_rtl(&it.text, i18n::rtl());
-            let at = flip_if(rtl, body, Rect::from_min_size(body.min, Vec2::splat(28.0)));
+            let at = flip_if(
+                rtl,
+                body,
+                Rect::from_min_size(body.min, Vec2::splat(PATH_ICON)),
+            );
             icons::paint(&bp, at, icon, text_shade(c, v.dark_mode));
             let name = path
                 .file_name()
@@ -235,7 +356,7 @@ pub(super) fn paint_card(
                 .parent()
                 .map(|f| f.display().to_string())
                 .unwrap_or_default();
-            let below = Pos2::new(body.left(), at.bottom() + 10.0);
+            let below = Pos2::new(body.left(), at.bottom() + PATH_ICON_GAP);
             let lines = [
                 (name, size::LARGE, v.strong_text_color()),
                 (folder, size::SMALL, weak),
@@ -243,80 +364,12 @@ pub(super) fn paint_card(
             paint_lines(ui, &bp, body, below, &lines, rtl);
         }
         _ => {
-            let code = is_code(it);
-            let text: String = match it.kind {
-                Kind::Files => it
-                    .text
-                    .lines()
-                    .map(|l| {
-                        std::path::Path::new(l)
-                            .file_name()
-                            .map(|f| f.to_string_lossy().into_owned())
-                            .unwrap_or_else(|| l.to_string())
-                    })
-                    .collect::<Vec<_>>()
-                    .join("\n"),
-                // As rows show it: without https:// and www., letters decoded.
-                Kind::Link => row_title(it),
-                _ => it
-                    .text
-                    .lines()
-                    .take(14)
-                    .collect::<Vec<_>>()
-                    .join("\n")
-                    .chars()
-                    .take(900)
-                    .collect(),
-            };
-            let text = if text.trim().is_empty() {
-                t!("item-empty")
-            } else {
-                text
-            };
-            // Short text shows larger, so the card is used.
-            let short = !code && text.chars().count() <= 60 && text.lines().count() <= 2;
-            // Code a step smaller than text, not two, so it reads as easily.
-            let (font, line_h) = if code {
-                (FontId::monospace(size::CONTROL), 18.0)
-            } else if short {
-                (FontId::proportional(size::LARGE), 23.0)
-            } else {
-                (FontId::proportional(size::BODY), 20.0)
-            };
-            let color = if it.kind == Kind::Link {
-                v.hyperlink_color
-            } else {
-                v.strong_text_color()
-            };
-            let rows = ((body.height() / line_h).floor() as usize).max(1);
-            if bidi::has_rtl(&text) {
-                // Each line lines up with its own reading edge.
-                let lines = bidi::lines(
-                    ui,
-                    text.trim_end(),
-                    terms,
-                    font,
-                    color,
-                    theme::search_hit(v.dark_mode),
-                    body.width(),
-                    rows,
-                    None,
-                );
-                bidi::paint(&bp, body, lines, color, None, 0.0);
-            } else {
-                let g = ui.fonts_mut(|f| {
-                    f.layout_job(highlighted(
-                        text.trim_end(),
-                        terms,
-                        font,
-                        color,
-                        (v.strong_text_color(), theme::search_hit(v.dark_mode)),
-                        body.width(),
-                        rows,
-                    ))
-                });
-                bp.galley(body.min, g, color);
-            }
+            let (lines, color) = card_text(ui, it, terms, body.size());
+            // Arabic letters reach a little above and below their lines,
+            // and a card as tall as its text ends at its last line: the
+            // room around the text keeps them whole.
+            let clip = body.expand2(Vec2::new(0.0, BELOW_CONTENT));
+            bidi::paint(&ui.painter_at(clip), body, lines, color, None, 0.0);
         }
     }
     // Outline last, so the footer doesn't cover it. On a dark card the
@@ -375,7 +428,7 @@ fn paint_lines(
             FontId::proportional(*text_size),
             *color,
         );
-        y = painted.bottom() + 2.0;
+        y = painted.bottom() + LINE_GAP;
     }
 }
 
@@ -562,7 +615,131 @@ fn paint_tags(ui: &Ui, rect: Rect, it: &Item, pad: f32, tags_top: f32, strip_top
     }
 }
 
+/// How long a frame may spend measuring cards (see `CardHeights`).
+const MEASURE_TIME: Duration = Duration::from_millis(4);
+
+/// What the fitted heights of cards depend on besides the items: the
+/// cards' width, the density, the language and the screen's scale.
+#[derive(Clone, Copy, PartialEq)]
+struct CardLayout {
+    width: f32,
+    compact: bool,
+    rtl: bool,
+    pixels_per_point: f32,
+}
+
+/// The fitted heights of cards (D69), kept so that each card is measured
+/// once for each layout of the grid: a frame with nothing new measures
+/// nothing. A new layout, such as each new width while the window is
+/// resized, measures the cards again in the results' order for as long as
+/// a frame may (`MEASURE_TIME`); until its turn, a card keeps the height
+/// it had in an earlier layout. Heights are kept for one item each, and
+/// those of items no longer in the history are dropped.
+#[derive(Default)]
+pub(crate) struct CardHeights {
+    layout: Option<CardLayout>,
+    /// Goes up with each new layout, so a height knows whether it is up to
+    /// date.
+    generation: u64,
+    by_item: HashMap<u64, Measured>,
+}
+
+struct Measured {
+    generation: u64,
+    /// The item had tags, which add their row.
+    tagged: bool,
+    height: f32,
+}
+
+impl CardHeights {
+    /// Starts a frame with cards laid out as `layout`.
+    fn start(&mut self, layout: CardLayout) {
+        if self.layout != Some(layout) {
+            self.layout = Some(layout);
+            self.generation += 1;
+        }
+    }
+
+    /// The height of `it`'s card, and whether it is up to date: as
+    /// measured for this layout; or measured now by `measure` before
+    /// `deadline`; or else, until a later frame, its height in an earlier
+    /// layout, or `stand_in` when it has none.
+    fn height(
+        &mut self,
+        it: &Item,
+        deadline: Instant,
+        stand_in: f32,
+        measure: impl FnOnce() -> f32,
+    ) -> (f32, bool) {
+        let tagged = !it.tags.is_empty();
+        let known = self
+            .by_item
+            .get(&it.id)
+            .filter(|m| m.tagged == tagged)
+            .map(|m| (m.generation, m.height));
+        if let Some((generation, height)) = known {
+            if generation == self.generation {
+                return (height, true);
+            }
+        }
+        if Instant::now() >= deadline {
+            return (known.map_or(stand_in, |(_, height)| height), false);
+        }
+        let height = measure();
+        let generation = self.generation;
+        self.by_item.insert(
+            it.id,
+            Measured {
+                generation,
+                tagged,
+                height,
+            },
+        );
+        (height, true)
+    }
+
+    /// Drops the heights of items no longer in `library`, once there are
+    /// more heights than items.
+    fn forget_gone(&mut self, library: &Library) {
+        if self.by_item.len() > library.items().len() {
+            self.by_item.retain(|id, _| library.get(*id).is_some());
+        }
+    }
+}
+
 impl App {
+    /// The height of each result's card when cards are as tall as their
+    /// content, `card_w` wide, `same` tall when they are all the same.
+    fn fitted_heights(&mut self, ui: &Ui, card_w: f32, same: f32) -> Vec<f32> {
+        self.card_heights.start(CardLayout {
+            width: card_w,
+            compact: self.cfg.density == Density::Compact,
+            rtl: i18n::rtl(),
+            pixels_per_point: ui.pixels_per_point(),
+        });
+        let deadline = Instant::now() + MEASURE_TIME;
+        let mut behind = false;
+        let heights = self
+            .results
+            .iter()
+            .map(|hit| match self.library.get(hit.id) {
+                Some(it) => {
+                    let measure = || fitted_height(ui, it, card_w, same);
+                    let (height, current) = self.card_heights.height(it, deadline, same, measure);
+                    behind |= !current;
+                    height
+                }
+                None => same,
+            })
+            .collect();
+        self.card_heights.forget_gone(&self.library);
+        // The cards not measured in time are measured in the next frames.
+        if behind {
+            ui.ctx().request_repaint();
+        }
+        heights
+    }
+
     /// Cards in as many columns as fit, like a pinboard.
     pub(super) fn grid(&mut self, ui: &mut Ui) {
         if self.results.is_empty() {
@@ -589,14 +766,11 @@ impl App {
         // weaker matches follows the strong ones, and while it is open the
         // weaker ones start below it.
         let fit = self.cfg.card_height == CardHeight::Fit;
-        let heights: Vec<f32> = self
-            .results
-            .iter()
-            .map(|hit| match self.library.get(hit.id) {
-                Some(it) if fit => fitted_height(it, card_w, card_h),
-                _ => card_h,
-            })
-            .collect();
+        let heights: Vec<f32> = if fit {
+            self.fitted_heights(ui, card_w, card_h)
+        } else {
+            vec![card_h; self.results.len()]
+        };
         let link = self.weaker_link_place();
         let split = link
             .and_then(|link| link.first_weak)
@@ -823,17 +997,128 @@ mod tests {
         assert_eq!(at(3), (0.0, 110.0));
     }
 
+    /// Runs `check` in a frame of a window with the app's fonts, at
+    /// `scale` pixels per point.
+    fn in_window(scale: f32, mut check: impl FnMut(&Ui)) {
+        let ctx = egui::Context::default();
+        ctx.set_pixels_per_point(scale);
+        add_fonts(&ctx);
+        // The fonts apply from the next frame; the font atlas uploads no
+        // renderer takes here are dropped.
+        ctx.run_ui(egui::RawInput::default(), |_| {})
+            .textures_delta
+            .clear();
+        ctx.run_ui(egui::RawInput::default(), |ui| check(ui))
+            .textures_delta
+            .clear();
+        assert_eq!(ctx.pixels_per_point(), scale);
+    }
+
+    /// How many lines laid-out text has.
+    fn rows(lines: &[(Arc<egui::Galley>, bool)]) -> usize {
+        lines.iter().map(|(g, _)| g.rows.len()).sum()
+    }
+
+    /// A card as tall as its content shows every line the cap allows, with
+    /// no room left over, and a one-line card is as tall as one line needs.
     #[test]
-    fn a_card_fits_its_content_within_limits() {
-        let short = Item::new(1, Kind::Text, Origin::Clipboard, "Lunch at noon".into());
-        let long = Item::new(2, Kind::Text, Origin::Clipboard, "word ".repeat(400).into());
-        let same = 210.0;
-        let (short, long) = (
-            fitted_height(&short, 370.0, same),
-            fitted_height(&long, 370.0, same),
+    fn a_fitted_card_holds_every_line_the_cap_allows() {
+        let text = |id: u64, text: &str| Item::new(id, Kind::Text, Origin::Clipboard, text.into());
+        let long = "word ".repeat(400);
+        let samples = [
+            text(1, "Lunch at noon"),
+            text(2, "Call the bank\nPick up the parcel\nBook the flights"),
+            text(3, "fn main() {\n    println!(\"Hello, world!\");\n}"),
+            text(
+                4,
+                "Dear team, the new version is out. Please update and tell me what you think.",
+            ),
+            text(
+                5,
+                "SELECT name, total FROM orders WHERE total > 1000 ORDER BY total DESC;",
+            ),
+            text(6, "موعد الاجتماع يوم الخميس الساعة العاشرة والنصف صباحًا"),
+            text(7, &long),
+        ];
+        let tagged: Vec<Item> = samples
+            .iter()
+            .map(|it| {
+                let mut it = it.clone();
+                it.tags = vec!["work".into()];
+                it
+            })
+            .collect();
+        for scale in [1.0, 1.25, 1.5] {
+            in_window(scale, |ui| {
+                for (it, width, same) in samples.iter().chain(&tagged).flat_map(|it| {
+                    [240.0, 300.0, 370.0, 494.0]
+                        .into_iter()
+                        .flat_map(move |width| [150.0, 210.0].map(|same| (it, width, same)))
+                }) {
+                    let case = format!("{:?} at {width} by {same}, scale {scale}", it.text);
+                    let tagged = !it.tags.is_empty();
+                    let height = fitted_height(ui, it, width, same);
+                    assert!(height <= same * 1.6, "{case}: {height}");
+                    let card = Rect::from_min_size(Pos2::ZERO, Vec2::new(width, height));
+                    let body = card_body(card, tagged);
+                    // As the card draws it, all of it, and at the cap.
+                    let (shown, _) = card_text(ui, it, &[], body.size());
+                    let every = Vec2::new(body.width(), f32::INFINITY);
+                    let (all, _) = card_text(ui, it, &[], every);
+                    let tallest = Rect::from_min_size(Pos2::ZERO, Vec2::new(width, same * 1.6));
+                    let (capped, _) = card_text(ui, it, &[], card_body(tallest, tagged).size());
+                    assert_eq!(rows(&shown), rows(&capped), "{case}");
+                    if *it.text == *long {
+                        assert!(rows(&shown) < rows(&all), "{case}: the long text is cut");
+                        assert!(shown[0].0.elided, "{case}: it ends with the cut-off mark");
+                    } else {
+                        assert_eq!(rows(&shown), rows(&all), "{case}: a line was lost");
+                    }
+                    // Exactly as tall as its lines.
+                    let lines_h: f32 = shown.iter().map(|(g, _)| g.size().y).sum();
+                    assert!((lines_h - body.height()).abs() < 0.01, "{case}: {lines_h}");
+                }
+                let one_line = fitted_height(ui, &samples[0], 370.0, 210.0);
+                let line = line_height(ui, &FontId::proportional(size::LARGE));
+                let expected = CARD_PADDING + line + BELOW_CONTENT + CARD_FOOTER;
+                assert!((one_line - expected).abs() < 0.01, "{one_line} {expected}");
+            });
+        }
+    }
+
+    #[test]
+    fn a_card_is_measured_once_for_each_layout() {
+        let mut heights = CardHeights::default();
+        let mut it = Item::new(1, Kind::Text, Origin::Clipboard, "Lunch at noon".into());
+        let layout = |width: f32| CardLayout {
+            width,
+            compact: false,
+            rtl: false,
+            pixels_per_point: 1.0,
+        };
+        let later = Instant::now() + Duration::from_secs(600);
+        heights.start(layout(300.0));
+        assert_eq!(heights.height(&it, later, 210.0, || 84.0), (84.0, true));
+        // The next frame with nothing new measures nothing.
+        heights.start(layout(300.0));
+        let not_again = || -> f32 { panic!("measured again") };
+        assert_eq!(heights.height(&it, later, 210.0, not_again), (84.0, true));
+        // Another width measures again; out of time, the height of the
+        // earlier width stands in.
+        heights.start(layout(280.0));
+        let no_time = Instant::now();
+        assert_eq!(
+            heights.height(&it, no_time, 210.0, not_again),
+            (84.0, false)
         );
-        assert!(short < same, "{short}");
-        assert!(short >= same * 0.5, "{short}");
-        assert_eq!(long, same * 1.6);
+        assert_eq!(heights.height(&it, later, 210.0, || 106.0), (106.0, true));
+        // Tags add their row: measured again, and until then the card is as
+        // tall as cards of one height.
+        it.tags = vec!["work".into()];
+        assert_eq!(
+            heights.height(&it, no_time, 210.0, not_again),
+            (210.0, false)
+        );
+        assert_eq!(heights.height(&it, later, 210.0, || 134.0), (134.0, true));
     }
 }

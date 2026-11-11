@@ -43,7 +43,7 @@ use widgets::*;
 
 // The ones the rest of the app uses.
 pub(crate) use details::reveal;
-pub(crate) use grid::{cards_per_row, GRID_GAP, GRID_SIDES};
+pub(crate) use grid::{cards_per_row, CardHeights, GRID_GAP, GRID_SIDES};
 pub(crate) use items::looks_like_code;
 pub(crate) use messages::UpdateParts;
 pub(crate) use theme::{
