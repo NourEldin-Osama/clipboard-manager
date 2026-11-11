@@ -459,8 +459,9 @@ pub(super) fn setting_row(
 
 /// What a setting's row holds, for a row that shows more under it: its
 /// text at the reading-start side, the name with its info button and the
-/// gray line under it, and the control at the far end, the two centred on
-/// each other. True when the reset was clicked.
+/// gray line under it, its lines evened out when it wraps, and the control
+/// at the far end, the two centred on each other. True when the reset was
+/// clicked.
 pub(super) fn setting_content(
     ui: &mut Ui,
     label: &str,
@@ -472,7 +473,7 @@ pub(super) fn setting_content(
 ) -> bool {
     let weak = ui.visuals().weak_text_color();
     let under = (!line.is_empty()).then_some(|ui: &mut Ui| {
-        super::bidi::paragraph(ui, line, FontId::proportional(size::SMALL), weak);
+        super::bidi::balanced(ui, line, FontId::proportional(size::SMALL), weak);
     });
     setting_parts(ui, label, under, details, changed, resettable, control)
 }
@@ -1438,6 +1439,46 @@ mod tests {
         if arabic_run() {
             check_text_and_control();
         }
+    }
+
+    /// The "Read by" row of Settings, Search & AI, in the widest column: its
+    /// choice of three leaves its gray line two lines, which come out about
+    /// equally long, the last at least half as wide as the first, and the
+    /// choice is centred on the name and the two lines.
+    #[test]
+    fn a_wrapped_gray_line_has_even_lines() {
+        let ctx = window();
+        let (name, line) = (t!("settings-read-engine"), t!("settings-read-engine-hint"));
+        let mut engine = 2;
+        let mut control = Rect::NOTHING;
+        let mut draw = |ui: &mut Ui| {
+            in_column(ui, |ui| {
+                card(ui, |ui| {
+                    plain_setting(ui, &name, &line, "", |ui| {
+                        let engines = [
+                            (0, t!("settings-engine-off")),
+                            (1, t!("settings-engine-windows")),
+                            (2, t!("settings-engine-server")),
+                        ];
+                        segmented(ui, &mut engine, &engines);
+                        control = ui.min_rect();
+                    });
+                });
+            });
+        };
+        frame(&ctx, egui::RawInput::default(), &mut draw);
+        let output = frame(&ctx, egui::RawInput::default(), &mut draw);
+        assert!(!output.platform_output.requested_discard(), "steady");
+        let lines = text_rects(&output, &line);
+        assert_eq!(lines.len(), 2, "{lines:?}");
+        assert!(lines[1].width() >= lines[0].width() / 2.0, "{lines:?}");
+        let text = lines
+            .iter()
+            .fold(text_rects(&output, &name)[0], |text, line| {
+                text.union(*line)
+            });
+        let off = control.center().y - text.center().y;
+        assert!(off.abs() <= 0.5, "{control:?} on {text:?}");
     }
 
     /// The widest controls in the widest column, the choice and the recorder

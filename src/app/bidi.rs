@@ -357,6 +357,64 @@ pub(super) fn paragraph(ui: &mut Ui, text: &str, font: FontId, color: Color32) -
     block(ui, text, font, color, width, 0.0)
 }
 
+/// A paragraph as `paragraph` lays it out, its lines evened out: when it
+/// takes more than one line in the width it has, it is laid out at the
+/// narrowest width that keeps as many lines, so they come out about equally
+/// long and the last isn't one short word.
+pub(super) fn balanced(ui: &mut Ui, text: &str, font: FontId, color: Color32) -> egui::Response {
+    let width = balanced_width(ui, text, &font, ui.available_width());
+    block(ui, text, font, color, width, 0.0)
+}
+
+/// How many widths `balanced_width` tries at most.
+const BALANCE_TRIES: usize = 8;
+
+/// The narrowest width, at most `width`, at which `text` wraps into as many
+/// lines as at `width`; `width` itself when each of its paragraphs fits on
+/// one line, which measures nothing `lines` doesn't. It halves the range
+/// between a width too narrow and one that keeps the lines, and a try that
+/// keeps them narrows to its widest line, where they wrap the same. egui
+/// keeps what it laid out, so frames after the first lay out nothing new.
+fn balanced_width(ui: &Ui, text: &str, font: &FontId, width: f32) -> f32 {
+    let measure = |s: &str| {
+        ui.fonts_mut(|f| {
+            f.layout_no_wrap(s.to_string(), font.clone(), Color32::WHITE)
+                .size()
+                .x
+        })
+    };
+    if text.split('\n').all(|p| measure(p.trim_end()) <= width) {
+        return width;
+    }
+    // How many lines `text` takes at `w`, and how wide the widest is.
+    let wrapped = |w: f32| {
+        let lines: Vec<String> = text
+            .split('\n')
+            .flat_map(|p| wrap(ui, p, font, w))
+            .collect();
+        let widest = lines.iter().map(|l| measure(l)).fold(0.0, f32::max);
+        (lines.len(), widest)
+    };
+    let (count, mut wide) = wrapped(width);
+    // The text shared out over that many lines, less a space at each
+    // break: anything narrower takes more lines.
+    let whole: f32 = text.split('\n').map(|p| measure(p.trim_end())).sum();
+    let mut narrow = whole / count as f32 - font.size;
+    for _ in 0..BALANCE_TRIES {
+        if wide - narrow <= 1.0 {
+            break;
+        }
+        let middle = (narrow + wide) / 2.0;
+        let (lines, widest) = wrapped(middle);
+        if lines <= count {
+            wide = widest;
+        } else {
+            narrow = middle;
+        }
+    }
+    wide
+}
+
 /// An item's own text to read, as a paragraph: lines at most about 70
 /// characters wide, with a little room between them, on the side its first
 /// letter reads from, so English content lines up on the left in Arabic too.
@@ -470,6 +528,123 @@ mod tests {
         assert_eq!(shown(&tagged, false), "#work  ·  بكم مرحبا");
         let skipped = [isolate("من Visual Studio Code"), isolate("sk-…6789")].join(" · ");
         assert_eq!(shown(&skipped, true), "sk-…6789 · Visual Studio Code من");
+    }
+
+    /// A window with the app's fonts.
+    fn window() -> egui::Context {
+        let ctx = egui::Context::default();
+        crate::app::view::add_fonts(&ctx);
+        // The fonts apply from the next frame; the font atlas uploads no
+        // renderer takes here are dropped.
+        ctx.run_ui(egui::RawInput::default(), |_| {})
+            .textures_delta
+            .clear();
+        ctx
+    }
+
+    /// How wide `text` is on one line in `font`.
+    fn width_of(ctx: &egui::Context, text: &str, font: &FontId) -> f32 {
+        let mut width = 0.0;
+        let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+            width = ui.fonts_mut(|f| {
+                f.layout_no_wrap(text.into(), font.clone(), Color32::WHITE)
+                    .size()
+                    .x
+            });
+        });
+        output.textures_delta.clear();
+        width
+    }
+
+    /// The lines `draw` painted in a column `width` wide, top to bottom.
+    fn painted_lines(ctx: &egui::Context, width: f32, mut draw: impl FnMut(&mut Ui)) -> Vec<Rect> {
+        let column = Rect::from_min_size(Pos2::new(20.0, 20.0), Vec2::new(width, 400.0));
+        let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+            ui.scope_builder(egui::UiBuilder::new().max_rect(column), |ui| draw(ui));
+        });
+        output.textures_delta.clear();
+        let mut lines: Vec<Rect> = output
+            .shapes
+            .iter()
+            .filter_map(|clipped| match &clipped.shape {
+                egui::Shape::Text(text) => Some(text.galley.rect.translate(text.pos.to_vec2())),
+                _ => None,
+            })
+            .collect();
+        lines.sort_by(|a, b| a.top().total_cmp(&b.top()));
+        lines
+    }
+
+    /// "Reads the words in screenshots and photos, so search finds them"
+    /// in a column where it wraps into two lines, "them" alone on the
+    /// second: balanced, it keeps two lines and the second is at least half
+    /// as wide as the first. An Arabic line that wraps the same way is
+    /// balanced the same way. The lines start on the window's reading side,
+    /// and a line that fits on one line is laid out as before.
+    fn check_balanced_lines() {
+        let ctx = window();
+        let font = FontId::proportional(size::SMALL);
+        let start = |at: Rect, width: f32| {
+            if crate::i18n::rtl() {
+                at.right() - (20.0 + width)
+            } else {
+                at.left() - 20.0
+            }
+        };
+        for (text, last_word) in [
+            (
+                "Reads the words in screenshots and photos, so search finds them",
+                "them",
+            ),
+            ("يقرأ الكلمات في لقطات الشاشة والصور، ليجدها البحث", "البحث"),
+        ] {
+            // Just wide enough for all but the last word.
+            let rest = text.trim_end_matches(last_word).trim_end();
+            let width = width_of(&ctx, rest, &font) + 1.0;
+            let plain = painted_lines(&ctx, width, |ui| {
+                paragraph(ui, text, font.clone(), Color32::GRAY);
+            });
+            assert_eq!(plain.len(), 2, "{text}: {plain:?}");
+            assert!(
+                plain[1].width() < plain[0].width() / 2.0,
+                "{text}: {plain:?}"
+            );
+            let even = painted_lines(&ctx, width, |ui| {
+                balanced(ui, text, font.clone(), Color32::GRAY);
+            });
+            assert_eq!(even.len(), 2, "{text}: {even:?}");
+            assert!(even[1].width() >= even[0].width() / 2.0, "{text}: {even:?}");
+            for line in &even {
+                assert!(start(*line, width).abs() <= 0.5, "{text}: {line:?}");
+            }
+        }
+        let fits = "Keeps running in the tray";
+        let plain = painted_lines(&ctx, 300.0, |ui| {
+            paragraph(ui, fits, font.clone(), Color32::GRAY);
+        });
+        let even = painted_lines(&ctx, 300.0, |ui| {
+            balanced(ui, fits, font.clone(), Color32::GRAY);
+        });
+        assert_eq!(plain.len(), 1, "{plain:?}");
+        assert_eq!(even, plain);
+    }
+
+    #[test]
+    fn a_wrapped_line_is_balanced() {
+        check_balanced_lines();
+    }
+
+    #[test]
+    fn a_wrapped_line_is_balanced_right_to_left() {
+        crate::i18n::passes_in_arabic(module_path!(), "a_wrapped_line_is_balanced_in_arabic");
+    }
+
+    #[test]
+    #[ignore = "run in a process of its own by a_wrapped_line_is_balanced_right_to_left"]
+    fn a_wrapped_line_is_balanced_in_arabic() {
+        if crate::i18n::arabic_run() {
+            check_balanced_lines();
+        }
     }
 
     #[test]
