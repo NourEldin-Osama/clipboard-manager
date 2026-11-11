@@ -250,11 +250,14 @@ fn kind_tiles(ui: &mut Ui, server: &mut Server) {
     });
 }
 
+/// How wide a type's tile is.
+const KIND_TILE_WIDTH: f32 = 78.0;
+
 /// A type's logo above its name.
 fn kind_tile(ui: &mut Ui, kind: ServerKind, selected: bool) -> egui::Response {
     let name = kind_name(kind);
-    // Seven fit in one row of the settings column.
-    let (rect, resp) = ui.allocate_exact_size(Vec2::new(86.0, 62.0), Sense::click());
+    // Seven fit in one row of a card in the widest settings column.
+    let (rect, resp) = ui.allocate_exact_size(Vec2::new(KIND_TILE_WIDTH, 62.0), Sense::click());
     resp.widget_info(|| egui::WidgetInfo::selected(egui::Role::RadioButton, true, selected, &name));
     let v = ui.visuals();
     let (fill, stroke, color) = if selected {
@@ -1899,6 +1902,43 @@ mod tests {
         finish_fill(&mut model, Ok(Some(entry)));
         assert_eq!(model.name, "Mine");
         assert_eq!(finish_fill(&mut model, Ok(None)).len(), 1);
+    }
+
+    /// In a card of the widest settings column, the seven types of server
+    /// fit in one row of tiles.
+    #[test]
+    fn the_server_types_fit_in_one_row() {
+        let ctx = egui::Context::default();
+        crate::app::view::add_fonts(&ctx);
+        crate::app::view::style(&ctx, DarkPanels::Lighter);
+        ctx.enable_accesskit();
+        // The fonts take effect from the next frame; the font atlas uploads
+        // no renderer takes here are dropped.
+        ctx.run_ui(egui::RawInput::default(), |_| {})
+            .textures_delta
+            .clear();
+        let mut server = Server::default();
+        let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+            let column = Rect::from_min_size(
+                ui.max_rect().min,
+                Vec2::new(super::super::COLUMN_WIDTH, 400.0),
+            );
+            ui.scope_builder(egui::UiBuilder::new().max_rect(column), |ui| {
+                card(ui, |ui| {
+                    card_row(ui, false, |ui| kind_tiles(ui, &mut server))
+                });
+            });
+        });
+        output.textures_delta.clear();
+        let update = output.platform_output.accesskit_update.expect("a tree");
+        let tops: Vec<f64> = update
+            .nodes
+            .iter()
+            .filter(|(_, node)| node.role() == egui::accesskit::Role::RadioButton)
+            .filter_map(|(_, node)| node.bounds().map(|bounds| bounds.y0))
+            .collect();
+        assert_eq!(tops.len(), ServerKind::ALL.len());
+        assert!(tops.iter().all(|top| *top == tops[0]), "{tops:?}");
     }
 
     #[test]

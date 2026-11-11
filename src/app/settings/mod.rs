@@ -36,7 +36,7 @@ use widgets::*;
 pub(super) use servers::{model_label, use_found, PendingSend, ServerEditor};
 
 /// How wide a settings page is at most.
-const COLUMN_WIDTH: f32 = 560.0;
+const COLUMN_WIDTH: f32 = 640.0;
 
 /// The pages, each about one question.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
