@@ -358,7 +358,9 @@ pub(super) fn paint_row(
             weak,
         );
     }
-    let av = if compact { 26.0 } else { 38.0 };
+    // The kind's place: a tile on two lines; on one line a slot as wide
+    // as a picture's thumbnail, so every title starts on one edge.
+    let av = if compact { ONE_LINE_SLOT } else { 38.0 };
     let av_rect = m(Rect::from_min_size(
         Pos2::new(
             rect.left() + ROW_PADDING + gutter,
@@ -389,10 +391,10 @@ pub(super) fn paint_row(
             text_shade(c, v.dark_mode),
         );
     };
-    // On one line a picture or a swatch takes about the room of the kind's
-    // symbol, so the column stays even.
+    // On one line a picture is a thumbnail that nearly fills the slot, so
+    // two pictures can be told apart.
     let picture = if compact {
-        av_rect.shrink(4.0)
+        Rect::from_center_size(av_rect.center(), Vec2::splat(ONE_LINE_PICTURE))
     } else {
         av_rect
     };
@@ -412,12 +414,26 @@ pub(super) fn paint_row(
             egui::Image::new((t.id(), Vec2::splat(side)))
                 .uv(uv)
                 .tint(small_picture_tint(ui, id, hot || selected))
-                .corner_radius(if compact { 4.0 } else { 6.0 })
+                .corner_radius(if compact {
+                    f32::from(radius::SMALL)
+                } else {
+                    6.0
+                })
                 .paint_at(ui, picture);
+            if compact {
+                // A thin edge, so a picture with a pale border keeps its shape.
+                p.rect_stroke(
+                    picture,
+                    CornerRadius::same(radius::SMALL),
+                    Stroke::new(1.0, line_color(v.dark_mode)),
+                    egui::StrokeKind::Inside,
+                );
+            }
         }
         None if color.is_some() => {
+            // On one line a dot about the size of the kind's symbol.
             let swatch = if compact {
-                picture
+                Rect::from_center_size(av_rect.center(), Vec2::splat(ONE_LINE_DOT))
             } else {
                 av_rect.shrink(3.0)
             };
@@ -729,6 +745,17 @@ impl<'a> SecondLine<'a> {
 
 /// How wide the place of a number of quick paste is.
 const NUMBER_SLOT: f32 = 20.0;
+
+/// How wide the kind's place is on a one-line row: a picture's thumbnail
+/// and a point on each side. The kind's symbol and a color's dot sit in its
+/// middle.
+const ONE_LINE_SLOT: f32 = 32.0;
+
+/// How big a picture's thumbnail is on a one-line row.
+const ONE_LINE_PICTURE: f32 = 30.0;
+
+/// How big a color's dot is on a one-line row.
+const ONE_LINE_DOT: f32 = 18.0;
 
 /// The room the line after the popup's pinned rows adds between them and
 /// the others.
@@ -2052,7 +2079,7 @@ mod tests {
         assert_eq!((format.font_id.size, format.color), (size::SMALL, weak));
         // The title after the number's place, the symbol's and their gaps.
         let title = title.expect("the title");
-        let start = ROW_PADDING + NUMBER_SLOT + 6.0 + 26.0 + 12.0;
+        let start = ROW_PADDING + NUMBER_SLOT + 6.0 + ONE_LINE_SLOT + 12.0;
         let title_start = if rtl {
             row.right() - title.right()
         } else {
@@ -2082,6 +2109,118 @@ mod tests {
     fn the_popups_numbers_are_plain_digits_in_arabic() {
         if crate::i18n::arabic_run() {
             check_plain_numbers();
+        }
+    }
+
+    /// On one line, numbered as in the popup or not as in compact density,
+    /// a picture is a thumbnail 30 points square with a thin edge, centred
+    /// on the row in the kind's place, and its title starts where a text's
+    /// does. From the left, or in Arabic from the right.
+    fn check_one_line_picture() {
+        let ctx = egui::Context::default();
+        add_fonts(&ctx);
+        icons::register(&ctx);
+        // The fonts apply from the next frame.
+        ctx.run_ui(egui::RawInput::default(), |_| {})
+            .textures_delta
+            .clear();
+        let white = egui::ColorImage::filled([48, 32], Color32::WHITE);
+        let thumb = ctx.load_texture("picture", white, Default::default());
+        let mut picture = Item::new(1, Kind::Image, Origin::Clipboard, "".into());
+        (picture.width, picture.height) = (480, 320);
+        let note = Item::new(2, Kind::Text, Origin::Clipboard, "Lunch at noon".into());
+        let rtl = i18n::rtl();
+        let row = Rect::from_min_size(Pos2::new(0.0, 100.0), Vec2::new(420.0, 40.0));
+        for numbered in [true, false] {
+            let case = format!("rtl {rtl}, numbered {numbered}");
+            // What a row painted: the thumbnail, the strokes and where its
+            // title starts in reading order.
+            let paint = |it: &Item, thumb: Option<TextureHandle>, words: &str| {
+                let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+                    let hit = Hit {
+                        id: it.id,
+                        closeness: None,
+                        weak: false,
+                    };
+                    let number = numbered.then_some(it.id as usize);
+                    paint_row(
+                        ui,
+                        row,
+                        false,
+                        it,
+                        &hit,
+                        thumb.clone(),
+                        None,
+                        false,
+                        true,
+                        &[],
+                        numbered,
+                        number,
+                        false,
+                        false,
+                        60.0,
+                    );
+                });
+                output.textures_delta.clear();
+                let (mut shown, mut strokes, mut title) = (None, Vec::new(), None);
+                for clipped in &output.shapes {
+                    match &clipped.shape {
+                        egui::Shape::Rect(shape) if shape.brush.is_some() => {
+                            shown = Some(shape.rect)
+                        }
+                        egui::Shape::Rect(shape) if shape.stroke.width > 0.0 => {
+                            strokes.push(shape.rect);
+                        }
+                        egui::Shape::Text(text) if text.galley.text().contains(words) => {
+                            let at = text.galley.rect.translate(text.pos.to_vec2());
+                            title = Some(if rtl {
+                                row.right() - at.right()
+                            } else {
+                                at.left()
+                            });
+                        }
+                        _ => {}
+                    }
+                }
+                (shown, strokes, title.expect(words))
+            };
+            let (shown, strokes, picture_title) = paint(&picture, Some(thumb.clone()), "480");
+            let shown = shown.expect("the thumbnail");
+            assert_eq!(shown.size(), Vec2::splat(ONE_LINE_PICTURE), "{case}");
+            assert!((shown.center().y - row.center().y).abs() <= 0.5, "{case}");
+            // In the middle of the kind's place, after the number's.
+            let gutter = if numbered { NUMBER_SLOT + 6.0 } else { 0.0 };
+            let middle = ROW_PADDING + gutter + ONE_LINE_SLOT / 2.0;
+            let from_start = if rtl {
+                row.right() - shown.center().x
+            } else {
+                shown.center().x - row.left()
+            };
+            assert!((from_start - middle).abs() <= 0.5, "{case}: {from_start}");
+            assert!(strokes.contains(&shown), "{case}: its edge {strokes:?}");
+            let (_, _, text_title) = paint(&note, None, "Lunch at noon");
+            assert!((picture_title - text_title).abs() <= 0.5, "{case}");
+        }
+    }
+
+    #[test]
+    fn a_one_line_rows_picture_shows_as_a_picture() {
+        check_one_line_picture();
+    }
+
+    #[test]
+    fn a_one_line_rows_picture_shows_as_a_picture_right_to_left() {
+        crate::i18n::passes_in_arabic(
+            module_path!(),
+            "a_one_line_rows_picture_shows_as_a_picture_in_arabic",
+        );
+    }
+
+    #[test]
+    #[ignore = "run in a process of its own by a_one_line_rows_picture_shows_as_a_picture_right_to_left"]
+    fn a_one_line_rows_picture_shows_as_a_picture_in_arabic() {
+        if crate::i18n::arabic_run() {
+            check_one_line_picture();
         }
     }
 
