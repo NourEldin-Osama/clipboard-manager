@@ -420,6 +420,9 @@ struct Toast {
     /// Makes this the update's message (D65): its text, buttons and progress
     /// follow `App::update`, and it lasts until the update is done or closed.
     update: Option<view::UpdateParts>,
+    /// Makes this a question that waits for its answer: its button, or
+    /// Cancel, Esc or its window closing, which answer no.
+    question: Option<view::Question>,
 }
 
 impl Toast {
@@ -498,6 +501,10 @@ pub(super) enum Command {
     OpenSettings(settings::SettingsPage),
     /// Records copies from a program again: Undo after its rule was added.
     RecordAppAgain(String),
+    /// Stops recording copies from a program (its file name, and its name
+    /// as shown) with a rule: Never record, the answer to the question
+    /// the item's menu asks.
+    IgnoreApp(String, String),
 }
 
 /// Whether putting an item back on the clipboard also pastes it into the
@@ -557,6 +564,16 @@ fn texts_together<'a>(items: impl Iterator<Item = &'a Item>) -> (usize, String, 
     let (pictures, texts): (Vec<_>, Vec<_>) = items.partition(|it| it.kind == Kind::Image);
     let texts: Vec<&str> = texts.iter().map(|it| it.text.trim_end()).collect();
     (texts.len(), texts.join("\n"), pictures.len())
+}
+
+/// `cfg` with a rule that stops recording copies from the program `app`.
+fn ignoring_app(cfg: &Config, app: &str) -> Config {
+    let mut d = cfg.clone();
+    d.rules.push(crate::rules::Rule {
+        app: app.to_string(),
+        ..Default::default()
+    });
+    d
 }
 
 /// eframe's entry for the window's place and size in app.ron.
@@ -1622,6 +1639,7 @@ impl App {
             drawn: false,
             id: self.toast_seq,
             update: None,
+            question: None,
         });
         self.toasts.last_mut().expect("a message was just added")
     }
@@ -1749,6 +1767,7 @@ impl App {
                 let ctx = self.win.ctx.clone();
                 self.apply_settings(d, &ctx, false);
             }
+            Command::IgnoreApp(app, name) => self.ignore_app(&app, &name),
             Command::SaveSkipped(capture) => {
                 // Said first, so a warning the copy brings (the history 90%
                 // full) comes in front of it.
@@ -1892,11 +1911,7 @@ impl App {
     /// Stops recording copies from `app`, shown as `name`, with a rule; the
     /// message offers Undo, and the rule stays in Settings, Privacy.
     fn ignore_app(&mut self, app: &str, name: &str) {
-        let mut d = self.cfg.clone();
-        d.rules.push(crate::rules::Rule {
-            app: app.to_string(),
-            ..Default::default()
-        });
+        let d = ignoring_app(&self.cfg, app);
         let ctx = self.win.ctx.clone();
         self.apply_settings(d, &ctx, false);
         let toast = self.toast_with(t!("toast-app-ignored", app = name), Duration::from_secs(8));

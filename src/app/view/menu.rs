@@ -2,6 +2,7 @@
 //! the selected one. Every action with its key, what suits the item, and
 //! Delete last, in red, apart from the rest.
 
+use super::messages::{ask_to_ignore, close_question};
 use super::*;
 
 /// What an entry of an item's menu does.
@@ -191,6 +192,8 @@ impl App {
         let groups = self.menu_groups(&it, in_popup);
         let mut open = true;
         let mut chosen = None;
+        // The entry was chosen with Enter or Space, not the mouse.
+        let mut by_key = false;
         let mut focused = false;
         // It opens toward the reading end.
         let align = if i18n::rtl() {
@@ -233,6 +236,7 @@ impl App {
                     }
                     if r.clicked() {
                         chosen = Some(e.action.clone());
+                        by_key = !r.clicked_by(egui::PointerButton::Primary);
                     }
                 }
             }
@@ -243,17 +247,41 @@ impl App {
         if !open || chosen.is_some() {
             self.item_menu = None;
             // Typing goes to the search field again; Esc took the keyboard
-            // away from it. Tagging takes it for its own field.
-            if !matches!(chosen, Some(Action::Tag)) {
+            // away from it. Tagging takes it for its own field, and a
+            // question asked from the keyboard for its button.
+            let keeps_keyboard = match &chosen {
+                Some(Action::Tag) => true,
+                Some(Action::IgnoreApp(_)) => by_key,
+                _ => false,
+            };
+            if !keeps_keyboard {
                 self.focus_search.store(true, Ordering::SeqCst);
             }
         }
         if let Some(action) = chosen {
-            self.menu_action(ui.ctx(), &it, action);
+            self.menu_action(ui.ctx(), &it, action, in_popup, by_key);
         }
     }
 
-    fn menu_action(&mut self, ctx: &egui::Context, it: &Item, action: Action) {
+    /// Asks before a rule that stops recording copies from the program
+    /// `app`, shown as `name`, in the popup's window (`in_popup`) or the
+    /// full window: the rule waits for Never record. It replaces a
+    /// question asked before.
+    fn ask_to_ignore_app(&mut self, app: &str, name: &str, in_popup: bool, by_key: bool) {
+        close_question(&mut self.toasts, true);
+        close_question(&mut self.toasts, false);
+        let toast = self.toast_with(String::new(), Duration::MAX);
+        ask_to_ignore(toast, app, name, in_popup, by_key);
+    }
+
+    fn menu_action(
+        &mut self,
+        ctx: &egui::Context,
+        it: &Item,
+        action: Action,
+        in_popup: bool,
+        by_key: bool,
+    ) {
         match action {
             Action::Copy(paste) => self.run(Command::Copy(it.id, paste)),
             Action::Pin => self.run(Command::Pin(it.id)),
@@ -270,7 +298,7 @@ impl App {
             Action::IgnoreApp(app) => {
                 let program = it.program.as_deref().and_then(|p| self.programs.get(p));
                 let name = crate::app::programs::shown_name(&app, program);
-                self.ignore_app(&app, &name);
+                self.ask_to_ignore_app(&app, &name, in_popup, by_key);
             }
             Action::Delete => self.run(Command::Delete(it.id)),
             Action::CopyGroup(paste) => self.run(Command::CopyTogether(self.group(), paste)),

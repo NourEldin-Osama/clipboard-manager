@@ -382,7 +382,10 @@ impl App {
             }
         }
         if esc {
-            if self.group_tag.is_some() {
+            // A question waiting for its answer closes first, with no.
+            if super::messages::close_question(&mut self.toasts, in_popup) {
+                self.focus_search.store(true, Ordering::SeqCst);
+            } else if self.group_tag.is_some() {
                 self.group_tag = None;
             } else if !in_popup && !self.marked.is_empty() {
                 self.clear_marks();

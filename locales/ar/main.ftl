@@ -227,7 +227,7 @@ item-paste-plain = لصق كنص عادي
 item-copy-only = نسخ فقط
 item-copy-plain = نسخ كنص عادي
 item-copy-image-text = نسخ النص الموجود في الصورة
-item-ignore-app = عدم التسجيل أبدًا من { $app }
+item-ignore-app = عدم التسجيل أبدًا من { $app }…
 item-menu = الإجراءات
 item-paste-group =
     { $count ->
@@ -961,6 +961,8 @@ toast-hint-characters =
        *[other] { $count } حرف
     }
 toast-skipped-rule = لم يُحفظ: إحدى قواعدك تتخطاه
+toast-never-record-question = عدم التسجيل أبدًا من { $app }؟ لن تُحفظ النسخ منه.
+toast-never-record = عدم التسجيل أبدًا
 toast-app-ignored = لن تُسجَّل النسخ من { $app }. يمكنك حذف القاعدة من الإعدادات، الخصوصية.
 tray-show = إظهار مدير الحافظة
 tray-pause-recording = إيقاف التسجيل مؤقتًا

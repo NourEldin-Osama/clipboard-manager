@@ -35,6 +35,10 @@ impl App {
             ctx.send_viewport_cmd(egui::ViewportCommand::RequestPaintWhileHidden);
             ctx.request_repaint();
         }
+        // A question the popup asked goes with it, answered no.
+        if !self.win.is_popup_open() {
+            super::messages::close_question(&mut self.toasts, true);
+        }
     }
 
     /// Draws the popup's window while it is open. A frame without it closes
