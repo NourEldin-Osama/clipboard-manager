@@ -398,9 +398,10 @@ pub(super) fn paint_row(
                 Pos2::new((1.0 - uv_w) / 2.0, (1.0 - uv_h) / 2.0),
                 Pos2::new((1.0 + uv_w) / 2.0, (1.0 + uv_h) / 2.0),
             );
+            let id = ui.scope_id().with(("row-picture", it.id));
             egui::Image::new((t.id(), Vec2::splat(side)))
                 .uv(uv)
-                .tint(theme::picture_tint(v.dark_mode))
+                .tint(small_picture_tint(ui, id, hot || selected))
                 .corner_radius(if compact { 4.0 } else { 6.0 })
                 .paint_at(ui, picture);
         }
@@ -552,6 +553,19 @@ pub(super) fn paint_row(
     if let Some(level) = relevance_level(hit) {
         paint_relevance(&p, rect, ix, iy + 6.0, level, a, weak);
     }
+}
+
+/// The tint of a picture in a row or a card, `id` its place: dimmer at rest
+/// in the dark theme, in full while `lit`, under the pointer or selected.
+/// It fades between the two, or switches at once with animations off.
+pub(super) fn small_picture_tint(ui: &Ui, id: egui::Id, lit: bool) -> Color32 {
+    let fade = if ui.style().animation_time > 0.0 {
+        theme::PICTURE_FADE
+    } else {
+        0.0
+    };
+    let lit = ui.ctx().animate_bool_with_time(id, lit, fade);
+    theme::picture_tint(ui.visuals().dark_mode, lit)
 }
 
 /// How big the pin of a pinned item is on rows and cards, big enough to
@@ -1950,6 +1964,108 @@ mod tests {
         if crate::i18n::arabic_run() {
             check_second_line();
         }
+    }
+
+    /// The tint of a picture as a row shows it, in frames one after the
+    /// other, each with whether the row is under the pointer and whether
+    /// it is selected. With animations on or off.
+    fn row_picture_tints(
+        dark: bool,
+        compact: bool,
+        animate: bool,
+        frames: &[(bool, bool)],
+    ) -> Vec<Color32> {
+        let ctx = egui::Context::default();
+        add_fonts(&ctx);
+        ctx.set_theme(if dark {
+            egui::Theme::Dark
+        } else {
+            egui::Theme::Light
+        });
+        if !animate {
+            ctx.all_styles_mut(|style| style.animation_time = 0.0);
+        }
+        let mut it = Item::new(1, Kind::Image, Origin::Clipboard, "".into());
+        (it.width, it.height) = (480, 320);
+        let hit = Hit {
+            id: 1,
+            closeness: None,
+            weak: false,
+        };
+        let white = egui::ColorImage::filled([48, 32], Color32::WHITE);
+        let thumb = ctx.load_texture("picture", white, Default::default());
+        frames
+            .iter()
+            .map(|&(hot, selected)| {
+                let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+                    let row_h = if compact { 40.0 } else { 58.0 };
+                    let rect = Rect::from_min_size(Pos2::new(0.0, 100.0), Vec2::new(600.0, row_h));
+                    paint_row(
+                        ui,
+                        rect,
+                        hot,
+                        &it,
+                        &hit,
+                        Some(thumb.clone()),
+                        None,
+                        selected,
+                        compact,
+                        &[],
+                        false,
+                        None,
+                        false,
+                        false,
+                        60.0,
+                    );
+                });
+                output.textures_delta.clear();
+                let tints: Vec<Color32> = output
+                    .shapes
+                    .iter()
+                    .filter_map(|clipped| match &clipped.shape {
+                        egui::Shape::Rect(shape) => shape
+                            .brush
+                            .as_ref()
+                            .filter(|brush| brush.fill_texture_id == thumb.id())
+                            .map(|_| shape.fill),
+                        _ => None,
+                    })
+                    .collect();
+                assert_eq!(tints.len(), 1, "one picture");
+                tints[0]
+            })
+            .collect()
+    }
+
+    /// In the dark theme a row's picture rests dimmer and shows in full
+    /// under the pointer or selected; the light theme shows it in full.
+    /// Between the two it fades, or switches at once with animations off.
+    #[test]
+    fn a_rows_picture_rests_dimmer_in_the_dark_theme() {
+        let resting = theme::picture_tint(true, 0.0);
+        assert_ne!(resting, Color32::WHITE);
+        for dark in [true, false] {
+            for compact in [false, true] {
+                for (hot, selected) in [(false, false), (true, false), (false, true)] {
+                    let tint = row_picture_tints(dark, compact, true, &[(hot, selected)])[0];
+                    let lit = hot || selected;
+                    let expected = if dark && !lit {
+                        resting
+                    } else {
+                        Color32::WHITE
+                    };
+                    let case =
+                        format!("dark {dark}, compact {compact}, hot {hot}, selected {selected}");
+                    assert_eq!(tint, expected, "{case}");
+                }
+            }
+        }
+        // The pointer comes onto the row: a fade, or at once.
+        let fading = row_picture_tints(true, false, true, &[(false, false), (true, false)]);
+        let fade = fading[1];
+        assert!(fade.r() > resting.r() && fade.r() < 255, "{fading:?}");
+        let at_once = row_picture_tints(true, false, false, &[(false, false), (true, false)]);
+        assert_eq!(at_once, [resting, Color32::WHITE]);
     }
 
     #[test]

@@ -811,7 +811,8 @@ impl App {
                 let size = tex.size_vec2();
                 let max_h = (ui.available_height() - 140.0).max(220.0);
                 let scale = (ui.available_width() / size.x).min(max_h / size.y).min(1.0);
-                let tint = theme::picture_tint(ui.visuals().dark_mode);
+                // Large, so in full, in the dark theme too.
+                let tint = theme::picture_tint(ui.visuals().dark_mode, 1.0);
                 ui.add(
                     egui::Image::new((tex.id(), size * scale))
                         .tint(tint)

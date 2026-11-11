@@ -296,8 +296,9 @@ pub(super) fn paint_card(
             let s = t.size_vec2();
             let k = (body.width() / s.x).min(body.height() / s.y).min(2.0);
             let img = Rect::from_center_size(body.center(), s * k);
+            let id = ui.scope_id().with(("card-picture", it.id));
             egui::Image::new((t.id(), s * k))
-                .tint(theme::picture_tint(v.dark_mode))
+                .tint(small_picture_tint(ui, id, hot || selected))
                 .corner_radius(6.0)
                 .paint_at(ui, img);
             bp.rect_stroke(
@@ -1320,6 +1321,51 @@ mod tests {
     fn a_color_card_shows_a_small_swatch_in_arabic() {
         if crate::i18n::arabic_run() {
             check_color_card();
+        }
+    }
+
+    /// In the dark theme a card's picture rests dimmer and shows in full
+    /// under the pointer or selected; the light theme shows it in full.
+    #[test]
+    fn a_cards_picture_rests_dimmer_in_the_dark_theme() {
+        let mut it = Item::new(1, Kind::Image, Origin::Clipboard, "".into());
+        (it.width, it.height) = (480, 320);
+        for dark in [true, false] {
+            for (hot, selected) in [(false, false), (true, false), (false, true)] {
+                let ctx = egui::Context::default();
+                add_fonts(&ctx);
+                ctx.set_theme(if dark {
+                    egui::Theme::Dark
+                } else {
+                    egui::Theme::Light
+                });
+                let white = egui::ColorImage::filled([48, 32], Color32::WHITE);
+                let thumb = ctx.load_texture("picture", white, Default::default());
+                let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+                    let rect = Rect::from_min_size(Pos2::new(0.0, 100.0), Vec2::new(300.0, 210.0));
+                    let picture = Some(thumb.clone());
+                    paint_card(ui, rect, hot, &it, picture, None, None, selected, &[]);
+                });
+                output.textures_delta.clear();
+                let tints: Vec<Color32> = output
+                    .shapes
+                    .iter()
+                    .filter_map(|clipped| match &clipped.shape {
+                        egui::Shape::Rect(shape) => shape
+                            .brush
+                            .as_ref()
+                            .filter(|brush| brush.fill_texture_id == thumb.id())
+                            .map(|_| shape.fill),
+                        _ => None,
+                    })
+                    .collect();
+                let lit = hot || selected;
+                let expected = theme::picture_tint(dark, if lit { 1.0 } else { 0.0 });
+                let case = format!("dark {dark}, hot {hot}, selected {selected}");
+                assert_eq!(tints, [expected], "{case}");
+                let full = !dark || lit;
+                assert_eq!(expected == Color32::WHITE, full, "{case}");
+            }
         }
     }
 
