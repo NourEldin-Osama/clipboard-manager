@@ -184,7 +184,8 @@ const LINE_GAP: f32 = space::TINY;
 const TEXT_GAP: f32 = space::HUGE;
 
 /// The least width a setting's text keeps beside its control; with less,
-/// the control goes under the text.
+/// the control goes under the text. A reset beside the control doesn't
+/// count: it takes its room from the text, so it never moves the control.
 const TEXT_LEAST_WIDTH: f32 = 260.0;
 
 /// The room between a setting's text and its control under it.
@@ -504,15 +505,17 @@ impl RowSizes {
 /// `setting_content` with `under` the name what the caller draws there,
 /// such as a state, in place of the gray line.
 ///
-/// The text takes the width the control leaves, its lines wrapping there;
-/// when that is less than `TEXT_LEAST_WIDTH`, or too little for the name on
-/// one line, the control goes under the text, where it may take the row's
-/// whole width. The control ends on the row's far edge whether the
-/// reset shows or not, so the controls of a card share one edge. The reset
-/// sits on the control's reading-start side and comes after the info
-/// button and before the control for the keyboard, as it reads. The parts
-/// are placed by their sizes from the frame before; a part that changed
-/// size has the frame drawn again.
+/// The text takes the width the control and its reset leave, its lines
+/// wrapping there. When the control alone leaves less than
+/// `TEXT_LEAST_WIDTH`, or too little for the name on one line beside a
+/// reset, the control goes under the text, where it may take the row's
+/// whole width; so a reset that shows or goes never moves the control.
+/// The control ends on the row's far edge whether the reset shows or not,
+/// so the controls of a card share one edge. The reset sits on the
+/// control's reading-start side and comes after the info button and
+/// before the control for the keyboard, as it reads. The parts are placed
+/// by their sizes from the frame before; a part that changed size has the
+/// frame drawn again.
 pub(super) fn setting_parts(
     ui: &mut Ui,
     label: &str,
@@ -551,10 +554,14 @@ pub(super) fn setting_parts(
         name.size().x + spacing + INFO_BUTTON_SIZE
     };
 
-    // The most the control and its reset may take beside the text.
+    // Whether the control fits beside the text. The reset doesn't count, so
+    // it never moves the control: it takes its room from the text, whose
+    // lines may wrap a little more. The name, which never wraps, keeps room
+    // for a reset whether one shows or not, so a reset never runs into it.
     let room = (width - TEXT_GAP - TEXT_LEAST_WIDTH).max(0.0);
+    let name_room = width - sizes.control.x - TEXT_GAP - RESET_BUTTON_SIZE - spacing;
+    let beside = sizes.control.x <= room && name_width <= name_room;
     let far_part = sizes.control.x + reset_room;
-    let beside = far_part <= room && name_width <= width - far_part - TEXT_GAP;
     // The control's place spans the row, less the reset's room, beside the
     // text as under it, so the control takes its own width in both; it is
     // beside the text only while that width leaves the text its room.
@@ -1493,10 +1500,10 @@ mod tests {
     }
 
     /// The widest controls in the widest column, the choice and the recorder
-    /// changed so their resets show: the model menu and a three-way choice
-    /// stay beside their text, centred on it, and leave it at least
-    /// `TEXT_LEAST_WIDTH`; a key recorder with a note beside it would leave
-    /// less, so it goes under its text, at the row's far edge.
+    /// changed so their resets show: the model menu, a three-way choice and
+    /// a key recorder with a note beside it stay beside their text, centred
+    /// on it, and leave it at least `TEXT_LEAST_WIDTH`. A reset takes its
+    /// room from the text, which ends `TEXT_GAP` before it.
     fn check_widest_controls_leave_room() {
         let ctx = window();
         let (mut mode, mut size, mut problem) = (SearchMode::Hybrid, 1, None);
@@ -1570,35 +1577,32 @@ mod tests {
             .collect();
         let reset = t!("settings-back-to-default");
         let (_, places) = spoken(output);
-        for (n, (row, control)) in rows.into_iter().enumerate() {
-            let with_reset = places
-                .iter()
-                .filter(|(name, rect)| *name == reset && row.y_range().contains(rect.center().y))
-                .fold(control, |beside, (_, rect)| beside.union(*rect));
-            if n == 2 {
-                // The row's name and gray line, outside the control.
-                let text_bottom = texts
-                    .iter()
-                    .filter(|at| row.contains(at.center()) && !control.contains(at.center()))
-                    .map(|at| at.bottom())
-                    .fold(f32::MIN, f32::max);
-                assert!(
-                    control.top() >= text_bottom + STACKED_GAP - 0.5,
-                    "{control:?} under the text ending at {text_bottom}"
-                );
-                let end = far_edge(control) - far_edge(row);
-                assert!(end.abs() <= 0.5, "{control:?} at the end of {row:?}");
-                continue;
-            }
+        for (row, control) in rows {
             let room = if i18n::rtl() {
-                row.right() - with_reset.right() - TEXT_GAP
+                row.right() - control.right() - TEXT_GAP
             } else {
-                with_reset.left() - row.left() - TEXT_GAP
+                control.left() - row.left() - TEXT_GAP
             };
             assert!(
                 room >= TEXT_LEAST_WIDTH,
                 "{room} beside {control:?} in {row:?}"
             );
+            let with_reset = places
+                .iter()
+                .filter(|(name, rect)| *name == reset && row.y_range().contains(rect.center().y))
+                .fold(control, |beside, (_, rect)| beside.union(*rect));
+            // The row's name and gray line, outside the control.
+            let text = texts
+                .iter()
+                .filter(|at| row.contains(at.center()) && !control.contains(at.center()));
+            for at in text {
+                let apart = if i18n::rtl() {
+                    at.left() - with_reset.right()
+                } else {
+                    with_reset.left() - at.right()
+                };
+                assert!(apart >= TEXT_GAP - 0.5, "{at:?} beside {with_reset:?}");
+            }
             let off = control.center().y - row.center().y;
             assert!(off.abs() <= 0.5, "{control:?} beside its text in {row:?}");
         }
@@ -1750,15 +1754,18 @@ mod tests {
         }
     }
 
-    /// The Query prompt row of a model's settings, set in under its model,
-    /// in the widest column, with its field `width` points wide and its
-    /// reset showing when `changed`: the row's rect and the field's, once
-    /// the frames drawn in `ctx`, as the app draws them, need no pass again.
-    fn settled_prompt_row(ctx: &egui::Context, width: f32, changed: bool) -> (Rect, Rect) {
-        let (name, line) = (
-            t!("settings-server-query-prompt"),
-            t!("settings-server-query-prompt-hint"),
-        );
+    /// A prompt row of a model's settings, `name` with the gray line `line`,
+    /// set in under its model, in the widest column, with its field `width`
+    /// points wide and its reset showing when `changed`, drawn in `ctx` as
+    /// the app draws it until a frame needs no pass again: the row's rect,
+    /// the field's, and that frame.
+    fn settled_prompt_row(
+        ctx: &egui::Context,
+        name: &str,
+        line: &str,
+        width: f32,
+        changed: bool,
+    ) -> (Rect, Rect, egui::FullOutput) {
         let mut prompt = String::new();
         let (mut row, mut field) = (Rect::NOTHING, Rect::NOTHING);
         let mut draw = |ui: &mut Ui| {
@@ -1766,7 +1773,7 @@ mod tests {
                 card(ui, |ui| {
                     nested(ui, |ui| {
                         row = card_row(ui, changed, |ui| {
-                            let _ = setting_content(ui, &name, &line, "", changed, changed, |ui| {
+                            let _ = setting_content(ui, name, line, "", changed, changed, |ui| {
                                 let edit = egui::TextEdit::singleline(&mut prompt);
                                 field = ui.add(edit.desired_width(width)).rect;
                             });
@@ -1776,12 +1783,23 @@ mod tests {
                 });
             });
         };
-        let settled = (0..4).any(|_| {
-            let output = frame(ctx, egui::RawInput::default(), &mut draw);
-            !output.platform_output.requested_discard()
-        });
-        assert!(settled, "the row settles");
-        (row, field)
+        let mut output = frame(ctx, egui::RawInput::default(), &mut draw);
+        for _ in 0..3 {
+            if !output.platform_output.requested_discard() {
+                break;
+            }
+            output = frame(ctx, egui::RawInput::default(), &mut draw);
+        }
+        assert!(
+            !output.platform_output.requested_discard(),
+            "the row settles"
+        );
+        (row, field, output)
+    }
+
+    /// Whether two rects are in the same place, up to half a point.
+    fn same_place(a: Rect, b: Rect) -> bool {
+        (a.min - b.min).length() + (a.max - b.max).length() <= 0.5
     }
 
     /// The width of a field that leaves the prompt row's text its room,
@@ -1803,19 +1821,26 @@ mod tests {
     /// settles, the field and the row's height are those of the same row
     /// drawn in a new window in that state.
     fn check_row_changing_its_layout() {
+        let name = t!("settings-server-query-prompt");
+        let line = t!("settings-server-query-prompt-hint");
+        let settled = |ctx: &egui::Context, width: f32| {
+            let (row, field, _) = settled_prompt_row(ctx, &name, &line, width, false);
+            (row, field)
+        };
         for (before, after) in [(FIELD_BESIDE, FIELD_UNDER), (FIELD_UNDER, FIELD_BESIDE)] {
             let ctx = window();
-            let (row, field) = settled_prompt_row(&ctx, before, false);
+            let (row, field) = settled(&ctx, before);
             assert_eq!(beside_its_text(row, field), before == FIELD_BESIDE);
-            let (row, field) = settled_prompt_row(&ctx, after, false);
-            let (fresh_row, fresh_field) = settled_prompt_row(&window(), after, false);
+            let (row, field) = settled(&ctx, after);
+            let (fresh_row, fresh_field) = settled(&window(), after);
             assert_eq!(
                 beside_its_text(fresh_row, fresh_field),
                 after == FIELD_BESIDE
             );
-            let apart =
-                (field.min - fresh_field.min).length() + (field.max - fresh_field.max).length();
-            assert!(apart <= 0.5, "{field:?} drawn on, {fresh_field:?} new");
+            assert!(
+                same_place(field, fresh_field),
+                "{field:?} drawn on, {fresh_field:?} new"
+            );
             let taller = row.height() - fresh_row.height();
             assert!(taller.abs() <= 0.5, "{row:?} drawn on, {fresh_row:?} new");
         }
@@ -1836,6 +1861,91 @@ mod tests {
     fn a_row_that_changes_its_layout_keeps_no_old_size_in_arabic() {
         if arabic_run() {
             check_row_changing_its_layout();
+        }
+    }
+
+    /// The Query prompt and Item prompt rows of a model's settings before
+    /// and after a change shows their reset, as when the first letter is
+    /// typed: each field stays beside its text, as far along the row, and
+    /// the text gives the reset its room, ending `TEXT_GAP` before it. The
+    /// Item prompt's gray line keeps its two lines there, so its field
+    /// stays where it was; the Query prompt's takes a third, so its field,
+    /// centred on the text, moves down half a line.
+    fn check_reset_keeps_its_control_beside_the_text() {
+        let rows = [
+            (
+                t!("settings-server-query-prompt"),
+                t!("settings-server-query-prompt-hint"),
+                false,
+            ),
+            (
+                t!("settings-server-item-prompt"),
+                t!("settings-server-item-prompt-hint"),
+                true,
+            ),
+        ];
+        let reset = t!("settings-back-to-default");
+        for (name, line, keeps_its_lines) in rows {
+            let ctx = window();
+            let (row, without, _) = settled_prompt_row(&ctx, &name, &line, FIELD_BESIDE, false);
+            assert!(beside_its_text(row, without), "{name}: {without:?}");
+            let (row, with, output) = settled_prompt_row(&ctx, &name, &line, FIELD_BESIDE, true);
+            assert!(
+                beside_its_text(row, with),
+                "{name}: {with:?} with the reset"
+            );
+            let along =
+                (with.left() - without.left()).abs() + (with.right() - without.right()).abs();
+            assert!(
+                along <= 0.5,
+                "{name}: {with:?} with the reset, {without:?} without"
+            );
+            if keeps_its_lines {
+                assert!(same_place(with, without), "{name}: {with:?}, {without:?}");
+            }
+            // The name and the gray line's lines.
+            let texts: Vec<Rect> = output
+                .shapes
+                .iter()
+                .filter_map(|clipped| match &clipped.shape {
+                    egui::Shape::Text(text) => Some(text.galley.rect.translate(text.pos.to_vec2())),
+                    _ => None,
+                })
+                .filter(|at| row.contains(at.center()) && !with.contains(at.center()))
+                .collect();
+            assert!(texts.len() >= 3, "{name}: {texts:?}");
+            let (_, places) = spoken(output);
+            let button = places
+                .iter()
+                .find(|(said, _)| *said == reset)
+                .map(|(_, at)| *at)
+                .expect("a reset");
+            for text in texts {
+                let room = if i18n::rtl() {
+                    text.left() - button.right()
+                } else {
+                    button.left() - text.right()
+                };
+                assert!(room >= TEXT_GAP - 0.5, "{name}: {text:?} before {button:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn a_reset_keeps_its_control_beside_the_text() {
+        check_reset_keeps_its_control_beside_the_text();
+    }
+
+    #[test]
+    fn a_reset_keeps_its_control_beside_the_text_right_to_left() {
+        passes_in_arabic("a_reset_keeps_its_control_beside_the_text_in_arabic");
+    }
+
+    #[test]
+    #[ignore = "run in a process of its own by a_reset_keeps_its_control_beside_the_text_right_to_left"]
+    fn a_reset_keeps_its_control_beside_the_text_in_arabic() {
+        if arabic_run() {
+            check_reset_keeps_its_control_beside_the_text();
         }
     }
 
