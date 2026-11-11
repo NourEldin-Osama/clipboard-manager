@@ -185,7 +185,7 @@ const TEXT_GAP: f32 = space::HUGE;
 
 /// The least width a setting's text keeps beside its control; with less,
 /// the control goes under the text.
-const TEXT_LEAST_WIDTH: f32 = 160.0;
+const TEXT_LEAST_WIDTH: f32 = 260.0;
 
 /// The room between a setting's text and its control under it.
 const STACKED_GAP: f32 = space::SMALL;
@@ -481,13 +481,12 @@ pub(super) fn setting_content(
 /// and its control out before they are drawn.
 #[derive(Clone, Copy, Default)]
 struct RowSizes {
-    /// The control's size, without the reset beside it.
+    /// The control's size, without the reset beside it. The control gets
+    /// the row's whole width beside the text as well as under it, so this
+    /// is its own width wherever it is, and says whether it fits beside
+    /// the text: a value cut to the room it gets, such as a path, is as
+    /// wide as all of it.
     control: Vec2,
-    /// How wide the control is beside the text, which says whether it fits
-    /// there. While the control is under the text this only narrows, so a
-    /// control that takes all the room it gets there is tried beside the
-    /// text again when the row widens.
-    beside: f32,
     /// How tall the text is.
     text: f32,
 }
@@ -497,7 +496,6 @@ impl RowSizes {
         let apart = |a: f32, b: f32| (a - b).abs() > 0.5;
         apart(self.control.x, other.control.x)
             || apart(self.control.y, other.control.y)
-            || apart(self.beside, other.beside)
             || apart(self.text, other.text)
     }
 }
@@ -506,8 +504,9 @@ impl RowSizes {
 /// such as a state, in place of the gray line.
 ///
 /// The text takes the width the control leaves, its lines wrapping there;
-/// with too little room for it, or for the name on one line, the control
-/// goes under the text. The control ends on the row's far edge whether the
+/// when that is less than `TEXT_LEAST_WIDTH`, or too little for the name on
+/// one line, the control goes under the text, where it may take the row's
+/// whole width. The control ends on the row's far edge whether the
 /// reset shows or not, so the controls of a card share one edge. The reset
 /// sits on the control's reading-start side and comes after the info
 /// button and before the control for the keyboard, as it reads. The parts
@@ -553,23 +552,25 @@ pub(super) fn setting_parts(
 
     // The most the control and its reset may take beside the text.
     let room = (width - TEXT_GAP - TEXT_LEAST_WIDTH).max(0.0);
-    let far_part = sizes.beside + reset_room;
+    let far_part = sizes.control.x + reset_room;
     let beside = far_part <= room && name_width <= width - far_part - TEXT_GAP;
+    // The control's place spans the row, less the reset's room, beside the
+    // text as under it, so the control takes its own width in both; it is
+    // beside the text only while that width leaves the text its room.
+    let area_left = whole.left() + reset_room;
+    let area_width = (width - reset_room).max(0.0);
     let (text_width, text_top, area) = if beside {
         let height = sizes.text.max(sizes.control.y);
         let area = Rect::from_min_size(
-            Pos2::new(whole.right() - room + reset_room, whole.top()),
-            Vec2::new((room - reset_room).max(0.0), height),
+            Pos2::new(area_left, whole.top()),
+            Vec2::new(area_width, height),
         );
         let top = whole.top() + (height - sizes.text) / 2.0;
         (width - far_part - TEXT_GAP, top, area)
     } else {
         let area = Rect::from_min_size(
-            Pos2::new(
-                whole.left() + reset_room,
-                whole.top() + sizes.text + STACKED_GAP,
-            ),
-            Vec2::new((width - reset_room).max(0.0), sizes.control.y),
+            Pos2::new(area_left, whole.top() + sizes.text + STACKED_GAP),
+            Vec2::new(area_width, sizes.control.y),
         );
         (width, whole.top(), area)
     };
@@ -634,11 +635,6 @@ pub(super) fn setting_parts(
 
     let now = RowSizes {
         control: drawn.size(),
-        beside: if beside {
-            drawn.width()
-        } else {
-            sizes.beside.min(drawn.width())
-        },
         text: text.height(),
     };
     if last.is_none_or(|last| last.differs(now)) {
@@ -1445,9 +1441,10 @@ mod tests {
     }
 
     /// The widest controls in the widest column, the choice and the recorder
-    /// changed so their resets show: the model menu, a three-way choice and
-    /// a key recorder with a note beside it each leave their text at least
-    /// 200 points.
+    /// changed so their resets show: the model menu and a three-way choice
+    /// stay beside their text, centred on it, and leave it at least
+    /// `TEXT_LEAST_WIDTH`; a key recorder with a note beside it would leave
+    /// less, so it goes under its text, at the row's far edge.
     fn check_widest_controls_leave_room() {
         let ctx = window();
         let (mut mode, mut size, mut problem) = (SearchMode::Hybrid, 1, None);
@@ -1511,19 +1508,47 @@ mod tests {
         };
         frame(&ctx, egui::RawInput::default(), &mut draw);
         let output = frame(&ctx, egui::RawInput::default(), &mut draw);
+        let texts: Vec<Rect> = output
+            .shapes
+            .iter()
+            .filter_map(|clipped| match &clipped.shape {
+                egui::Shape::Text(text) => Some(text.galley.rect.translate(text.pos.to_vec2())),
+                _ => None,
+            })
+            .collect();
         let reset = t!("settings-back-to-default");
         let (_, places) = spoken(output);
-        for (row, control) in rows {
-            let beside = places
+        for (n, (row, control)) in rows.into_iter().enumerate() {
+            let with_reset = places
                 .iter()
                 .filter(|(name, rect)| *name == reset && row.y_range().contains(rect.center().y))
                 .fold(control, |beside, (_, rect)| beside.union(*rect));
+            if n == 2 {
+                // The row's name and gray line, outside the control.
+                let text_bottom = texts
+                    .iter()
+                    .filter(|at| row.contains(at.center()) && !control.contains(at.center()))
+                    .map(|at| at.bottom())
+                    .fold(f32::MIN, f32::max);
+                assert!(
+                    control.top() >= text_bottom + STACKED_GAP - 0.5,
+                    "{control:?} under the text ending at {text_bottom}"
+                );
+                let end = far_edge(control) - far_edge(row);
+                assert!(end.abs() <= 0.5, "{control:?} at the end of {row:?}");
+                continue;
+            }
             let room = if i18n::rtl() {
-                row.right() - beside.right() - TEXT_GAP
+                row.right() - with_reset.right() - TEXT_GAP
             } else {
-                beside.left() - row.left() - TEXT_GAP
+                with_reset.left() - row.left() - TEXT_GAP
             };
-            assert!(room >= 200.0, "{room} beside {control:?} in {row:?}");
+            assert!(
+                room >= TEXT_LEAST_WIDTH,
+                "{room} beside {control:?} in {row:?}"
+            );
+            let off = control.center().y - row.center().y;
+            assert!(off.abs() <= 0.5, "{control:?} beside its text in {row:?}");
         }
     }
 
@@ -1543,6 +1568,74 @@ mod tests {
         if arabic_run() {
             check_widest_controls_leave_room();
         }
+    }
+
+    /// The Version and Data folder rows of Settings, About, as a development
+    /// build draws them, in the widest column: the update's state and the
+    /// version, and the folder's Open button and path, would leave their
+    /// text less than `TEXT_LEAST_WIDTH`. Each goes under its text, at the
+    /// row's far edge, the gray line takes one line, and the path shows in
+    /// full.
+    #[test]
+    fn a_long_value_goes_under_its_text() {
+        let ctx = window();
+        let path = r"C:\Users\Someone\AppData\Roaming\clipboard-manager\data";
+        let lines = [t!("settings-version-hint"), t!("settings-data-folder-hint")];
+        let mut rows = [(Rect::NOTHING, Rect::NOTHING); 2];
+        let mut draw = |ui: &mut Ui| {
+            in_column(ui, |ui| {
+                card(ui, |ui| {
+                    rows[0] = card_row(ui, false, |ui| {
+                        let mut control = Rect::NOTHING;
+                        let name = t!("settings-version");
+                        setting_content(ui, &name, &lines[0], "", false, false, |ui| {
+                            // The state, cut to the room the version leaves.
+                            let weak = ui.visuals().weak_text_color();
+                            let version = txt(&crate::update::current_label(), size::CONTROL, None)
+                                .into_galley(
+                                    ui,
+                                    Some(egui::TextWrapMode::Extend),
+                                    f32::INFINITY,
+                                    egui::FontSelection::Default,
+                                );
+                            let spacing = ui.spacing().item_spacing.x;
+                            let room = ui.available_width() - version.size().x - 2.0 * spacing;
+                            let state = t!("settings-updates-off-dev");
+                            cut_line(ui, &state, room.max(0.0), size::SMALL, weak, Sense::hover());
+                            ui.label(version);
+                            control = ui.min_rect();
+                        });
+                        (ui.min_rect(), control)
+                    });
+                    rows[1] = card_row(ui, false, |ui| {
+                        let mut control = Rect::NOTHING;
+                        let name = t!("settings-data-folder");
+                        setting_content(ui, &name, &lines[1], "", false, false, |ui| {
+                            let _ = ui.button(txt(&t!("settings-open"), size::BODY, None));
+                            let weak = ui.visuals().weak_text_color();
+                            let shown = RichText::new(path).size(size::SMALL).color(weak);
+                            ui.add(egui::Label::new(shown).truncate());
+                            control = ui.min_rect();
+                        });
+                        (ui.min_rect(), control)
+                    });
+                });
+            });
+        };
+        frame(&ctx, egui::RawInput::default(), &mut draw);
+        let output = frame(&ctx, egui::RawInput::default(), &mut draw);
+        assert!(!output.platform_output.requested_discard(), "steady");
+        for ((row, control), line) in rows.into_iter().zip(&lines) {
+            let shown = text_rects(&output, line);
+            assert_eq!(shown.len(), 1, "{line:?} on one line: {shown:?}");
+            assert!(
+                control.top() >= shown[0].bottom() + STACKED_GAP - 0.5,
+                "{control:?} under {shown:?}"
+            );
+            let end = far_edge(control) - far_edge(row);
+            assert!(end.abs() <= 0.5, "{control:?} at the end of {row:?}");
+        }
+        assert_eq!(text_rects(&output, path).len(), 1, "the whole path");
     }
 
     /// In a row too narrow for a menu beside its text, the menu goes under
