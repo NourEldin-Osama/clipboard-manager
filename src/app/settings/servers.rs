@@ -342,7 +342,11 @@ fn kind_tile(
 }
 
 /// The model's name on the server: typed, or picked from what it lists.
+/// The list's button takes its room from the field, so the two are as wide
+/// as the field alone and the control stays where it was when the list
+/// comes.
 fn model_field(ui: &mut Ui, model: &mut String, listed: &[String], default: Option<&str>) {
+    let mut width = 280.0;
     if !listed.is_empty() {
         let b = icons::icon_button_ex(
             ui,
@@ -353,6 +357,7 @@ fn model_field(ui: &mut Ui, model: &mut String, listed: &[String], default: Opti
             None,
             None,
         );
+        width -= b.rect.width() + ui.spacing().item_spacing.x;
         egui::Popup::menu(&b).show(|ui| {
             ui.set_min_width(320.0);
             // What is typed narrows the list, unless it is one of them.
@@ -383,7 +388,7 @@ fn model_field(ui: &mut Ui, model: &mut String, listed: &[String], default: Opti
     let field = ui.add(
         egui::TextEdit::singleline(model)
             .hint_text(txt(&hint, size::BODY, None))
-            .desired_width(280.0),
+            .desired_width(width),
     );
     set_name(&field, &row_title(ui));
 }
@@ -2004,6 +2009,109 @@ mod tests {
         });
         assert!((start as f32 - row.left()).abs() <= 0.5, "{start} {row:?}");
         assert!((end as f32 - row.right()).abs() <= 0.5, "{end} {row:?}");
+    }
+
+    /// The Model on the server row of a model's settings, set in under its
+    /// model in the widest column, with the models the server lists, drawn
+    /// in a new window until a frame needs no pass again: the row's rect,
+    /// its control's, and whether the list's button shows.
+    fn settled_model_row(listed: &[String]) -> (Rect, Rect, bool) {
+        let ctx = egui::Context::default();
+        crate::app::view::add_fonts(&ctx);
+        crate::app::view::style(&ctx, DarkPanels::Lighter);
+        ctx.enable_accesskit();
+        let mut model = String::new();
+        let (mut row, mut control) = (Rect::NOTHING, Rect::NOTHING);
+        let mut draw = |ui: &mut Ui| {
+            // As in the settings' column, where the pages set their gaps.
+            ui.spacing_mut().item_spacing.y = 0.0;
+            let column = Rect::from_min_size(
+                ui.max_rect().min,
+                Vec2::new(super::super::COLUMN_WIDTH, 400.0),
+            );
+            ui.scope_builder(egui::UiBuilder::new().max_rect(column), |ui| {
+                card(ui, |ui| {
+                    nested(ui, |ui| {
+                        row = card_row(ui, false, |ui| {
+                            let _ = setting_content(
+                                ui,
+                                &t!("settings-model-on-the-server"),
+                                &t!("settings-model-on-the-server-hint"),
+                                &t!("settings-model-on-the-server-help"),
+                                false,
+                                false,
+                                |ui| {
+                                    model_field(ui, &mut model, listed, None);
+                                    control = ui.min_rect();
+                                },
+                            );
+                            ui.min_rect()
+                        });
+                    });
+                });
+            });
+        };
+        // The fonts take effect from the next frame; the font atlas uploads
+        // no renderer takes here are dropped.
+        ctx.run_ui(egui::RawInput::default(), |_| {})
+            .textures_delta
+            .clear();
+        let mut output = ctx.run_ui(egui::RawInput::default(), &mut draw);
+        for _ in 0..3 {
+            if !output.platform_output.requested_discard() {
+                break;
+            }
+            output = ctx.run_ui(egui::RawInput::default(), &mut draw);
+        }
+        assert!(
+            !output.platform_output.requested_discard(),
+            "the row settles"
+        );
+        output.textures_delta.clear();
+        let update = output.platform_output.accesskit_update.expect("a tree");
+        let button = t!("settings-server-models");
+        let has_button = update
+            .nodes
+            .iter()
+            .any(|(_, node)| node.label() == Some(button.as_str()));
+        (row, control, has_button)
+    }
+
+    /// The model's name field without and with the list's button: the
+    /// control is as wide either way, and stays beside its text, centred
+    /// on it, in the room a model's settings have.
+    fn check_model_field_keeps_its_width() {
+        let (row, alone, has_button) = settled_model_row(&[]);
+        assert!(!has_button, "no list yet");
+        let listed = ["embeddinggemma-300m".to_string(), "nomic-embed-text".into()];
+        let (listed_row, with_button, has_button) = settled_model_row(&listed);
+        assert!(has_button, "the list's button");
+        assert!(
+            (with_button.width() - alone.width()).abs() <= 0.5,
+            "{with_button:?} with the button, {alone:?} without"
+        );
+        for (row, control) in [(row, alone), (listed_row, with_button)] {
+            let off = control.center().y - row.center().y;
+            assert!(off.abs() <= 0.5, "{control:?} beside its text in {row:?}");
+        }
+    }
+
+    #[test]
+    fn the_model_field_keeps_its_width() {
+        check_model_field_keeps_its_width();
+    }
+
+    #[test]
+    fn the_model_field_keeps_its_width_right_to_left() {
+        crate::i18n::passes_in_arabic(module_path!(), "the_model_field_keeps_its_width_in_arabic");
+    }
+
+    #[test]
+    #[ignore = "run in a process of its own by the_model_field_keeps_its_width_right_to_left"]
+    fn the_model_field_keeps_its_width_in_arabic() {
+        if crate::i18n::arabic_run() {
+            check_model_field_keeps_its_width();
+        }
     }
 
     #[test]
