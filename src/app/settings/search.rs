@@ -19,156 +19,160 @@ impl App {
         let def = Config::default();
         // The models each saved server has, for the model menus (D67).
         self.server_lists.ask(&d.servers, ui.ctx());
-        section(ui, &t!("settings-search"));
-        setting_for(
-            ui,
-            &t!("settings-search-mode"),
-            // What the chosen way does, in a few words.
-            &match d.search_mode {
-                SearchMode::Hybrid => t!("search-mode-smart-help"),
-                SearchMode::Semantic => t!("search-mode-meaning-help"),
-                SearchMode::Keyword => t!("search-mode-words-help"),
-            },
-            &t!("settings-search-mode-help"),
-            &mut d.search_mode,
-            def.search_mode,
-            |ui, mode| {
-                segmented(
-                    ui,
-                    mode,
-                    &[
-                        (SearchMode::Hybrid, t!("search-mode-smart")),
-                        (SearchMode::Semantic, t!("search-mode-meaning")),
-                        (SearchMode::Keyword, t!("search-mode-words")),
-                    ],
-                )
-            },
-        );
-        setting_for(
-            ui,
-            &t!("settings-strictness"),
-            &t!("settings-strictness-hint"),
-            &t!("settings-strictness-help"),
-            &mut d.min_similarity,
-            def.min_similarity,
-            |ui, min_similarity| {
-                let choices = strictness();
-                let current = choices
-                    .iter()
-                    .find(|(v, _)| (*v - *min_similarity).abs() < 1e-4)
-                    .map(|(_, l)| l.clone())
-                    .unwrap_or_else(|| {
-                        t!(
-                            "settings-strictness-custom",
-                            value = format!("{:.2}", min_similarity)
-                        )
-                    });
-                field_look(ui);
-                let menu = egui::ComboBox::from_id_salt("strict")
-                    .icon(menu_arrow)
-                    .selected_text(txt(&current, size::BODY, None))
-                    .width(MENU_WIDTH)
-                    .show_ui(ui, |ui| {
-                        for (v, l) in choices {
-                            ui.selectable_value(min_similarity, v, txt(&l, size::BODY, None));
-                        }
-                    });
-                set_choice_name(&menu.response, &row_title(ui), &current);
-            },
-        );
-        self.send_question(ui, d);
-
-        section(ui, &t!("settings-meaning-section"));
-        // The state in words after a dot of its color, without a box that
-        // could read as a button.
-        let (dot, text) = self.meaning_state();
-        row(ui, |ui| {
-            ui.add_space(space::MEDIUM);
-            let color = if dot == Color32::GRAY {
-                ui.visuals().weak_text_color()
-            } else {
-                text_shade(dot, ui.visuals().dark_mode)
-            };
-            icons::glyph(ui, Icon::Dot, 10.0, color);
-            ui.label(txt(&text, size::CONTROL, Some(color)));
+        section(ui, &t!("settings-search"), |ui| {
+            setting_for(
+                ui,
+                &t!("settings-search-mode"),
+                // What the chosen way does, in a few words.
+                &match d.search_mode {
+                    SearchMode::Hybrid => t!("search-mode-smart-help"),
+                    SearchMode::Semantic => t!("search-mode-meaning-help"),
+                    SearchMode::Keyword => t!("search-mode-words-help"),
+                },
+                &t!("settings-search-mode-help"),
+                &mut d.search_mode,
+                def.search_mode,
+                |ui, mode| {
+                    segmented(
+                        ui,
+                        mode,
+                        &[
+                            (SearchMode::Hybrid, t!("search-mode-smart")),
+                            (SearchMode::Semantic, t!("search-mode-meaning")),
+                            (SearchMode::Keyword, t!("search-mode-words")),
+                        ],
+                    )
+                },
+            );
+            setting_for(
+                ui,
+                &t!("settings-strictness"),
+                &t!("settings-strictness-hint"),
+                &t!("settings-strictness-help"),
+                &mut d.min_similarity,
+                def.min_similarity,
+                |ui, min_similarity| {
+                    let choices = strictness();
+                    let current = choices
+                        .iter()
+                        .find(|(v, _)| (*v - *min_similarity).abs() < 1e-4)
+                        .map(|(_, l)| l.clone())
+                        .unwrap_or_else(|| {
+                            t!(
+                                "settings-strictness-custom",
+                                value = format!("{:.2}", min_similarity)
+                            )
+                        });
+                    field_look(ui);
+                    let menu = egui::ComboBox::from_id_salt("strict")
+                        .icon(menu_arrow)
+                        .selected_text(txt(&current, size::BODY, None))
+                        .width(MENU_WIDTH)
+                        .show_ui(ui, |ui| {
+                            for (v, l) in choices {
+                                ui.selectable_value(min_similarity, v, txt(&l, size::BODY, None));
+                            }
+                        });
+                    set_choice_name(&menu.response, &row_title(ui), &current);
+                },
+            );
+            self.send_question(ui, d);
         });
-        ui.add_space(space::TINY);
+
+        let (dot, text) = self.meaning_state();
         // Without a search model in use, the ones found on this PC come first.
         let in_use =
             d.search_engine == SearchEngine::Server && is_model_for(d, d.search_model, true);
         self.local_servers.look(ui.ctx());
-        if !in_use {
-            self.found_card(ui, d);
-        }
-        let engine = d.search_engine;
-        plain_setting(
-            ui,
-            &t!("settings-engine"),
-            &t!("settings-search-engine-hint"),
-            &t!("settings-search-engine-help"),
-            |ui| {
-                segmented(
-                    ui,
-                    &mut d.search_engine,
-                    &[
-                        (SearchEngine::Off, t!("settings-engine-off")),
-                        (SearchEngine::Server, t!("settings-engine-server")),
-                    ],
-                );
-            },
-        );
-        // Turned on with no model picked yet: the first one there is.
-        if d.search_engine != engine && !is_model_for(d, d.search_model, true) {
-            d.search_model = models_for(d, true).first().copied();
-        }
-        match d.search_engine {
-            SearchEngine::Off => note(ui, &t!("settings-model-off-note")),
-            SearchEngine::Server if models_for(d, true).is_empty() => {
-                self.no_models(ui, d, &t!("settings-model-none-search"))
+        section(ui, &t!("settings-meaning-section"), |ui| {
+            // The state in words after a dot of its color, as the card's
+            // first row, without a box that could read as a button.
+            card_row(ui, false, |ui| {
+                row(ui, |ui| {
+                    let color = if dot == Color32::GRAY {
+                        ui.visuals().weak_text_color()
+                    } else {
+                        text_shade(dot, ui.visuals().dark_mode)
+                    };
+                    icons::glyph(ui, Icon::Dot, 10.0, color);
+                    ui.label(txt(&text, size::CONTROL, Some(color)));
+                });
+            });
+            if !in_use {
+                self.found_rows(ui, d);
             }
-            SearchEngine::Server => self.model_menu(ui, d, true),
-        }
+            let engine = d.search_engine;
+            plain_setting(
+                ui,
+                &t!("settings-engine"),
+                &t!("settings-search-engine-hint"),
+                &t!("settings-search-engine-help"),
+                |ui| {
+                    segmented(
+                        ui,
+                        &mut d.search_engine,
+                        &[
+                            (SearchEngine::Off, t!("settings-engine-off")),
+                            (SearchEngine::Server, t!("settings-engine-server")),
+                        ],
+                    );
+                },
+            );
+            // Turned on with no model picked yet: the first one there is.
+            if d.search_engine != engine && !is_model_for(d, d.search_model, true) {
+                d.search_model = models_for(d, true).first().copied();
+            }
+            match d.search_engine {
+                SearchEngine::Off => note(ui, &t!("settings-model-off-note")),
+                SearchEngine::Server if models_for(d, true).is_empty() => {
+                    self.no_models(ui, d, &t!("settings-model-none-search"))
+                }
+                SearchEngine::Server => self.model_menu(ui, d, true),
+            }
+        });
 
-        section(ui, &t!("settings-read-section"));
-        let engine = d.read_engine;
-        let mut engines = vec![(ReadEngine::Off, t!("settings-engine-off"))];
-        if cfg!(windows) {
-            engines.push((ReadEngine::Windows, t!("settings-engine-windows")));
-        }
-        engines.push((ReadEngine::Server, t!("settings-engine-server")));
-        plain_setting(
-            ui,
-            &t!("settings-read-engine"),
-            &t!("settings-read-engine-hint"),
-            &t!("settings-read-engine-help"),
-            |ui| {
-                segmented(ui, &mut d.read_engine, &engines);
-            },
-        );
-        if d.read_engine != engine && !is_model_for(d, d.read_model, false) {
-            d.read_model = models_for(d, false).first().copied();
-        }
-        match d.read_engine {
-            ReadEngine::Off => note(ui, &t!("settings-read-off-note")),
-            ReadEngine::Windows => note(ui, &t!("settings-read-windows-note")),
-            ReadEngine::Server if models_for(d, false).is_empty() => {
-                self.no_models(ui, d, &t!("settings-model-none-read"))
+        section(ui, &t!("settings-read-section"), |ui| {
+            let engine = d.read_engine;
+            let mut engines = vec![(ReadEngine::Off, t!("settings-engine-off"))];
+            if cfg!(windows) {
+                engines.push((ReadEngine::Windows, t!("settings-engine-windows")));
             }
-            ReadEngine::Server => self.model_menu(ui, d, false),
-        }
+            engines.push((ReadEngine::Server, t!("settings-engine-server")));
+            plain_setting(
+                ui,
+                &t!("settings-read-engine"),
+                &t!("settings-read-engine-hint"),
+                &t!("settings-read-engine-help"),
+                |ui| {
+                    segmented(ui, &mut d.read_engine, &engines);
+                },
+            );
+            if d.read_engine != engine && !is_model_for(d, d.read_model, false) {
+                d.read_model = models_for(d, false).first().copied();
+            }
+            match d.read_engine {
+                ReadEngine::Off => note(ui, &t!("settings-read-off-note")),
+                ReadEngine::Windows => note(ui, &t!("settings-read-windows-note")),
+                ReadEngine::Server if models_for(d, false).is_empty() => {
+                    self.no_models(ui, d, &t!("settings-model-none-read"))
+                }
+                ReadEngine::Server => self.model_menu(ui, d, false),
+            }
+        });
     }
 
     /// The engine is a server, but no server has a model for it yet.
     fn no_models(&mut self, ui: &mut Ui, d: &Config, text: &str) {
         note(ui, text);
-        row(ui, |ui| {
-            ui.add_space(space::MEDIUM);
-            if ui
-                .button(txt(&t!("settings-server-add"), size::CONTROL, None))
-                .clicked()
-            {
-                self.add_server(d);
-            }
+        card_row(ui, false, |ui| {
+            row(ui, |ui| {
+                if ui
+                    .button(txt(&t!("settings-server-add"), size::CONTROL, None))
+                    .clicked()
+                {
+                    self.add_server(d);
+                }
+            });
         });
     }
 }

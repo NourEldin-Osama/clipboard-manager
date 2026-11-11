@@ -47,9 +47,9 @@ pub(crate) use grid::{cards_per_row, GRID_GAP, GRID_SIDES};
 pub(crate) use items::looks_like_code;
 pub(crate) use messages::UpdateParts;
 pub(crate) use theme::{
-    accent, accent_name, add_fonts, apply_theme, button_fill, choice_track, chosen_face,
-    chosen_pill, key_cap, line_color, lit, radius, semibold, set_accent, size, space, style,
-    text_shade, ACCENTS, AMBER, GREEN, READING_WIDTH, RED,
+    accent, accent_name, add_fonts, apply_theme, button_fill, card_frame, choice_track,
+    chosen_face, chosen_pill, key_cap, line_color, lit, radius, semibold, set_accent, size, space,
+    style, text_shade, ACCENTS, AMBER, GREEN, READING_WIDTH, RED,
 };
 pub(crate) use widgets::{
     chip, cut_line, divider, far, flip, lbl, paint_progress, paint_text, pill_job, primary_button,

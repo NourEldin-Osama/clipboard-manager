@@ -240,7 +240,6 @@ fn choose_kind(server: &mut Server, kind: ServerKind) {
 /// The type of server, as a row of tiles.
 fn kind_tiles(ui: &mut Ui, server: &mut Server) {
     super::view::row_wrapped(ui, |ui| {
-        ui.add_space(space::MEDIUM);
         ui.spacing_mut().item_spacing = Vec2::new(8.0, 8.0);
         for kind in ServerKind::ALL {
             let selected = server.kind == kind;
@@ -449,34 +448,55 @@ fn finish_fill(model: &mut Model, found: Result<Option<catalog::Entry>, String>)
     said
 }
 
-/// What sending to servers outside this PC means, before the user agrees.
-fn send_questions(ui: &mut Ui, search: &Option<String>, reader: &Option<String>) {
-    Frame::new()
-        .inner_margin(Margin::symmetric(10, 0))
-        .show(ui, |ui| {
-            let strong = ui.visuals().strong_text_color();
-            let font = FontId::proportional(size::CONTROL);
-            if let Some(url) = search {
-                let host = crate::net::host(url);
-                let question = t!("settings-server-send-question", host = host);
-                super::bidi::paragraph(ui, &question, font.clone(), strong);
+/// What sending to servers outside this PC means, before the user agrees,
+/// and the answers: a row of the card. `answer` is the main button's text;
+/// the answer clicked comes back.
+fn send_question_row(
+    ui: &mut Ui,
+    search: &Option<String>,
+    reader: &Option<String>,
+    answer: &str,
+) -> Option<bool> {
+    card_row(ui, false, |ui| {
+        let strong = ui.visuals().strong_text_color();
+        let font = FontId::proportional(size::CONTROL);
+        if let Some(url) = search {
+            let host = crate::net::host(url);
+            let question = t!("settings-server-send-question", host = host);
+            super::bidi::paragraph(ui, &question, font.clone(), strong);
+        }
+        if let Some(url) = reader {
+            let host = crate::net::host(url);
+            let question = t!("settings-reader-send-question", host = host);
+            super::bidi::paragraph(ui, &question, font, strong);
+        }
+        row(ui, |ui| {
+            let send = primary_button(ui, answer).clicked();
+            let cancel = ui
+                .button(txt(&t!("settings-server-send-cancel"), size::CONTROL, None))
+                .clicked();
+            if send {
+                Some(true)
+            } else if cancel {
+                Some(false)
+            } else {
+                None
             }
-            if let Some(url) = reader {
-                let host = crate::net::host(url);
-                let question = t!("settings-reader-send-question", host = host);
-                super::bidi::paragraph(ui, &question, font, strong);
-            }
-        });
+        })
+    })
 }
 
-/// A test's result, under the model.
+/// A test's result, in a row under the model's.
 fn test_line(ui: &mut Ui, test: &Test) {
     let Some(result) = &test.result else {
         return;
     };
+    card_row(ui, false, |ui| test_result(ui, result));
+}
+
+fn test_result(ui: &mut Ui, result: &Result<Tested, String>) {
     let seconds = |took: &Duration| format!("{:.1}", took.as_secs_f32());
     super::view::row_wrapped(ui, |ui| {
-        ui.add_space(space::MEDIUM);
         match result {
             Ok(Tested::Search(t)) => {
                 let works = if t.vectors > 1 {
@@ -528,7 +548,6 @@ fn test_line(ui: &mut Ui, test: &Test) {
         return;
     };
     super::view::row_wrapped(ui, |ui| {
-        ui.add_space(space::MEDIUM);
         match images {
             Ok(()) => icons::chip(ui, Icon::Check, &t!("settings-model-test-images"), GREEN),
             Err(e) => {
@@ -576,69 +595,52 @@ impl App {
     }
 
     /// Each model server found on this PC with its search models, and Use
-    /// beside each, which saves the server with that model and uses it (D66).
-    pub(super) fn found_card(&mut self, ui: &mut Ui, d: &mut Config) {
+    /// beside each, which saves the server with that model and uses it (D66):
+    /// a row of the card each.
+    pub(super) fn found_rows(&mut self, ui: &mut Ui, d: &mut Config) {
         let found: Vec<LocalServer> = self
             .unsaved_local(d)
             .into_iter()
             .filter(|f| f.models.iter().any(|m| catalog::is_search_model(m)))
             .collect();
         let mut used = None;
-        // The card ends where the settings' controls do, so its buttons line
-        // up with theirs.
-        let reserve = (RESET_BUTTON_SIZE + ui.spacing().item_spacing.x - 4.0) as i8;
-        let outside = if i18n::rtl() {
-            Margin {
-                left: reserve,
-                ..Margin::ZERO
-            }
-        } else {
-            Margin {
-                right: reserve,
-                ..Margin::ZERO
-            }
-        };
+        let v = ui.visuals().clone();
         for server in &found {
-            let v = ui.visuals().clone();
-            Frame::new()
-                .outer_margin(outside)
-                .fill(accent().gamma_multiply(if v.dark_mode { 0.12 } else { 0.05 }))
-                .stroke(Stroke::new(1.0, accent().gamma_multiply(0.3)))
-                .corner_radius(CornerRadius::same(radius::LARGE))
-                .inner_margin(Margin::symmetric(14, 10))
-                .show(ui, |ui| {
-                    ui.set_width(ui.available_width());
+            card_row(ui, false, |ui| {
+                row(ui, |ui| {
+                    icons::logo(ui, server.kind, 20.0, v.strong_text_color());
+                    let running = t!("settings-found-running", server = server.kind.name());
+                    title_lbl(ui, &running, size::BODY, v.strong_text_color());
+                    far(ui, |ui| {
+                        // Where the settings' controls end, past the reset button's room.
+                        ui.add_space(RESET_BUTTON_SIZE + ui.spacing().item_spacing.x);
+                        let host = crate::net::host(&server.base_url);
+                        lbl(ui, host, size::SMALL, v.weak_text_color());
+                    });
+                });
+                let models = server.models.iter().filter(|m| catalog::is_search_model(m));
+                for (i, model) in models.enumerate() {
                     row(ui, |ui| {
-                        icons::logo(ui, server.kind, 20.0, v.strong_text_color());
-                        let running = t!("settings-found-running", server = server.kind.name());
-                        title_lbl(ui, &running, size::BODY, v.strong_text_color());
+                        ui.set_min_height(34.0);
+                        // Under the server's name, past its logo.
+                        ui.add_space(space::HUGE + space::TINY);
+                        lbl(ui, model, size::BODY, v.text_color());
+                        chip(ui, t!("settings-found-search"), accent());
                         far(ui, |ui| {
-                            let host = crate::net::host(&server.base_url);
-                            lbl(ui, host, size::SMALL, v.weak_text_color());
+                            ui.add_space(RESET_BUTTON_SIZE + ui.spacing().item_spacing.x);
+                            let text = t!("settings-found-use");
+                            let r = if i == 0 {
+                                primary_button(ui, &text)
+                            } else {
+                                ui.button(txt(&text, size::CONTROL, None))
+                            };
+                            if r.clicked() {
+                                used = Some((server.clone(), model.clone()));
+                            }
                         });
                     });
-                    let models = server.models.iter().filter(|m| catalog::is_search_model(m));
-                    for (i, model) in models.enumerate() {
-                        row(ui, |ui| {
-                            ui.set_min_height(34.0);
-                            ui.add_space(space::HUGE + space::TINY);
-                            lbl(ui, model, size::BODY, v.text_color());
-                            chip(ui, t!("settings-found-search"), accent());
-                            far(ui, |ui| {
-                                let text = t!("settings-found-use");
-                                let r = if i == 0 {
-                                    primary_button(ui, &text)
-                                } else {
-                                    ui.button(txt(&text, size::CONTROL, None))
-                                };
-                                if r.clicked() {
-                                    used = Some((server.clone(), model.clone()));
-                                }
-                            });
-                        });
-                    }
-                });
-            ui.add_space(space::SMALL);
+                }
+            });
         }
         if let Some((server, model)) = used {
             use_found(d, &server, &model);
@@ -652,15 +654,12 @@ impl App {
         if found.is_empty() {
             return;
         }
-        section(ui, &t!("settings-found-title"));
         let mut add = None;
         let weak = ui.visuals().weak_text_color();
         let strong = ui.visuals().strong_text_color();
-        for server in &found {
-            Frame::new()
-                .inner_margin(Margin::symmetric(10, 6))
-                .show(ui, |ui| {
-                    ui.set_width(ui.available_width());
+        section(ui, &t!("settings-found-title"), |ui| {
+            for server in &found {
+                card_row(ui, false, |ui| {
                     row(ui, |ui| {
                         ui.set_min_height(30.0);
                         icons::logo(ui, server.kind, 20.0, strong);
@@ -684,7 +683,8 @@ impl App {
                         });
                     });
                 });
-        }
+            }
+        });
         if let Some(found) = add {
             let mut server = found_server(d, &found);
             // Its search models to start with; the editor adds the others.
@@ -695,10 +695,6 @@ impl App {
     }
 
     pub(super) fn servers_section(&mut self, ui: &mut Ui, d: &Config) {
-        section(ui, &t!("settings-servers-section"));
-        if d.servers.is_empty() {
-            note(ui, &t!("settings-servers-none"));
-        }
         let mut edit = None;
         let mut discard = None;
         let weak = ui.visuals().weak_text_color();
@@ -710,13 +706,14 @@ impl App {
             .filter(|e| !d.servers.iter().any(|s| s.id == e.server.id))
             .map(|e| e.server.clone())
             .collect();
-        for server in d.servers.iter().chain(&new) {
-            let drafted = self.server_drafts.contains_key(&server.id);
-            ui.push_id(server.id, |ui| {
-                Frame::new()
-                    .inner_margin(Margin::symmetric(10, 6))
-                    .show(ui, |ui| {
-                        ui.set_width(ui.available_width());
+        section(ui, &t!("settings-servers-section"), |ui| {
+            if d.servers.is_empty() {
+                note(ui, &t!("settings-servers-none"));
+            }
+            for server in d.servers.iter().chain(&new) {
+                let drafted = self.server_drafts.contains_key(&server.id);
+                ui.push_id(server.id, |ui| {
+                    card_row(ui, false, |ui| {
                         row(ui, |ui| {
                             ui.set_min_height(30.0);
                             icons::logo(ui, server.kind, 20.0, strong);
@@ -761,16 +758,18 @@ impl App {
                             });
                         });
                     });
-            });
-        }
-        row(ui, |ui| {
-            ui.add_space(space::MEDIUM);
-            if ui
-                .button(txt(&t!("settings-server-add"), size::CONTROL, None))
-                .clicked()
-            {
-                self.add_server(d);
+                });
             }
+            card_row(ui, false, |ui| {
+                row(ui, |ui| {
+                    if ui
+                        .button(txt(&t!("settings-server-add"), size::CONTROL, None))
+                        .clicked()
+                    {
+                        self.add_server(d);
+                    }
+                });
+            });
         });
         if let Some(id) = discard {
             self.server_drafts.remove(&id);
@@ -965,22 +964,12 @@ impl App {
         let Some(pending) = &self.pending_send else {
             return;
         };
-        ui.add_space(space::SMALL);
-        send_questions(ui, &pending.search, &pending.reader);
-        ui.add_space(space::TINY);
-        let mut answer = None;
-        row(ui, |ui| {
-            ui.add_space(space::MEDIUM);
-            if primary_button(ui, &t!("settings-server-send")).clicked() {
-                answer = Some(true);
-            }
-            if ui
-                .button(txt(&t!("settings-server-send-cancel"), size::CONTROL, None))
-                .clicked()
-            {
-                answer = Some(false);
-            }
-        });
+        let answer = send_question_row(
+            ui,
+            &pending.search,
+            &pending.reader,
+            &t!("settings-server-send"),
+        );
         if let Some(agreed) = answer {
             let pending = self.pending_send.take().expect("a question is showing");
             if agreed {
@@ -1070,321 +1059,347 @@ impl App {
             title_lbl(ui, &title, size::LARGE, strong);
         });
 
-        section(ui, &t!("settings-server-kind"));
-        kind_tiles(ui, &mut editor.server);
-        ui.add_space(space::SMALL);
-
-        let server = &mut editor.server;
-        plain_setting(
-            ui,
-            &t!("settings-server-name"),
-            &t!("settings-server-name-hint"),
-            "",
-            |ui| {
-                let field = ui.add(
-                    egui::TextEdit::singleline(&mut server.name)
-                        .hint_text(crate::net::host(&server.base_url))
-                        .desired_width(280.0),
-                );
-                set_name(&field, &row_title(ui));
-            },
-        );
-        // A server the app starts listens at its port.
-        if let Some(launch) = &server.launch {
-            server.base_url = format!("http://127.0.0.1:{}/v1", launch.port);
-        }
-        let launching = server.launch.is_some();
-        let mut check = false;
-        plain_setting(
-            ui,
-            &t!("settings-server-address"),
-            &t!("settings-server-address-hint"),
-            &t!("settings-server-address-help"),
-            |ui| {
-                if !launching
-                    && ui
-                        .button(txt(
-                            &t!("settings-server-test-connection"),
-                            size::CONTROL,
-                            None,
-                        ))
-                        .clicked()
-                {
-                    check = true;
-                }
-                let usual = match server.kind.address() {
-                    "" => "http://127.0.0.1:8080/v1",
-                    usual => usual,
-                };
-                let field = ui.add_enabled(
-                    !launching,
-                    egui::TextEdit::singleline(&mut server.base_url)
-                        .hint_text(usual)
-                        .desired_width(280.0),
-                );
-                set_name(&field, &row_title(ui));
-            },
-        );
-        let embedding_list = server.kind == ServerKind::OpenRouter;
-        editor.found.poll();
-        if check {
-            editor
-                .found
-                .fetch(&server.base_url, &server.api_key, embedding_list, &ctx);
-        } else if !launching {
-            editor.found.fetch_when_settled(
-                &server.base_url,
-                &server.api_key,
-                embedding_list,
-                &ctx,
+        let can_save = section(ui, &t!("settings-server-kind"), |ui| {
+            let ServerEditor {
+                server,
+                found,
+                show_key,
+                ..
+            } = &mut editor;
+            card_row(ui, false, |ui| kind_tiles(ui, server));
+            plain_setting(
+                ui,
+                &t!("settings-server-name"),
+                &t!("settings-server-name-hint"),
+                "",
+                |ui| {
+                    let field = ui.add(
+                        egui::TextEdit::singleline(&mut server.name)
+                            .hint_text(crate::net::host(&server.base_url))
+                            .desired_width(280.0),
+                    );
+                    set_name(&field, &row_title(ui));
+                },
             );
-        }
-        super::view::row_wrapped(ui, |ui| {
-            ui.add_space(space::MEDIUM);
-            let found = &editor.found;
-            if launching {
-                lbl(ui, &t!("settings-server-launch-note"), size::SMALL, weak);
-            } else if found.pending.is_some() {
-                super::view::slow_spinner(ui, 12.0, None);
-                lbl(ui, &t!("settings-server-checking"), size::SMALL, weak);
-            } else if let Some(e) = &found.error {
-                icons::chip(ui, Icon::Warning, e, RED);
-            } else if !found.url.is_empty() {
-                let count = found
-                    .found
-                    .listed
-                    .len()
-                    .max(found.found.embedding.len())
-                    .max(usize::from(found.found.default.is_some()));
-                icons::chip(
-                    ui,
-                    Icon::Check,
-                    &t!("settings-server-found", count = count),
-                    GREEN,
-                );
+            // A server the app starts listens at its port.
+            if let Some(launch) = &server.launch {
+                server.base_url = format!("http://127.0.0.1:{}/v1", launch.port);
             }
-        });
-        if !server.base_url.trim().is_empty() && !crate::net::is_on_this_pc(&server.base_url) {
-            let host = crate::net::host(&server.base_url);
-            let text = if server
-                .base_url
-                .trim()
-                .to_ascii_lowercase()
-                .starts_with("http://")
-            {
-                t!("settings-server-remote-http", host = host)
-            } else {
-                t!("settings-server-remote", host = host)
-            };
-            note(ui, &format!("⚠ {text}"));
-        }
-        let show_key = &mut editor.show_key;
-        plain_setting(
-            ui,
-            &t!("settings-server-key"),
-            &t!("settings-server-key-hint"),
-            &t!("settings-server-key-help"),
-            |ui| {
-                let (eye, label) = if *show_key {
-                    (Icon::EyeOff, t!("settings-server-hide-key"))
-                } else {
-                    (Icon::Eye, t!("settings-server-show-key"))
-                };
-                if icons::icon_button_ex(ui, eye, &label, Vec2::splat(28.0), 16.0, None, None)
-                    .clicked()
-                {
-                    *show_key = !*show_key;
-                }
-                let hint = if server.kind == ServerKind::OpenRouter {
-                    t!("settings-server-needed")
-                } else {
-                    t!("settings-server-optional")
-                };
-                let field = ui.add(
-                    egui::TextEdit::singleline(&mut server.api_key)
-                        .password(!*show_key)
-                        .hint_text(txt(&hint, size::BODY, None))
-                        .desired_width(280.0),
+            let launching = server.launch.is_some();
+            // The address, and under it what the server said.
+            card_row(ui, false, |ui| {
+                let mut check = false;
+                setting_content(
+                    ui,
+                    &t!("settings-server-address"),
+                    &t!("settings-server-address-hint"),
+                    &t!("settings-server-address-help"),
+                    false,
+                    false,
+                    |ui| {
+                        if !launching
+                            && ui
+                                .button(txt(
+                                    &t!("settings-server-test-connection"),
+                                    size::CONTROL,
+                                    None,
+                                ))
+                                .clicked()
+                        {
+                            check = true;
+                        }
+                        let usual = match server.kind.address() {
+                            "" => "http://127.0.0.1:8080/v1",
+                            usual => usual,
+                        };
+                        let field = ui.add_enabled(
+                            !launching,
+                            egui::TextEdit::singleline(&mut server.base_url)
+                                .hint_text(usual)
+                                .desired_width(280.0),
+                        );
+                        set_name(&field, &row_title(ui));
+                    },
                 );
-                set_name(&field, &row_title(ui));
-            },
-        );
-        if server.kind == ServerKind::LlamaCpp {
-            launch_settings(ui, server);
-        }
-
-        section(ui, &t!("settings-server-models-section"));
-        if editor.server.models.is_empty() {
-            note(ui, &t!("settings-server-no-models"));
-        }
-        let mut remove = None;
-        let mut test = None;
-        let mut fill = None;
-        let found = &editor.found.found;
-        let default_name = found.default.clone().filter(|name| !name.is_empty());
-        for model in editor.server.models.iter_mut() {
-            let id = model.id;
-            let open = editor.open == Some(id);
-            ui.push_id(id, |ui| {
-                let job = if is_search(model) {
-                    t!("settings-model-job-search")
-                } else {
-                    t!("settings-model-job-read")
-                };
-                setting_row(ui, &model_label(model), "", "", open, false, |ui| {
-                    if icons::icon_button_ex(
-                        ui,
-                        Icon::Delete,
-                        &t!("settings-model-remove"),
-                        Vec2::splat(28.0),
-                        15.0,
-                        None,
-                        None,
-                    )
-                    .clicked()
-                    {
-                        remove = Some(id);
-                    }
-                    let testing = editor.tests.get(&id).is_some_and(|t| t.running.is_some());
-                    if testing {
-                        super::view::slow_spinner(ui, 14.0, None);
-                    } else if tip(
-                        ui.button(txt(&t!("settings-model-test"), size::CONTROL, None)),
-                        &t!("settings-model-test-help"),
-                    )
-                    .clicked()
-                    {
-                        test = Some(id);
-                    }
-                    let (icon, label) = if open {
-                        (Icon::Check, t!("settings-model-close"))
-                    } else {
-                        (Icon::Edit, t!("settings-model-open"))
-                    };
-                    if icons::icon_button_ex(ui, icon, &label, Vec2::splat(28.0), 15.0, None, None)
-                        .clicked()
-                    {
-                        editor.open = if open { None } else { Some(id) };
-                    }
-                    chip(ui, job, accent());
-                });
-                if open {
-                    // The server's default model is the one it embeds with.
-                    let (listed, default) = if is_search(model) {
-                        (found.for_search(), default_name.as_deref())
-                    } else {
-                        (found.listed.as_slice(), None)
-                    };
-                    model_settings(ui, model, listed, default, editor.fills.get(&id), &mut fill);
+                let embedding_list = server.kind == ServerKind::OpenRouter;
+                found.poll();
+                if check {
+                    found.fetch(&server.base_url, &server.api_key, embedding_list, &ctx);
+                } else if !launching {
+                    found.fetch_when_settled(
+                        &server.base_url,
+                        &server.api_key,
+                        embedding_list,
+                        &ctx,
+                    );
                 }
-                if let Some(t) = editor.tests.get(&id) {
-                    test_line(ui, t);
+                let said = launching
+                    || found.pending.is_some()
+                    || found.error.is_some()
+                    || !found.url.is_empty();
+                if said {
+                    super::view::row_wrapped(ui, |ui| {
+                        if launching {
+                            lbl(ui, &t!("settings-server-launch-note"), size::SMALL, weak);
+                        } else if found.pending.is_some() {
+                            super::view::slow_spinner(ui, 12.0, None);
+                            lbl(ui, &t!("settings-server-checking"), size::SMALL, weak);
+                        } else if let Some(e) = &found.error {
+                            icons::chip(ui, Icon::Warning, e, RED);
+                        } else if !found.url.is_empty() {
+                            let count = found
+                                .found
+                                .listed
+                                .len()
+                                .max(found.found.embedding.len())
+                                .max(usize::from(found.found.default.is_some()));
+                            icons::chip(
+                                ui,
+                                Icon::Check,
+                                &t!("settings-server-found", count = count),
+                                GREEN,
+                            );
+                        }
+                    });
                 }
             });
-        }
-        row(ui, |ui| {
-            ui.add_space(space::MEDIUM);
-            for (search, label) in [
-                (true, t!("settings-model-add-search")),
-                (false, t!("settings-model-add-read")),
-            ] {
-                if ui.button(txt(&label, size::CONTROL, None)).clicked() {
-                    let job = if search {
-                        ModelJob::Search(SearchSettings::default())
-                    } else {
-                        ModelJob::Read(ReadSettings::default())
-                    };
-                    let id = editor.server.next_model_id();
-                    editor.server.models.push(Model {
-                        id,
-                        job,
-                        ..Default::default()
-                    });
-                    editor.open = Some(id);
-                }
+            // Save waits for an address; this says why.
+            let can_save = launching || !server.base_url.trim().is_empty();
+            if !can_save {
+                note(ui, &t!("settings-server-needs-address"));
             }
+            if !server.base_url.trim().is_empty() && !crate::net::is_on_this_pc(&server.base_url) {
+                let host = crate::net::host(&server.base_url);
+                let text = if server
+                    .base_url
+                    .trim()
+                    .to_ascii_lowercase()
+                    .starts_with("http://")
+                {
+                    t!("settings-server-remote-http", host = host)
+                } else {
+                    t!("settings-server-remote", host = host)
+                };
+                note(ui, &format!("⚠ {text}"));
+            }
+            plain_setting(
+                ui,
+                &t!("settings-server-key"),
+                &t!("settings-server-key-hint"),
+                &t!("settings-server-key-help"),
+                |ui| {
+                    let (eye, label) = if *show_key {
+                        (Icon::EyeOff, t!("settings-server-hide-key"))
+                    } else {
+                        (Icon::Eye, t!("settings-server-show-key"))
+                    };
+                    if icons::icon_button_ex(ui, eye, &label, Vec2::splat(28.0), 16.0, None, None)
+                        .clicked()
+                    {
+                        *show_key = !*show_key;
+                    }
+                    let hint = if server.kind == ServerKind::OpenRouter {
+                        t!("settings-server-needed")
+                    } else {
+                        t!("settings-server-optional")
+                    };
+                    let field = ui.add(
+                        egui::TextEdit::singleline(&mut server.api_key)
+                            .password(!*show_key)
+                            .hint_text(txt(&hint, size::BODY, None))
+                            .desired_width(280.0),
+                    );
+                    set_name(&field, &row_title(ui));
+                },
+            );
+            if server.kind == ServerKind::LlamaCpp {
+                launch_settings(ui, server);
+            }
+            can_save
         });
 
-        // What the clicks above asked for.
-        if let Some(id) = remove {
-            editor.server.models.retain(|m| m.id != id);
-            editor.tests.remove(&id);
-            editor.fills.remove(&id);
-        }
-        if let Some(id) = test {
-            if let Some(model) = editor.server.model(id) {
-                editor
-                    .tests
-                    .insert(id, start_test(&editor.server, model, &ctx));
+        let (search_gone, read_gone) = section(ui, &t!("settings-server-models-section"), |ui| {
+            if editor.server.models.is_empty() {
+                note(ui, &t!("settings-server-no-models"));
             }
-        }
-        if let Some(id) = fill {
-            let kind = editor.server.kind;
-            if let Some(model) = editor.server.models.iter_mut().find(|m| m.id == id) {
-                let name = match model.model.trim() {
-                    "" if is_search(model) => default_name.clone().unwrap_or_default(),
-                    "" => String::new(),
-                    name => name.to_string(),
-                };
-                let started = if name.is_empty() {
-                    Fill {
-                        running: None,
-                        said: vec![t!("settings-model-fill-needs-name")],
+            let mut remove = None;
+            let mut test = None;
+            let mut fill = None;
+            let found = &editor.found.found;
+            let default_name = found.default.clone().filter(|name| !name.is_empty());
+            for model in editor.server.models.iter_mut() {
+                let id = model.id;
+                let open = editor.open == Some(id);
+                ui.push_id(id, |ui| {
+                    let job = if is_search(model) {
+                        t!("settings-model-job-search")
+                    } else {
+                        t!("settings-model-job-read")
+                    };
+                    setting_row(ui, &model_label(model), "", "", open, false, |ui| {
+                        if icons::icon_button_ex(
+                            ui,
+                            Icon::Delete,
+                            &t!("settings-model-remove"),
+                            Vec2::splat(28.0),
+                            15.0,
+                            None,
+                            None,
+                        )
+                        .clicked()
+                        {
+                            remove = Some(id);
+                        }
+                        let testing = editor.tests.get(&id).is_some_and(|t| t.running.is_some());
+                        if testing {
+                            super::view::slow_spinner(ui, 14.0, None);
+                        } else if tip(
+                            ui.button(txt(&t!("settings-model-test"), size::CONTROL, None)),
+                            &t!("settings-model-test-help"),
+                        )
+                        .clicked()
+                        {
+                            test = Some(id);
+                        }
+                        let (icon, label) = if open {
+                            (Icon::Check, t!("settings-model-close"))
+                        } else {
+                            (Icon::Edit, t!("settings-model-open"))
+                        };
+                        if icons::icon_button_ex(
+                            ui,
+                            icon,
+                            &label,
+                            Vec2::splat(28.0),
+                            15.0,
+                            None,
+                            None,
+                        )
+                        .clicked()
+                        {
+                            editor.open = if open { None } else { Some(id) };
+                        }
+                        chip(ui, job, accent());
+                    });
+                    // Its settings and its test's result belong to it.
+                    nested(ui, |ui| {
+                        if open {
+                            // The server's default model is the one it embeds with.
+                            let (listed, default) = if is_search(model) {
+                                (found.for_search(), default_name.as_deref())
+                            } else {
+                                (found.listed.as_slice(), None)
+                            };
+                            model_settings(
+                                ui,
+                                model,
+                                listed,
+                                default,
+                                editor.fills.get(&id),
+                                &mut fill,
+                            );
+                        }
+                        if let Some(t) = editor.tests.get(&id) {
+                            test_line(ui, t);
+                        }
+                    });
+                });
+            }
+            card_row(ui, false, |ui| {
+                row(ui, |ui| {
+                    for (search, label) in [
+                        (true, t!("settings-model-add-search")),
+                        (false, t!("settings-model-add-read")),
+                    ] {
+                        if ui.button(txt(&label, size::CONTROL, None)).clicked() {
+                            let job = if search {
+                                ModelJob::Search(SearchSettings::default())
+                            } else {
+                                ModelJob::Read(ReadSettings::default())
+                            };
+                            let id = editor.server.next_model_id();
+                            editor.server.models.push(Model {
+                                id,
+                                job,
+                                ..Default::default()
+                            });
+                            editor.open = Some(id);
+                        }
                     }
-                } else {
-                    start_fill(model, &name, kind, &ctx)
-                };
-                editor.fills.insert(id, started);
+                });
+            });
+
+            // What the clicks above asked for.
+            if let Some(id) = remove {
+                editor.server.models.retain(|m| m.id != id);
+                editor.tests.remove(&id);
+                editor.fills.remove(&id);
             }
-        }
-        for t in editor.tests.values_mut() {
-            if let Some(result) = t.running.as_ref().and_then(|rx| rx.try_recv().ok()) {
-                t.running = None;
-                t.result = Some(result);
-            }
-        }
-        let ServerEditor { server, fills, .. } = &mut editor;
-        for (id, f) in fills.iter_mut() {
-            if let Some(found) = f.running.as_ref().and_then(|rx| rx.try_recv().ok()) {
-                f.running = None;
-                if let Some(model) = server.models.iter_mut().find(|m| m.id == *id) {
-                    f.said.extend(finish_fill(model, found));
+            if let Some(id) = test {
+                if let Some(model) = editor.server.model(id) {
+                    editor
+                        .tests
+                        .insert(id, start_test(&editor.server, model, &ctx));
                 }
             }
-        }
+            if let Some(id) = fill {
+                let kind = editor.server.kind;
+                if let Some(model) = editor.server.models.iter_mut().find(|m| m.id == id) {
+                    let name = match model.model.trim() {
+                        "" if is_search(model) => default_name.clone().unwrap_or_default(),
+                        "" => String::new(),
+                        name => name.to_string(),
+                    };
+                    let started = if name.is_empty() {
+                        Fill {
+                            running: None,
+                            said: vec![t!("settings-model-fill-needs-name")],
+                        }
+                    } else {
+                        start_fill(model, &name, kind, &ctx)
+                    };
+                    editor.fills.insert(id, started);
+                }
+            }
+            for t in editor.tests.values_mut() {
+                if let Some(result) = t.running.as_ref().and_then(|rx| rx.try_recv().ok()) {
+                    t.running = None;
+                    t.result = Some(result);
+                }
+            }
+            let ServerEditor { server, fills, .. } = &mut editor;
+            for (id, f) in fills.iter_mut() {
+                if let Some(found) = f.running.as_ref().and_then(|rx| rx.try_recv().ok()) {
+                    f.running = None;
+                    if let Some(model) = server.models.iter_mut().find(|m| m.id == *id) {
+                        f.said.extend(finish_fill(model, found));
+                    }
+                }
+            }
 
-        // A model in use that is gone turns its job off at Save.
-        let gone = |at: Option<ModelRef>, search: bool| {
-            at.is_some_and(|at| {
-                at.server == editor.server.id
-                    && !editor
-                        .server
-                        .model(at.model)
-                        .is_some_and(|m| is_search(m) == search)
-            })
-        };
-        let search_gone = d.search_engine == SearchEngine::Server && gone(d.search_model, true);
-        let read_gone = d.read_engine == ReadEngine::Server && gone(d.read_model, false);
-        if !editor.is_new && (search_gone || read_gone) {
-            note(ui, &format!("⚠ {}", t!("settings-server-in-use-removed")));
-        }
+            // A model in use that is gone turns its job off at Save.
+            let gone = |at: Option<ModelRef>, search: bool| {
+                at.is_some_and(|at| {
+                    at.server == editor.server.id
+                        && !editor
+                            .server
+                            .model(at.model)
+                            .is_some_and(|m| is_search(m) == search)
+                })
+            };
+            let search_gone = d.search_engine == SearchEngine::Server && gone(d.search_model, true);
+            let read_gone = d.read_engine == ReadEngine::Server && gone(d.read_model, false);
+            if !editor.is_new && (search_gone || read_gone) {
+                note(ui, &format!("⚠ {}", t!("settings-server-in-use-removed")));
+            }
+            (search_gone, read_gone)
+        });
 
         let mut agreed = false;
         if let Some((search, reader)) = &editor.ask_send {
-            ui.add_space(space::SMALL);
-            send_questions(ui, search, reader);
-            let mut answer = None;
-            row(ui, |ui| {
-                ui.add_space(space::MEDIUM);
-                if primary_button(ui, &t!("settings-server-send-and-save")).clicked() {
-                    answer = Some(true);
-                }
-                if ui
-                    .button(txt(&t!("settings-server-send-cancel"), size::CONTROL, None))
-                    .clicked()
-                {
-                    answer = Some(false);
-                }
+            ui.add_space(space::HUGE);
+            let answer = card(ui, |ui| {
+                send_question_row(ui, search, reader, &t!("settings-server-send-and-save"))
             });
             match answer {
                 Some(true) => {
@@ -1396,10 +1411,9 @@ impl App {
             }
         }
 
+        // Save and Cancel on the page under the cards, on their edges.
         ui.add_space(space::LARGE);
-        let can_save = launching || !editor.server.base_url.trim().is_empty();
         row(ui, |ui| {
-            ui.add_space(space::MEDIUM);
             if !editor.is_new {
                 let red = text_shade(RED, ui.visuals().dark_mode);
                 if editor.deleting {
@@ -1439,7 +1453,6 @@ impl App {
                 }
             }
             far(ui, |ui| {
-                ui.add_space(space::MEDIUM);
                 if ui
                     .add_enabled(
                         can_save,
@@ -1464,9 +1477,6 @@ impl App {
                 }
             });
         });
-        if !can_save {
-            note(ui, &t!("settings-server-needs-address"));
-        }
 
         if delete {
             let id = editor.server.id;
@@ -1554,86 +1564,79 @@ fn model_settings(
         "" => default_name.unwrap_or_default().to_string(),
         name => name.to_string(),
     };
-    Frame::new()
-        .inner_margin(Margin {
-            left: 18,
-            right: 0,
-            top: 0,
-            bottom: 6,
-        })
-        .show(ui, |ui| {
-            plain_setting(
-                ui,
-                &t!("settings-model-on-the-server"),
-                &t!("settings-model-on-the-server-hint"),
-                &t!("settings-model-on-the-server-help"),
-                |ui| model_field(ui, &mut model.model, listed, default_name),
+    plain_setting(
+        ui,
+        &t!("settings-model-on-the-server"),
+        &t!("settings-model-on-the-server-hint"),
+        &t!("settings-model-on-the-server-help"),
+        |ui| model_field(ui, &mut model.model, listed, default_name),
+    );
+    plain_setting(
+        ui,
+        &t!("settings-model-name"),
+        &t!("settings-model-name-hint"),
+        &t!("settings-model-name-help"),
+        |ui| {
+            let hint = match model.model.trim() {
+                "" => t!("settings-server-default"),
+                name => name.to_string(),
+            };
+            let field = ui.add(
+                egui::TextEdit::singleline(&mut model.name)
+                    .hint_text(txt(&hint, size::BODY, None))
+                    .desired_width(280.0),
             );
-            plain_setting(
-                ui,
-                &t!("settings-model-name"),
-                &t!("settings-model-name-hint"),
-                &t!("settings-model-name-help"),
-                |ui| {
-                    let hint = match model.model.trim() {
-                        "" => t!("settings-server-default"),
-                        name => name.to_string(),
-                    };
-                    let field = ui.add(
-                        egui::TextEdit::singleline(&mut model.name)
-                            .hint_text(txt(&hint, size::BODY, None))
-                            .desired_width(280.0),
-                    );
-                    set_name(&field, &row_title(ui));
-                },
-            );
-            row(ui, |ui| {
-                ui.add_space(space::MEDIUM);
-                let running = fill.is_some_and(|f| f.running.is_some());
-                if tip(
-                    ui.add_enabled(
-                        !running,
-                        egui::Button::new(txt(&t!("settings-model-fill"), size::CONTROL, None)),
-                    ),
-                    &t!("settings-model-fill-help"),
-                )
-                .clicked()
-                {
-                    *fill_clicked = Some(id);
-                }
-                if running {
-                    super::view::slow_spinner(ui, 12.0, None);
-                    lbl(
-                        ui,
-                        &t!("settings-model-fill-looking"),
-                        size::SMALL,
-                        ui.visuals().weak_text_color(),
-                    );
-                }
-            });
-            for said in fill.map(|f| f.said.as_slice()).unwrap_or_default() {
-                note(ui, said);
+            set_name(&field, &row_title(ui));
+        },
+    );
+    card_row(ui, false, |ui| {
+        row(ui, |ui| {
+            let running = fill.is_some_and(|f| f.running.is_some());
+            if tip(
+                ui.add_enabled(
+                    !running,
+                    egui::Button::new(txt(&t!("settings-model-fill"), size::CONTROL, None)),
+                ),
+                &t!("settings-model-fill-help"),
+            )
+            .clicked()
+            {
+                *fill_clicked = Some(id);
             }
-            match &mut model.job {
-                ModelJob::Search(s) => search_settings(ui, s, &lookup_name),
-                ModelJob::Read(r) => read_settings(ui, r),
+            if running {
+                super::view::slow_spinner(ui, 12.0, None);
+                lbl(
+                    ui,
+                    &t!("settings-model-fill-looking"),
+                    size::SMALL,
+                    ui.visuals().weak_text_color(),
+                );
             }
         });
+    });
+    for said in fill.map(|f| f.said.as_slice()).unwrap_or_default() {
+        note(ui, said);
+    }
+    match &mut model.job {
+        ModelJob::Search(s) => search_settings(ui, s, &lookup_name),
+        ModelJob::Read(r) => read_settings(ui, r),
+    }
 }
 
 fn search_settings(ui: &mut Ui, s: &mut SearchSettings, model: &str) {
     if let Some((query, document)) = catalog::known_prompts(model) {
         if s.query_prefix != query || s.document_prefix != document {
-            row(ui, |ui| {
-                ui.add_space(space::MEDIUM);
-                icons::chip(ui, Icon::Info, &t!("settings-model-prompts-tip"), AMBER);
-                if ui
-                    .button(txt(&t!("settings-server-use-them"), size::BODY, None))
-                    .clicked()
-                {
-                    s.query_prefix = query.into();
-                    s.document_prefix = document.into();
-                }
+            card_row(ui, false, |ui| {
+                row(ui, |ui| {
+                    icons::chip(ui, Icon::Info, &t!("settings-model-prompts-tip"), AMBER);
+                    if ui
+                        .button(txt(&t!("settings-server-use-them"), size::BODY, None))
+                        .clicked()
+                    {
+                        s.query_prefix = query.into();
+                        s.document_prefix = document.into();
+                    }
+                });
             });
         }
     }
@@ -1796,8 +1799,10 @@ fn launch_settings(ui: &mut Ui, server: &mut Server) {
         return;
     };
     if both {
-        super::view::row_wrapped(ui, |ui| {
-            icons::chip(ui, Icon::Warning, &t!("settings-server-one-model"), AMBER);
+        card_row(ui, false, |ui| {
+            super::view::row_wrapped(ui, |ui| {
+                icons::chip(ui, Icon::Warning, &t!("settings-server-one-model"), AMBER);
+            });
         });
     }
     plain_setting(

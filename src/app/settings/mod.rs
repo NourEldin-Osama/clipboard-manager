@@ -7,10 +7,10 @@ use eframe::egui::{Frame, Margin, Pos2, Rect, Ui};
 use super::icons::{self, Icon};
 use super::shortcut;
 use super::view::{
-    accent, accent_name, button_fill, chip, choice_track, chosen_face, cut_line, divider, far,
-    flip, lbl, line_color, paint_progress, paint_text, pill_job, primary_button, radius, reveal,
-    row, set_choice_name, set_name, size, slow_spinner, space, start_anchor, text_shade, tip,
-    title_lbl, txt, Reacts, ACCENTS, AMBER, GREEN, PROGRESS_LINE, RED,
+    accent, accent_name, button_fill, card_frame, chip, choice_track, chosen_face, cut_line,
+    divider, far, flip, lbl, line_color, paint_progress, paint_text, pill_job, primary_button,
+    radius, reveal, row, set_choice_name, set_name, size, slow_spinner, space, start_anchor,
+    text_shade, tip, title_lbl, txt, Reacts, ACCENTS, AMBER, GREEN, PROGRESS_LINE, RED,
 };
 use super::*;
 use crate::config::{
@@ -311,7 +311,8 @@ impl App {
                 }
             });
 
-        let content = ui.visuals().extreme_bg_color;
+        // The window's gray, as the page list has: the settings' cards
+        // stand on it as the cards of the main window do.
         egui::CentralPanel::default()
             .frame(
                 Frame::new()
@@ -321,7 +322,7 @@ impl App {
                         top: 8,
                         bottom: 16,
                     })
-                    .fill(content),
+                    .fill(panel),
             )
             .show(ui, |ui| {
                 // Each page keeps its own scroll position.
@@ -330,27 +331,30 @@ impl App {
                     .auto_shrink([false, false])
                     .show(ui, |ui| {
                         // A readable column in the middle of the page, narrow enough
-                        // that each control stays near its name.
+                        // that each control stays near its name, with room at its
+                        // sides for the cards' shadow.
                         let area = ui.available_rect_before_wrap();
-                        let w = area.width().min(COLUMN_WIDTH);
+                        let w = (area.width() - 2.0 * space::SMALL).clamp(0.0, COLUMN_WIDTH);
                         let x = area.left() + (area.width() - w) / 2.0;
                         let column = Rect::from_min_size(
                             Pos2::new(x, area.top()),
                             Vec2::new(w, area.height()),
                         );
-                        ui.scope_builder(egui::UiBuilder::new().max_rect(column), |ui| match self
-                            .settings_page
-                        {
-                            SettingsPage::General => self.general_page(ui, &mut d),
-                            SettingsPage::Appearance => appearance_page(ui, &mut d),
-                            SettingsPage::Clipboard => self.clipboard_page(ui, &mut d),
-                            SettingsPage::Privacy => self.privacy_page(ui, &mut d),
-                            SettingsPage::Search => self.search_page(ui, &mut d),
-                            SettingsPage::Servers => self.servers_page(ui, &mut d),
-                            SettingsPage::Shortcuts => {
-                                self.shortcuts_page(ui, &mut d, &mut apply_keys)
+                        ui.scope_builder(egui::UiBuilder::new().max_rect(column), |ui| {
+                            // The pages set their own gaps between titles and cards.
+                            ui.spacing_mut().item_spacing.y = 0.0;
+                            match self.settings_page {
+                                SettingsPage::General => self.general_page(ui, &mut d),
+                                SettingsPage::Appearance => appearance_page(ui, &mut d),
+                                SettingsPage::Clipboard => self.clipboard_page(ui, &mut d),
+                                SettingsPage::Privacy => self.privacy_page(ui, &mut d),
+                                SettingsPage::Search => self.search_page(ui, &mut d),
+                                SettingsPage::Servers => self.servers_page(ui, &mut d),
+                                SettingsPage::Shortcuts => {
+                                    self.shortcuts_page(ui, &mut d, &mut apply_keys)
+                                }
+                                SettingsPage::About => self.about_page(ui, &mut d),
                             }
-                            SettingsPage::About => self.about_page(ui, &mut d),
                         });
                         ui.add_space(space::HUGE);
                     });

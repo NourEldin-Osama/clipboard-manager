@@ -5,38 +5,39 @@ use super::*;
 impl App {
     pub(super) fn privacy_page(&mut self, ui: &mut Ui, d: &mut Config) {
         let def = Config::default();
-        section(ui, &t!("settings-never-kept"));
-        setting_for(
-            ui,
-            &t!("settings-skip-secrets"),
-            &t!("settings-skip-secrets-hint"),
-            &t!("settings-skip-secrets-help"),
-            &mut d.skip_secrets,
-            def.skip_secrets,
-            toggle,
-        );
-        setting_for(
-            ui,
-            &t!("settings-screen-notes"),
-            &t!("settings-screen-notes-hint"),
-            &t!("settings-screen-notes-help"),
-            &mut d.screen_notes,
-            def.screen_notes,
-            toggle,
-        );
         let mut change = false;
-        plain_setting(
-            ui,
-            &t!("settings-skip-next"),
-            &t!("settings-skip-next-hint"),
-            "",
-            |ui| {
-                change = ui
-                    .button(txt(&t!("settings-change-key"), size::BODY, None))
-                    .clicked();
-                shortcut::fixed(ui, &d.ignore_next_hotkey);
-            },
-        );
+        section(ui, &t!("settings-never-kept"), |ui| {
+            setting_for(
+                ui,
+                &t!("settings-skip-secrets"),
+                &t!("settings-skip-secrets-hint"),
+                &t!("settings-skip-secrets-help"),
+                &mut d.skip_secrets,
+                def.skip_secrets,
+                toggle,
+            );
+            setting_for(
+                ui,
+                &t!("settings-screen-notes"),
+                &t!("settings-screen-notes-hint"),
+                &t!("settings-screen-notes-help"),
+                &mut d.screen_notes,
+                def.screen_notes,
+                toggle,
+            );
+            plain_setting(
+                ui,
+                &t!("settings-skip-next"),
+                &t!("settings-skip-next-hint"),
+                "",
+                |ui| {
+                    change = ui
+                        .button(txt(&t!("settings-change-key"), size::BODY, None))
+                        .clicked();
+                    shortcut::fixed(ui, &d.ignore_next_hotkey);
+                },
+            );
+        });
         if change {
             self.settings_page = SettingsPage::Shortcuts;
         }
@@ -79,39 +80,40 @@ impl App {
     /// The rules for copies that aren't recorded: one row each, then "Add a
     /// rule", which offers the programs in the history first.
     fn rules_section(&mut self, ui: &mut Ui, d: &mut Config) {
-        section(ui, &t!("settings-rules"));
-        note(ui, &t!("settings-rules-help"));
-        ui.add_space(space::TINY);
-        rule_rows(ui, d);
-        let programs = self.history_programs(d);
         let mut add = None;
-        row(ui, |ui| {
-            ui.add_space(space::MEDIUM);
-            let button = ui.button(txt(&t!("settings-rule-add"), size::CONTROL, None));
-            egui::Popup::menu(&button).show(|ui| {
-                ui.set_width(RULE_MENU_WIDTH);
-                let weak = ui.visuals().weak_text_color();
-                if !programs.is_empty() {
-                    row(ui, |ui| {
-                        ui.add_space(space::SMALL);
-                        lbl(
-                            ui,
-                            &t!("settings-rule-programs").to_uppercase(),
-                            size::SMALL,
-                            weak,
-                        );
-                    });
-                    for (app, name, icon) in &programs {
-                        if program_entry(ui, name, app, icon.as_ref()).clicked() {
-                            add = Some(app.clone());
+        section(ui, &t!("settings-rules"), |ui| {
+            note(ui, &t!("settings-rules-help"));
+            rule_rows(ui, d);
+            let programs = self.history_programs(d);
+            card_row(ui, false, |ui| {
+                row(ui, |ui| {
+                    let button = ui.button(txt(&t!("settings-rule-add"), size::CONTROL, None));
+                    egui::Popup::menu(&button).show(|ui| {
+                        ui.set_width(RULE_MENU_WIDTH);
+                        let weak = ui.visuals().weak_text_color();
+                        if !programs.is_empty() {
+                            row(ui, |ui| {
+                                ui.add_space(space::SMALL);
+                                lbl(
+                                    ui,
+                                    &t!("settings-rule-programs").to_uppercase(),
+                                    size::SMALL,
+                                    weak,
+                                );
+                            });
+                            for (app, name, icon) in &programs {
+                                if program_entry(ui, name, app, icon.as_ref()).clicked() {
+                                    add = Some(app.clone());
+                                }
+                            }
+                            divider(ui);
                         }
-                    }
-                    divider(ui);
-                }
-                let other = txt(&t!("settings-rule-add-other"), size::BODY, None);
-                if ui.selectable_label(false, other).clicked() {
-                    add = Some(String::new());
-                }
+                        let other = txt(&t!("settings-rule-add-other"), size::BODY, None);
+                        if ui.selectable_label(false, other).clicked() {
+                            add = Some(String::new());
+                        }
+                    });
+                });
             });
         });
         if let Some(app) = add {
@@ -124,7 +126,6 @@ impl App {
 
     /// Where each kind of data stays or goes, as the settings are now.
     fn where_data_goes(&self, ui: &mut Ui, d: &Config) {
-        section(ui, &t!("settings-data-goes"));
         let dark = ui.visuals().dark_mode;
         let (weak, warn) = (ui.visuals().weak_text_color(), text_shade(AMBER, dark));
         // A server on this PC keeps the data here; any other gets it.
@@ -155,16 +156,18 @@ impl App {
         } else {
             t!("settings-data-off")
         };
-        for (label, (value, color)) in [
-            (t!("settings-data-history"), (history, weak)),
-            (t!("settings-data-search"), search),
-            (t!("settings-data-reader"), reader),
-            (t!("settings-data-updates"), (updates, weak)),
-        ] {
-            plain_setting(ui, &label, "", "", |ui| {
-                lbl(ui, &value, size::BODY, color);
-            });
-        }
+        section(ui, &t!("settings-data-goes"), |ui| {
+            for (label, (value, color)) in [
+                (t!("settings-data-history"), (history, weak)),
+                (t!("settings-data-search"), search),
+                (t!("settings-data-reader"), reader),
+                (t!("settings-data-updates"), (updates, weak)),
+            ] {
+                plain_setting(ui, &label, "", "", |ui| {
+                    lbl(ui, &value, size::BODY, color);
+                });
+            }
+        });
     }
 }
 
@@ -251,34 +254,37 @@ fn rule_rows(ui: &mut Ui, d: &mut Config) {
     let mut remove = None;
     for (index, rule) in d.rules.iter_mut().enumerate() {
         ui.push_id(index, |ui| {
-            row(ui, |ui| {
-                ui.add_space(space::MEDIUM);
-                let program = ui.add(
-                    egui::TextEdit::singleline(&mut rule.app)
-                        .hint_text(txt(&t!("settings-rule-program"), size::BODY, None))
-                        .desired_width(RULE_PROGRAM_WIDTH),
-                );
-                set_name(&program, &t!("settings-rule-program"));
-                let pattern = ui.add(
-                    egui::TextEdit::singleline(&mut rule.pattern)
-                        .hint_text(txt(&t!("settings-rule-pattern"), size::BODY, None))
-                        .desired_width(RULE_PATTERN_WIDTH),
-                );
-                set_name(&pattern, &t!("settings-rule-pattern"));
-                tip(
-                    toggle(ui, &mut rule.is_regex),
-                    &t!("settings-rule-regex-help"),
-                );
-                lbl(
-                    ui,
-                    &t!("settings-rule-regex"),
-                    size::CONTROL,
-                    ui.visuals().text_color(),
-                );
-                far(ui, |ui| {
-                    if icons::icon_button(ui, Icon::Delete, &t!("settings-rule-delete")).clicked() {
-                        remove = Some(index);
-                    }
+            card_row(ui, false, |ui| {
+                row(ui, |ui| {
+                    let program = ui.add(
+                        egui::TextEdit::singleline(&mut rule.app)
+                            .hint_text(txt(&t!("settings-rule-program"), size::BODY, None))
+                            .desired_width(RULE_PROGRAM_WIDTH),
+                    );
+                    set_name(&program, &t!("settings-rule-program"));
+                    let pattern = ui.add(
+                        egui::TextEdit::singleline(&mut rule.pattern)
+                            .hint_text(txt(&t!("settings-rule-pattern"), size::BODY, None))
+                            .desired_width(RULE_PATTERN_WIDTH),
+                    );
+                    set_name(&pattern, &t!("settings-rule-pattern"));
+                    tip(
+                        toggle(ui, &mut rule.is_regex),
+                        &t!("settings-rule-regex-help"),
+                    );
+                    lbl(
+                        ui,
+                        &t!("settings-rule-regex"),
+                        size::CONTROL,
+                        ui.visuals().text_color(),
+                    );
+                    far(ui, |ui| {
+                        if icons::icon_button(ui, Icon::Delete, &t!("settings-rule-delete"))
+                            .clicked()
+                        {
+                            remove = Some(index);
+                        }
+                    });
                 });
             });
             match rule.compile() {

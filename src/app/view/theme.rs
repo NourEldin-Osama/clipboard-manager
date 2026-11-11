@@ -93,13 +93,31 @@ pub(crate) fn search_fill(dark: bool) -> Color32 {
     }
 }
 
-/// A grid card's shadow, deeper under the pointer.
-pub(crate) fn card_shadow(dark: bool, hot: bool) -> Color32 {
+/// A card's shadow, deeper under the pointer.
+fn card_shadow(dark: bool, hot: bool) -> Color32 {
     Color32::from_black_alpha(match (dark, hot) {
         (true, _) => 90,
         (false, true) => 34,
         (false, false) => 20,
     })
+}
+
+/// The surface of a card, in the grid and in Settings: the content's fill,
+/// a soft shadow, deeper under the pointer, and the faint edge of the dark
+/// theme. The edge takes its room in the light theme too, unseen, so what a
+/// card holds sits in the same place in both themes.
+pub(crate) fn card_frame(v: &egui::Visuals, hot: bool) -> egui::Frame {
+    let edge = card_edge(v.dark_mode).unwrap_or(Color32::TRANSPARENT);
+    egui::Frame::new()
+        .fill(v.extreme_bg_color)
+        .stroke(Stroke::new(1.0, edge))
+        .corner_radius(CornerRadius::same(radius::LARGE))
+        .shadow(egui::Shadow {
+            offset: [0, 2],
+            blur: if hot { 14 } else { 8 },
+            spread: 0,
+            color: card_shadow(v.dark_mode, hot),
+        })
 }
 
 /// The track behind a setting's choices, and the face of the chosen one
@@ -148,9 +166,9 @@ pub(crate) fn menu_line(dark: bool) -> Color32 {
     Color32::from_gray(if dark { 76 } else { 204 })
 }
 
-/// The faint edge around a grid card in the dark theme, where its shadow
+/// The faint edge around a card in the dark theme, where its shadow
 /// doesn't show; none in the light theme.
-pub(crate) fn card_edge(dark: bool) -> Option<Color32> {
+fn card_edge(dark: bool) -> Option<Color32> {
     dark.then(|| Color32::from_gray(70))
 }
 

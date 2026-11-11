@@ -110,26 +110,13 @@ pub(super) fn paint_card(
     let a = accent();
     let radius = CornerRadius::same(radius::LARGE);
     let p = ui.painter();
-    let shadow = egui::epaint::Shadow {
-        offset: [0, 2],
-        blur: if hot { 14 } else { 8 },
-        spread: 0,
-        color: theme::card_shadow(v.dark_mode, hot),
-    };
-    p.add(shadow.as_shape(rect, radius));
-    p.rect_filled(rect, radius, v.extreme_bg_color);
+    // The surface settings cards share: fill, shadow and the dark edge.
+    let surface = theme::card_frame(v, hot);
+    p.add(surface.paint(rect - surface.total_margin()));
     // A selected card is tinted as well as outlined, so it stands out as
-    // more than a focus ring.
+    // more than a focus ring. Its outline covers the edge under the tint.
     if selected {
         p.rect_filled(rect, radius, theme::selected_card(a, v.dark_mode));
-    }
-    if let Some(edge) = theme::card_edge(v.dark_mode) {
-        p.rect_stroke(
-            rect,
-            radius,
-            Stroke::new(1.0, edge),
-            egui::StrokeKind::Inside,
-        );
     }
     let pad = 16.0;
     let weak = v.weak_text_color();

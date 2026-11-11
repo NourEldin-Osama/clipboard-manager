@@ -22,82 +22,84 @@ fn age_label(days: u32) -> String {
 impl App {
     pub(super) fn clipboard_page(&mut self, ui: &mut Ui, d: &mut Config) {
         let def = Config::default();
-        section(ui, &t!("settings-recording"));
-        setting_for(
-            ui,
-            &t!("settings-record"),
-            &t!("settings-record-hint"),
-            &t!("settings-record-help"),
-            &mut d.monitor_clipboard,
-            def.monitor_clipboard,
-            toggle,
-        );
-        setting_for(
-            ui,
-            &t!("settings-merge-duplicates"),
-            &t!("settings-merge-duplicates-hint"),
-            "",
-            &mut d.dedupe,
-            def.dedupe,
-            toggle,
-        );
-        section(ui, &t!("settings-how-long"));
-        setting_for(
-            ui,
-            &t!("settings-keep-up-to"),
-            &t!("settings-keep-up-to-hint"),
-            &t!("settings-keep-up-to-help"),
-            &mut d.max_items,
-            def.max_items,
-            |ui, max_items| {
-                let label = |n: usize| {
-                    t!(
-                        "settings-history-items",
-                        size = n
-                            .to_string()
-                            .as_bytes()
-                            .rchunks(3)
-                            .rev()
-                            .map(|c| std::str::from_utf8(c).unwrap())
-                            .collect::<Vec<_>>()
-                            .join(",")
-                    )
-                };
-                field_look(ui);
-                let menu = egui::ComboBox::from_id_salt("history")
-                    .icon(menu_arrow)
-                    .selected_text(txt(&label(*max_items), size::BODY, None))
-                    .width(140.0)
-                    .show_ui(ui, |ui| {
-                        for n in HISTORY_SIZES {
-                            ui.selectable_value(max_items, n, txt(&label(n), size::BODY, None));
-                        }
-                    });
-                set_choice_name(&menu.response, &row_title(ui), &label(*max_items));
-            },
-        );
-        setting_for(
-            ui,
-            &t!("settings-delete-older"),
-            &t!("settings-delete-older-hint"),
-            &t!("settings-delete-older-help"),
-            &mut d.delete_after_days,
-            def.delete_after_days,
-            |ui, days| {
-                field_look(ui);
-                let menu = egui::ComboBox::from_id_salt("age")
-                    .icon(menu_arrow)
-                    .selected_text(txt(&age_label(*days), size::BODY, None))
-                    .width(140.0)
-                    .show_ui(ui, |ui| {
-                        for n in AGES {
-                            ui.selectable_value(days, n, txt(&age_label(n), size::BODY, None));
-                        }
-                    });
-                set_choice_name(&menu.response, &row_title(ui), &age_label(*days));
-            },
-        );
-        self.clear_history_setting(ui);
+        section(ui, &t!("settings-recording"), |ui| {
+            setting_for(
+                ui,
+                &t!("settings-record"),
+                &t!("settings-record-hint"),
+                &t!("settings-record-help"),
+                &mut d.monitor_clipboard,
+                def.monitor_clipboard,
+                toggle,
+            );
+            setting_for(
+                ui,
+                &t!("settings-merge-duplicates"),
+                &t!("settings-merge-duplicates-hint"),
+                "",
+                &mut d.dedupe,
+                def.dedupe,
+                toggle,
+            );
+        });
+        section(ui, &t!("settings-how-long"), |ui| {
+            setting_for(
+                ui,
+                &t!("settings-keep-up-to"),
+                &t!("settings-keep-up-to-hint"),
+                &t!("settings-keep-up-to-help"),
+                &mut d.max_items,
+                def.max_items,
+                |ui, max_items| {
+                    let label = |n: usize| {
+                        t!(
+                            "settings-history-items",
+                            size = n
+                                .to_string()
+                                .as_bytes()
+                                .rchunks(3)
+                                .rev()
+                                .map(|c| std::str::from_utf8(c).unwrap())
+                                .collect::<Vec<_>>()
+                                .join(",")
+                        )
+                    };
+                    field_look(ui);
+                    let menu = egui::ComboBox::from_id_salt("history")
+                        .icon(menu_arrow)
+                        .selected_text(txt(&label(*max_items), size::BODY, None))
+                        .width(140.0)
+                        .show_ui(ui, |ui| {
+                            for n in HISTORY_SIZES {
+                                ui.selectable_value(max_items, n, txt(&label(n), size::BODY, None));
+                            }
+                        });
+                    set_choice_name(&menu.response, &row_title(ui), &label(*max_items));
+                },
+            );
+            setting_for(
+                ui,
+                &t!("settings-delete-older"),
+                &t!("settings-delete-older-hint"),
+                &t!("settings-delete-older-help"),
+                &mut d.delete_after_days,
+                def.delete_after_days,
+                |ui, days| {
+                    field_look(ui);
+                    let menu = egui::ComboBox::from_id_salt("age")
+                        .icon(menu_arrow)
+                        .selected_text(txt(&age_label(*days), size::BODY, None))
+                        .width(140.0)
+                        .show_ui(ui, |ui| {
+                            for n in AGES {
+                                ui.selectable_value(days, n, txt(&age_label(n), size::BODY, None));
+                            }
+                        });
+                    set_choice_name(&menu.response, &row_title(ui), &age_label(*days));
+                },
+            );
+            self.clear_history_setting(ui);
+        });
     }
 
     fn clear_history_setting(&mut self, ui: &mut Ui) {
