@@ -116,16 +116,80 @@ fn key_row(ui: &mut Ui, what: &str, keys: &str) {
                 ui.add(egui::Label::new(text).wrap());
             }
         });
-        far(ui, |ui| {
-            // A far-end row lays the caps out backwards in a left-to-right
-            // window; undo that.
-            let keys = if i18n::rtl() {
-                keys.to_string()
-            } else {
-                keys.split('+').rev().collect::<Vec<_>>().join("+")
-            };
-            shortcut::keycaps(ui, &keys, false);
-        });
+        far(ui, |ui| shortcut::keycaps(ui, keys, false));
     });
     ui.add_space(space::TINY);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Draws one place that shows keys.
+    type Draw<'a> = &'a dyn Fn(&mut Ui);
+
+    /// What one frame of `draw` paints in a window 600 points wide, with
+    /// the app's fonts.
+    fn drawn(draw: Draw) -> Vec<egui::epaint::ClippedShape> {
+        let ctx = egui::Context::default();
+        add_fonts(&ctx);
+        style(&ctx, crate::config::DarkPanels::Lighter);
+        // The fonts apply from the next frame.
+        ctx.run_ui(egui::RawInput::default(), |_| {})
+            .textures_delta
+            .clear();
+        let input = egui::RawInput {
+            screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(600.0, 400.0))),
+            ..Default::default()
+        };
+        let mut output = ctx.run_ui(input, |ui| draw(ui));
+        output.textures_delta.clear();
+        output.shapes
+    }
+
+    /// Ctrl+1 to 9 reads in order in every place that shows it: the
+    /// popup's hints, this sheet, the empty details pane and Settings,
+    /// Shortcuts.
+    fn check_quick_paste_everywhere() {
+        let keys = t!("quick-paste-keys");
+        let hints = [(keys.clone(), t!("popup-key-quick"))];
+        let what = t!("settings-shortcut-quick-paste");
+        let pane_what = t!("details-key-quick");
+        let places: [(&str, Draw); 4] = [
+            ("popup", &|ui| {
+                super::super::popup::paint_key_hints(ui, &hints)
+            }),
+            ("sheet", &|ui| key_row(ui, &what, &keys)),
+            ("empty pane", &|ui| {
+                super::super::details::key_hint_row(ui, &keys, &pane_what, Color32::GRAY)
+            }),
+            ("settings", &|ui| shortcut::fixed(ui, &keys)),
+        ];
+        for (place, draw) in places {
+            if let Err(problem) = shortcut::quick_paste_order(&drawn(draw)) {
+                panic!("{place}: {problem}");
+            }
+        }
+    }
+
+    #[test]
+    fn the_quick_paste_keys_read_in_order_everywhere() {
+        check_quick_paste_everywhere();
+    }
+
+    #[test]
+    fn the_quick_paste_keys_read_in_order_everywhere_right_to_left() {
+        crate::i18n::passes_in_arabic(
+            module_path!(),
+            "the_quick_paste_keys_read_in_order_everywhere_in_arabic",
+        );
+    }
+
+    #[test]
+    #[ignore = "run in a process of its own by the_quick_paste_keys_read_in_order_everywhere_right_to_left"]
+    fn the_quick_paste_keys_read_in_order_everywhere_in_arabic() {
+        if crate::i18n::arabic_run() {
+            check_quick_paste_everywhere();
+        }
+    }
 }

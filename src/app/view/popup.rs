@@ -307,7 +307,7 @@ fn spread(widths: &[f32], room: f32, least: f32) -> Vec<(usize, f32)> {
 /// Pairs of keys and what they do, spread across a line with equal gaps.
 /// A pair that doesn't fit on a line, even with the gaps at their least,
 /// starts the next one.
-fn paint_key_hints(ui: &mut Ui, hints: &[(String, String)]) {
+pub(super) fn paint_key_hints(ui: &mut Ui, hints: &[(String, String)]) {
     let room = ui.available_width().max(0.0);
     let laid = KeyHints::new(ui, hints, room);
     let places = spread(&laid.widths(), room, space::MEDIUM);
@@ -394,7 +394,7 @@ mod tests {
         for clipped in &output.shapes {
             match &clipped.shape {
                 egui::Shape::Text(text) => {
-                    baselines.push(text.pos.y + baseline(&text.galley));
+                    baselines.push(text.pos.y + shortcut::baseline(&text.galley));
                     end = end.max(text.pos.x + text.galley.rect.right());
                 }
                 egui::Shape::Rect(shape) => start = start.min(shape.rect.left()),

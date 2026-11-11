@@ -907,27 +907,25 @@ impl App {
                 ("Escape", t!("details-key-clear")),
             ];
             for (keys, what) in rows.into_iter().filter(|(k, _)| !k.trim().is_empty()) {
-                row(ui, |ui| {
-                    // Keys hug a shared centre line from one side, actions from the other.
-                    let half = ui.available_width() / 2.0;
-                    // Only the first frame after starting can be this narrow.
-                    let width = (half - 8.0).max(0.0);
-                    let (first, _) = ui.allocate_exact_size(Vec2::new(width, 28.0), Sense::hover());
-                    let mut caps =
-                        ui.new_child(egui::UiBuilder::new().max_rect(first).layout(far_layout()));
-                    // A right-to-left child lays the caps out backwards; undo that.
-                    let keys = if i18n::rtl() {
-                        keys.to_string()
-                    } else {
-                        keys.split('+').rev().collect::<Vec<_>>().join("+")
-                    };
-                    shortcut::keycaps(&mut caps, &keys, false);
-                    ui.add_space(space::SMALL);
-                    lbl(ui, &what, size::SMALL, weak);
-                });
+                key_hint_row(ui, keys, &what, weak);
             }
         });
     }
+}
+
+/// One key of the empty pane: its caps and what it does hug a shared
+/// centre line, the caps from the reading start's side.
+pub(super) fn key_hint_row(ui: &mut Ui, keys: &str, what: &str, color: Color32) {
+    row(ui, |ui| {
+        let half = ui.available_width() / 2.0;
+        // Only the first frame after starting can be this narrow.
+        let width = (half - 8.0).max(0.0);
+        let (first, _) = ui.allocate_exact_size(Vec2::new(width, 28.0), Sense::hover());
+        let mut caps = ui.new_child(egui::UiBuilder::new().max_rect(first).layout(far_layout()));
+        shortcut::keycaps(&mut caps, keys, false);
+        ui.add_space(space::SMALL);
+        lbl(ui, what, size::SMALL, color);
+    });
 }
 
 #[cfg(test)]
