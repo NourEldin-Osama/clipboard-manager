@@ -374,7 +374,7 @@ impl App {
             ui.spacing_mut().item_spacing = Vec2::new(6.0, 6.0);
             for t in &it.tags {
                 let c = tag_color(t);
-                let shade = text_shade(c, ui.visuals().dark_mode);
+                let shade = tag_shade(c, ui.visuals().dark_mode);
                 Frame::new()
                     .fill(c.gamma_multiply(if ui.visuals().dark_mode { 0.3 } else { 0.13 }))
                     .corner_radius(CornerRadius::same(radius::LARGE))
@@ -456,7 +456,7 @@ impl App {
                                 egui::Button::new(txt(
                                     &format!("+ {k}"),
                                     size::SMALL,
-                                    Some(text_shade(tag_color(k), ui.visuals().dark_mode)),
+                                    Some(tag_shade(tag_color(k), ui.visuals().dark_mode)),
                                 ))
                                 .frame_when_inactive(false),
                             )

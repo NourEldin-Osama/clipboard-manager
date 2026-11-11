@@ -559,7 +559,7 @@ pub(super) fn paint_row(
                 Vec2::splat(PIN_SIZE),
             )),
             Icon::PinFilled,
-            a,
+            pin_color(a, v.dark_mode),
         );
     }
     if show_pin || time_column.is_some() {

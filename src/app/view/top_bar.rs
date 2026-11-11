@@ -380,7 +380,7 @@ impl App {
                 .map_or(*all, |c| c.tag(t, folded));
             let dim = self.search_counts.is_some() && n == 0 && !sel;
             let c = tag_color(t);
-            let shade = text_shade(c, ui.visuals().dark_mode);
+            let shade = tag_shade(c, ui.visuals().dark_mode);
             let job = pill_job(
                 t,
                 size::CONTROL,

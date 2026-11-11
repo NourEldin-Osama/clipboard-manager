@@ -480,7 +480,7 @@ fn paint_footer(
             &p,
             Rect::from_center_size(Pos2::new(x, y), Vec2::splat(PIN_SIZE)),
             Icon::PinFilled,
-            accent(),
+            pin_color(accent(), v.dark_mode),
         );
         used += 22.0;
     }
@@ -562,7 +562,7 @@ fn paint_tags(ui: &Ui, rect: Rect, it: &Item, pad: f32, tags_top: f32, strip_top
         .iter()
         .map(|t| {
             let c = tag_color(t);
-            (pill(&format!("# {t}"), text_shade(c, v.dark_mode)), c)
+            (pill(&format!("# {t}"), tag_shade(c, v.dark_mode)), c)
         })
         .collect();
     // As many tags as fit on the row; the rest become "+N tags".

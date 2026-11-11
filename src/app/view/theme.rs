@@ -275,6 +275,26 @@ pub(crate) fn text_shade(color: Color32, dark_mode: bool) -> Color32 {
     readable(color, Color32::from_gray(if dark_mode { 62 } else { 220 }))
 }
 
+/// A tag's text, in its color: the text shade, a step lighter in the dark
+/// theme, where a tag's chip can sit on a selected card's tint.
+pub(crate) fn tag_shade(color: Color32, dark_mode: bool) -> Color32 {
+    if dark_mode {
+        readable(color, Color32::from_gray(80))
+    } else {
+        text_shade(color, false)
+    }
+}
+
+/// The pin of a pinned item on rows and cards: the `accent`, in its text
+/// shade in the dark theme, where the plain accent is dim.
+pub(crate) fn pin_color(accent: Color32, dark_mode: bool) -> Color32 {
+    if dark_mode {
+        text_shade(accent, true)
+    } else {
+        accent
+    }
+}
+
 /// `color` as the fill behind white text, darkened just enough to read.
 pub(crate) fn button_fill(color: Color32) -> Color32 {
     readable(color, Color32::WHITE)
@@ -538,12 +558,13 @@ pub(crate) fn style(ctx: &egui::Context, panels: crate::config::DarkPanels) {
         }
         s.visuals.text_edit_bg_color = Some(Color32::from_gray(38));
         s.visuals.popup_shadow = menu_shadow(120);
-        s.visuals.widgets.noninteractive.fg_stroke.color = Color32::from_gray(180);
-        // Lighter menus need lighter gray text to stay readable on them.
+        s.visuals.widgets.noninteractive.fg_stroke.color = Color32::from_gray(200);
+        // Gray text reads at 5.5 to 1 or more on the dark surfaces, a step
+        // above the least; lighter cards and menus need it lighter.
         let weak = if panels == crate::config::DarkPanels::Lighter {
-            160
+            176
         } else {
-            150
+            165
         };
         s.visuals.weak_text_color = Some(Color32::from_gray(weak));
     });
@@ -763,11 +784,15 @@ mod tests {
                     ("settings note", over(note_fill(dark), content)),
                     ("status bar while paused", paused_bar(panel, dark)),
                 ];
-                for (text, color) in [("normal", v.text_color()), ("weak", weak)] {
+                // Gray text a step above the least in the dark theme.
+                let weak_least = if dark { 5.5 } else { 4.5 };
+                for (text, color, least) in
+                    [("normal", v.text_color(), 4.5), ("weak", weak, weak_least)]
+                {
                     for (place, background) in backgrounds {
                         let ratio = contrast(color, background);
                         assert!(
-                            ratio >= 4.5,
+                            ratio >= least,
                             "{theme:?}, {a:?}: {text} text on {place} is {ratio:.2} to 1"
                         );
                     }
@@ -839,15 +864,32 @@ mod tests {
             // (what and where, text colour, background)
             let mut cases: Vec<(String, Color32, Color32)> = Vec::new();
             let kinds = [Kind::Text, Kind::Link, Kind::Image, Kind::Files].map(kind_color);
-            for c in kinds.into_iter().chain(TAG_COLORS) {
+            let tint = if dark { 0.3 } else { 0.13 };
+            for c in kinds {
                 let text = text_shade(c, dark);
-                let tint = if dark { 0.3 } else { 0.13 };
                 for (place, background) in [
                     ("chip", over(c.gamma_multiply(0.14), content)),
-                    ("card chip or tag", over(c.gamma_multiply(tint), content)),
-                    ("chosen tag filter", over(chosen_pill(c, dark), panel)),
-                    ("tag suggestion", content),
+                    ("card chip", over(c.gamma_multiply(tint), content)),
                 ] {
+                    cases.push((format!("{c:?} on {place}"), text, background));
+                }
+            }
+            for c in TAG_COLORS {
+                let text = tag_shade(c, dark);
+                let mut grounds = vec![
+                    ("tag".to_string(), over(c.gamma_multiply(tint), content)),
+                    (
+                        "chosen tag filter".to_string(),
+                        over(chosen_pill(c, dark), panel),
+                    ),
+                    ("tag suggestion".to_string(), content),
+                ];
+                for a in ACCENTS {
+                    let card = over(selected_card(a, dark), content);
+                    let place = format!("tag on a card selected in {a:?}");
+                    grounds.push((place, over(c.gamma_multiply(tint), card)));
+                }
+                for (place, background) in grounds {
                     cases.push((format!("{c:?} on {place}"), text, background));
                 }
             }
@@ -945,6 +987,20 @@ mod tests {
                     cases.push((format!("{a:?} selected in {place}"), selected, background));
                 }
                 cases.push((format!("{a:?} progress label"), selected, content));
+                // The pin of a pinned row or card, in dark.
+                if dark {
+                    let pin = pin_color(a, dark);
+                    let hovered = v.widgets.hovered.weak_bg_fill.gamma_multiply(0.6);
+                    for (place, background) in [
+                        ("row", panel),
+                        ("card", content),
+                        ("selected row", over(a.gamma_multiply(0.16), panel)),
+                        ("selected card", over(selected_card(a, dark), content)),
+                        ("row under the pointer", over(hovered, panel)),
+                    ] {
+                        cases.push((format!("pin {a:?} on {place}"), pin, background));
+                    }
+                }
             }
             for (case, text, background) in cases {
                 let ratio = contrast(text, background);
