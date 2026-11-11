@@ -208,7 +208,7 @@ item-paste-plain = Paste as plain text
 item-copy-only = Copy only
 item-copy-plain = Copy as plain text
 item-copy-image-text = Copy the text in the image
-item-ignore-app = Don't record from { $app }
+item-ignore-app = Never record from { $app }
 item-menu = Actions
 item-paste-group =
     { $count ->
@@ -365,7 +365,7 @@ settings-language = Language
 settings-language-hint = Menus, buttons and messages
 settings-language-help = Arabic also lays the window out right to left.
 settings-time-format = Time format
-settings-time-format-hint = Times in the list and details, such as 2:30 PM or 14:30
+settings-time-format-hint = Times in the list and details, such as 14:30 or 2:30 PM
 settings-time-format-help = They're stored in UTC and shown in your time zone.
 settings-time-24h = 24-hour
 settings-time-12h = 12-hour

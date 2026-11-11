@@ -224,7 +224,7 @@ item-paste-plain = لصق كنص عادي
 item-copy-only = نسخ فقط
 item-copy-plain = نسخ كنص عادي
 item-copy-image-text = نسخ النص الموجود في الصورة
-item-ignore-app = عدم التسجيل من { $app }
+item-ignore-app = عدم التسجيل أبدًا من { $app }
 item-menu = الإجراءات
 item-paste-group =
     { $count ->
@@ -414,7 +414,7 @@ settings-language = اللغة
 settings-language-hint = القوائم والأزرار والرسائل
 settings-language-help = العربية تجعل اتجاه النافذة من اليمين إلى اليسار.
 settings-time-format = تنسيق الوقت
-settings-time-format-hint = الأوقات في القائمة والتفاصيل، مثل 2:30 م أو 14:30
+settings-time-format-hint = الأوقات في القائمة والتفاصيل، مثل 14:30 أو 2:30 م
 settings-time-format-help = تُحفظ بالتوقيت العالمي (UTC) وتُعرض بتوقيتك المحلي.
 settings-time-24h = 24 ساعة
 settings-time-12h = 12 ساعة
