@@ -483,10 +483,10 @@ pub(super) fn setting_content(
 #[derive(Clone, Copy, Default)]
 struct RowSizes {
     /// The control's size, without the reset beside it. The control gets
-    /// the row's whole width beside the text as well as under it, so this
-    /// is its own width wherever it is, and says whether it fits beside
-    /// the text: a value cut to the room it gets, such as a path, is as
-    /// wide as all of it.
+    /// the row's whole width and a place as tall as itself, beside the text
+    /// as well as under it, so this is its own size wherever it is, and its
+    /// width says whether it fits beside the text: a value cut to the room
+    /// it gets, such as a path, is as wide as all of it.
     control: Vec2,
     /// How tall the text is.
     text: f32,
@@ -561,10 +561,15 @@ pub(super) fn setting_parts(
     let area_left = whole.left() + reset_room;
     let area_width = (width - reset_room).max(0.0);
     let (text_width, text_top, area) = if beside {
+        // The taller of the two sets the row's height, and the other is
+        // centred on it. The control's place is only as tall as the
+        // control: controls in a row take all the height they are given,
+        // and that height is kept as the control's size, which would stay
+        // with it under the text.
         let height = sizes.text.max(sizes.control.y);
         let area = Rect::from_min_size(
-            Pos2::new(area_left, whole.top()),
-            Vec2::new(area_width, height),
+            Pos2::new(area_left, whole.top() + (height - sizes.control.y) / 2.0),
+            Vec2::new(area_width, sizes.control.y),
         );
         let top = whole.top() + (height - sizes.text) / 2.0;
         (width - far_part - TEXT_GAP, top, area)
@@ -610,8 +615,14 @@ pub(super) fn setting_parts(
             .layout(far_layout()),
     );
     // Placed first, by the control's width from the frame before, and kept
-    // off the control's layout so the control doesn't move.
-    let mut slot = control_ui.new_child(egui::UiBuilder::new());
+    // off the control's layout so the control doesn't move. Its place is
+    // centred on the control's and at least as tall as the button, which
+    // would otherwise be pushed down beside a shorter control.
+    let reset_place = Rect::from_center_size(
+        area.center(),
+        Vec2::new(area.width(), area.height().max(RESET_BUTTON_SIZE)),
+    );
+    let mut slot = control_ui.new_child(egui::UiBuilder::new().max_rect(flip(whole, reset_place)));
     if resettable {
         slot.add_space(sizes.control.x + spacing);
         if icons::icon_button_ex(
@@ -1736,6 +1747,95 @@ mod tests {
     fn a_control_goes_under_its_text_in_a_narrow_row_in_arabic() {
         if arabic_run() {
             check_control_under_text_when_narrow();
+        }
+    }
+
+    /// The Query prompt row of a model's settings, set in under its model,
+    /// in the widest column, with its field `width` points wide and its
+    /// reset showing when `changed`: the row's rect and the field's, once
+    /// the frames drawn in `ctx`, as the app draws them, need no pass again.
+    fn settled_prompt_row(ctx: &egui::Context, width: f32, changed: bool) -> (Rect, Rect) {
+        let (name, line) = (
+            t!("settings-server-query-prompt"),
+            t!("settings-server-query-prompt-hint"),
+        );
+        let mut prompt = String::new();
+        let (mut row, mut field) = (Rect::NOTHING, Rect::NOTHING);
+        let mut draw = |ui: &mut Ui| {
+            in_column(ui, |ui| {
+                card(ui, |ui| {
+                    nested(ui, |ui| {
+                        row = card_row(ui, changed, |ui| {
+                            let _ = setting_content(ui, &name, &line, "", changed, changed, |ui| {
+                                let edit = egui::TextEdit::singleline(&mut prompt);
+                                field = ui.add(edit.desired_width(width)).rect;
+                            });
+                            ui.min_rect()
+                        });
+                    });
+                });
+            });
+        };
+        let settled = (0..4).any(|_| {
+            let output = frame(ctx, egui::RawInput::default(), &mut draw);
+            !output.platform_output.requested_discard()
+        });
+        assert!(settled, "the row settles");
+        (row, field)
+    }
+
+    /// The width of a field that leaves the prompt row's text its room,
+    /// and of one that doesn't.
+    const FIELD_BESIDE: f32 = 280.0;
+    const FIELD_UNDER: f32 = 400.0;
+
+    /// Whether `field` is beside its text, centred on it, rather than under
+    /// it, at the bottom of `row`.
+    fn beside_its_text(row: Rect, field: Rect) -> bool {
+        let centred = (field.center().y - row.center().y).abs() <= 0.5;
+        let under = (field.bottom() - row.bottom()).abs() <= 0.5 && field.top() > row.center().y;
+        assert!(centred != under, "{field:?} in {row:?}");
+        centred
+    }
+
+    /// The prompt row's field beside its text, then wide enough to go under
+    /// it, and the other way round, while the row is drawn: once it
+    /// settles, the field and the row's height are those of the same row
+    /// drawn in a new window in that state.
+    fn check_row_changing_its_layout() {
+        for (before, after) in [(FIELD_BESIDE, FIELD_UNDER), (FIELD_UNDER, FIELD_BESIDE)] {
+            let ctx = window();
+            let (row, field) = settled_prompt_row(&ctx, before, false);
+            assert_eq!(beside_its_text(row, field), before == FIELD_BESIDE);
+            let (row, field) = settled_prompt_row(&ctx, after, false);
+            let (fresh_row, fresh_field) = settled_prompt_row(&window(), after, false);
+            assert_eq!(
+                beside_its_text(fresh_row, fresh_field),
+                after == FIELD_BESIDE
+            );
+            let apart =
+                (field.min - fresh_field.min).length() + (field.max - fresh_field.max).length();
+            assert!(apart <= 0.5, "{field:?} drawn on, {fresh_field:?} new");
+            let taller = row.height() - fresh_row.height();
+            assert!(taller.abs() <= 0.5, "{row:?} drawn on, {fresh_row:?} new");
+        }
+    }
+
+    #[test]
+    fn a_row_that_changes_its_layout_keeps_no_old_size() {
+        check_row_changing_its_layout();
+    }
+
+    #[test]
+    fn a_row_that_changes_its_layout_keeps_no_old_size_right_to_left() {
+        passes_in_arabic("a_row_that_changes_its_layout_keeps_no_old_size_in_arabic");
+    }
+
+    #[test]
+    #[ignore = "run in a process of its own by a_row_that_changes_its_layout_keeps_no_old_size_right_to_left"]
+    fn a_row_that_changes_its_layout_keeps_no_old_size_in_arabic() {
+        if arabic_run() {
+            check_row_changing_its_layout();
         }
     }
 
