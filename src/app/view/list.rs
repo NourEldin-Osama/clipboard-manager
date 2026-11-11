@@ -281,8 +281,9 @@ pub(super) fn thumbs_to_drop(
 /// room at the start for the numbers of quick paste, and show `number`.
 /// `dated` rows sit under a day header, which gives their day; rows
 /// `under_pinned` sit under the Pinned header, which says they are pinned.
-/// With a `time_column` width shared by the rows, each row keeps the pin's
-/// slot before it, so times, pins and relevance bars line up down the list.
+/// The rows share a time column `time_column` wide, and each keeps the
+/// pin's slot before it, so times, pins and relevance bars line up down
+/// the list.
 #[allow(clippy::too_many_arguments)]
 pub(super) fn paint_row(
     ui: &Ui,
@@ -299,7 +300,7 @@ pub(super) fn paint_row(
     number: Option<usize>,
     dated: bool,
     under_pinned: bool,
-    time_column: Option<f32>,
+    time_column: f32,
 ) {
     let show_pin = it.pinned && !under_pinned;
     let v = ui.visuals();
@@ -447,20 +448,21 @@ pub(super) fn paint_row(
     let x = rect.left() + ROW_PADDING + gutter + av + 12.0;
     let sub = if compact { String::new() } else { subtitle(it) };
     // The pin and the relevance bars sit before the time on the first
-    // line, so the title ends before them.
+    // line, so the title ends before them. The bars keep the pin's slot
+    // free when there is no pin, so they line up with the bars below.
     let bars = if relevance_level(hit).is_some() {
         22.0
     } else {
         0.0
     };
-    let pin_slot = show_pin || (time_column.is_some() && bars > 0.0);
-    let pin = if pin_slot { PIN_SLOT } else { 0.0 };
+    let pin = if show_pin || bars > 0.0 {
+        PIN_SLOT
+    } else {
+        0.0
+    };
     let badges = pin + bars;
-    // The time's column: as wide as a clock time, wider for a long weekday
-    // or a date with its year, or the width the rows share.
     let time = row_time(it.created, dated);
-    let time_w = time_column.unwrap_or_else(|| time_width(ui, &time).max(TIME_COLUMN));
-    let right_w = if hot { 150.0 } else { time_w + 8.0 };
+    let right_w = if hot { 150.0 } else { time_column + 8.0 };
     let text_w = (rect.right() - x - right_w - 8.0).max(40.0);
     // While hovered, the buttons take the far end instead.
     let title_w = if hot {
@@ -549,7 +551,7 @@ pub(super) fn paint_row(
         FontId::proportional(size::SMALL),
         weak,
     );
-    let mut ix = rect.right() - ROW_PADDING - time_w;
+    let mut ix = rect.right() - ROW_PADDING - time_column;
     let iy = time_y;
     if show_pin {
         icons::paint(
@@ -562,9 +564,7 @@ pub(super) fn paint_row(
             pin_color(a, v.dark_mode),
         );
     }
-    if show_pin || time_column.is_some() {
-        ix -= PIN_SLOT;
-    }
+    ix -= PIN_SLOT;
     if let Some(level) = relevance_level(hit) {
         paint_relevance(&p, rect, ix, iy + 6.0, level, a, weak);
     }
@@ -585,12 +585,15 @@ fn time_width(ui: &Ui, time: &str) -> f32 {
         .x
 }
 
+/// The time column rows share: as wide as the widest of their times, each
+/// row's item with whether it is `dated`, as `paint_row` takes them.
+fn time_column<'a>(ui: &Ui, rows: impl Iterator<Item = (&'a Item, bool)>) -> f32 {
+    rows.map(|(it, dated)| time_width(ui, &row_time(it.created, dated)))
+        .fold(0.0, f32::max)
+}
+
 /// How big the program's icon is on a row's symbol.
 const PROGRAM_BADGE: f32 = 16.0;
-
-/// How wide a row's time is at least, so the pins and the relevance bars
-/// before short times line up.
-const TIME_COLUMN: f32 = 56.0;
 
 /// How big the numbers of quick paste are, drawn as keys.
 const NUMBER_CAP: f32 = 20.0;
@@ -705,6 +708,9 @@ impl App {
         let day_headers =
             !searching && !in_popup && self.cfg.group_by_date && self.sort() == SortOrder::Recent;
         let pinned_first = self.cfg.pinned_first;
+        // A row under a day header, which gives its day; the Pinned header
+        // gives none.
+        let dated = |it: &Item| day_headers && Group::of(it, pinned_first) != Group::Pinned;
         if day_headers {
             lines = with_headers(self.results.iter().map(|h| {
                 self.library
@@ -833,18 +839,16 @@ impl App {
             };
             let shown =
                 |i: usize| ys[i] + height(&lines[i]) >= viewport.min.y && ys[i] <= viewport.max.y;
-            // The popup's times share one column, as wide as the widest
-            // shown, so its pins and times line up down the list.
-            let time_column = in_popup.then(|| {
+            // The rows shown share one time column, as wide as the widest
+            // of their times, so their pins and times line up down the list.
+            let rows_shown =
                 (0..lines.len())
                     .filter(|&i| shown(i))
                     .filter_map(|i| match lines[i] {
                         Line::Row(r) => library.get(results[r].id),
                         _ => None,
-                    })
-                    .map(|it| time_width(ui, &row_time(it.created, false)))
-                    .fold(0.0, f32::max)
-            });
+                    });
+            let time_column = time_column(ui, rows_shown.map(|it| (it, dated(it))));
             if let Some(i) = first_unpinned
                 .and_then(|n| lines.iter().position(|l| *l == Line::Row(n - 1)))
                 .filter(|&i| shown(i))
@@ -910,7 +914,7 @@ impl App {
                             &terms,
                             in_popup,
                             (in_popup && *r < 9).then_some(*r + 1),
-                            day_headers && Group::of(it, pinned_first) != Group::Pinned,
+                            dated(it),
                             day_headers && Group::of(it, pinned_first) == Group::Pinned,
                             time_column,
                         );
@@ -1202,6 +1206,7 @@ mod tests {
         let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
             let rect = Rect::from_min_size(Pos2::new(0.0, 100.0), Vec2::new(600.0, row_h));
             let (thumb, program, numbered, number) = (None, None, false, None);
+            let column = time_column(ui, std::iter::once((&it, false)));
             paint_row(
                 ui,
                 rect,
@@ -1217,7 +1222,7 @@ mod tests {
                 number,
                 false,
                 false,
-                None,
+                column,
             );
         });
         output.textures_delta.clear();
@@ -1264,79 +1269,150 @@ mod tests {
         }
     }
 
-    /// Two of the popup's rows sharing a time column: a pinned one copied
-    /// now, and one copied over a year ago, whose time is longer. Their
-    /// relevance bars, after the pin's place, and their times line up.
-    #[test]
-    fn popup_rows_line_up_their_pins_and_times() {
+    /// Rows sharing their time column, as the popup draws them (one line,
+    /// numbered) and as the list does (two lines): a pinned row copied
+    /// now, a pinned one copied over a year ago, whose time is longer, and
+    /// one copied three days ago, without a pin. Their pins, their
+    /// relevance bars and the far ends of their times line up, in reading
+    /// order bars, pin, time: from the left, or in Arabic from the right.
+    fn check_rows_line_up() {
         let ctx = egui::Context::default();
         add_fonts(&ctx);
+        icons::register(&ctx);
         // The fonts apply from the next frame.
         ctx.run_ui(egui::RawInput::default(), |_| {})
             .textures_delta
             .clear();
-        let mut new = Item::new(1, Kind::Text, Origin::Clipboard, "Pinned note".into());
-        new.pinned = true;
-        let mut old = Item::new(2, Kind::Text, Origin::Clipboard, "Old note".into());
-        old.created -= 400 * 86_400;
-        let times = [&new, &old].map(|it| row_time(it.created, false));
-        let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
-            let column = times
-                .iter()
-                .map(|time| time_width(ui, time))
-                .fold(0.0, f32::max);
-            for (n, it) in [&new, &old].into_iter().enumerate() {
-                let hit = Hit {
-                    id: it.id,
-                    closeness: Some(1.0),
-                    weak: false,
-                };
-                let top = 100.0 + 42.0 * n as f32;
-                let rect = Rect::from_min_size(Pos2::new(0.0, top), Vec2::new(420.0, 40.0));
-                paint_row(
-                    ui,
-                    rect,
-                    false,
-                    it,
-                    &hit,
-                    None,
-                    None,
-                    false,
-                    true,
-                    &[],
-                    true,
-                    Some(n + 1),
-                    false,
-                    false,
-                    Some(column),
-                );
-            }
-        });
-        output.textures_delta.clear();
-        let mut bars: Vec<Rect> = Vec::new();
-        let mut time_ends = Vec::new();
-        for clipped in &output.shapes {
-            match &clipped.shape {
-                egui::Shape::Rect(shape) if shape.rect.width() == 4.0 => bars.push(shape.rect),
-                egui::Shape::Text(text) if times.contains(&text.galley.text().to_string()) => {
-                    time_ends.push(text.pos.x + text.galley.rect.right());
+        let item = |id: u64, days_ago: i64, pinned: bool| {
+            let text = format!("Note {id}\nIts second line");
+            let mut it = Item::new(id, Kind::Text, Origin::Clipboard, text.into());
+            it.created -= days_ago * 86_400;
+            it.pinned = pinned;
+            it
+        };
+        let rows = [item(1, 0, true), item(2, 400, true), item(3, 3, false)];
+        let rtl = i18n::rtl();
+        // Each row's time as drawn, in display order.
+        let times: Vec<String> = rows
+            .iter()
+            .map(|it| row_time(it.created, false))
+            .map(|time| match bidi::has_rtl(&time) {
+                true => bidi::job(&time, FontId::proportional(size::SMALL), Color32::GRAY).text,
+                false => time,
+            })
+            .collect();
+        for (compact, numbered) in [(true, true), (false, false)] {
+            let row_h = if compact { 40.0 } else { 58.0 };
+            let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+                let column = time_column(ui, rows.iter().map(|it| (it, false)));
+                for (n, it) in rows.iter().enumerate() {
+                    let hit = Hit {
+                        id: it.id,
+                        closeness: Some(1.0),
+                        weak: false,
+                    };
+                    let top = 100.0 + (row_h + 2.0) * n as f32;
+                    let rect = Rect::from_min_size(Pos2::new(0.0, top), Vec2::new(420.0, row_h));
+                    let number = numbered.then_some(n + 1);
+                    paint_row(
+                        ui,
+                        rect,
+                        false,
+                        it,
+                        &hit,
+                        None,
+                        None,
+                        false,
+                        compact,
+                        &[],
+                        numbered,
+                        number,
+                        false,
+                        false,
+                        column,
+                    );
                 }
-                _ => {}
+            });
+            output.textures_delta.clear();
+            // Each row's pin, bars and time, by the row they are in.
+            let row_of = |r: Rect| ((r.center().y - 100.0) / (row_h + 2.0)).floor() as usize;
+            let (mut pins, mut bars, mut drawn_times) =
+                (vec![None; 3], vec![Vec::new(); 3], vec![None; 3]);
+            for clipped in &output.shapes {
+                match &clipped.shape {
+                    egui::Shape::Rect(shape) if shape.rect.width() == 4.0 => {
+                        bars[row_of(shape.rect)].push(shape.rect);
+                    }
+                    // The pin, the one icon of its size.
+                    egui::Shape::Mesh(mesh)
+                        if (mesh.calc_bounds().width() - PIN_SIZE).abs() < 0.01 =>
+                    {
+                        pins[row_of(mesh.calc_bounds())] = Some(mesh.calc_bounds());
+                    }
+                    egui::Shape::Text(text) => {
+                        let at = text.galley.rect.translate(text.pos.to_vec2());
+                        if let Some(n) = times.iter().position(|t| t == text.galley.text()) {
+                            drawn_times[n] = Some(at);
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            let case = format!("compact {compact}, rtl {rtl}: {times:?}");
+            let (Some(pin), Some(old_pin), None) = (pins[0], pins[1], pins[2]) else {
+                panic!("{case}: pins {pins:?}");
+            };
+            assert_eq!(pin.x_range(), old_pin.x_range(), "{case}");
+            // Where a rect starts and ends in reading order.
+            let along = |r: Rect| {
+                if rtl {
+                    (-r.right(), -r.left())
+                } else {
+                    (r.left(), r.right())
+                }
+            };
+            let lefts = |bars: &[Rect]| {
+                let mut x: Vec<f32> = bars.iter().map(|bar| bar.left()).collect();
+                x.sort_by(f32::total_cmp);
+                x
+            };
+            let first_time = drawn_times[0].expect(&case);
+            for (row_bars, time) in bars.iter().zip(&drawn_times) {
+                let time = time.expect(&case);
+                assert_eq!(row_bars.len(), 3, "{case}: three bars a row");
+                // Bar by bar, each row's under the first's.
+                assert_eq!(lefts(row_bars), lefts(&bars[0]), "{case}");
+                assert!((along(time).1 - along(first_time).1).abs() <= 0.5, "{case}");
+                // In reading order: the bars, the pin's place, the time.
+                let bars_end = row_bars
+                    .iter()
+                    .map(|bar| along(*bar).1)
+                    .fold(f32::MIN, f32::max);
+                assert!(bars_end <= along(pin).0, "{case}");
+                assert!(along(pin).1 <= along(time).0, "{case}");
             }
         }
-        assert_eq!(bars.len(), 6, "three bars a row");
-        assert_eq!(time_ends.len(), 2, "{times:?}");
-        assert!(times[0] != times[1], "{times:?}");
-        // Bar by bar, the second row's under the first's.
-        bars.sort_by(|a, b| a.top().total_cmp(&b.top()));
-        let (first, second) = bars.split_at(3);
-        let lefts = |row: &[Rect]| {
-            let mut x: Vec<f32> = row.iter().map(|bar| bar.left()).collect();
-            x.sort_by(f32::total_cmp);
-            x
-        };
-        assert_eq!(lefts(first), lefts(second));
-        assert!((time_ends[0] - time_ends[1]).abs() <= 0.5, "{time_ends:?}");
+    }
+
+    #[test]
+    fn rows_line_up_their_pins_bars_and_times() {
+        check_rows_line_up();
+    }
+
+    #[test]
+    fn rows_line_up_their_pins_bars_and_times_right_to_left() {
+        crate::i18n::passes_in_arabic(
+            module_path!(),
+            "rows_line_up_their_pins_bars_and_times_in_arabic",
+        );
+    }
+
+    #[test]
+    #[ignore = "run in a process of its own by rows_line_up_their_pins_bars_and_times_right_to_left"]
+    fn rows_line_up_their_pins_bars_and_times_in_arabic() {
+        if crate::i18n::arabic_run() {
+            check_rows_line_up();
+        }
     }
 
     /// Closed or open, a screen reader hears the link as a button with the
