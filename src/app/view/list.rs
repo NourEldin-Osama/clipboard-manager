@@ -550,7 +550,7 @@ pub(super) fn paint_row(
     };
     p.galley(Pos2::new(line_x(tg.size().x), title_y), tg, title_color);
     if let Some(second) = &second {
-        second.paint(ui, &p, column, rect.top() + 32.0, terms);
+        second.paint(ui, &p, column, rect.top() + 32.0, terms, fill.is_some());
     }
 
     if hot {
@@ -650,9 +650,9 @@ const PROGRAM_ICON: f32 = 16.0;
 /// as tall as the line.
 const ROW_CHIP_PADDING: f32 = 1.0;
 
-/// How strong the gray tint behind a row's "+N tags" is: a little fainter
-/// than on a card, so the gray text keeps the dark theme's contrast on the
-/// list's panel, which can be lighter than a card.
+/// How strong the gray tint behind a row's "+N tags" is on a row at rest:
+/// a little fainter than on a card, so the gray text keeps the dark theme's
+/// contrast on the list's panel, which can be lighter than a card.
 const ROW_REST_TINT: f32 = 0.12;
 
 /// The least room a fact gets on a row's second line, a few letters and
@@ -691,8 +691,17 @@ impl<'a> SecondLine<'a> {
     /// found words marked; then the tags as chips. Laid out left to right,
     /// then mirrored with the row, the name and the fact each in their own
     /// direction. Text that doesn't fit is cut with "…", and the tags keep
-    /// room for their first chip or "+N tags".
-    fn paint(&self, ui: &Ui, p: &egui::Painter, column: Rect, top: f32, terms: &[String]) {
+    /// room for their first chip or "+N tags". `on_tint` while the row is
+    /// tinted: selected, or under the pointer.
+    fn paint(
+        &self,
+        ui: &Ui,
+        p: &egui::Painter,
+        column: Rect,
+        top: f32,
+        terms: &[String],
+        on_tint: bool,
+    ) {
         let weak = ui.visuals().weak_text_color();
         let font = FontId::proportional(size::SMALL);
         let line_height = ui
@@ -749,12 +758,16 @@ impl<'a> SecondLine<'a> {
             if x > column.left() {
                 x += space::SMALL;
             }
-            // Opaque, so a tag reads the same on a selected row and under
-            // the pointer.
+            // Opaque: on a row at rest, its tint over the list's color; on
+            // a tinted row, the list's own color, so the chip stands out
+            // from the row's tint.
             let panel = ui.visuals().panel_fill;
             let chips = grid::tag_chips(ui, self.tags, column.right() - x, ROW_REST_TINT)
                 .into_iter()
-                .map(|(text, color, fill)| (text, color, panel.blend(fill)))
+                .map(|(text, color, fill)| {
+                    let fill = if on_tint { panel } else { panel.blend(fill) };
+                    (text, color, fill)
+                })
                 .collect();
             // Never past the column, under the time or the hover buttons.
             let within = (i18n::rtl(), column);
@@ -2017,6 +2030,105 @@ mod tests {
     fn a_rows_second_line_names_its_program_in_arabic() {
         if crate::i18n::arabic_run() {
             check_second_line();
+        }
+    }
+
+    /// On a row at rest a tag's chip is its tint over the list's color; on
+    /// a row under the pointer or selected it is the list's own color, so
+    /// it stands out from the row's tint. "+N tags" follows the same rule.
+    /// The theme's tests check the contrasts.
+    #[test]
+    fn a_tag_chip_takes_the_lists_color_on_a_tinted_row() {
+        let ctx = egui::Context::default();
+        add_fonts(&ctx);
+        icons::register(&ctx);
+        // The fonts apply from the next frame.
+        ctx.run_ui(egui::RawInput::default(), |_| {})
+            .textures_delta
+            .clear();
+        let mut it = Item::new(1, Kind::Text, Origin::Clipboard, "Invoice 4821".into());
+        let tags = [
+            "finance",
+            "quarterly reports",
+            "to read later",
+            "receipts",
+            "travel plans",
+            "taxes 2026",
+            "office",
+            "family",
+        ];
+        it.tags = tags.map(String::from).to_vec();
+        let hit = Hit {
+            id: 1,
+            closeness: None,
+            weak: false,
+        };
+        let row = Rect::from_min_size(Pos2::new(0.0, 100.0), Vec2::new(600.0, 58.0));
+        let more: Vec<String> = (1..=tags.len())
+            .map(|n| t!("tags-more", count = n))
+            .collect();
+        for (hot, selected) in [(false, false), (true, false), (false, true), (true, true)] {
+            let mut panel = Color32::PLACEHOLDER;
+            let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+                panel = ui.visuals().panel_fill;
+                let column = time_column(ui, std::iter::once((&it, false)));
+                paint_row(
+                    ui,
+                    row,
+                    hot,
+                    &it,
+                    &hit,
+                    None,
+                    None,
+                    selected,
+                    false,
+                    &[],
+                    false,
+                    None,
+                    false,
+                    false,
+                    column,
+                );
+            });
+            output.textures_delta.clear();
+            let (mut fills, mut words) = (Vec::new(), Vec::new());
+            for clipped in &output.shapes {
+                match &clipped.shape {
+                    egui::Shape::Rect(shape) => fills.push((shape.rect, shape.fill)),
+                    egui::Shape::Text(text) => {
+                        let shown = text.galley.text();
+                        if shown.starts_with("# ") || more.iter().any(|m| m == shown) {
+                            let at = text.galley.rect.translate(text.pos.to_vec2());
+                            words.push((shown.to_string(), at));
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            let case = format!("hot {hot}, selected {selected}");
+            let is_more = |shown: &str| more.iter().any(|m| m == shown);
+            assert!(
+                words.iter().any(|(shown, _)| !is_more(shown)),
+                "{case}: a tag"
+            );
+            assert!(
+                words.iter().any(|(shown, _)| is_more(shown)),
+                "{case}: +N tags"
+            );
+            for (shown, at) in &words {
+                let chip = fills
+                    .iter()
+                    .filter(|(rect, _)| rect.contains_rect(*at) && rect.height() < row.height())
+                    .min_by(|a, b| a.0.area().total_cmp(&b.0.area()))
+                    .map(|(_, fill)| *fill)
+                    .unwrap_or_else(|| panic!("{case}: the chip of {shown:?}"));
+                assert_eq!(chip.a(), 255, "{case}: {shown:?} on an opaque chip");
+                if hot || selected {
+                    assert_eq!(chip, panel, "{case}: {shown:?}");
+                } else {
+                    assert_ne!(chip, panel, "{case}: {shown:?}");
+                }
+            }
         }
     }
 

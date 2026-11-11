@@ -819,8 +819,8 @@ mod tests {
                         ),
                     ),
                     ("gray chip", over(weak.gamma_multiply(0.14), content)),
-                    // "+N tags" on a list row: opaque, the same on a
-                    // selected row and under the pointer.
+                    // "+N tags" on a list row at rest; on a tinted row it
+                    // is on the panel's color.
                     ("more tags on a row", over(weak.gamma_multiply(0.12), panel)),
                     ("settings note", over(note_fill(dark), content)),
                     ("settings warning", over(warning_fill(dark), content)),
@@ -888,6 +888,48 @@ mod tests {
             ] {
                 let ratio = contrast(v.text_color(), background);
                 assert!(ratio >= 4.5, "{theme:?}: {place} is {ratio:.2} to 1");
+            }
+        }
+    }
+
+    /// A list row's tag chips, and its "+N tags", stay pills on every row
+    /// state, for every accent: at rest a tint over the panel, and under
+    /// the pointer or selected the panel's own color. Each chip's fill and
+    /// the row's differ by 1.1 to 1 or more, and the chip's text reads on
+    /// it at 4.5 to 1 or more.
+    #[test]
+    fn a_rows_tag_chips_stand_out_on_every_row_state() {
+        for (ctx, theme) in styled() {
+            let v = ctx.style_of(theme).visuals.clone();
+            let (dark, panel, weak) = (v.dark_mode, v.panel_fill, v.weak_text_color());
+            let tint = if dark { 0.3 } else { 0.13 };
+            let hovered = over(v.widgets.hovered.weak_bg_fill.gamma_multiply(0.6), panel);
+            // The chips on a row, each as its text's color and its fill.
+            let at_rest: Vec<(Color32, Color32)> = TAG_COLORS
+                .iter()
+                .map(|c| (tag_shade(*c, dark), over(c.gamma_multiply(tint), panel)))
+                .chain([(weak, over(weak.gamma_multiply(0.12), panel))])
+                .collect();
+            let tinted: Vec<(Color32, Color32)> = TAG_COLORS
+                .iter()
+                .map(|c| (tag_shade(*c, dark), panel))
+                .chain([(weak, panel)])
+                .collect();
+            for a in ACCENTS {
+                let selected = over(a.gamma_multiply(if dark { 0.16 } else { 0.12 }), panel);
+                for (state, row, chips) in [
+                    ("at rest", panel, &at_rest),
+                    ("under the pointer", hovered, &tinted),
+                    ("selected", selected, &tinted),
+                ] {
+                    for (text, fill) in chips {
+                        let case = format!("{theme:?}, {a:?}, {state}, text {text:?}");
+                        let apart = contrast(*fill, row);
+                        assert!(apart >= 1.1, "{case}: chip and row {apart:.3} to 1");
+                        let ratio = contrast(*text, *fill);
+                        assert!(ratio >= 4.5, "{case}: text {ratio:.2} to 1");
+                    }
+                }
             }
         }
     }
@@ -962,9 +1004,10 @@ mod tests {
                     let place = format!("tag on a card selected in {a:?}");
                     grounds.push((place, over(c.gamma_multiply(tint), card)));
                 }
-                // A list row's tag: opaque, the same on a selected row and
-                // under the pointer.
+                // A list row's tag at rest, and on a row under the pointer
+                // or selected, where its chip is the panel's color.
                 grounds.push(("tag on a row".into(), over(c.gamma_multiply(tint), panel)));
+                grounds.push(("tag on a tinted row".into(), panel));
                 for (place, background) in grounds {
                     cases.push((format!("{c:?} on {place}"), text, background));
                 }
