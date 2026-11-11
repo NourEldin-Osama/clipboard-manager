@@ -23,7 +23,9 @@ cargo deny check -W unmaintained            # licenses, advisories, duplicates, 
   (`server_reader_reads_text`), `OCR_IMAGE=…` (`windows_reader_reads_text`), and `models_dev_lists_models`
   (downloads the models.dev list, about 6 MB).
 - `SAMPLE_HOME=<empty folder> cargo test -- --ignored sample_history` fills a data folder with made-up items over two
-  weeks; start the app with `CLIPBOARD_MANAGER_HOME` set to it to check the window or take screenshots.
+  weeks; start the app with `CLIPBOARD_MANAGER_HOME` set to it to check the window or take screenshots. The items take
+  their programs from `SAMPLE_PROGRAMS` (`Teams.exe=<path>;Code.exe=<path>`, for programs a test can't find), then from
+  four Windows paths and the App Paths registry key.
 - When the repo lives on Google Drive (as in Colab), build with `CARGO_TARGET_DIR` pointing outside it.
 - `CLIPBOARD_MANAGER_HOME=<dir>` gives a throwaway data folder (config, history) for testing.
 - `CLIPBOARD_MANAGER_LOCAL_PORT_OFFSET=<n>` moves the usual ports the app looks for model servers on this PC on

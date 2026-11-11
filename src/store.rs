@@ -960,20 +960,43 @@ mod tests {
             (Kind::Text, "Grocery list: milk, eggs, bread, dates, olive oil", "Notepad.exe", 11 * day),
             (Kind::Text, "مرحبًا بالعالم", "Notepad.exe", 13 * day),
         ];
-        // Programs every Windows PC has, so their rows show real icons and
-        // names; the others look like copies made before 0.6.
+        // The programs the items came from, so they show real icons and
+        // names, as real copies always do. In this order: SAMPLE_PROGRAMS,
+        // pairs of a program's file name and its path separated by ";"
+        // (`Teams.exe=C:\...\ms-teams.exe;Code.exe=...`), for programs
+        // Windows keeps where a test can't find them; then four every
+        // Windows PC has; then the path Windows notes under App Paths for
+        // the current user or the machine. A path counts only if its file
+        // is there; an item with none shows the stand-in icon.
+        let listed: Vec<(String, PathBuf)> = std::env::var("SAMPLE_PROGRAMS")
+            .unwrap_or_default()
+            .split(';')
+            .filter_map(|pair| pair.split_once('='))
+            .map(|(name, path)| (name.trim().to_lowercase(), PathBuf::from(path.trim())))
+            .collect();
         let system = std::env::var_os("SystemRoot").map(PathBuf::from);
         let edge = PathBuf::from(r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe");
-        let program_of = |app: &str| -> Option<PathBuf> {
+        let known = |app: &str| -> Option<PathBuf> {
             let system = system.as_ref()?;
-            let path = match app {
+            Some(match app {
                 "Notepad.exe" => system.join("System32").join("notepad.exe"),
                 "explorer.exe" => system.join("explorer.exe"),
                 "cmd.exe" => system.join("System32").join("cmd.exe"),
                 "msedge.exe" => edge.clone(),
                 _ => return None,
-            };
-            path.exists().then_some(path)
+            })
+        };
+        let program_of = |app: &str| -> Option<PathBuf> {
+            let there = |path: &PathBuf| path.is_file();
+            let name = app.to_lowercase();
+            let listed = listed
+                .iter()
+                .find(|(n, _)| *n == name)
+                .map(|(_, p)| p.clone());
+            listed
+                .filter(there)
+                .or_else(|| known(app).filter(there))
+                .or_else(|| registered_program(app).filter(there))
         };
         let now = now();
         let mut id = store.next_id().unwrap();
@@ -1007,11 +1030,53 @@ mod tests {
             let mut it = Item::new(id, Kind::Image, Origin::Clipboard, "".into());
             it.created = now - age;
             it.app = Some("SnippingTool.exe".into());
+            it.program = program_of("SnippingTool.exe");
             it.image = Some(store.images.save(id, &picture).unwrap());
             it.width = picture.width();
             it.height = picture.height();
             store.put(&it).unwrap();
             id += 1;
         }
+    }
+
+    /// Where Windows notes the program `app` (a file name such as
+    /// `chrome.exe`) is: the value under App Paths in the current user's
+    /// part of the registry, else in the machine's.
+    #[cfg(windows)]
+    fn registered_program(app: &str) -> Option<PathBuf> {
+        let key = format!(r"SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\{app}");
+        [
+            windows_registry::CURRENT_USER,
+            windows_registry::LOCAL_MACHINE,
+        ]
+        .into_iter()
+        .find_map(|root| root.open(&key).ok()?.get_string("").ok())
+        .map(|path| PathBuf::from(with_variables(path.trim().trim_matches('"'))))
+    }
+
+    #[cfg(not(windows))]
+    fn registered_program(_app: &str) -> Option<PathBuf> {
+        None
+    }
+
+    /// `text` with each `%NAME%` replaced by that environment variable, as
+    /// Windows reads a path such as `%ProgramFiles%\App\app.exe`.
+    #[cfg(windows)]
+    fn with_variables(text: &str) -> String {
+        let mut out = String::new();
+        let mut rest = text;
+        while let Some((before, after)) = rest.split_once('%') {
+            let Some((name, next)) = after.split_once('%') else {
+                break;
+            };
+            out.push_str(before);
+            match std::env::var(name) {
+                Ok(value) => out.push_str(&value),
+                Err(_) => out.push_str(&format!("%{name}%")),
+            }
+            rest = next;
+        }
+        out.push_str(rest);
+        out
     }
 }
