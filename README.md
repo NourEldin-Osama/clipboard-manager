@@ -131,7 +131,8 @@ the bundled Sentence Transformers server) or elsewhere (OpenRouter, or a server 
    - **Test** sends one short text and shows the vector size (how many numbers each vector has) and how long it took.
    - **Vector size** keeps fewer numbers of each vector, for Matryoshka models only. Vectors are normalised again after
      they are shortened.
-6. **Save**, then pick the model under **Search by meaning → Model**. Your history is indexed in the background.
+6. **Save**, then turn on **Search by meaning** and pick the model under **Model**. Your history is indexed in the
+   background.
 
 A server keeps as many models as you like, for searching and for reading text, and each model keeps its own index: going
 back to a model needs no new indexing. Items missing from the model's index are embedded in the background, and the

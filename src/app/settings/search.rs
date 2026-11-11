@@ -14,6 +14,34 @@ fn strictness() -> [(f32, String); 3] {
     ]
 }
 
+/// Search by meaning turned on and off, with its state in words under its
+/// name, after a dot of the state's color (gray while off).
+fn meaning_switch(ui: &mut Ui, engine: &mut SearchEngine, (dot, text): (Color32, String)) {
+    card_row(ui, false, |ui| {
+        let name = t!("settings-meaning-section");
+        let help = t!("settings-search-engine-help");
+        let _ = setting_content(ui, &name, "", &help, false, false, |ui| {
+            let mut on = *engine == SearchEngine::Server;
+            if toggle(ui, &mut on).changed() {
+                *engine = if on {
+                    SearchEngine::Server
+                } else {
+                    SearchEngine::Off
+                };
+            }
+        });
+        row(ui, |ui| {
+            let color = if dot == Color32::GRAY {
+                ui.visuals().weak_text_color()
+            } else {
+                text_shade(dot, ui.visuals().dark_mode)
+            };
+            icons::glyph(ui, Icon::Dot, 10.0, color);
+            ui.label(txt(&text, size::SMALL, Some(color)));
+        });
+    });
+}
+
 impl App {
     pub(super) fn search_page(&mut self, ui: &mut Ui, d: &mut Config) {
         let def = Config::default();
@@ -79,48 +107,20 @@ impl App {
             self.send_question(ui, d);
         });
 
-        let (dot, text) = self.meaning_state();
+        let state = self.meaning_state();
         // Without a search model in use, the ones found on this PC come first.
         let in_use =
             d.search_engine == SearchEngine::Server && is_model_for(d, d.search_model, true);
         self.local_servers.look(ui.ctx());
         section(ui, &t!("settings-meaning-section"), |ui| {
-            // The state in words after a dot of its color, as the card's
-            // first row, without a box that could read as a button.
-            card_row(ui, false, |ui| {
-                row(ui, |ui| {
-                    let color = if dot == Color32::GRAY {
-                        ui.visuals().weak_text_color()
-                    } else {
-                        text_shade(dot, ui.visuals().dark_mode)
-                    };
-                    icons::glyph(ui, Icon::Dot, 10.0, color);
-                    ui.label(txt(&text, size::CONTROL, Some(color)));
-                });
-            });
-            if !in_use {
-                self.found_rows(ui, d);
-            }
             let engine = d.search_engine;
-            plain_setting(
-                ui,
-                &t!("settings-engine"),
-                &t!("settings-search-engine-hint"),
-                &t!("settings-search-engine-help"),
-                |ui| {
-                    segmented(
-                        ui,
-                        &mut d.search_engine,
-                        &[
-                            (SearchEngine::Off, t!("settings-engine-off")),
-                            (SearchEngine::Server, t!("settings-engine-server")),
-                        ],
-                    );
-                },
-            );
+            meaning_switch(ui, &mut d.search_engine, state);
             // Turned on with no model picked yet: the first one there is.
             if d.search_engine != engine && !is_model_for(d, d.search_model, true) {
                 d.search_model = models_for(d, true).first().copied();
+            }
+            if !in_use {
+                self.found_rows(ui, d);
             }
             match d.search_engine {
                 SearchEngine::Off => note(ui, &t!("settings-model-off-note")),
@@ -174,5 +174,105 @@ impl App {
                 }
             });
         });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// One frame of the switch with `events`, in a window with the app's
+    /// fonts and style: what was painted, and the screen reader's tree.
+    fn switch_frame(
+        ctx: &egui::Context,
+        engine: &mut SearchEngine,
+        events: Vec<egui::Event>,
+    ) -> egui::FullOutput {
+        let input = egui::RawInput {
+            events,
+            ..Default::default()
+        };
+        let state = (Color32::GRAY, t!("settings-meaning-off"));
+        let mut output = ctx.run_ui(input, |ui| {
+            let column = Rect::from_min_size(Pos2::new(20.0, 20.0), Vec2::new(600.0, 300.0));
+            ui.scope_builder(egui::UiBuilder::new().max_rect(column), |ui| {
+                card(ui, |ui| meaning_switch(ui, engine, state.clone()));
+            });
+        });
+        // The font atlas upload no renderer takes here.
+        output.textures_delta.clear();
+        output
+    }
+
+    /// The row's switch carries the section's name for screen readers and
+    /// turns search by meaning on; its state stands under its name.
+    #[test]
+    fn search_by_meaning_is_a_switch_with_its_state_under_its_name() {
+        let ctx = egui::Context::default();
+        crate::app::view::add_fonts(&ctx);
+        crate::app::view::style(&ctx, DarkPanels::Lighter);
+        ctx.enable_accesskit();
+        let mut engine = SearchEngine::Off;
+        // The fonts apply from the next frame.
+        switch_frame(&ctx, &mut engine, Vec::new());
+        let output = switch_frame(&ctx, &mut engine, Vec::new());
+        let name = t!("settings-meaning-section");
+        let state = t!("settings-meaning-off");
+        let text_rect = |words: &str| {
+            output
+                .shapes
+                .iter()
+                .find_map(|clipped| match &clipped.shape {
+                    egui::Shape::Text(text) if text.galley.text() == words => {
+                        Some(text.galley.rect.translate(text.pos.to_vec2()))
+                    }
+                    _ => None,
+                })
+                .expect(words)
+        };
+        let (title, line) = (text_rect(&name), text_rect(&state));
+        assert!(line.top() >= title.bottom(), "{line:?} under {title:?}");
+        // The dot at the name's reading-start edge, the words after it.
+        let dot = output
+            .shapes
+            .iter()
+            .find_map(|clipped| match &clipped.shape {
+                egui::Shape::Circle(circle) if line.y_range().contains(circle.center.y) => {
+                    Some(circle.center)
+                }
+                _ => None,
+            })
+            .expect("a dot");
+        assert!(
+            (dot.x - 5.0 - title.left()).abs() <= 1.0,
+            "{dot:?} {title:?}"
+        );
+        assert!(line.left() > dot.x, "{line:?} after {dot:?}");
+        let update = output.platform_output.accesskit_update.expect("a tree");
+        let switch = update
+            .nodes
+            .iter()
+            .map(|(_, node)| node)
+            .find(|node| node.role() == egui::accesskit::Role::Switch)
+            .expect("a switch");
+        assert_eq!(switch.label(), Some(name.as_str()));
+        let bounds = switch.bounds().expect("a place");
+        let at = Pos2::new(
+            ((bounds.x0 + bounds.x1) / 2.0) as f32,
+            ((bounds.y0 + bounds.y1) / 2.0) as f32,
+        );
+        let press = |pressed| egui::Event::PointerButton {
+            pos: at,
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: egui::Modifiers::NONE,
+        };
+        switch_frame(
+            &ctx,
+            &mut engine,
+            vec![egui::Event::PointerMoved(at), press(true)],
+        );
+        switch_frame(&ctx, &mut engine, vec![press(false)]);
+        assert_eq!(engine, SearchEngine::Server);
     }
 }
