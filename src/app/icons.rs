@@ -222,9 +222,10 @@ pub(super) fn register(ctx: &egui::Context) {
     }
 }
 
-/// Icons that point somewhere, turned around for right-to-left.
+/// Icons that point somewhere, turned around for right-to-left, and the
+/// details pane's, which opens on the left there.
 fn mirrored(icon: Icon) -> bool {
-    matches!(icon, Icon::Back)
+    matches!(icon, Icon::Back | Icon::Detail)
 }
 
 /// The parts of an icon's texture its square shows: all of it, as drawn.

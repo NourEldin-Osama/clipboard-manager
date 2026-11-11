@@ -67,9 +67,9 @@ impl App {
         // The details at the reading end: always in Detail view, and while
         // open over the grid or the list, with a Back button there. The list
         // or the grid takes the rest.
-        let detail_view = self.cfg.view == ViewMode::Detail;
-        if detail_view || (self.details_open && self.selected.is_some()) {
-            details::details_panel(ui, |ui| self.details(ui, !detail_view));
+        if self.pane_shown() {
+            let closeable = self.cfg.view != ViewMode::Detail;
+            details::details_panel(ui, |ui| self.details(ui, closeable));
         }
         // The cards end 16 points from the window's edge, after the 12 the
         // grid keeps for its scroll bar; rows add their own 8 to the 8 here.
@@ -104,6 +104,34 @@ impl App {
         self.details_open = false;
         self.scroll_to_selected = true;
         self.save_config();
+    }
+
+    /// The details pane shows beside the list or the grid: always in
+    /// Detail, and after Open details in the other two.
+    fn pane_shown(&self) -> bool {
+        self.cfg.view == ViewMode::Detail || (self.details_open && self.selected.is_some())
+    }
+
+    /// Shows `view` with the details pane `open` beside it or not, as the
+    /// layout controls ask. Only the view is saved: the pane beside the grid
+    /// or the list is the one Open details opens.
+    fn show_layout(&mut self, (view, open): (ViewMode, bool)) {
+        if view != self.cfg.view {
+            self.set_view(view);
+        }
+        if view == ViewMode::Detail {
+            return;
+        }
+        if !open {
+            self.details_open = false;
+            return;
+        }
+        // With none selected, the pane shows the first item shown.
+        if self.selected.is_none() {
+            self.selected = self.results.first().map(|hit| hit.id);
+            self.scroll_to_selected = true;
+        }
+        self.details_open = self.selected.is_some();
     }
 
     /// A file dialog took the keyboard focus away: the search box gets it
