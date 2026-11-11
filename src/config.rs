@@ -456,9 +456,9 @@ pub enum Density {
 /// How tall the grid's cards are (D69).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum CardHeight {
-    /// All the same height, in rows.
+    /// All the same height, in rows: the default.
     Same,
-    /// As tall as their content, stacked in columns: the default.
+    /// As tall as their content, stacked in columns.
     Fit,
 }
 
@@ -689,7 +689,7 @@ impl Default for Config {
             search_model: None,
             min_similarity: 0.0,
             density: Density::Comfortable,
-            card_height: CardHeight::Fit,
+            card_height: CardHeight::Same,
             group_by_date: true,
             accent: 0,
             view: ViewMode::Grid,
