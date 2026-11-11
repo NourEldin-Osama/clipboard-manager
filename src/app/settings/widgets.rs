@@ -507,9 +507,9 @@ impl RowSizes {
 ///
 /// The text takes the width the control and its reset leave, its lines
 /// wrapping there. When the control alone leaves less than
-/// `TEXT_LEAST_WIDTH`, or too little for the name on one line beside a
-/// reset, the control goes under the text, where it may take the row's
-/// whole width; so a reset that shows or goes never moves the control.
+/// `TEXT_LEAST_WIDTH`, or too little for the name on one line, the control
+/// goes under the text, where it may take the row's whole width. The reset
+/// counts for neither, so one that shows or goes never moves the control.
 /// The control ends on the row's far edge whether the reset shows or not,
 /// so the controls of a card share one edge. The reset sits on the
 /// control's reading-start side and comes after the info button and
@@ -556,10 +556,10 @@ pub(super) fn setting_parts(
 
     // Whether the control fits beside the text. The reset doesn't count, so
     // it never moves the control: it takes its room from the text, whose
-    // lines may wrap a little more. The name, which never wraps, keeps room
-    // for a reset whether one shows or not, so a reset never runs into it.
+    // lines may wrap a little more. The name, which never wraps, may then
+    // come close to the reset.
     let room = (width - TEXT_GAP - TEXT_LEAST_WIDTH).max(0.0);
-    let name_room = width - sizes.control.x - TEXT_GAP - RESET_BUTTON_SIZE - spacing;
+    let name_room = width - sizes.control.x - TEXT_GAP;
     let beside = sizes.control.x <= room && name_width <= name_room;
     let far_part = sizes.control.x + reset_room;
     // The control's place spans the row, less the reset's room, beside the
@@ -1946,6 +1946,111 @@ mod tests {
     fn a_reset_keeps_its_control_beside_the_text_in_arabic() {
         if arabic_run() {
             check_reset_keeps_its_control_beside_the_text();
+        }
+    }
+
+    /// The first two rows of the shortcuts in this window, in Settings,
+    /// Shortcuts and pasting, in the widest column, the first with its
+    /// reset showing when `changed`, drawn in `ctx` as the app draws them
+    /// until a frame needs no pass again: each row's rect and its
+    /// recorder's.
+    fn settled_paste_rows(ctx: &egui::Context, changed: bool) -> [(Rect, Rect); 2] {
+        let rows = [
+            (
+                t!("settings-shortcut-paste"),
+                t!("settings-shortcut-paste-hint"),
+                t!("settings-shortcut-paste-help"),
+                changed,
+            ),
+            (
+                t!("settings-shortcut-paste-plain"),
+                String::new(),
+                String::new(),
+                false,
+            ),
+        ];
+        let mut keys = ["Enter".to_string(), "Shift+Enter".to_string()];
+        let mut problem = None;
+        let mut places = [(Rect::NOTHING, Rect::NOTHING); 2];
+        let mut draw = |ui: &mut Ui| {
+            in_column(ui, |ui| {
+                card(ui, |ui| {
+                    let rows = rows.iter().zip(&mut keys).zip(&mut places);
+                    for (((name, line, details, changed), keys), place) in rows {
+                        *place = card_row(ui, *changed, |ui| {
+                            let mut recorder = Rect::NOTHING;
+                            let _ = setting_content(
+                                ui,
+                                name,
+                                line,
+                                details,
+                                *changed,
+                                *changed,
+                                |ui| {
+                                    crate::app::shortcut::recorder(
+                                        ui,
+                                        keys,
+                                        false,
+                                        false,
+                                        &mut problem,
+                                    );
+                                    recorder = ui.min_rect();
+                                },
+                            );
+                            (ui.min_rect(), recorder)
+                        });
+                    }
+                });
+            });
+        };
+        let mut output = frame(ctx, egui::RawInput::default(), &mut draw);
+        for _ in 0..3 {
+            if !output.platform_output.requested_discard() {
+                break;
+            }
+            output = frame(ctx, egui::RawInput::default(), &mut draw);
+        }
+        assert!(
+            !output.platform_output.requested_discard(),
+            "the rows settle"
+        );
+        places
+    }
+
+    /// The Paste row, whose long name and info button leave just room for
+    /// a recorder beside them, before and after a change shows its reset,
+    /// and in a new window with the reset: its recorder stays beside its
+    /// text, in the same place as the next row's recorder across the row.
+    fn check_long_name_keeps_its_control_beside_it() {
+        let ctx = window();
+        let drawn = [
+            settled_paste_rows(&ctx, false),
+            settled_paste_rows(&ctx, true),
+            settled_paste_rows(&window(), true),
+        ];
+        for [(row, recorder), (_, next)] in drawn {
+            assert!(beside_its_text(row, recorder), "{recorder:?} in {row:?}");
+            let along =
+                (recorder.left() - next.left()).abs() + (recorder.right() - next.right()).abs();
+            assert!(along <= 0.5, "{recorder:?} over {next:?}");
+        }
+    }
+
+    #[test]
+    fn a_long_name_keeps_its_control_beside_it() {
+        check_long_name_keeps_its_control_beside_it();
+    }
+
+    #[test]
+    fn a_long_name_keeps_its_control_beside_it_right_to_left() {
+        passes_in_arabic("a_long_name_keeps_its_control_beside_it_in_arabic");
+    }
+
+    #[test]
+    #[ignore = "run in a process of its own by a_long_name_keeps_its_control_beside_it_right_to_left"]
+    fn a_long_name_keeps_its_control_beside_it_in_arabic() {
+        if arabic_run() {
+            check_long_name_keeps_its_control_beside_it();
         }
     }
 
