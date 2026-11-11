@@ -131,10 +131,17 @@ pub(super) fn menu_arrow(ui: &Ui, rect: Rect, visuals: &egui::style::WidgetVisua
 /// How big a menu's arrow is.
 const MENU_ARROW: f32 = 10.0;
 
+/// How big the info button is.
+const INFO_BUTTON_SIZE: f32 = 22.0;
+
 /// The info button beside a setting's name: a click, or Enter or Space,
-/// opens its details; screen readers read them as the button's name.
-pub(super) fn info(ui: &mut Ui, text: &str) {
-    let (rect, resp) = ui.allocate_exact_size(Vec2::splat(22.0), Sense::click());
+/// opens its details; screen readers read them as the button's name. It
+/// takes the name's `height` in its line, its square on the line's middle,
+/// so a name has the same place and line with it or without it.
+pub(super) fn info(ui: &mut Ui, text: &str, height: f32) {
+    let (id, place) = ui.allocate_space(Vec2::new(INFO_BUTTON_SIZE, height));
+    let rect = Rect::from_center_size(place.center(), Vec2::splat(INFO_BUTTON_SIZE));
+    let resp = ui.interact(rect, id, Sense::click());
     resp.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, text));
     let v = ui.visuals();
     if resp.hovered() || resp.has_focus() {
@@ -169,6 +176,19 @@ pub(super) const MENU_WIDTH: f32 = 280.0;
 
 /// The reset button beside a changed setting.
 const RESET_BUTTON_SIZE: f32 = 28.0;
+
+/// How far a setting's short line is under its name.
+const LINE_GAP: f32 = space::TINY;
+
+/// The room between a setting's text and its control beside it.
+const TEXT_GAP: f32 = space::HUGE;
+
+/// The least width a setting's text keeps beside its control; with less,
+/// the control goes under the text.
+const TEXT_LEAST_WIDTH: f32 = 160.0;
+
+/// The room between a setting's text and its control under it.
+const STACKED_GAP: f32 = space::SMALL;
 
 /// The room inside a card's rows at their sides, where their text and
 /// their controls end.
@@ -437,9 +457,10 @@ pub(super) fn setting_row(
     })
 }
 
-/// What a setting's row holds, for a row that shows more under it: the
-/// name with its info button and the control on one line, and the gray
-/// line under them. True when the reset was clicked.
+/// What a setting's row holds, for a row that shows more under it: its
+/// text at the reading-start side, the name with its info button and the
+/// gray line under it, and the control at the far end, the two centred on
+/// each other. True when the reset was clicked.
 pub(super) fn setting_content(
     ui: &mut Ui,
     label: &str,
@@ -449,63 +470,186 @@ pub(super) fn setting_content(
     resettable: bool,
     control: impl FnOnce(&mut Ui),
 ) -> bool {
-    let mut reset = false;
-    row(ui, |ui| {
-        ui.set_min_height(30.0);
-        let color = if changed {
-            text_shade(accent(), ui.visuals().dark_mode)
-        } else {
-            ui.visuals().strong_text_color()
-        };
-        lbl(ui, label, size::BODY, color);
-        if !details.is_empty() {
-            info(ui, details);
-        }
-        far(ui, |ui| {
-            // The control ends on the row's far edge whether the reset shows
-            // or not, so the controls of a card share one edge. The reset
-            // sits on the control's reading-start side and comes before it
-            // for the keyboard, as it reads: it is placed first, by the
-            // control's width from the frame before, and kept off the row's
-            // layout so the control doesn't move.
-            let width_id = ui.unique_id().with("control width");
-            let width = ui.ctx().data(|d| d.get_temp::<f32>(width_id));
-            let mut slot = ui.new_child(egui::UiBuilder::new());
-            if resettable {
-                slot.add_space(width.unwrap_or_default() + ui.spacing().item_spacing.x);
-                if icons::icon_button_ex(
-                    &mut slot,
-                    Icon::Reset,
-                    &t!("settings-back-to-default"),
-                    Vec2::splat(RESET_BUTTON_SIZE),
-                    14.0,
-                    None,
-                    None,
-                )
-                .clicked()
-                {
-                    reset = true;
-                }
-            }
-            ui.ctx()
-                .data_mut(|d| d.insert_temp(row_title_id(), label.to_string()));
-            control(ui);
-            ui.ctx().data_mut(|d| d.remove::<String>(row_title_id()));
-            let used = ui.min_rect().width();
-            if width.is_none_or(|width| (width - used).abs() > 0.5) {
-                ui.ctx().data_mut(|d| d.insert_temp(width_id, used));
-                if resettable {
-                    ui.ctx()
-                        .request_discard("a reset button follows its control's width");
-                }
-            }
-        });
-    });
-    if !line.is_empty() {
-        // Right under the name, as one block with it.
-        let weak = ui.visuals().weak_text_color();
+    let weak = ui.visuals().weak_text_color();
+    let under = (!line.is_empty()).then_some(|ui: &mut Ui| {
         super::bidi::paragraph(ui, line, FontId::proportional(size::SMALL), weak);
+    });
+    setting_parts(ui, label, under, details, changed, resettable, control)
+}
+
+/// What a setting's row measured when it was drawn last, to lay its text
+/// and its control out before they are drawn.
+#[derive(Clone, Copy, Default)]
+struct RowSizes {
+    /// The control's size, without the reset beside it.
+    control: Vec2,
+    /// How wide the control is beside the text, which says whether it fits
+    /// there. While the control is under the text this only narrows, so a
+    /// control that takes all the room it gets there is tried beside the
+    /// text again when the row widens.
+    beside: f32,
+    /// How tall the text is.
+    text: f32,
+}
+
+impl RowSizes {
+    fn differs(self, other: Self) -> bool {
+        let apart = |a: f32, b: f32| (a - b).abs() > 0.5;
+        apart(self.control.x, other.control.x)
+            || apart(self.control.y, other.control.y)
+            || apart(self.beside, other.beside)
+            || apart(self.text, other.text)
     }
+}
+
+/// `setting_content` with `under` the name what the caller draws there,
+/// such as a state, in place of the gray line.
+///
+/// The text takes the width the control leaves, its lines wrapping there;
+/// with too little room for it, or for the name on one line, the control
+/// goes under the text. The control ends on the row's far edge whether the
+/// reset shows or not, so the controls of a card share one edge. The reset
+/// sits on the control's reading-start side and comes after the info
+/// button and before the control for the keyboard, as it reads. The parts
+/// are placed by their sizes from the frame before; a part that changed
+/// size has the frame drawn again.
+pub(super) fn setting_parts(
+    ui: &mut Ui,
+    label: &str,
+    under: Option<impl FnOnce(&mut Ui)>,
+    details: &str,
+    changed: bool,
+    resettable: bool,
+    control: impl FnOnce(&mut Ui),
+) -> bool {
+    let sizes_id = ui.unique_id().with(("setting sizes", label));
+    let last = ui.ctx().data(|d| d.get_temp::<RowSizes>(sizes_id));
+    let sizes = last.unwrap_or_default();
+    let spacing = ui.spacing().item_spacing.x;
+    let reset_room = if resettable {
+        RESET_BUTTON_SIZE + spacing
+    } else {
+        0.0
+    };
+    let whole = ui.available_rect_before_wrap();
+    let width = whole.width();
+    let color = if changed {
+        text_shade(accent(), ui.visuals().dark_mode)
+    } else {
+        ui.visuals().strong_text_color()
+    };
+    let name = txt(label, size::BODY, Some(color)).into_galley(
+        ui,
+        Some(egui::TextWrapMode::Extend),
+        f32::INFINITY,
+        egui::FontSelection::Default,
+    );
+    let name_height = name.size().y;
+    let name_width = if details.is_empty() {
+        name.size().x
+    } else {
+        name.size().x + spacing + INFO_BUTTON_SIZE
+    };
+
+    // The most the control and its reset may take beside the text.
+    let room = (width - TEXT_GAP - TEXT_LEAST_WIDTH).max(0.0);
+    let far_part = sizes.beside + reset_room;
+    let beside = far_part <= room && name_width <= width - far_part - TEXT_GAP;
+    let (text_width, text_top, area) = if beside {
+        let height = sizes.text.max(sizes.control.y);
+        let area = Rect::from_min_size(
+            Pos2::new(whole.right() - room + reset_room, whole.top()),
+            Vec2::new((room - reset_room).max(0.0), height),
+        );
+        let top = whole.top() + (height - sizes.text) / 2.0;
+        (width - far_part - TEXT_GAP, top, area)
+    } else {
+        let area = Rect::from_min_size(
+            Pos2::new(
+                whole.left() + reset_room,
+                whole.top() + sizes.text + STACKED_GAP,
+            ),
+            Vec2::new((width - reset_room).max(0.0), sizes.control.y),
+        );
+        (width, whole.top(), area)
+    };
+
+    let text_rect = Rect::from_min_size(
+        Pos2::new(whole.left(), text_top),
+        Vec2::new(text_width, sizes.text.max(name_height)),
+    );
+    let start = if i18n::rtl() {
+        egui::Align::Max
+    } else {
+        egui::Align::Min
+    };
+    let mut text_ui = ui.new_child(
+        egui::UiBuilder::new()
+            .max_rect(flip(whole, text_rect))
+            .layout(egui::Layout::top_down(start)),
+    );
+    text_ui.spacing_mut().item_spacing.y = 0.0;
+    row_of(&mut text_ui, name_height, |ui| {
+        ui.label(name);
+        if !details.is_empty() {
+            info(ui, details, name_height);
+        }
+    });
+    if let Some(under) = under {
+        text_ui.add_space(LINE_GAP);
+        under(&mut text_ui);
+    }
+    let text = text_ui.min_rect();
+
+    let mut reset = false;
+    let mut control_ui = ui.new_child(
+        egui::UiBuilder::new()
+            .max_rect(flip(whole, area))
+            .layout(far_layout()),
+    );
+    // Placed first, by the control's width from the frame before, and kept
+    // off the control's layout so the control doesn't move.
+    let mut slot = control_ui.new_child(egui::UiBuilder::new());
+    if resettable {
+        slot.add_space(sizes.control.x + spacing);
+        if icons::icon_button_ex(
+            &mut slot,
+            Icon::Reset,
+            &t!("settings-back-to-default"),
+            Vec2::splat(RESET_BUTTON_SIZE),
+            14.0,
+            None,
+            None,
+        )
+        .clicked()
+        {
+            reset = true;
+        }
+    }
+    ui.ctx()
+        .data_mut(|d| d.insert_temp(row_title_id(), label.to_string()));
+    control(&mut control_ui);
+    ui.ctx().data_mut(|d| d.remove::<String>(row_title_id()));
+    let drawn = control_ui.min_rect();
+
+    let now = RowSizes {
+        control: drawn.size(),
+        beside: if beside {
+            drawn.width()
+        } else {
+            sizes.beside.min(drawn.width())
+        },
+        text: text.height(),
+    };
+    if last.is_none_or(|last| last.differs(now)) {
+        ui.ctx().data_mut(|d| d.insert_temp(sizes_id, now));
+        ui.ctx()
+            .request_discard("a setting's row follows its parts' sizes");
+        // Drawn again later if this frame can't be.
+        ui.ctx().request_repaint();
+    }
+    let bottom = text.bottom().max(drawn.bottom());
+    ui.advance_cursor_after_rect(Rect::from_x_y_ranges(whole.x_range(), whole.top()..=bottom));
     reset
 }
 
@@ -1094,6 +1238,277 @@ mod tests {
         }
         let reset = t!("settings-back-to-default");
         assert_eq!(order, ["Details", reset.as_str(), "Tray"]);
+    }
+
+    /// `draw` in a settings column of the widest kind.
+    fn in_column(ui: &mut Ui, draw: impl FnOnce(&mut Ui)) {
+        let column = Rect::from_min_size(
+            Pos2::new(20.0, 20.0),
+            Vec2::new(super::super::COLUMN_WIDTH, 2000.0),
+        );
+        ui.scope_builder(egui::UiBuilder::new().max_rect(column), draw);
+    }
+
+    /// Where the text that reads `words` was painted, one rect per line.
+    fn text_rects(output: &egui::FullOutput, words: &str) -> Vec<Rect> {
+        let mut found: Vec<Rect> = output
+            .shapes
+            .iter()
+            .filter_map(|clipped| match &clipped.shape {
+                egui::Shape::Text(text)
+                    if !text.galley.text().is_empty() && words.contains(text.galley.text()) =>
+                {
+                    Some(text.galley.rect.translate(text.pos.to_vec2()))
+                }
+                _ => None,
+            })
+            .collect();
+        found.sort_by(|a, b| a.top().total_cmp(&b.top()));
+        found
+    }
+
+    /// A row with a short line and a switch shorter than its text, a row
+    /// with only a name and a recorder taller than it, and a row whose line
+    /// wraps beside a wide menu: each line starts 4 points under its name,
+    /// no line reaches under a control, and each control's middle is its
+    /// text's middle.
+    fn check_text_and_control() {
+        let ctx = window();
+        let (mut on, mut size, mut problem) = (true, 1, None);
+        let mut keys = "Ctrl+Shift+V".to_string();
+        let lines = [
+            "Keeps running",
+            "",
+            &"each model keeps its own data ".repeat(4),
+        ];
+        let names = ["Tray", "Paste", "Model"];
+        let mut controls = [Rect::NOTHING; 3];
+        let mut draw = |ui: &mut Ui| {
+            in_column(ui, |ui| {
+                card(ui, |ui| {
+                    let _ = setting_row(ui, names[0], lines[0], "Details", false, false, |ui| {
+                        controls[0] = toggle(ui, &mut on).rect;
+                    });
+                    let _ = setting_row(ui, names[1], lines[1], "", true, true, |ui| {
+                        crate::app::shortcut::recorder(ui, &mut keys, false, false, &mut problem);
+                        controls[1] = ui.min_rect();
+                    });
+                    let _ = setting_row(ui, names[2], lines[2], "Details", false, false, |ui| {
+                        controls[2] = egui::ComboBox::from_id_salt("model")
+                            .width(MENU_WIDTH)
+                            .selected_text("EmbeddingGemma")
+                            .show_ui(ui, |ui| {
+                                ui.selectable_value(&mut size, 1, "EmbeddingGemma");
+                            })
+                            .response
+                            .rect;
+                    });
+                });
+            });
+        };
+        frame(&ctx, egui::RawInput::default(), &mut draw);
+        let output = frame(&ctx, egui::RawInput::default(), &mut draw);
+        assert!(!output.platform_output.requested_discard(), "steady");
+        for ((name, line), control) in names.iter().zip(lines).zip(controls) {
+            let name = text_rects(&output, name)[0];
+            let mut text = name;
+            if !line.is_empty() {
+                let lines = text_rects(&output, line);
+                let gap = lines[0].top() - name.bottom();
+                assert!((gap - LINE_GAP).abs() <= 0.5, "{gap} under {name:?}");
+                for line in &lines {
+                    let apart = if i18n::rtl() {
+                        line.left() - control.right()
+                    } else {
+                        control.left() - line.right()
+                    };
+                    assert!(apart >= TEXT_GAP, "{line:?} beside {control:?}");
+                    text = text.union(*line);
+                }
+            }
+            let off = control.center().y - text.center().y;
+            assert!(off.abs() <= 0.5, "{control:?} on {text:?}");
+        }
+        assert!(text_rects(&output, lines[2]).len() > 1, "a long line wraps");
+    }
+
+    #[test]
+    fn a_settings_text_and_its_control_are_centred_on_each_other() {
+        check_text_and_control();
+    }
+
+    #[test]
+    fn a_settings_text_and_its_control_are_centred_on_each_other_right_to_left() {
+        passes_in_arabic("a_settings_text_and_its_control_are_centred_on_each_other_in_arabic");
+    }
+
+    #[test]
+    #[ignore = "run in a process of its own by a_settings_text_and_its_control_are_centred_on_each_other_right_to_left"]
+    fn a_settings_text_and_its_control_are_centred_on_each_other_in_arabic() {
+        if arabic_run() {
+            check_text_and_control();
+        }
+    }
+
+    /// The widest controls in the widest column, the choice and the recorder
+    /// changed so their resets show: the model menu, a three-way choice and
+    /// a key recorder with a note beside it each leave their text at least
+    /// 200 points.
+    fn check_widest_controls_leave_room() {
+        let ctx = window();
+        let (mut mode, mut size, mut problem) = (SearchMode::Hybrid, 1, None);
+        let mut keys = "Ctrl+Shift+V".to_string();
+        let mut rows = [(Rect::NOTHING, Rect::NOTHING); 3];
+        let mut draw = |ui: &mut Ui| {
+            in_column(ui, |ui| {
+                card(ui, |ui| {
+                    rows[0] = card_row(ui, true, |ui| {
+                        let mut menu = Rect::NOTHING;
+                        let model = t!("settings-model");
+                        let line = t!("settings-search-model-hint");
+                        setting_content(ui, &model, &line, "", false, false, |ui| {
+                            field_look(ui);
+                            menu = egui::ComboBox::from_id_salt("model")
+                                .icon(menu_arrow)
+                                .width(MENU_WIDTH)
+                                .selected_text("EmbeddingGemma · llama.cpp")
+                                .show_ui(ui, |ui| {
+                                    ui.selectable_value(&mut size, 1, "EmbeddingGemma");
+                                })
+                                .response
+                                .rect;
+                        });
+                        (ui.min_rect(), menu)
+                    });
+                    rows[1] = card_row(ui, true, |ui| {
+                        let mut choice = Rect::NOTHING;
+                        let name = t!("settings-search-mode");
+                        let line = t!("search-mode-smart-help");
+                        setting_content(ui, &name, &line, "", true, true, |ui| {
+                            let modes = [
+                                (SearchMode::Hybrid, t!("search-mode-smart")),
+                                (SearchMode::Semantic, t!("search-mode-meaning")),
+                                (SearchMode::Keyword, t!("search-mode-words")),
+                            ];
+                            segmented(ui, &mut mode, &modes);
+                            choice = ui.min_rect();
+                        });
+                        (ui.min_rect(), choice)
+                    });
+                    rows[2] = card_row(ui, true, |ui| {
+                        let mut recorder = Rect::NOTHING;
+                        let name = t!("settings-shortcut-popup");
+                        let line = t!("settings-shortcut-popup-hint");
+                        setting_content(ui, &name, &line, "", true, true, |ui| {
+                            crate::app::shortcut::recorder(
+                                ui,
+                                &mut keys,
+                                false,
+                                true,
+                                &mut problem,
+                            );
+                            chip(ui, t!("settings-shortcut-taken"), RED);
+                            recorder = ui.min_rect();
+                        });
+                        (ui.min_rect(), recorder)
+                    });
+                });
+            });
+        };
+        frame(&ctx, egui::RawInput::default(), &mut draw);
+        let output = frame(&ctx, egui::RawInput::default(), &mut draw);
+        let reset = t!("settings-back-to-default");
+        let (_, places) = spoken(output);
+        for (row, control) in rows {
+            let beside = places
+                .iter()
+                .filter(|(name, rect)| *name == reset && row.y_range().contains(rect.center().y))
+                .fold(control, |beside, (_, rect)| beside.union(*rect));
+            let room = if i18n::rtl() {
+                row.right() - beside.right() - TEXT_GAP
+            } else {
+                beside.left() - row.left() - TEXT_GAP
+            };
+            assert!(room >= 200.0, "{room} beside {control:?} in {row:?}");
+        }
+    }
+
+    #[test]
+    fn the_widest_controls_leave_room_for_their_text() {
+        check_widest_controls_leave_room();
+    }
+
+    #[test]
+    fn the_widest_controls_leave_room_for_their_text_right_to_left() {
+        passes_in_arabic("the_widest_controls_leave_room_for_their_text_in_arabic");
+    }
+
+    #[test]
+    #[ignore = "run in a process of its own by the_widest_controls_leave_room_for_their_text_right_to_left"]
+    fn the_widest_controls_leave_room_for_their_text_in_arabic() {
+        if arabic_run() {
+            check_widest_controls_leave_room();
+        }
+    }
+
+    /// In a row too narrow for a menu beside its text, the menu goes under
+    /// the text, at the row's far edge.
+    fn check_control_under_text_when_narrow() {
+        let ctx = window();
+        let mut size = 1;
+        let (mut row, mut menu) = (Rect::NOTHING, Rect::NOTHING);
+        let mut draw = |ui: &mut Ui| {
+            let narrow = Rect::from_min_size(Pos2::new(20.0, 20.0), Vec2::new(300.0, 600.0));
+            ui.scope_builder(egui::UiBuilder::new().max_rect(narrow), |ui| {
+                card(ui, |ui| {
+                    row = card_row(ui, false, |ui| {
+                        setting_content(ui, "Model", "The one in use", "", false, false, |ui| {
+                            menu = egui::ComboBox::from_id_salt("model")
+                                .width(MENU_WIDTH / 2.0)
+                                .selected_text("EmbeddingGemma")
+                                .show_ui(ui, |ui| {
+                                    ui.selectable_value(&mut size, 1, "EmbeddingGemma");
+                                })
+                                .response
+                                .rect;
+                        });
+                        ui.min_rect()
+                    });
+                });
+            });
+        };
+        frame(&ctx, egui::RawInput::default(), &mut draw);
+        let output = frame(&ctx, egui::RawInput::default(), &mut draw);
+        assert!(!output.platform_output.requested_discard(), "steady");
+        let line = text_rects(&output, "The one in use")[0];
+        assert!(
+            menu.top() >= line.bottom() + STACKED_GAP - 0.5,
+            "{menu:?} under {line:?}"
+        );
+        let end = far_edge(menu) - far_edge(row);
+        assert!(end.abs() <= 0.5, "{menu:?} at the end of {row:?}");
+        assert!(
+            (row.bottom() - menu.bottom()).abs() <= 0.5,
+            "{row:?} holds {menu:?}"
+        );
+    }
+
+    #[test]
+    fn a_control_goes_under_its_text_in_a_narrow_row() {
+        check_control_under_text_when_narrow();
+    }
+
+    #[test]
+    fn a_control_goes_under_its_text_in_a_narrow_row_right_to_left() {
+        passes_in_arabic("a_control_goes_under_its_text_in_a_narrow_row_in_arabic");
+    }
+
+    #[test]
+    #[ignore = "run in a process of its own by a_control_goes_under_its_text_in_a_narrow_row_right_to_left"]
+    fn a_control_goes_under_its_text_in_a_narrow_row_in_arabic() {
+        if arabic_run() {
+            check_control_under_text_when_narrow();
+        }
     }
 
     /// A row, a note, a row and a last note that warns, in a card: the

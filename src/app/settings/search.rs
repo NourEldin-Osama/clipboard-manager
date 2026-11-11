@@ -15,12 +15,31 @@ fn strictness() -> [(f32, String); 3] {
 }
 
 /// Search by meaning turned on and off, with its state in words under its
-/// name, after a dot of the state's color (gray while off).
+/// name in place of a gray line, after a dot of the state's color (gray
+/// while off).
 fn meaning_switch(ui: &mut Ui, engine: &mut SearchEngine, (dot, text): (Color32, String)) {
+    let state = |ui: &mut Ui| {
+        let color = if dot == Color32::GRAY {
+            ui.visuals().weak_text_color()
+        } else {
+            text_shade(dot, ui.visuals().dark_mode)
+        };
+        let words = txt(&text, size::SMALL, Some(color)).into_galley(
+            ui,
+            Some(egui::TextWrapMode::Extend),
+            f32::INFINITY,
+            egui::FontSelection::Default,
+        );
+        // As tall as its words, so they start where a gray line would.
+        row_of(ui, words.size().y, |ui| {
+            icons::glyph(ui, Icon::Dot, 10.0, color);
+            ui.label(words);
+        });
+    };
     card_row(ui, false, |ui| {
         let name = t!("settings-meaning-section");
         let help = t!("settings-search-engine-help");
-        let _ = setting_content(ui, &name, "", &help, false, false, |ui| {
+        let _ = setting_parts(ui, &name, Some(state), &help, false, false, |ui| {
             let mut on = *engine == SearchEngine::Server;
             if toggle(ui, &mut on).changed() {
                 *engine = if on {
@@ -29,15 +48,6 @@ fn meaning_switch(ui: &mut Ui, engine: &mut SearchEngine, (dot, text): (Color32,
                     SearchEngine::Off
                 };
             }
-        });
-        row(ui, |ui| {
-            let color = if dot == Color32::GRAY {
-                ui.visuals().weak_text_color()
-            } else {
-                text_shade(dot, ui.visuals().dark_mode)
-            };
-            icons::glyph(ui, Icon::Dot, 10.0, color);
-            ui.label(txt(&text, size::SMALL, Some(color)));
         });
     });
 }
@@ -231,7 +241,9 @@ mod tests {
                 .expect(words)
         };
         let (title, line) = (text_rect(&name), text_rect(&state));
-        assert!(line.top() >= title.bottom(), "{line:?} under {title:?}");
+        // Where a gray line would start.
+        let gap = line.top() - title.bottom();
+        assert!((gap - space::TINY).abs() <= 0.5, "{line:?} under {title:?}");
         // The dot at the name's reading-start edge, the words after it.
         let dot = output
             .shapes
@@ -261,6 +273,9 @@ mod tests {
             ((bounds.x0 + bounds.x1) / 2.0) as f32,
             ((bounds.y0 + bounds.y1) / 2.0) as f32,
         );
+        // Centred on the name and its state together.
+        let off = at.y - title.union(line).center().y;
+        assert!(off.abs() <= 0.5, "{at:?} on {title:?} and {line:?}");
         let press = |pressed| egui::Event::PointerButton {
             pos: at,
             button: egui::PointerButton::Primary,
