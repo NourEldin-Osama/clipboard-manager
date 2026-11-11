@@ -81,6 +81,10 @@ pub(super) fn details_panel<R>(
 /// The least room the content keeps above the foot, in a very short window.
 const LEAST_CONTENT_HEIGHT: f32 = 48.0;
 
+/// The room for the content's scroll bar in the pane's margin, beside the
+/// content: as wide as the bar under the pointer, and a little more.
+const SCROLL_BAR_ROOM: f32 = 12.0;
+
 /// The pane's content in a scroll area that takes the room left, then a
 /// thin line and the foot, which ends at the pane's bottom however long the
 /// content is, so its buttons stay in one place from item to item. The
@@ -100,10 +104,22 @@ fn content_over_foot<T>(
         .unwrap_or_default();
     let top = ui.cursor().top();
     let room = (ui.available_height() - below).max(LEAST_CONTENT_HEIGHT);
+    // The scroll bar floats in the pane's margin, beside the content, so it
+    // never covers the text: Arabic lines start at the content's edge.
+    let width = ui.available_width();
+    let at = ui.cursor().min;
+    let area = Rect::from_min_size(at, Vec2::new(width + SCROLL_BAR_ROOM, room));
+    let mut scroll = ui.new_child(egui::UiBuilder::new().max_rect(area).layout(*ui.layout()));
     egui::ScrollArea::vertical()
         .auto_shrink([false, false])
-        .max_height(room)
-        .show(ui, |ui| content(ui, state));
+        .content_margin(Margin {
+            left: 0,
+            right: SCROLL_BAR_ROOM as i8,
+            top: 0,
+            bottom: 0,
+        })
+        .show(&mut scroll, |ui| content(ui, state));
+    ui.advance_cursor_after_rect(Rect::from_min_size(at, Vec2::new(width, room)));
     ui.add_space(space::SMALL);
     let (line, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 1.0), Sense::hover());
     ui.painter().hline(
@@ -947,6 +963,54 @@ mod tests {
             output.textures_delta.clear();
         }
         (actions.top(), foot.bottom(), bottom)
+    }
+
+    /// Long content keeps the pane's width, and its scroll bar floats
+    /// beside it, in the pane's margin.
+    #[test]
+    fn the_scroll_bar_floats_beside_the_content() {
+        let ctx = egui::Context::default();
+        ctx.enable_accesskit();
+        let (mut content, mut pane) = (Rect::NOTHING, Rect::NOTHING);
+        let mut bar = None;
+        for _ in 0..3 {
+            let mut output = ctx.run_ui(input(Vec2::new(480.0, 600.0)), |ui| {
+                // Inside the pane's margin, as its frame sets it.
+                pane = ui.max_rect().shrink(20.0);
+                ui.scope_builder(egui::UiBuilder::new().max_rect(pane), |ui| {
+                    content_over_foot(
+                        ui,
+                        &mut (),
+                        |ui, _| {
+                            content = ui.max_rect();
+                            for line in 0..300 {
+                                ui.label(format!("Line {line}"));
+                            }
+                        },
+                        |ui, _| {
+                            ui.label("Today, 10:30");
+                        },
+                    );
+                });
+            });
+            output.textures_delta.clear();
+            let update = output.platform_output.accesskit_update.expect("a tree");
+            bar = update
+                .nodes
+                .iter()
+                .find(|(_, node)| node.role() == egui::accesskit::Role::ScrollBar)
+                .and_then(|(_, node)| node.bounds());
+        }
+        let bar = bar.expect("a scroll bar");
+        assert_eq!(content.x_range(), pane.x_range());
+        assert!(
+            bar.x0 as f32 >= content.right(),
+            "{bar:?} beside {content:?}"
+        );
+        assert!(
+            bar.x1 as f32 <= pane.right() + 20.0,
+            "{bar:?} in the margin"
+        );
     }
 
     #[test]

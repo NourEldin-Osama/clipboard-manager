@@ -379,6 +379,11 @@ pub(crate) mod size {
 /// about 70 characters.
 pub(crate) const READING_WIDTH: f32 = 35.0;
 
+/// How strong a scroll bar's handle is while the pointer is elsewhere:
+/// faint, a little more than half as strong as with the pointer over the
+/// list.
+const RESTING_SCROLL_HANDLE: f32 = 0.35;
+
 /// The font family of titles: Noto Sans and Noto Sans Arabic in SemiBold.
 const SEMIBOLD: &str = "semibold";
 
@@ -487,6 +492,11 @@ pub(crate) fn style(ctx: &egui::Context, panels: crate::config::DarkPanels) {
             s.animation_time = 0.0;
         }
         s.spacing.button_padding = Vec2::new(10.0, 5.0);
+        // A list or a page shows that it goes on: the scroll bar's handle
+        // stays faintly in sight while the content is longer than its
+        // area, and grows stronger under the pointer. The bar still floats,
+        // taking no room from the content.
+        s.spacing.scroll.dormant_handle_opacity = RESTING_SCROLL_HANDLE;
         for w in [
             &mut s.visuals.widgets.noninteractive,
             &mut s.visuals.widgets.inactive,
@@ -786,6 +796,33 @@ mod tests {
                 ratio >= 4.5,
                 "{theme:?}: a quiet button under the pointer is {ratio:.2} to 1"
             );
+        }
+    }
+
+    /// A scroll bar's handle at rest stays in sight on every surface it
+    /// floats over, fainter than under the pointer, and the bar takes no
+    /// room from the content.
+    #[test]
+    fn a_resting_scroll_handle_stays_in_sight() {
+        for (ctx, theme) in styled() {
+            let style = ctx.style_of(theme);
+            let scroll = style.spacing.scroll;
+            assert!(scroll.floating, "{theme:?}");
+            assert_eq!(scroll.floating_allocated_width, 0.0, "{theme:?}");
+            assert!(scroll.dormant_handle_opacity < scroll.active_handle_opacity);
+            // egui draws a floating bar's handle in the color of a
+            // button's text.
+            let v = &style.visuals;
+            let handle = v
+                .widgets
+                .inactive
+                .fg_stroke
+                .color
+                .gamma_multiply(scroll.dormant_handle_opacity);
+            for (place, under) in [("panel", v.panel_fill), ("content", v.extreme_bg_color)] {
+                let ratio = contrast(over(handle, under), under);
+                assert!(ratio >= 1.8, "{theme:?}: on {place}, {ratio:.2} to 1");
+            }
         }
     }
 
