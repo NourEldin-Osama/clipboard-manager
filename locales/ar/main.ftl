@@ -202,6 +202,9 @@ status-recording-stopped-tip = توقف التسجيل بعد أخطاء متك�
 status-shortcut-taken = الاختصار { $keys } يستخدمه تطبيق آخر
 status-open-shortcut-settings = افتح إعدادات الاختصارات
 status-dismiss-error = انقر للإغلاق
+status-key-paste = لصق
+status-key-copy = نسخ
+status-key-all = كل الاختصارات
 list-drop-files = أفلت لإضافتها إلى مكتبتك القابلة للبحث
 item-files-count =
     { $count ->

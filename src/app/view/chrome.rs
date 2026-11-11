@@ -199,7 +199,22 @@ impl App {
                             self.error = None;
                         }
                     }
-                    far(ui, |ui| self.recording_button(ui, recording));
+                    let start = ui.min_rect();
+                    let end = far(ui, |ui| {
+                        self.recording_button(ui, recording);
+                        ui.min_rect()
+                    });
+                    // The main keys in the middle of the bar, in the room
+                    // the parts at either end leave.
+                    let free = if i18n::rtl() {
+                        egui::Rangef::new(end.right(), start.left())
+                    } else {
+                        egui::Rangef::new(start.right(), end.left())
+                    };
+                    let can_paste = paste::exists(self.win.previous.load(Ordering::SeqCst));
+                    let hints = BarHints::new(&self.cfg.keys, can_paste);
+                    let line = Rect::from_x_y_ranges(ui.max_rect().x_range(), start.y_range());
+                    hints.paint(ui, line, free.shrink(BAR_HINTS_GAP));
                 });
             });
         // A thin line between the items and the bar: the items go on under it.
@@ -316,6 +331,68 @@ impl App {
     }
 }
 
+/// Between two of the status bar's key hints, and between them and the
+/// bar's other parts.
+const BAR_HINTS_GAP: f32 = space::LARGE;
+
+/// The main keys in the status bar, each with its word, as the popup's
+/// hint line shows them. They are no buttons: F1 shows every key.
+struct BarHints {
+    /// From the reading start.
+    hints: Vec<(String, String)>,
+    /// The first is the paste hint, which gives way first.
+    paste_first: bool,
+}
+
+impl BarHints {
+    /// With a program to paste into, the paste key; then the copy key and
+    /// F1. A key switched off in Settings is left out with its word.
+    fn new(keys: &crate::config::Keys, can_paste: bool) -> Self {
+        let paste = (can_paste && !keys.paste.trim().is_empty())
+            .then(|| (keys.paste.clone(), t!("status-key-paste")));
+        let paste_first = paste.is_some();
+        let rest = [
+            (keys.copy_only.clone(), t!("status-key-copy")),
+            ("F1".to_string(), t!("status-key-all")),
+        ]
+        .into_iter()
+        .filter(|(keys, _)| !keys.trim().is_empty());
+        Self {
+            hints: paste.into_iter().chain(rest).collect(),
+            paste_first,
+        }
+    }
+
+    /// Paints the hints on one line, centred in `line`, when they fit in
+    /// `free`: all of them, else all but the paste hint, else none. How
+    /// many it painted.
+    fn paint(&self, ui: &Ui, line: Rect, free: egui::Rangef) -> usize {
+        let laid = KeyHints::new(ui, &self.hints, line.width());
+        let widths = laid.widths();
+        let firsts = if self.paste_first { 0..2 } else { 0..1 };
+        for first in firsts {
+            let shown = &widths[first.min(widths.len())..];
+            if shown.is_empty() {
+                break;
+            }
+            let total = shown.iter().sum::<f32>() + BAR_HINTS_GAP * (shown.len() - 1) as f32;
+            let middle = line.center().x;
+            let across = egui::Rangef::new(middle - total / 2.0, middle + total / 2.0);
+            if across.min < free.min || across.max > free.max {
+                continue;
+            }
+            let within = Rect::from_x_y_ranges(across, line.y_range());
+            let mut x = 0.0;
+            for (n, width) in widths.iter().enumerate().skip(first) {
+                laid.paint(ui.painter(), within, n, x, line.center().y);
+                x += width + BAR_HINTS_GAP;
+            }
+            return shown.len();
+        }
+        0
+    }
+}
+
 /// How big the recording button's icon is.
 const RECORDING_ICON: f32 = 14.0;
 
@@ -353,6 +430,106 @@ fn selected_count(ui: &Ui, text: &str, color: Color32) -> std::sync::Arc<egui::G
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The status bar's hints painted in a bar 1000 points wide, with the
+    /// room `free` between its other parts: how many were painted, and the
+    /// texts drawn with where they are.
+    fn bar_hints_drawn(hints: &BarHints, free: egui::Rangef) -> (usize, Vec<(String, Rect)>) {
+        let ctx = egui::Context::default();
+        add_fonts(&ctx);
+        // The fonts apply from the next frame.
+        ctx.run_ui(egui::RawInput::default(), |_| {})
+            .textures_delta
+            .clear();
+        let line = Rect::from_min_size(Pos2::new(16.0, 6.0), Vec2::new(1000.0, 26.0));
+        let mut painted = 0;
+        let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+            painted = hints.paint(ui, line, free);
+        });
+        output.textures_delta.clear();
+        let texts = output
+            .shapes
+            .iter()
+            .filter_map(|clipped| match &clipped.shape {
+                egui::Shape::Text(text) => Some((
+                    text.galley.text().to_string(),
+                    text.galley.rect.translate(text.pos.to_vec2()),
+                )),
+                _ => None,
+            })
+            .collect();
+        (painted, texts)
+    }
+
+    /// With a program to paste into: Enter and paste, the copy key and
+    /// copy, F1 and all shortcuts, centred in the bar, on one line.
+    #[test]
+    fn the_main_keys_sit_in_the_middle_of_the_status_bar() {
+        let keys = crate::config::Keys::default();
+        let hints = BarHints::new(&keys, true);
+        let words: Vec<&str> = hints.hints.iter().map(|(_, w)| w.as_str()).collect();
+        assert_eq!(words, ["paste", "copy", "all shortcuts"]);
+        let (painted, texts) = bar_hints_drawn(&hints, egui::Rangef::new(200.0, 800.0));
+        assert_eq!(painted, 3, "{texts:?}");
+        let left = texts
+            .iter()
+            .map(|(_, r)| r.left())
+            .fold(f32::INFINITY, f32::min);
+        let right = texts.iter().map(|(_, r)| r.right()).fold(0.0, f32::max);
+        // The texts' ends are a cap's room in from the hints' ends, at
+        // most.
+        let middle = (left + right) / 2.0;
+        assert!(
+            (middle - 516.0).abs() <= 8.0,
+            "{left} to {right}: {texts:?}"
+        );
+        let top = texts[0].1.center().y;
+        assert!(texts.iter().all(|(_, r)| (r.center().y - top).abs() <= 2.0));
+        assert!(texts.iter().any(|(text, _)| text == "F1"));
+        // Without a program to paste into, copy and F1 only.
+        let hints = BarHints::new(&keys, false);
+        let words: Vec<&str> = hints.hints.iter().map(|(_, w)| w.as_str()).collect();
+        assert_eq!(words, ["copy", "all shortcuts"]);
+    }
+
+    /// In a narrow room the paste hint goes first, then all of them.
+    #[test]
+    fn the_hints_give_way_to_the_bar_s_other_parts() {
+        let hints = BarHints::new(&crate::config::Keys::default(), true);
+        let (all, _) = bar_hints_drawn(&hints, egui::Rangef::new(200.0, 800.0));
+        assert_eq!(all, 3);
+        // Room for copy and F1 only.
+        let (painted, texts) = bar_hints_drawn(&hints, egui::Rangef::new(380.0, 650.0));
+        assert_eq!(painted, 2, "{texts:?}");
+        assert!(!texts.iter().any(|(text, _)| text == "paste"), "{texts:?}");
+        // Room for none: an error fills the bar.
+        let (painted, texts) = bar_hints_drawn(&hints, egui::Rangef::new(500.0, 540.0));
+        assert_eq!(painted, 0);
+        assert!(texts.is_empty(), "{texts:?}");
+    }
+
+    /// The copy key is the one set in Settings; switched off, it is left
+    /// out with its word.
+    #[test]
+    fn the_copy_hint_follows_the_setting() {
+        let mut keys = crate::config::Keys {
+            copy_only: "Ctrl+Shift+C".into(),
+            ..Default::default()
+        };
+        let hints = BarHints::new(&keys, false);
+        assert_eq!(
+            hints.hints[0],
+            ("Ctrl+Shift+C".to_string(), t!("status-key-copy"))
+        );
+        let (_, texts) = bar_hints_drawn(&hints, egui::Rangef::new(200.0, 800.0));
+        let drawn: Vec<&str> = texts.iter().map(|(text, _)| text.as_str()).collect();
+        for cap in ["Ctrl", "Shift", "C", "F1"] {
+            assert!(drawn.contains(&cap), "{cap} in {drawn:?}");
+        }
+        keys.copy_only.clear();
+        let hints = BarHints::new(&keys, false);
+        assert_eq!(hints.hints, [("F1".to_string(), t!("status-key-all"))]);
+    }
 
     /// Where each text that `add` paints has its baseline, in points from
     /// the top, at `scale` pixels per point.

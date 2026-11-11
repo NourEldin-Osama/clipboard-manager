@@ -20,6 +20,7 @@ mod chrome;
 mod details;
 mod grid;
 mod items;
+mod key_hints;
 mod keyboard;
 mod keys_sheet;
 mod list;
@@ -35,6 +36,7 @@ mod widgets;
 
 // The helpers of every part, for this file and its parts.
 use items::*;
+use key_hints::*;
 use keyboard::*;
 use list::*;
 use theme::*;

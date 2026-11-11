@@ -874,6 +874,21 @@ mod tests {
                 ratio >= 4.5,
                 "{theme:?}: a quiet button under the pointer is {ratio:.2} to 1"
             );
+            // The status bar's key hints, which stay while recording is
+            // paused: each key's name on its cap, and the words on the
+            // bar's amber tint.
+            let (cap, _) = key_cap(dark);
+            assert_eq!(cap.a(), 255, "{theme:?}: an opaque key cap");
+            for (place, background) in [
+                ("a key's name on its cap", cap),
+                (
+                    "a key hint's words on the paused status bar",
+                    paused_bar(panel, dark),
+                ),
+            ] {
+                let ratio = contrast(v.text_color(), background);
+                assert!(ratio >= 4.5, "{theme:?}: {place} is {ratio:.2} to 1");
+            }
         }
     }
 

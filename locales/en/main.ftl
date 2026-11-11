@@ -189,6 +189,9 @@ status-recording-stopped-tip = Recording stopped after repeated errors. Click to
 status-shortcut-taken = Shortcut { $keys } is used by another app
 status-open-shortcut-settings = Open the shortcut settings
 status-dismiss-error = Click to dismiss
+status-key-paste = paste
+status-key-copy = copy
+status-key-all = all shortcuts
 list-drop-files = Drop to add to your searchable library
 item-files-count =
     { $count ->
