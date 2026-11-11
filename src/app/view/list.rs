@@ -337,16 +337,26 @@ pub(super) fn paint_row(
         );
     }
 
-    let gutter = if numbered { NUMBER_CAP + 6.0 } else { 0.0 };
+    let gutter = if numbered { NUMBER_SLOT + 6.0 } else { 0.0 };
     if let Some(n) = number {
-        // The number of quick paste as a key, the one Ctrl+number presses.
-        let color = v.text_color();
-        let label = shortcut::keycap_label(ui, &n.to_string(), color);
+        // The number Ctrl presses to paste it, as a plain quiet digit, so
+        // nine of them down the edge don't pull the eye from the text.
         let at = m(Rect::from_center_size(
             Pos2::new(rect.left() + ROW_PADDING + gutter / 2.0, rect.center().y),
-            Vec2::splat(NUMBER_CAP),
-        ));
-        shortcut::paint_keycap(&p, at, label, color, v.dark_mode);
+            Vec2::ZERO,
+        ))
+        .center();
+        let font = FontId::proportional(size::SMALL);
+        let weak = v.weak_text_color();
+        paint_text(
+            ui,
+            &p,
+            at,
+            Align2::CENTER_CENTER,
+            &n.to_string(),
+            font,
+            weak,
+        );
     }
     let av = if compact { 26.0 } else { 38.0 };
     let av_rect = m(Rect::from_min_size(
@@ -717,8 +727,8 @@ impl<'a> SecondLine<'a> {
     }
 }
 
-/// How big the numbers of quick paste are, drawn as keys.
-const NUMBER_CAP: f32 = 20.0;
+/// How wide the place of a number of quick paste is.
+const NUMBER_SLOT: f32 = 20.0;
 
 /// The room the line after the popup's pinned rows adds between them and
 /// the others.
@@ -1963,6 +1973,115 @@ mod tests {
     fn a_rows_second_line_names_its_program_in_arabic() {
         if crate::i18n::arabic_run() {
             check_second_line();
+        }
+    }
+
+    /// The popup's numbers of quick paste are plain digits in the small
+    /// size and the weak gray, centred in their place at the row's start,
+    /// with no key cap around them; the title starts where it did. From the
+    /// left, or in Arabic from the right.
+    fn check_plain_numbers() {
+        let ctx = egui::Context::default();
+        add_fonts(&ctx);
+        icons::register(&ctx);
+        // The fonts apply from the next frame.
+        ctx.run_ui(egui::RawInput::default(), |_| {})
+            .textures_delta
+            .clear();
+        let it = Item::new(1, Kind::Text, Origin::Clipboard, "Lunch at noon".into());
+        let hit = Hit {
+            id: 1,
+            closeness: None,
+            weak: false,
+        };
+        let row = Rect::from_min_size(Pos2::new(0.0, 100.0), Vec2::new(420.0, 40.0));
+        let mut weak = Color32::PLACEHOLDER;
+        let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+            weak = ui.visuals().weak_text_color();
+            paint_row(
+                ui,
+                row,
+                false,
+                &it,
+                &hit,
+                None,
+                None,
+                false,
+                true,
+                &[],
+                true,
+                Some(3),
+                false,
+                false,
+                60.0,
+            );
+        });
+        output.textures_delta.clear();
+        let rtl = i18n::rtl();
+        // The number's place: as wide as it was, with the gap after it.
+        let slot = flip(
+            row,
+            Rect::from_min_size(
+                Pos2::new(row.left() + ROW_PADDING, row.top()),
+                Vec2::new(NUMBER_SLOT + 6.0, row.height()),
+            ),
+        );
+        let mut number = None;
+        let mut title = None;
+        for clipped in &output.shapes {
+            match &clipped.shape {
+                egui::Shape::Text(text) => {
+                    let at = text.galley.rect.translate(text.pos.to_vec2());
+                    match text.galley.text() {
+                        "3" => number = Some((at, text)),
+                        "Lunch at noon" => title = Some(at),
+                        _ => {}
+                    }
+                }
+                egui::Shape::Rect(shape) => {
+                    assert!(!shape.rect.intersects(slot), "rtl {rtl}: a box {shape:?}");
+                }
+                _ => {}
+            }
+        }
+        let (at, text) = number.expect("the number");
+        assert!((at.center().x - slot.center().x).abs() <= 0.5, "rtl {rtl}");
+        assert!((at.center().y - row.center().y).abs() <= 0.5, "rtl {rtl}");
+        assert_eq!(text.fallback_color, weak, "rtl {rtl}");
+        let format = &text.galley.job.sections[0].format;
+        assert_eq!((format.font_id.size, format.color), (size::SMALL, weak));
+        // The title after the number's place, the symbol's and their gaps.
+        let title = title.expect("the title");
+        let start = ROW_PADDING + NUMBER_SLOT + 6.0 + 26.0 + 12.0;
+        let title_start = if rtl {
+            row.right() - title.right()
+        } else {
+            title.left() - row.left()
+        };
+        assert!(
+            (title_start - start).abs() <= 0.5,
+            "rtl {rtl}: {title_start}"
+        );
+    }
+
+    #[test]
+    fn the_popups_numbers_are_plain_digits() {
+        check_plain_numbers();
+    }
+
+    #[test]
+    fn the_popups_numbers_are_plain_digits_right_to_left() {
+        crate::i18n::passes_in_arabic(
+            module_path!(),
+            "the_popups_numbers_are_plain_digits_in_arabic",
+        );
+    }
+
+    #[test]
+    #[ignore = "run in a process of its own by the_popups_numbers_are_plain_digits_right_to_left"]
+    fn the_popups_numbers_are_plain_digits_in_arabic() {
+        if crate::i18n::arabic_run() {
+            check_plain_numbers();
         }
     }
 

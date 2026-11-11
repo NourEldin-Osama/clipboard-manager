@@ -783,15 +783,17 @@ mod tests {
     }
 
     /// Every place gray text sits on, per accent: the plain backgrounds, the
-    /// tints of a selected row (`list`), a chosen search mode (`mode_option`)
-    /// and a changed setting (`card_row`), a gray chip, a note in a settings
-    /// card, and search hits.
+    /// tints of a selected row (`list`, where the popup's numbers are gray
+    /// too), a chosen search mode (`mode_option`) and a changed setting
+    /// (`card_row`), a gray chip, a note in a settings card, and search
+    /// hits. A row under the pointer keeps 4.5 to 1.
     #[test]
     fn gray_text_is_readable_on_every_background() {
         for (ctx, theme) in styled() {
             let v = ctx.style_of(theme).visuals.clone();
             let dark = v.dark_mode;
             let (panel, content, weak) = (v.panel_fill, v.extreme_bg_color, v.weak_text_color());
+            let hovered_row = over(v.widgets.hovered.weak_bg_fill.gamma_multiply(0.6), panel);
             for a in ACCENTS {
                 let selected_row = over(a.gamma_multiply(if dark { 0.16 } else { 0.12 }), panel);
                 let backgrounds = [
@@ -857,6 +859,15 @@ mod tests {
                 contrast(weak, panel) < contrast(v.text_color(), panel),
                 "{theme:?}: weak text stays weaker than normal text"
             );
+            // A row under the pointer, where the popup's numbers and a list
+            // row's second line stay in sight: the least for normal text.
+            for (text, color) in [("normal", v.text_color()), ("weak", weak)] {
+                let ratio = contrast(color, hovered_row);
+                assert!(
+                    ratio >= 4.5,
+                    "{theme:?}: {text} text on a row under the pointer is {ratio:.2} to 1"
+                );
+            }
             // Pause recording in the status bar under the pointer.
             let ratio = contrast(v.text_color(), v.widgets.hovered.weak_bg_fill);
             assert!(
