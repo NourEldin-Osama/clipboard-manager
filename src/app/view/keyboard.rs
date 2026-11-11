@@ -35,8 +35,9 @@ pub(super) fn touchpad_scroll(event: egui::Event, line_points: f32) -> Vec<egui:
 }
 
 /// Fixes a frame's input before egui sees it: touchpad scrolling (see
-/// `touchpad_scroll`) and Shift+Delete (see `shift_delete`). `modifiers` are
-/// the keys held when the frame starts; changes arrive as events.
+/// `touchpad_scroll`), Shift+Delete (see `shift_delete`) and Ctrl+C (see
+/// `ctrl_c`). `modifiers` are the keys held when the frame starts; changes
+/// arrive as events.
 pub(super) fn repair_input(
     events: Vec<egui::Event>,
     mut modifiers: egui::Modifiers,
@@ -48,9 +49,59 @@ pub(super) fn repair_input(
             if let egui::Event::ModifiersChanged(held) = event {
                 modifiers = held;
             }
-            touchpad_scroll(shift_delete(event, modifiers), line_points)
+            let events = ctrl_c(shift_delete(event, modifiers), modifiers);
+            events
+                .into_iter()
+                .flat_map(|event| touchpad_scroll(event, line_points))
+                .collect::<Vec<_>>()
         })
         .collect()
+}
+
+/// egui-winit turns Ctrl+C into "copy" and drops the key press, so a
+/// shortcut of Ctrl+C never arrived. "Copy" while Ctrl is held without
+/// Shift or Alt keeps coming, and the frame also gets a press of C: the
+/// copy shortcut reads it, and "copy" still copies selected text (see
+/// `copies_item`).
+fn ctrl_c(event: egui::Event, modifiers: egui::Modifiers) -> Vec<egui::Event> {
+    match event {
+        egui::Event::Copy if modifiers.command_only() => vec![
+            egui::Event::Copy,
+            egui::Event::Key {
+                key: Key::C,
+                physical_key: Some(Key::C),
+                pressed: true,
+                repeat: false,
+                modifiers,
+            },
+        ],
+        other => vec![other],
+    }
+}
+
+/// Whether a press of the copy shortcut copies the selected item. A press
+/// that came with "copy" (Ctrl+C, see `ctrl_c`) doesn't while text is
+/// selected in the search field or in a label: "copy" copies that text, as
+/// in every program. When it does, "copy" is taken out of the frame, so
+/// nothing else copies too.
+fn copies_item(ctx: &egui::Context) -> bool {
+    if !ctx.input(|i| i.events.contains(&egui::Event::Copy)) {
+        return true;
+    }
+    let in_search = ctx.memory(|m| m.has_focus(search_id()))
+        && TextEditState::load(ctx, search_id())
+            .and_then(|state| state.cursor.char_range())
+            .is_some_and(|range| !range.is_empty());
+    let in_label = ctx
+        .with_plugin(|labels: &mut egui::text_selection::LabelSelectionState| {
+            labels.has_selection()
+        })
+        .unwrap_or(false);
+    if in_search || in_label {
+        return false;
+    }
+    ctx.input_mut(|i| i.events.retain(|e| *e != egui::Event::Copy));
+    true
 }
 
 /// On Windows, egui-winit turns Shift+Delete into "cut" and drops the key
@@ -198,6 +249,8 @@ impl App {
                 ],
             )
         };
+        // Ctrl+C copies the selected item, unless text is selected.
+        let copy_only = copy_only && copies_item(ctx);
         // Ctrl+1 to Ctrl+9 paste one of the first nine items shown.
         let quick = if typing { None } else { quick_paste(ctx) };
         // Ctrl+Z undoes a delete while its message is up, also from the
@@ -402,6 +455,154 @@ mod tests {
         // Ctrl+X, held since an earlier frame, is still a cut.
         let cut = repair_input(vec![egui::Event::Cut], egui::Modifiers::COMMAND, 40.0);
         assert_eq!(cut, vec![egui::Event::Cut]);
+    }
+
+    /// Ctrl held, as egui-winit reports it on Windows.
+    const CTRL: egui::Modifiers = egui::Modifiers {
+        ctrl: true,
+        command: true,
+        ..egui::Modifiers::NONE
+    };
+
+    /// What egui-winit sends for Ctrl+C: Ctrl goes down, then "copy".
+    fn ctrl_c_pressed() -> Vec<egui::Event> {
+        let events = vec![egui::Event::ModifiersChanged(CTRL), egui::Event::Copy];
+        repair_input(events, egui::Modifiers::NONE, 40.0)
+    }
+
+    /// One frame of `events` with the search field holding "hello", its
+    /// letters from `selected` selected and the keyboard on it: whether
+    /// the copy shortcut `keys` copies the item, whether "copy" is still
+    /// in the frame after the keys are read, and what the field copied.
+    fn copy_in_search(
+        events: Vec<egui::Event>,
+        keys: &str,
+        selected: std::ops::Range<usize>,
+    ) -> (bool, bool, Option<String>) {
+        let ctx = egui::Context::default();
+        let mut text = String::from("hello");
+        let field = |ui: &mut Ui, text: &mut String| {
+            ui.add(egui::TextEdit::singleline(text).id(search_id()))
+                .request_focus();
+        };
+        let mut output = ctx.run_ui(egui::RawInput::default(), |ui| field(ui, &mut text));
+        output.textures_delta.clear();
+        let mut state = TextEditState::load(&ctx, search_id()).expect("the field's state");
+        let range = egui::text::CCursorRange::two(
+            egui::text::CCursor::new(selected.start),
+            egui::text::CCursor::new(selected.end),
+        );
+        state.cursor.set_char_range(Some(range));
+        state.store(&ctx, search_id());
+        let input = egui::RawInput {
+            events,
+            focused: true,
+            ..Default::default()
+        };
+        let (mut copies, mut copy_left) = (false, false);
+        let mut output = ctx.run_ui(input, |ui| {
+            // As `App::keyboard` reads them, before the field is drawn.
+            copies = shortcut::pressed(ui.ctx(), keys) && copies_item(ui.ctx());
+            copy_left = ui.input(|i| i.events.contains(&egui::Event::Copy));
+            field(ui, &mut text);
+        });
+        output.textures_delta.clear();
+        let copied = output
+            .platform_output
+            .commands
+            .iter()
+            .find_map(|command| match command {
+                egui::OutputCommand::CopyText(text) => Some(text.clone()),
+                _ => None,
+            });
+        (copies, copy_left, copied)
+    }
+
+    #[test]
+    fn ctrl_c_reaches_the_copy_shortcut() {
+        let input = egui::RawInput {
+            events: ctrl_c_pressed(),
+            focused: true,
+            ..Default::default()
+        };
+        let mut pressed = false;
+        let mut output = egui::Context::default().run_ui(input, |ui| {
+            pressed = shortcut::pressed(ui.ctx(), &crate::config::Keys::default().copy_only);
+        });
+        // The font atlas upload no renderer takes here.
+        output.textures_delta.clear();
+        assert_eq!(crate::config::Keys::default().copy_only, "Ctrl+C");
+        assert!(pressed, "Ctrl+C must reach the copy shortcut");
+        // Ctrl+Shift+C comes as a key press of its own: no "copy".
+        let shift = CTRL | egui::Modifiers::SHIFT;
+        let copy = repair_input(vec![egui::Event::Copy], shift, 40.0);
+        assert_eq!(copy, vec![egui::Event::Copy]);
+    }
+
+    /// With text selected in the search field, Ctrl+C copies that text,
+    /// not the item; with none, it copies the item and "copy" is gone, so
+    /// nothing else copies too.
+    #[test]
+    fn ctrl_c_copies_selected_text_else_the_item() {
+        let keys = &crate::config::Keys::default().copy_only;
+        let (copies, copy_left, copied) = copy_in_search(ctrl_c_pressed(), keys, 0..5);
+        assert!(!copies, "the item is not copied");
+        assert!(copy_left, "copy stays for the field");
+        assert_eq!(copied.as_deref(), Some("hello"));
+        let (copies, copy_left, copied) = copy_in_search(ctrl_c_pressed(), keys, 2..2);
+        assert!(copies, "the item is copied");
+        assert!(!copy_left, "copy is taken out");
+        assert_eq!(copied, None);
+    }
+
+    /// Settings' recorder takes Ctrl+C, and the keys go to it alone.
+    #[test]
+    fn the_recorder_takes_ctrl_c() {
+        let input = egui::RawInput {
+            events: ctrl_c_pressed(),
+            focused: true,
+            ..Default::default()
+        };
+        let (mut value, mut problem) = (String::from("Ctrl+Enter"), None);
+        let mut left = Vec::new();
+        let mut output = egui::Context::default().run_ui(input, |ui| {
+            shortcut::recorder(ui, &mut value, true, false, &mut problem);
+            left = ui.input(|i| i.events.clone());
+        });
+        output.textures_delta.clear();
+        assert_eq!(value, "Ctrl+C");
+        assert_eq!(problem, None);
+        let keys_left = left.iter().any(|e| {
+            matches!(
+                e,
+                egui::Event::Key { pressed: true, .. } | egui::Event::Copy
+            )
+        });
+        assert!(!keys_left, "{left:?}");
+    }
+
+    /// A copy key saved before Ctrl+C was the default stays, and works.
+    #[test]
+    fn a_saved_ctrl_enter_still_copies() {
+        let saved: crate::config::Keys =
+            serde_json::from_str(r#"{"copy_only": "Ctrl+Enter"}"#).expect("saved keys");
+        assert_eq!(saved.copy_only, "Ctrl+Enter");
+        let enter = vec![egui::Event::Key {
+            key: Key::Enter,
+            physical_key: Some(Key::Enter),
+            pressed: true,
+            repeat: false,
+            modifiers: CTRL,
+        }];
+        let (copies, ..) = copy_in_search(enter, &saved.copy_only, 0..5);
+        assert!(
+            copies,
+            "Ctrl+Enter copies the item, even with text selected"
+        );
+        // Ctrl+C then copies the selected text only.
+        let (copies, copy_left, copied) = copy_in_search(ctrl_c_pressed(), &saved.copy_only, 0..5);
+        assert!(!copies && copy_left);
+        assert_eq!(copied.as_deref(), Some("hello"));
     }
 
     #[test]

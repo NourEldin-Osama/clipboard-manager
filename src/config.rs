@@ -501,7 +501,7 @@ impl Default for Keys {
         Self {
             paste: "Enter".into(),
             paste_plain: "Shift+Enter".into(),
-            copy_only: "Ctrl+Enter".into(),
+            copy_only: "Ctrl+C".into(),
             pin: "Ctrl+P".into(),
             delete: "Shift+Delete".into(),
             tag: "Ctrl+T".into(),

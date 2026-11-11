@@ -232,10 +232,11 @@ pub(super) fn recorder(
                 *value = format(mods, key);
                 out = Recorded::Changed;
             }
-            // The keys were for the recorder, not for anything else on screen.
+            // The keys were for the recorder, not for anything else on
+            // screen; Ctrl+C also comes as "copy".
             ui.input_mut(|i| {
                 i.events
-                    .retain(|e| !matches!(e, Event::Key { .. } | Event::Text(_)))
+                    .retain(|e| !matches!(e, Event::Key { .. } | Event::Text(_) | Event::Copy))
             });
         }
     }
