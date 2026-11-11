@@ -19,7 +19,7 @@ impl App {
                 ui,
                 &t!("settings-hide-window"),
                 &t!("settings-hide-window-hint"),
-                &t!("settings-hide-window-help"),
+                "",
                 &mut d.minimize_after_copy,
                 def.minimize_after_copy,
                 toggle,
@@ -35,35 +35,32 @@ impl App {
         def: &Config,
         apply_keys: &mut bool,
     ) {
-        let globals: [(ShortcutField, String, String, String, KeyField); 3] = [
+        let globals: [(ShortcutField, String, String, KeyField); 3] = [
             (
                 ShortcutField::Popup,
                 t!("settings-shortcut-popup"),
                 t!("settings-shortcut-popup-hint"),
-                t!("settings-shortcut-popup-help"),
                 |c| &mut c.popup_hotkey,
             ),
             (
                 ShortcutField::Window,
                 t!("settings-shortcut-window"),
                 t!("settings-shortcut-window-hint"),
-                t!("settings-shortcut-window-help"),
                 |c| &mut c.window_hotkey,
             ),
             (
                 ShortcutField::IgnoreNext,
                 t!("settings-shortcut-ignore"),
                 t!("settings-shortcut-ignore-hint"),
-                String::new(),
                 |c| &mut c.ignore_next_hotkey,
             ),
         ];
-        for (id, label, line, details, field) in globals {
+        for (id, label, line, field) in globals {
             let default = field(&mut def.clone()).clone();
             let value = field(d);
             let invalid = !value.trim().is_empty() && HotKey::from_str(value.trim()).is_err();
             let mut result = shortcut::Recorded::Nothing;
-            let reset = setting(ui, &label, &line, &details, *value != default, |ui| {
+            let reset = setting(ui, &label, &line, "", *value != default, |ui| {
                 result = shortcut::recorder(
                     ui,
                     value,

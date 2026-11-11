@@ -1240,6 +1240,100 @@ mod tests {
         assert_eq!(order, ["Details", reset.as_str(), "Tray"]);
     }
 
+    /// A row with no details over one with details: the first paints no
+    /// info button and takes no focus stop for one, so Tab goes straight to
+    /// its switch. Its name and line sit where the second's do, and it is
+    /// as tall.
+    fn check_row_without_details() {
+        let ctx = window();
+        let mut on = true;
+        let mut rows = [Rect::NOTHING; 2];
+        let mut draw = |ui: &mut Ui| {
+            card(ui, |ui| {
+                for (row, details) in rows.iter_mut().zip(["", "Details"]) {
+                    *row = card_row(ui, false, |ui| {
+                        let _ = setting_content(
+                            ui,
+                            "Tray",
+                            "Keeps running",
+                            details,
+                            false,
+                            false,
+                            |ui| {
+                                toggle(ui, &mut on);
+                            },
+                        );
+                        ui.min_rect()
+                    });
+                }
+            });
+        };
+        frame(&ctx, egui::RawInput::default(), &mut draw);
+        let tab = egui::RawInput {
+            events: vec![egui::Event::Key {
+                key: egui::Key::Tab,
+                physical_key: None,
+                pressed: true,
+                repeat: false,
+                modifiers: egui::Modifiers::NONE,
+            }],
+            ..Default::default()
+        };
+        let output = frame(&ctx, tab, &mut draw);
+        // From the row's reading-start corner.
+        let place = |text: Rect, row: Rect| {
+            let x = if i18n::rtl() {
+                row.right() - text.right()
+            } else {
+                text.left() - row.left()
+            };
+            Vec2::new(x, text.top() - row.top())
+        };
+        for words in ["Tray", "Keeps running"] {
+            let texts = text_rects(&output, words);
+            assert_eq!(texts.len(), 2, "{words}");
+            let (without, with) = (place(texts[0], rows[0]), place(texts[1], rows[1]));
+            assert!(
+                (without - with).length() <= 0.5,
+                "{words}: {without:?} {with:?}"
+            );
+        }
+        assert!(
+            (rows[0].height() - rows[1].height()).abs() <= 0.5,
+            "{rows:?}"
+        );
+        let (focused, places) = spoken(output);
+        assert_eq!(focused.as_deref(), Some("Tray"), "Tab goes to the switch");
+        let buttons: Vec<Rect> = places
+            .into_iter()
+            .filter(|(name, _)| name == "Details")
+            .map(|(_, rect)| rect)
+            .collect();
+        assert_eq!(buttons.len(), 1, "one info button");
+        assert!(
+            rows[1].contains(buttons[0].center()),
+            "{buttons:?} in {rows:?}"
+        );
+    }
+
+    #[test]
+    fn a_row_without_details_has_no_info_button() {
+        check_row_without_details();
+    }
+
+    #[test]
+    fn a_row_without_details_has_no_info_button_right_to_left() {
+        passes_in_arabic("a_row_without_details_has_no_info_button_in_arabic");
+    }
+
+    #[test]
+    #[ignore = "run in a process of its own by a_row_without_details_has_no_info_button_right_to_left"]
+    fn a_row_without_details_has_no_info_button_in_arabic() {
+        if arabic_run() {
+            check_row_without_details();
+        }
+    }
+
     /// `draw` in a settings column of the widest kind.
     fn in_column(ui: &mut Ui, draw: impl FnOnce(&mut Ui)) {
         let column = Rect::from_min_size(

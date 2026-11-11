@@ -69,7 +69,7 @@ pub(super) fn appearance_page(ui: &mut Ui, d: &mut Config) {
             ui,
             &t!("settings-layout"),
             &t!("settings-layout-hint"),
-            &t!("settings-layout-help"),
+            "",
             &mut d.view,
             def.view,
             |ui, view| {
@@ -118,7 +118,7 @@ pub(super) fn appearance_page(ui: &mut Ui, d: &mut Config) {
             ui,
             &t!("settings-pinned-on-top"),
             &t!("settings-pinned-on-top-hint"),
-            &t!("settings-pinned-on-top-help"),
+            "",
             &mut d.pinned_first,
             def.pinned_first,
             toggle,

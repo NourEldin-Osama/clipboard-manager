@@ -885,16 +885,10 @@ impl App {
             .unwrap_or_else(|| t!("settings-model-choose"));
         let mut picked = None;
         let mut add = false;
-        let (line, details) = if search {
-            (
-                t!("settings-search-model-hint"),
-                t!("settings-search-model-help"),
-            )
+        let line = if search {
+            t!("settings-search-model-hint")
         } else {
-            (
-                t!("settings-read-model-hint"),
-                t!("settings-read-model-help"),
-            )
+            t!("settings-read-model-hint")
         };
         let in_use = chosen
             .and_then(|at| d.server(at.server))
@@ -928,7 +922,7 @@ impl App {
                 (server.id, more)
             })
             .collect();
-        plain_setting(ui, &t!("settings-model"), &line, &details, |ui| {
+        plain_setting(ui, &t!("settings-model"), &line, "", |ui| {
             let weak = ui.visuals().weak_text_color();
             let strong = ui.visuals().strong_text_color();
             // The server's logo inside the menu, before the model's name.
@@ -1143,7 +1137,7 @@ impl App {
                     ui,
                     &t!("settings-server-address"),
                     &t!("settings-server-address-hint"),
-                    &t!("settings-server-address-help"),
+                    "",
                     false,
                     false,
                     |ui| {
@@ -1628,7 +1622,7 @@ fn model_settings(
         ui,
         &t!("settings-model-name"),
         &t!("settings-model-name-hint"),
-        &t!("settings-model-name-help"),
+        "",
         |ui| {
             let hint = match model.model.trim() {
                 "" => t!("settings-server-default"),
@@ -1697,7 +1691,7 @@ fn search_settings(ui: &mut Ui, s: &mut SearchSettings, model: &str) {
         ui,
         &t!("settings-server-query-prompt"),
         &t!("settings-server-query-prompt-hint"),
-        &t!("settings-server-query-prompt-help"),
+        "",
         &mut s.query_prefix,
         String::new(),
         |ui, prefix| {

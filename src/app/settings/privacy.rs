@@ -11,7 +11,7 @@ impl App {
                 ui,
                 &t!("settings-skip-secrets"),
                 &t!("settings-skip-secrets-hint"),
-                &t!("settings-skip-secrets-help"),
+                "",
                 &mut d.skip_secrets,
                 def.skip_secrets,
                 toggle,

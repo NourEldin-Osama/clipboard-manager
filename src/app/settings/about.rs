@@ -31,7 +31,7 @@ impl App {
                 ui,
                 &t!("settings-update-download"),
                 &t!("settings-update-download-hint"),
-                &t!("settings-update-download-help"),
+                "",
                 &mut d.update_download,
                 def.update_download,
                 toggle,
@@ -254,7 +254,7 @@ impl App {
                 ui,
                 &t!("settings-log-file"),
                 &t!("settings-log-file-hint"),
-                &t!("settings-log-file-help"),
+                "",
                 |ui| {
                     if ui
                         .button(txt(&t!("settings-show"), size::BODY, None))

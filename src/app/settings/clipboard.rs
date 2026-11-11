@@ -27,7 +27,7 @@ impl App {
                 ui,
                 &t!("settings-record"),
                 &t!("settings-record-hint"),
-                &t!("settings-record-help"),
+                "",
                 &mut d.monitor_clipboard,
                 def.monitor_clipboard,
                 toggle,
@@ -110,7 +110,7 @@ impl App {
             ui,
             &t!("settings-clear-history"),
             &t!("settings-clear-history-hint"),
-            &t!("settings-clear-history-help"),
+            "",
             |ui| {
                 if confirm == Some(Confirm::ClearHistory) {
                     if ui
