@@ -1,4 +1,4 @@
-//! Settings, Search & AI: how search works, what searches by meaning and
+//! Settings, Search & AI: what searches by meaning, how search works and
 //! what reads the text in images. The servers they run on have their own
 //! page.
 
@@ -8,9 +8,9 @@ use crate::config::{ReadEngine, SearchEngine};
 /// The choices for how close a meaning match must be: a minimum similarity each.
 fn strictness() -> [(f32, String); 3] {
     [
-        (0.0, t!("settings-strictness-all")),
-        (0.15, t!("settings-strictness-related")),
-        (0.3, t!("settings-strictness-close")),
+        (0.0, t!("settings-strictness-any")),
+        (0.15, t!("settings-strictness-close")),
+        (0.3, t!("settings-strictness-very-close")),
     ]
 }
 
@@ -37,7 +37,7 @@ fn meaning_switch(ui: &mut Ui, engine: &mut SearchEngine, (dot, text): (Color32,
         });
     };
     card_row(ui, false, |ui| {
-        let name = t!("settings-meaning-section");
+        let name = t!("settings-meaning-switch");
         let help = t!("settings-search-engine-help");
         let _ = setting_parts(ui, &name, Some(state), &help, false, false, |ui| {
             let mut on = *engine == SearchEngine::Server;
@@ -57,66 +57,6 @@ impl App {
         let def = Config::default();
         // The models each saved server has, for the model menus (D67).
         self.server_lists.ask(&d.servers, ui.ctx());
-        section(ui, &t!("settings-search"), |ui| {
-            setting_for(
-                ui,
-                &t!("settings-search-mode"),
-                // What the chosen way does, in a few words.
-                &match d.search_mode {
-                    SearchMode::Hybrid => t!("search-mode-smart-help"),
-                    SearchMode::Semantic => t!("search-mode-meaning-help"),
-                    SearchMode::Keyword => t!("search-mode-words-help"),
-                },
-                &t!("settings-search-mode-help"),
-                &mut d.search_mode,
-                def.search_mode,
-                |ui, mode| {
-                    segmented(
-                        ui,
-                        mode,
-                        &[
-                            (SearchMode::Hybrid, t!("search-mode-smart")),
-                            (SearchMode::Semantic, t!("search-mode-meaning")),
-                            (SearchMode::Keyword, t!("search-mode-words")),
-                        ],
-                    )
-                },
-            );
-            setting_for(
-                ui,
-                &t!("settings-strictness"),
-                &t!("settings-strictness-hint"),
-                &t!("settings-strictness-help"),
-                &mut d.min_similarity,
-                def.min_similarity,
-                |ui, min_similarity| {
-                    let choices = strictness();
-                    let current = choices
-                        .iter()
-                        .find(|(v, _)| (*v - *min_similarity).abs() < 1e-4)
-                        .map(|(_, l)| l.clone())
-                        .unwrap_or_else(|| {
-                            t!(
-                                "settings-strictness-custom",
-                                value = format!("{:.2}", min_similarity)
-                            )
-                        });
-                    field_look(ui);
-                    let menu = egui::ComboBox::from_id_salt("strict")
-                        .icon(menu_arrow)
-                        .selected_text(txt(&current, size::BODY, None))
-                        .width(MENU_WIDTH)
-                        .show_ui(ui, |ui| {
-                            for (v, l) in choices {
-                                ui.selectable_value(min_similarity, v, txt(&l, size::BODY, None));
-                            }
-                        });
-                    set_choice_name(&menu.response, &row_title(ui), &current);
-                },
-            );
-            self.send_question(ui, d);
-        });
-
         let state = self.meaning_state();
         // Without a search model in use, the ones found on this PC come first.
         let in_use =
@@ -132,13 +72,83 @@ impl App {
             if !in_use {
                 self.found_rows(ui, d);
             }
-            match d.search_engine {
-                SearchEngine::Off => note(ui, &t!("settings-model-off-note")),
-                SearchEngine::Server if models_for(d, true).is_empty() => {
-                    self.no_models(ui, d, &t!("settings-model-none-search"))
+            // The model and how close its matches must be, while it is on.
+            if d.search_engine == SearchEngine::Off {
+                note(ui, &t!("settings-model-off-note"));
+            } else {
+                if models_for(d, true).is_empty() {
+                    self.no_models(ui, d, &t!("settings-model-none-search"));
+                } else {
+                    self.model_menu(ui, d, true);
                 }
-                SearchEngine::Server => self.model_menu(ui, d, true),
+                setting_for(
+                    ui,
+                    &t!("settings-strictness"),
+                    &t!("settings-strictness-hint"),
+                    "",
+                    &mut d.min_similarity,
+                    def.min_similarity,
+                    |ui, min_similarity| {
+                        let choices = strictness();
+                        let current = choices
+                            .iter()
+                            .find(|(v, _)| (*v - *min_similarity).abs() < 1e-4)
+                            .map(|(_, l)| l.clone())
+                            .unwrap_or_else(|| {
+                                t!(
+                                    "settings-strictness-custom",
+                                    value = format!("{:.2}", min_similarity)
+                                )
+                            });
+                        field_look(ui);
+                        let menu = egui::ComboBox::from_id_salt("strict")
+                            .icon(menu_arrow)
+                            .selected_text(txt(&current, size::BODY, None))
+                            .width(MENU_WIDTH)
+                            .show_ui(ui, |ui| {
+                                for (v, l) in choices {
+                                    ui.selectable_value(
+                                        min_similarity,
+                                        v,
+                                        txt(&l, size::BODY, None),
+                                    );
+                                }
+                            });
+                        set_choice_name(&menu.response, &row_title(ui), &current);
+                    },
+                );
             }
+            self.send_question(ui, d);
+        });
+
+        section(ui, &t!("settings-search"), |ui| {
+            // What the chosen way does, in a few words; without search by
+            // meaning, every way finds the words only.
+            let line = match (d.search_engine, d.search_mode) {
+                (SearchEngine::Off, _) => t!("settings-search-mode-meaning-off"),
+                (_, SearchMode::Hybrid) => t!("search-mode-smart-help"),
+                (_, SearchMode::Semantic) => t!("search-mode-meaning-help"),
+                (_, SearchMode::Keyword) => t!("search-mode-words-help"),
+            };
+            setting_for(
+                ui,
+                &t!("settings-search-mode"),
+                &line,
+                &t!("settings-search-mode-help"),
+                &mut d.search_mode,
+                def.search_mode,
+                |ui, mode| {
+                    segmented(
+                        ui,
+                        mode,
+                        &[
+                            (SearchMode::Hybrid, t!("search-mode-smart")),
+                            (SearchMode::Semantic, t!("search-mode-meaning")),
+                            (SearchMode::Keyword, t!("search-mode-words")),
+                        ],
+                    )
+                },
+            );
         });
 
         section(ui, &t!("settings-read-section"), |ui| {
@@ -226,7 +236,7 @@ mod tests {
         // The fonts apply from the next frame.
         switch_frame(&ctx, &mut engine, Vec::new());
         let output = switch_frame(&ctx, &mut engine, Vec::new());
-        let name = t!("settings-meaning-section");
+        let name = t!("settings-meaning-switch");
         let state = t!("settings-meaning-off");
         let text_rect = |words: &str| {
             output

@@ -535,20 +535,21 @@ settings-reset-all = Reset all settings
 settings-reset-all-hint = Puts every setting back to its default. Your saved servers and rules stay
 settings-reset-everything = Reset everything
 settings-reset = Reset…
-settings-strictness-all = Any match
-settings-strictness-related = Close matches
-settings-strictness-close = Very close matches
+settings-strictness-any = Anything related
+settings-strictness-close = Close
+settings-strictness-very-close = Very close
 settings-strictness-custom = Custom ({ $value })
 settings-search = Search
 settings-search-mode = How search works
+settings-search-mode-meaning-off = Search by meaning is off, so search finds exact words only
 settings-search-mode-help =
     Smart: finds items that contain your words and items that mean the same thing, merged into one list.
     Meaning: only by meaning (needs a search model).
     Exact words: only items containing what you type.
-settings-strictness = Meaning matches
-settings-strictness-hint = How close in meaning an item must be to be listed
-settings-strictness-help = "Any match" ranks everything by closeness; stricter options hide weak matches. Exact word matches are always shown.
+settings-strictness = How close the meaning must be
+settings-strictness-hint = Stricter choices hide weaker matches; exact words always show
 settings-meaning-section = Search by meaning
+settings-meaning-switch = Use search by meaning
 settings-meaning-ready = Ready: finds items by what they mean
 settings-meaning-off = Off: search finds words only
 settings-meaning-none = No search model yet

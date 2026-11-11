@@ -602,24 +602,25 @@ settings-reset-all = إعادة ضبط كل الإعدادات
 settings-reset-all-hint = يعيد كل إعداد إلى قيمته الافتراضية. تبقى خوادمك المحفوظة وقواعدك
 settings-reset-everything = إعادة ضبط الكل
 settings-reset = إعادة ضبط…
-settings-strictness-all = أي تطابق
-settings-strictness-related = التطابقات القريبة
-settings-strictness-close = القريبة جدًا
+settings-strictness-any = أي شيء ذي صلة
+settings-strictness-close = قريب
+settings-strictness-very-close = قريب جدًا
 settings-strictness-custom = مخصص ({ $value })
 settings-search = البحث
 settings-search-mode = طريقة البحث
+settings-search-mode-meaning-off = البحث بالمعنى متوقف، فيجد البحث الكلمات نفسها فقط
 settings-search-mode-help =
     ذكي: يجد العناصر التي تحتوي كلماتك والعناصر التي تحمل المعنى نفسه في قائمة واحدة.
     بالمعنى: بالمعنى فقط (يحتاج نموذج بحث).
     الكلمات نفسها: العناصر التي تحتوي ما تكتبه فقط.
-settings-strictness = نتائج المعنى
-settings-strictness-hint = مدى قرب معنى العنصر حتى يُعرض
-settings-strictness-help = «أي تطابق» يرتّب كل شيء حسب القرب، والخيارات الأشد تخفي التطابقات الضعيفة. تظهر مطابقات الكلمات نفسها دائمًا.
+settings-strictness = مدى قرب المعنى المطلوب
+settings-strictness-hint = الخيارات الأشد تخفي التطابقات الأضعف، وتظهر مطابقات الكلمات نفسها دائمًا
 settings-meaning-ready = جاهز: يجد العناصر بمعناها
 settings-meaning-off = متوقف: يجد البحث الكلمات فقط
 settings-meaning-none = لا يوجد نموذج للبحث بعد
 settings-meaning-unavailable = لا يمكن استخدام نموذج البحث: تحقق من خادمه
 settings-meaning-section = البحث بالمعنى
+settings-meaning-switch = استخدام البحث بالمعنى
 settings-read-section = قراءة النص في الصور
 settings-servers-section = الخوادم المحفوظة
 settings-read-engine = يقرأ النص
