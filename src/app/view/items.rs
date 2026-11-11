@@ -209,7 +209,9 @@ pub(super) fn path_in(text: &str) -> Option<&std::path::Path> {
     (drive || share || unix).then(|| std::path::Path::new(text))
 }
 
-/// Second line of an item row: the most useful detail for its kind.
+/// An item's tags and the most useful detail for its kind, as one line of
+/// text: a picture's row on one line shows it after the title, having no
+/// second line for its size.
 pub(super) fn subtitle(it: &Item) -> String {
     let detail = subtitle_detail(it);
     if it.tags.is_empty() {
