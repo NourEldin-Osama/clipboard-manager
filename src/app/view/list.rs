@@ -15,6 +15,27 @@ const LIST_MAX_WIDTH: f32 = 900.0;
 /// Height of the link between the strong and the weaker matches.
 pub(super) const WEAKER_LINE: f32 = 48.0;
 
+/// The room rows keep at the right edge of their scroll area, where the
+/// scroll bar's handle floats in every language: the handle's width at
+/// rest and a gap.
+fn handle_room(ui: &Ui) -> f32 {
+    ui.spacing().scroll.floating_width + space::TINY
+}
+
+/// Where the rows go across a scroll area `full` wide: how far from its
+/// start, and how wide. They keep clear of the scroll bar's handle. In List
+/// view (`centred`) they are at most `LIST_MAX_WIDTH` wide, in the middle of
+/// the area as long as that keeps them clear.
+fn rows_across(ui: &Ui, full: f32, centred: bool) -> (f32, f32) {
+    let usable = (full - handle_room(ui)).max(0.0);
+    let width = if centred {
+        usable.min(LIST_MAX_WIDTH)
+    } else {
+        usable
+    };
+    (((full - width) / 2.0).min(usable - width), width)
+}
+
 /// The link between the strong matches and the `count` weaker ones,
 /// across `rect`: it shows them below it, or hides them while `open`.
 /// Returns whether it was clicked.
@@ -843,13 +864,8 @@ impl App {
         let centred = self.cfg.view == ViewMode::List && !in_popup;
         if !in_popup {
             // As wide as the rows, and where they are.
-            let full = ui.available_width();
-            let width = if centred {
-                full.min(LIST_MAX_WIDTH)
-            } else {
-                full
-            };
-            self.checklist_above(ui, (full - width) / 2.0, width);
+            let (offset, width) = rows_across(ui, ui.available_width(), centred);
+            self.checklist_above(ui, offset, width);
         }
         // The popup's rows take one line and no day headers, so its nine
         // numbered items fit without scrolling.
@@ -984,13 +1000,8 @@ impl App {
         let out = sa.show_viewport(ui, |ui, viewport| {
             ui.set_height(total);
             let origin = ui.max_rect().min;
-            let full = ui.available_width();
-            let width = if centred {
-                full.min(LIST_MAX_WIDTH)
-            } else {
-                full
-            };
-            let left = origin.x + (full - width) / 2.0;
+            let (offset, width) = rows_across(ui, ui.available_width(), centred);
+            let left = origin.x + offset;
             let height = |l: &Line| match l {
                 Line::Header(..) => header_h,
                 Line::Row(_) => row_h,
@@ -2221,6 +2232,146 @@ mod tests {
     fn a_one_line_rows_picture_shows_as_a_picture_in_arabic() {
         if crate::i18n::arabic_run() {
             check_one_line_picture();
+        }
+    }
+
+    /// Rows in a list long enough to scroll, as the popup draws them (one
+    /// line, numbered), as the list beside the details does (two lines) and
+    /// as List view does (two lines, centred, in a narrow window): nothing
+    /// they paint, selected, under the pointer, pinned or with bars, comes
+    /// within the scroll handle's width and 4 points of the scroll area's
+    /// edge, where the handle floats in every language.
+    fn check_rows_clear_of_the_handle() {
+        let ctx = egui::Context::default();
+        add_fonts(&ctx);
+        icons::register(&ctx);
+        style(&ctx, crate::config::DarkPanels::Lighter);
+        // The scroll bar in its place at once.
+        ctx.all_styles_mut(|style| style.animation_time = 0.0);
+        // The fonts apply from the next frame.
+        ctx.run_ui(egui::RawInput::default(), |_| {})
+            .textures_delta
+            .clear();
+        let items: Vec<Item> = (1..=30)
+            .map(|id| {
+                let text = format!("Note {id}, with a title long enough to reach the time");
+                let mut it = Item::new(id, Kind::Text, Origin::Clipboard, text.into());
+                it.pinned = id % 3 == 0;
+                it.app = Some("Teams.exe".into());
+                if id % 2 == 0 {
+                    it.tags = vec!["work".into(), "to read".into()];
+                }
+                it
+            })
+            .collect();
+        let rtl = i18n::rtl();
+        let area = Rect::from_min_size(Pos2::new(20.0, 20.0), Vec2::new(420.0, 300.0));
+        for (compact, numbered, centred) in [
+            (true, true, false),
+            (false, false, false),
+            (false, false, true),
+        ] {
+            let case = format!("rtl {rtl}, compact {compact}, centred {centred}");
+            let row_h = if compact { 40.0 } else { 58.0 };
+            let mut inner = Rect::NOTHING;
+            // The bar shows from the frame after the one that finds the list
+            // longer than its area.
+            let mut output = None;
+            for _ in 0..2 {
+                let mut frame = ctx.run_ui(egui::RawInput::default(), |ui| {
+                    ui.scope_builder(egui::UiBuilder::new().max_rect(area), |ui| {
+                        let scroll = egui::ScrollArea::vertical().auto_shrink([false, false]);
+                        let out = scroll.show_viewport(ui, |ui, _| {
+                            ui.set_height(items.len() as f32 * (row_h + 2.0));
+                            let origin = ui.max_rect().min;
+                            let (offset, width) = rows_across(ui, ui.available_width(), centred);
+                            let column = time_column(ui, items.iter().map(|it| (it, false)));
+                            for (n, it) in items.iter().enumerate() {
+                                let top = origin.y + n as f32 * (row_h + 2.0);
+                                let rect = Rect::from_min_size(
+                                    Pos2::new(origin.x + offset, top),
+                                    Vec2::new(width, row_h),
+                                );
+                                let hit = Hit {
+                                    id: it.id,
+                                    closeness: Some(1.0),
+                                    weak: false,
+                                };
+                                let number = (numbered && n < 9).then_some(n + 1);
+                                let (hot, selected) = (n == 1, n == 0);
+                                paint_row(
+                                    ui,
+                                    rect,
+                                    hot,
+                                    it,
+                                    &hit,
+                                    None,
+                                    None,
+                                    selected,
+                                    compact,
+                                    &[],
+                                    numbered,
+                                    number,
+                                    false,
+                                    false,
+                                    column,
+                                );
+                            }
+                        });
+                        inner = out.inner_rect;
+                    });
+                });
+                frame.textures_delta.clear();
+                output = Some(frame);
+            }
+            let output = output.expect("a frame");
+            // The rows' parts are clipped to the list; the handle is not.
+            let (rows, others): (Vec<_>, Vec<_>) = output
+                .shapes
+                .iter()
+                .partition(|clipped| clipped.clip_rect.right() <= inner.right() + 0.5);
+            let handle = others
+                .iter()
+                .filter_map(|clipped| match &clipped.shape {
+                    egui::Shape::Rect(shape) if shape.fill.a() > 0 => Some(shape.rect),
+                    _ => None,
+                })
+                .find(|at| at.right() <= inner.right() + 0.5 && at.left() >= inner.right() - 12.0)
+                .unwrap_or_else(|| panic!("{case}: no handle"));
+            let room = handle.width() + space::TINY;
+            assert!(handle.width() > 0.0, "{case}: {handle:?}");
+            assert!(!rows.is_empty(), "{case}");
+            for clipped in rows {
+                let at = clipped.shape.visual_bounding_rect();
+                if at.is_positive() {
+                    assert!(
+                        at.right() <= inner.right() - room + 0.5,
+                        "{case}: {at:?}, the handle {handle:?}: {:?}",
+                        clipped.shape
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn rows_keep_clear_of_the_scroll_handle() {
+        check_rows_clear_of_the_handle();
+    }
+
+    #[test]
+    fn rows_keep_clear_of_the_scroll_handle_right_to_left() {
+        crate::i18n::passes_in_arabic(
+            module_path!(),
+            "rows_keep_clear_of_the_scroll_handle_in_arabic",
+        );
+    }
+
+    #[test]
+    #[ignore = "run in a process of its own by rows_keep_clear_of_the_scroll_handle_right_to_left"]
+    fn rows_keep_clear_of_the_scroll_handle_in_arabic() {
+        if crate::i18n::arabic_run() {
+            check_rows_clear_of_the_handle();
         }
     }
 
