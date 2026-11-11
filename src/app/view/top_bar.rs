@@ -36,7 +36,7 @@ impl App {
                         {
                             self.open_settings(SettingsPage::General);
                         }
-                        // Add with its word, as Pause has, so neither is a bare icon.
+                        // Add with its word, so it is not a bare icon.
                         let import = word_button(ui, Icon::Add, &t!("top-add"));
                         let import = tip(import, &t!("top-add-files-tip"));
                         egui::Popup::menu(&import).show(|ui| {
@@ -55,8 +55,6 @@ impl App {
                             }
                         });
                         self.view_switch(ui);
-                        ui.add_space(space::SMALL);
-                        self.pause_button(ui);
                         ui.min_rect().width()
                     });
                     if (used - self.top_actions_w).abs() > 0.5 {
@@ -130,54 +128,6 @@ impl App {
             if tip(resp, &name).clicked() && !current {
                 self.set_view(mode);
             }
-        }
-    }
-
-    /// Pause recording, with its words; Resume recording, in amber, while
-    /// recording is paused.
-    fn pause_button(&mut self, ui: &mut Ui) {
-        let recording = self.flags.enabled.load(Ordering::SeqCst);
-        let (icon, word, name) = if recording {
-            let name = t!("top-pause-recording");
-            (Icon::Pause, name.clone(), name)
-        } else {
-            let name = t!("top-resume-recording");
-            (Icon::Play, name.clone(), name)
-        };
-        let label = txt(&word, size::CONTROL, None);
-        let (galley, inner) = icons::icon_text_size(ui, &label, size::CONTROL, 16.0);
-        let pad = 10.0;
-        let (rect, resp) =
-            ui.allocate_exact_size(Vec2::new(inner.x + 2.0 * pad, 34.0), Sense::click());
-        resp.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, &name));
-        let v = ui.visuals();
-        let p = ui.painter();
-        let color = if recording {
-            // The view switcher's background, so it reads as a button.
-            let fill = if resp.hovered() {
-                v.widgets.hovered.weak_bg_fill
-            } else {
-                v.widgets.inactive.weak_bg_fill
-            };
-            p.rect_filled(rect, CornerRadius::same(radius::MEDIUM), fill);
-            v.text_color()
-        } else {
-            p.rect_filled(rect, CornerRadius::same(radius::MEDIUM), button_fill(AMBER));
-            if resp.hovered() {
-                p.rect_filled(rect, CornerRadius::same(radius::MEDIUM), theme::lit(false));
-            }
-            Color32::WHITE
-        };
-        icons::paint_icon_text(
-            p,
-            rect.shrink2(Vec2::new(pad, 0.0)),
-            icon,
-            16.0,
-            galley,
-            color,
-        );
-        if tip(resp, &name).clicked() {
-            self.set_recording(!recording);
         }
     }
 
@@ -510,7 +460,7 @@ impl App {
     }
 }
 
-/// A flat button with an icon and its word, like Pause recording.
+/// A flat button with an icon and its word.
 fn word_button(ui: &mut Ui, icon: Icon, word: &str) -> egui::Response {
     let label = txt(word, size::CONTROL, None);
     let (galley, inner) = icons::icon_text_size(ui, &label, size::CONTROL, 16.0);

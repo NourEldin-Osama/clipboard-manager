@@ -89,7 +89,15 @@ impl App {
     }
 
     pub(super) fn status_bar(&mut self, ui: &mut Ui) {
-        let fill = ui.visuals().panel_fill;
+        let recording = self.flags.enabled.load(Ordering::SeqCst);
+        let panel = ui.visuals().panel_fill;
+        // While recording is paused, the bar is tinted amber, so the state
+        // can't be missed.
+        let fill = if recording {
+            panel
+        } else {
+            theme::paused_bar(panel, ui.visuals().dark_mode)
+        };
         let bar = egui::Panel::bottom("status")
             .show_separator_line(false)
             .frame(
@@ -105,6 +113,10 @@ impl App {
                 }
                 row(ui, |ui| {
                     let weak = ui.visuals().weak_text_color();
+                    // The recording button comes last, at the far end; an
+                    // error before it leaves it its room.
+                    let gap = ui.spacing().item_spacing.x;
+                    let button = recording_label(ui, recording).2.x + gap;
                     // No counts here: the filters and the result count beside
                     // the sort menu say how many.
                     let (dot, text) = self.model_status();
@@ -156,9 +168,6 @@ impl App {
                         slow_spinner(ui, 11.0, Some(weak));
                         ui.label(txt(&self.reader_status, size::SMALL, Some(weak)));
                     }
-                    if !self.flags.enabled.load(Ordering::SeqCst) {
-                        icons::chip(ui, Icon::Pause, &t!("status-recording-paused"), AMBER);
-                    }
                     if self.recording_stopped {
                         let text = t!("status-recording-stopped");
                         let r = icons::chip(ui, Icon::Warning, &text, RED).interact(Sense::click());
@@ -184,12 +193,13 @@ impl App {
                     if let Some((e, _)) = &self.error {
                         let red = text_shade(RED, ui.visuals().dark_mode);
                         icons::glyph(ui, Icon::Warning, 13.0, red);
-                        let room = ui.available_width() - ui.spacing().item_spacing.x;
+                        let room = ui.available_width() - gap - button;
                         let r = cut_line(ui, e, room.max(0.0), size::SMALL, red, Sense::click());
                         if tip(r, &t!("status-dismiss-error")).clicked() {
                             self.error = None;
                         }
                     }
+                    far(ui, |ui| self.recording_button(ui, recording));
                 });
             });
         // A thin line between the items and the bar: the items go on under it.
@@ -199,6 +209,35 @@ impl App {
             rect.top() + 0.5,
             Stroke::new(1.0, line_color(ui.visuals().dark_mode)),
         );
+    }
+
+    /// Pause recording, quiet, while recording; Resume recording, filled
+    /// amber, while it is paused.
+    fn recording_button(&mut self, ui: &mut Ui, recording: bool) {
+        let (name, galley, size) = recording_label(ui, recording);
+        let (rect, resp) = ui.allocate_exact_size(size, Sense::click());
+        resp.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, &name));
+        let v = ui.visuals();
+        let p = ui.painter();
+        let round = CornerRadius::same(radius::MEDIUM);
+        let (icon, color) = if recording {
+            // The bar's own text, with a fill only under the pointer.
+            if resp.hovered() {
+                p.rect_filled(rect, round, v.widgets.hovered.weak_bg_fill);
+            }
+            (Icon::Pause, v.text_color())
+        } else {
+            p.rect_filled(rect, round, button_fill(AMBER));
+            if resp.hovered() {
+                p.rect_filled(rect, round, theme::lit(false));
+            }
+            (Icon::Play, Color32::WHITE)
+        };
+        let inner = rect.shrink2(Vec2::new(RECORDING_PAD, 0.0));
+        icons::paint_icon_text(p, inner, icon, RECORDING_ICON, galley, color);
+        if tip(resp, &name).clicked() {
+            self.set_recording(!recording);
+        }
     }
 
     /// While several items are selected, the status bar holds what can be
@@ -275,6 +314,30 @@ impl App {
             self.clear_marks();
         }
     }
+}
+
+/// How big the recording button's icon is.
+const RECORDING_ICON: f32 = 14.0;
+
+/// The room at the recording button's sides.
+const RECORDING_PAD: f32 = 10.0;
+
+/// The recording button's words, laid out, and its size: as tall as the
+/// bar's pills in both states, so the bar keeps its height.
+fn recording_label(ui: &Ui, recording: bool) -> (String, std::sync::Arc<egui::Galley>, Vec2) {
+    let name = if recording {
+        t!("status-pause-recording")
+    } else {
+        t!("status-resume-recording")
+    };
+    let label = txt(&name, size::SMALL, None);
+    let (galley, inner) = icons::icon_text_size(ui, &label, size::SMALL, RECORDING_ICON);
+    let height = icons::pill_height(galley.size().y);
+    (
+        name,
+        galley,
+        Vec2::new(inner.x + 2.0 * RECORDING_PAD, height),
+    )
 }
 
 /// The count of selected items in SemiBold, set like the pills' labels so it

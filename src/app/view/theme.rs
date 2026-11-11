@@ -164,6 +164,12 @@ pub(crate) fn search_hit(dark: bool) -> Color32 {
     AMBER.gamma_multiply(if dark { 0.40 } else { 0.30 })
 }
 
+/// The status bar's fill while recording is paused: the window's gray with
+/// a faint amber tint, opaque as a panel's fill must be.
+pub(crate) fn paused_bar(panel: Color32, dark: bool) -> Color32 {
+    panel.lerp_to_gamma(AMBER, if dark { 0.12 } else { 0.10 })
+}
+
 /// The tint of a selected grid card: lighter than a selected row's, so the
 /// card's gray text stays readable on it.
 pub(crate) fn selected_card(accent: Color32, dark: bool) -> Color32 {
@@ -745,6 +751,7 @@ mod tests {
                     ),
                     ("gray chip", over(weak.gamma_multiply(0.14), content)),
                     ("settings note", over(note_fill(dark), content)),
+                    ("status bar while paused", paused_bar(panel, dark)),
                 ];
                 for (text, color) in [("normal", v.text_color()), ("weak", weak)] {
                     for (place, background) in backgrounds {
@@ -773,6 +780,12 @@ mod tests {
                 contrast(weak, panel) < contrast(v.text_color(), panel),
                 "{theme:?}: weak text stays weaker than normal text"
             );
+            // Pause recording in the status bar under the pointer.
+            let ratio = contrast(v.text_color(), v.widgets.hovered.weak_bg_fill);
+            assert!(
+                ratio >= 4.5,
+                "{theme:?}: a quiet button under the pointer is {ratio:.2} to 1"
+            );
         }
     }
 
@@ -785,6 +798,7 @@ mod tests {
             let base = ctx.style_of(theme).visuals.clone();
             let dark = base.dark_mode;
             let (panel, content) = (base.panel_fill, base.extreme_bg_color);
+            let paused = paused_bar(panel, dark);
             // (what and where, text colour, background)
             let mut cases: Vec<(String, Color32, Color32)> = Vec::new();
             let kinds = [Kind::Text, Kind::Link, Kind::Image, Kind::Files].map(kind_color);
@@ -836,7 +850,11 @@ mod tests {
                 ] {
                     cases.push((format!("{a:?} on {place}"), text, background));
                 }
-                for (place, background) in [("card", content), ("update banner", banner)] {
+                for (place, background) in [
+                    ("card", content),
+                    ("update banner", banner),
+                    ("status bar while paused", paused),
+                ] {
                     cases.push((
                         format!("{a:?} link on {place}"),
                         v.hyperlink_color,
@@ -859,6 +877,11 @@ mod tests {
                         ),
                         ("update banner", banner),
                         ("button", v.widgets.inactive.weak_bg_fill),
+                        ("status bar while paused", paused),
+                        (
+                            "chip on the status bar while paused",
+                            over(s.gamma_multiply(0.14), paused),
+                        ),
                     ] {
                         cases.push((format!("{s:?} on {place}, accent {a:?}"), text, background));
                     }
@@ -866,6 +889,7 @@ mod tests {
                 for (place, fill) in [
                     ("main button", button_fill(a)),
                     ("delete button", button_fill(RED)),
+                    ("resume recording button", button_fill(AMBER)),
                 ] {
                     cases.push((
                         format!("white on {place}, accent {a:?}"),
