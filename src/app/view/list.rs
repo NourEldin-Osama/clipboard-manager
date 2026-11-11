@@ -281,6 +281,8 @@ pub(super) fn thumbs_to_drop(
 /// room at the start for the numbers of quick paste, and show `number`.
 /// `dated` rows sit under a day header, which gives their day; rows
 /// `under_pinned` sit under the Pinned header, which says they are pinned.
+/// With a `time_column` width shared by the rows, each row keeps the pin's
+/// slot before it, so times, pins and relevance bars line up down the list.
 #[allow(clippy::too_many_arguments)]
 pub(super) fn paint_row(
     ui: &Ui,
@@ -297,6 +299,7 @@ pub(super) fn paint_row(
     number: Option<usize>,
     dated: bool,
     under_pinned: bool,
+    time_column: Option<f32>,
 ) {
     let show_pin = it.pinned && !under_pinned;
     let v = ui.visuals();
@@ -445,27 +448,18 @@ pub(super) fn paint_row(
     let sub = if compact { String::new() } else { subtitle(it) };
     // The pin and the relevance bars sit before the time on the first
     // line, so the title ends before them.
-    let pin = if show_pin { PIN_SIZE + 5.0 } else { 0.0 };
     let bars = if relevance_level(hit).is_some() {
         22.0
     } else {
         0.0
     };
+    let pin_slot = show_pin || (time_column.is_some() && bars > 0.0);
+    let pin = if pin_slot { PIN_SLOT } else { 0.0 };
     let badges = pin + bars;
     // The time's column: as wide as a clock time, wider for a long weekday
-    // or a date with its year.
+    // or a date with its year, or the width the rows share.
     let time = row_time(it.created, dated);
-    let time_w = ui
-        .fonts_mut(|f| {
-            f.layout_no_wrap(
-                time.clone(),
-                FontId::proportional(size::SMALL),
-                v.weak_text_color(),
-            )
-        })
-        .size()
-        .x
-        .max(TIME_COLUMN);
+    let time_w = time_column.unwrap_or_else(|| time_width(ui, &time).max(TIME_COLUMN));
     let right_w = if hot { 150.0 } else { time_w + 8.0 };
     let text_w = (rect.right() - x - right_w - 8.0).max(40.0);
     // While hovered, the buttons take the far end instead.
@@ -567,7 +561,9 @@ pub(super) fn paint_row(
             Icon::PinFilled,
             a,
         );
-        ix -= PIN_SIZE + 5.0;
+    }
+    if show_pin || time_column.is_some() {
+        ix -= PIN_SLOT;
     }
     if let Some(level) = relevance_level(hit) {
         paint_relevance(&p, rect, ix, iy + 6.0, level, a, weak);
@@ -578,6 +574,17 @@ pub(super) fn paint_row(
 /// read as a pin.
 pub(super) const PIN_SIZE: f32 = 15.0;
 
+/// The pin's place before a row's time, with its gap.
+const PIN_SLOT: f32 = PIN_SIZE + 5.0;
+
+/// How wide a row's time is drawn.
+fn time_width(ui: &Ui, time: &str) -> f32 {
+    let color = ui.visuals().weak_text_color();
+    ui.fonts_mut(|f| f.layout_no_wrap(time.to_string(), FontId::proportional(size::SMALL), color))
+        .size()
+        .x
+}
+
 /// How big the program's icon is on a row's symbol.
 const PROGRAM_BADGE: f32 = 16.0;
 
@@ -587,6 +594,10 @@ const TIME_COLUMN: f32 = 56.0;
 
 /// How big the numbers of quick paste are, drawn as keys.
 const NUMBER_CAP: f32 = 20.0;
+
+/// The room the line after the popup's pinned rows adds between them and
+/// the others.
+const GROUP_END_GAP: f32 = space::TINY;
 
 /// How tall the fade at the end of the popup's list is.
 const FADE_HEIGHT: f32 = 16.0;
@@ -713,12 +724,23 @@ impl App {
                 .unwrap_or(lines.len());
             lines.insert(at, Line::WeakerLink);
         }
+        // The popup has no day headers: while browsing with pinned items
+        // first, a thin line ends their group, before the first other row.
+        let first_unpinned = (in_popup && !searching && pinned_first)
+            .then(|| {
+                self.results
+                    .iter()
+                    .take_while(|h| self.library.get(h.id).is_some_and(|it| it.pinned))
+                    .count()
+            })
+            .filter(|&n| n > 0 && n < self.results.len());
         let mut ys = Vec::with_capacity(lines.len());
         let mut y = 0.0;
         for l in &lines {
             ys.push(y);
             y += match l {
                 Line::Header(..) => header_h,
+                Line::Row(r) if Some(r + 1) == first_unpinned => row_h + 2.0 + GROUP_END_GAP,
                 Line::Row(_) => row_h + 2.0,
                 Line::WeakerLink => WEAKER_LINE,
             };
@@ -804,13 +826,37 @@ impl App {
                 full
             };
             let left = origin.x + (full - width) / 2.0;
+            let height = |l: &Line| match l {
+                Line::Header(..) => header_h,
+                Line::Row(_) => row_h,
+                Line::WeakerLink => WEAKER_LINE,
+            };
+            let shown =
+                |i: usize| ys[i] + height(&lines[i]) >= viewport.min.y && ys[i] <= viewport.max.y;
+            // The popup's times share one column, as wide as the widest
+            // shown, so its pins and times line up down the list.
+            let time_column = in_popup.then(|| {
+                (0..lines.len())
+                    .filter(|&i| shown(i))
+                    .filter_map(|i| match lines[i] {
+                        Line::Row(r) => library.get(results[r].id),
+                        _ => None,
+                    })
+                    .map(|it| time_width(ui, &row_time(it.created, false)))
+                    .fold(0.0, f32::max)
+            });
+            if let Some(i) = first_unpinned
+                .and_then(|n| lines.iter().position(|l| *l == Line::Row(n - 1)))
+                .filter(|&i| shown(i))
+            {
+                let y = origin.y + ys[i] + row_h + (2.0 + GROUP_END_GAP) / 2.0;
+                let x = (left + ROW_PADDING)..=(left + width - ROW_PADDING);
+                let color = line_color(ui.visuals().dark_mode);
+                ui.painter().hline(x, y, Stroke::new(1.0, color));
+            }
             for (i, l) in lines.iter().enumerate() {
-                let h = match l {
-                    Line::Header(..) => header_h,
-                    Line::Row(_) => row_h,
-                    Line::WeakerLink => WEAKER_LINE,
-                };
-                if ys[i] + h < viewport.min.y || ys[i] > viewport.max.y {
+                let h = height(l);
+                if !shown(i) {
                     continue;
                 }
                 let top = match l {
@@ -866,6 +912,7 @@ impl App {
                             (in_popup && *r < 9).then_some(*r + 1),
                             day_headers && Group::of(it, pinned_first) != Group::Pinned,
                             day_headers && Group::of(it, pinned_first) == Group::Pinned,
+                            time_column,
                         );
                         if resp.clicked() {
                             // Ctrl and Shift select several, but not in the popup.
@@ -1170,6 +1217,7 @@ mod tests {
                 number,
                 false,
                 false,
+                None,
             );
         });
         output.textures_delta.clear();
@@ -1214,6 +1262,81 @@ mod tests {
                 assert!(bar.right() + PIN_SIZE <= time.left(), "{bar:?} {time:?}");
             }
         }
+    }
+
+    /// Two of the popup's rows sharing a time column: a pinned one copied
+    /// now, and one copied over a year ago, whose time is longer. Their
+    /// relevance bars, after the pin's place, and their times line up.
+    #[test]
+    fn popup_rows_line_up_their_pins_and_times() {
+        let ctx = egui::Context::default();
+        add_fonts(&ctx);
+        // The fonts apply from the next frame.
+        ctx.run_ui(egui::RawInput::default(), |_| {})
+            .textures_delta
+            .clear();
+        let mut new = Item::new(1, Kind::Text, Origin::Clipboard, "Pinned note".into());
+        new.pinned = true;
+        let mut old = Item::new(2, Kind::Text, Origin::Clipboard, "Old note".into());
+        old.created -= 400 * 86_400;
+        let times = [&new, &old].map(|it| row_time(it.created, false));
+        let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+            let column = times
+                .iter()
+                .map(|time| time_width(ui, time))
+                .fold(0.0, f32::max);
+            for (n, it) in [&new, &old].into_iter().enumerate() {
+                let hit = Hit {
+                    id: it.id,
+                    closeness: Some(1.0),
+                    weak: false,
+                };
+                let top = 100.0 + 42.0 * n as f32;
+                let rect = Rect::from_min_size(Pos2::new(0.0, top), Vec2::new(420.0, 40.0));
+                paint_row(
+                    ui,
+                    rect,
+                    false,
+                    it,
+                    &hit,
+                    None,
+                    None,
+                    false,
+                    true,
+                    &[],
+                    true,
+                    Some(n + 1),
+                    false,
+                    false,
+                    Some(column),
+                );
+            }
+        });
+        output.textures_delta.clear();
+        let mut bars: Vec<Rect> = Vec::new();
+        let mut time_ends = Vec::new();
+        for clipped in &output.shapes {
+            match &clipped.shape {
+                egui::Shape::Rect(shape) if shape.rect.width() == 4.0 => bars.push(shape.rect),
+                egui::Shape::Text(text) if times.contains(&text.galley.text().to_string()) => {
+                    time_ends.push(text.pos.x + text.galley.rect.right());
+                }
+                _ => {}
+            }
+        }
+        assert_eq!(bars.len(), 6, "three bars a row");
+        assert_eq!(time_ends.len(), 2, "{times:?}");
+        assert!(times[0] != times[1], "{times:?}");
+        // Bar by bar, the second row's under the first's.
+        bars.sort_by(|a, b| a.top().total_cmp(&b.top()));
+        let (first, second) = bars.split_at(3);
+        let lefts = |row: &[Rect]| {
+            let mut x: Vec<f32> = row.iter().map(|bar| bar.left()).collect();
+            x.sort_by(f32::total_cmp);
+            x
+        };
+        assert_eq!(lefts(first), lefts(second));
+        assert!((time_ends[0] - time_ends[1]).abs() <= 0.5, "{time_ends:?}");
     }
 
     /// Closed or open, a screen reader hears the link as a button with the

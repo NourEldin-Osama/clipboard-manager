@@ -271,9 +271,48 @@ impl App {
     }
 }
 
-/// Pairs of keys and what they do, side by side in centered lines: the keys
-/// as key caps, as Settings shows them. A pair that doesn't fit on a line
-/// starts the next one.
+/// Where pairs `widths` wide go in lines `room` wide: each pair's line and
+/// where it starts in it. The pairs of a line spread across it with equal
+/// gaps; a lone pair is centred. In a narrow line the gaps shrink first,
+/// down to `least`, before a pair starts the next line.
+fn spread(widths: &[f32], room: f32, least: f32) -> Vec<(usize, f32)> {
+    let mut lines: Vec<Vec<f32>> = Vec::new();
+    for &width in widths {
+        match lines.last_mut() {
+            Some(line) if line.iter().map(|w| w + least).sum::<f32>() + width <= room => {
+                line.push(width);
+            }
+            _ => lines.push(vec![width]),
+        }
+    }
+    let mut places = Vec::new();
+    for (row, line) in lines.iter().enumerate() {
+        let total: f32 = line.iter().sum();
+        let (mut x, gap) = match line.len() {
+            1 => ((room - total) / 2.0, 0.0),
+            n => (0.0, (room - total) / (n - 1) as f32),
+        };
+        for width in line {
+            places.push((row, x));
+            x += width + gap;
+        }
+    }
+    places
+}
+
+/// Where a galley's first line stands, from its top.
+fn baseline(galley: &egui::Galley) -> f32 {
+    galley
+        .rows
+        .first()
+        .and_then(|row| row.row.glyphs.first().map(|glyph| row.pos.y + glyph.pos.y))
+        .unwrap_or(galley.size().y)
+}
+
+/// Pairs of keys and what they do, spread across a line with equal gaps:
+/// the keys as key caps, as Settings shows them, and the words on the line
+/// the caps' names stand on. A pair that doesn't fit on a line, even with
+/// the gaps at their least, starts the next one.
 fn paint_key_hints(ui: &mut Ui, hints: &[(String, String)]) {
     let (strong, weak) = (ui.visuals().text_color(), ui.visuals().weak_text_color());
     let dark = ui.visuals().dark_mode;
@@ -317,66 +356,59 @@ fn paint_key_hints(ui: &mut Ui, hints: &[(String, String)]) {
     let caps_width = |caps: &[Piece]| {
         caps.iter().map(piece_width).sum::<f32>() + cap_gap * caps.len().saturating_sub(1) as f32
     };
-    // Between the keys and their words, and between pairs.
-    let (gap, spacing) = (6.0, 16.0);
-    let width = |i: usize| caps_width(&pairs[i].0) + gap + pairs[i].1.size().x;
-    let mut lines: Vec<Vec<usize>> = Vec::new();
-    let mut used = 0.0;
-    for i in 0..pairs.len() {
-        match lines.last_mut() {
-            Some(line) if used + spacing + width(i) <= room => {
-                line.push(i);
-                used += spacing + width(i);
-            }
-            _ => {
-                lines.push(vec![i]);
-                used = width(i);
-            }
-        }
-    }
+    // Between the keys and their words, and the least between pairs.
+    let (gap, least) = (6.0, space::MEDIUM);
+    let widths: Vec<f32> = pairs
+        .iter()
+        .map(|(caps, what)| caps_width(caps) + gap + what.size().x)
+        .collect();
+    let places = spread(&widths, room, least);
+    let lines = places.last().map_or(0, |(row, _)| row + 1);
     let line_h = HINT_CAP + 6.0;
-    let (rect, _) =
-        ui.allocate_exact_size(Vec2::new(room, line_h * lines.len() as f32), Sense::hover());
+    let (rect, _) = ui.allocate_exact_size(Vec2::new(room, line_h * lines as f32), Sense::hover());
     let p = ui.painter();
-    for (row, line) in lines.iter().enumerate() {
-        let total = line.iter().map(|&i| width(i)).sum::<f32>() + spacing * (line.len() - 1) as f32;
-        let mut x = rect.center().x - total / 2.0;
+    for ((caps, what), (row, start)) in pairs.iter().zip(places) {
         let y = rect.top() + line_h * (row as f32 + 0.5);
-        for &i in line {
-            let (caps, what) = &pairs[i];
-            // The keys as one group, mirrored for Arabic as a whole, so
-            // they keep the order Settings shows them in.
-            let group = flip(
-                rect,
-                Rect::from_min_size(
-                    Pos2::new(x, y - HINT_CAP / 2.0),
-                    Vec2::new(caps_width(caps), HINT_CAP),
-                ),
-            );
-            let mut cap_x = group.left();
-            for piece in caps {
-                match piece {
-                    Piece::Cap(g) => {
-                        let size = shortcut::keycap_size(g, HINT_CAP);
-                        let cap = Rect::from_min_size(Pos2::new(cap_x, group.top()), size);
-                        shortcut::paint_keycap(p, cap, g.clone(), strong, dark);
-                    }
-                    Piece::Word(g) => {
-                        let top = group.center().y - g.size().y / 2.0;
-                        p.galley(Pos2::new(cap_x, top), g.clone(), weak);
-                    }
+        let mut x = rect.left() + start;
+        // The keys as one group, mirrored for Arabic as a whole, so
+        // they keep the order Settings shows them in.
+        let group = flip(
+            rect,
+            Rect::from_min_size(
+                Pos2::new(x, y - HINT_CAP / 2.0),
+                Vec2::new(caps_width(caps), HINT_CAP),
+            ),
+        );
+        // The line the caps' names stand on, in the middle of the caps;
+        // the words stand on it too.
+        let base = caps
+            .iter()
+            .find_map(|piece| match piece {
+                Piece::Cap(g) => Some(y - g.size().y / 2.0 + baseline(g)),
+                Piece::Word(_) => None,
+            })
+            .unwrap_or(y);
+        let mut cap_x = group.left();
+        for piece in caps {
+            match piece {
+                Piece::Cap(g) => {
+                    let size = shortcut::keycap_size(g, HINT_CAP);
+                    let cap = Rect::from_min_size(Pos2::new(cap_x, group.top()), size);
+                    shortcut::paint_keycap(p, cap, g.clone(), strong, dark);
                 }
-                cap_x += piece_width(piece) + cap_gap;
+                Piece::Word(g) => {
+                    p.galley(Pos2::new(cap_x, base - baseline(g)), g.clone(), weak);
+                }
             }
-            x += group.width() + gap;
-            let size = what.size();
-            let at = flip(
-                rect,
-                Rect::from_min_size(Pos2::new(x, y - size.y / 2.0), size),
-            );
-            p.galley(at.min, what.clone(), strong);
-            x += size.x + spacing;
+            cap_x += piece_width(piece) + cap_gap;
         }
+        x += group.width() + gap;
+        let size = what.size();
+        let at = flip(
+            rect,
+            Rect::from_min_size(Pos2::new(x, base - baseline(what)), size),
+        );
+        p.galley(at.min, what.clone(), strong);
     }
 }
 
@@ -411,4 +443,82 @@ fn popup_corner(ctx: &egui::Context) -> Option<Pos2> {
         })
         .unwrap_or(pointer.scale);
     Some((corner.to_vec2() / (scale * zoom)).to_pos2())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn hints_spread_with_equal_gaps_and_shrink_them_before_wrapping() {
+        // Room to spare: the first at the start, the last at the end.
+        assert_eq!(
+            spread(&[100.0, 120.0, 110.0], 420.0, 12.0),
+            [(0, 0.0), (0, 145.0), (0, 310.0)]
+        );
+        // Just room for the least gaps: still one line.
+        assert_eq!(
+            spread(&[100.0, 120.0, 110.0], 354.0, 12.0),
+            [(0, 0.0), (0, 112.0), (0, 244.0)]
+        );
+        // Less: the last one goes on a line of its own, centred.
+        assert_eq!(
+            spread(&[100.0, 120.0, 110.0], 353.0, 12.0),
+            [(0, 0.0), (0, 233.0), (1, 121.5)]
+        );
+    }
+
+    /// The popup's hints in `language`, at the popup's width: every text
+    /// on them, the caps' names and the words, stands on one line, and the
+    /// hints reach from the line's start to its end.
+    fn check_hints_on_one_line(language: crate::config::Language) {
+        let ctx = egui::Context::default();
+        add_fonts(&ctx);
+        style(&ctx, crate::config::DarkPanels::Lighter);
+        // The fonts apply from the next frame.
+        ctx.run_ui(egui::RawInput::default(), |_| {})
+            .textures_delta
+            .clear();
+        let text = |key: &str| crate::i18n::text_in(language, key, None);
+        let hints = [
+            ("Enter".to_string(), text("popup-key-paste")),
+            (text("quick-paste-keys"), text("popup-key-quick")),
+            ("F1".to_string(), text("popup-key-all")),
+        ];
+        // The popup's width less its hints' margins.
+        let line = Rect::from_min_size(Pos2::new(10.0, 10.0), Vec2::new(POPUP_SIZE.x - 20.0, 60.0));
+        let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+            ui.scope_builder(egui::UiBuilder::new().max_rect(line), |ui| {
+                paint_key_hints(ui, &hints);
+            });
+        });
+        output.textures_delta.clear();
+        let (mut baselines, mut start, mut end) = (Vec::new(), f32::INFINITY, f32::NEG_INFINITY);
+        for clipped in &output.shapes {
+            match &clipped.shape {
+                egui::Shape::Text(text) => {
+                    baselines.push(text.pos.y + baseline(&text.galley));
+                    end = end.max(text.pos.x + text.galley.rect.right());
+                }
+                egui::Shape::Rect(shape) => start = start.min(shape.rect.left()),
+                _ => {}
+            }
+        }
+        // Enter, Ctrl, 1, to, 9, F1 and the three words.
+        assert_eq!(baselines.len(), 9, "{language:?}");
+        for at in &baselines {
+            assert!(
+                (at - baselines[0]).abs() <= 0.5,
+                "{language:?}: {baselines:?}"
+            );
+        }
+        assert!((start - line.left()).abs() <= 0.5, "{language:?}: {start}");
+        assert!((end - line.right()).abs() <= 1.0, "{language:?}: {end}");
+    }
+
+    #[test]
+    fn the_hints_fit_on_one_line_in_english_and_arabic() {
+        check_hints_on_one_line(crate::config::Language::English);
+        check_hints_on_one_line(crate::config::Language::Arabic);
+    }
 }
