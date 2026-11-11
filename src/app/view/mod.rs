@@ -64,62 +64,12 @@ impl App {
         // search shows the same results in each.
         self.cards_in_a_row = cards_per_row(ui.available_width() - GRID_SIDES);
         let fill = ui.visuals().panel_fill;
-        // Panels swap sides right to left: the list starts on the reading side.
-        let (start, end) = if i18n::rtl() {
-            (egui::Panel::right("list"), egui::Panel::left("details"))
-        } else {
-            (egui::Panel::left("list"), egui::Panel::right("details"))
-        };
-        if self.cfg.view == ViewMode::Detail {
-            start
-                .resizable(true)
-                .show_separator_line(false)
-                .default_size(ui.available_width() * 0.42)
-                // Wide enough for a row's words, beside the details.
-                .size_range(400.0..=900.0)
-                .frame(
-                    Frame::new()
-                        .inner_margin(Margin {
-                            left: 8,
-                            right: 8,
-                            top: 4,
-                            bottom: 4,
-                        })
-                        .fill(fill),
-                )
-                .show(ui, |ui| self.list(ui, false));
-            let detail_fill = ui.visuals().extreme_bg_color;
-            egui::CentralPanel::default()
-                .frame(
-                    Frame::new()
-                        .inner_margin(Margin {
-                            left: 24,
-                            right: 20,
-                            top: 14,
-                            bottom: 14,
-                        })
-                        .fill(detail_fill),
-                )
-                .show(ui, |ui| self.details(ui, false));
-            return;
-        }
-        if self.details_open && self.selected.is_some() {
-            let detail_fill = ui.visuals().extreme_bg_color;
-            end.resizable(true)
-                .show_separator_line(false)
-                .default_size(ui.available_width() * 0.45)
-                .size_range(320.0..=1100.0)
-                .frame(
-                    Frame::new()
-                        .inner_margin(Margin {
-                            left: 20,
-                            right: 20,
-                            top: 14,
-                            bottom: 14,
-                        })
-                        .fill(detail_fill),
-                )
-                .show(ui, |ui| self.details(ui, true));
+        // The details at the reading end: always in Detail view, and while
+        // open over the grid or the list, with a Back button there. The list
+        // or the grid takes the rest.
+        let detail_view = self.cfg.view == ViewMode::Detail;
+        if detail_view || (self.details_open && self.selected.is_some()) {
+            details::details_panel(ui, |ui| self.details(ui, !detail_view));
         }
         // The cards end 16 points from the window's edge, after the 12 the
         // grid keeps for its scroll bar; rows add their own 8 to the 8 here.

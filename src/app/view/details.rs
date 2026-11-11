@@ -26,9 +26,99 @@ pub(crate) fn reveal(p: &std::path::Path) -> std::io::Result<()> {
     started.map(|_| ())
 }
 
-/// What the actions, the facts and the tags below the content take, about:
-/// the content scrolls above them.
-const FACTS_HEIGHT: f32 = 130.0;
+/// How much of the window's width the details pane takes when it first
+/// shows: most clips are short, so the list beside it gets the most room.
+const DETAILS_SHARE: f32 = 0.42;
+
+/// The details pane's first width stays in this range: wide enough for its
+/// actions row, narrow enough to leave the list most of a wide window.
+const DETAILS_FIRST_WIDTH: std::ops::RangeInclusive<f32> = 400.0..=560.0;
+
+/// What the list beside the details keeps at least, also in a window too
+/// narrow for both.
+const LIST_LEAST_WIDTH: f32 = 320.0;
+
+/// The details pane on the reading-end side of `ui`, beside the list or
+/// the grid, with `add` in it. One panel in every view, so it keeps one
+/// width; the user can drag its edge.
+pub(super) fn details_panel<R>(
+    ui: &mut Ui,
+    add: impl FnOnce(&mut Ui) -> R,
+) -> egui::InnerResponse<R> {
+    let panel = if i18n::rtl() {
+        egui::Panel::left("details-pane")
+    } else {
+        egui::Panel::right("details-pane")
+    };
+    let (least, most) = (*DETAILS_FIRST_WIDTH.start(), *DETAILS_FIRST_WIDTH.end());
+    let window_width = ui.available_width();
+    let room = (window_width - LIST_LEAST_WIDTH).max(0.0);
+    let first = (window_width * DETAILS_SHARE).clamp(least, most).min(room);
+    let fill = ui.visuals().extreme_bg_color;
+    panel
+        .resizable(true)
+        .show_separator_line(false)
+        .size_range(least.min(room)..=room)
+        .default_size(first)
+        .frame(
+            Frame::new()
+                .inner_margin(Margin {
+                    left: 20,
+                    right: 20,
+                    top: 14,
+                    bottom: 14,
+                })
+                .fill(fill),
+        )
+        .show(ui, |ui| {
+            // egui sizes a side panel by what it holds: the pane keeps its
+            // width whatever it shows.
+            ui.set_min_width(ui.available_width());
+            add(ui)
+        })
+}
+
+/// The least room the content keeps above the foot, in a very short window.
+const LEAST_CONTENT_HEIGHT: f32 = 48.0;
+
+/// The pane's content in a scroll area that takes the room left, then a
+/// thin line and the foot, which ends at the pane's bottom however long the
+/// content is, so its buttons stay in one place from item to item. The
+/// foot's height is the last frame's; when it changes, egui lays the frame
+/// out again.
+fn content_over_foot<T>(
+    ui: &mut Ui,
+    state: &mut T,
+    content: impl FnOnce(&mut Ui, &mut T),
+    foot: impl FnOnce(&mut Ui, &mut T),
+) {
+    // Everything under the content: the gaps, the line and the foot.
+    let below_id = ui.scope_id().with("details-foot");
+    let below = ui
+        .ctx()
+        .data(|d| d.get_temp::<f32>(below_id))
+        .unwrap_or_default();
+    let top = ui.cursor().top();
+    let room = (ui.available_height() - below).max(LEAST_CONTENT_HEIGHT);
+    egui::ScrollArea::vertical()
+        .auto_shrink([false, false])
+        .max_height(room)
+        .show(ui, |ui| content(ui, state));
+    ui.add_space(space::SMALL);
+    let (line, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 1.0), Sense::hover());
+    ui.painter().hline(
+        line.x_range(),
+        line.center().y,
+        Stroke::new(1.0, line_color(ui.visuals().dark_mode)),
+    );
+    ui.add_space(space::SMALL);
+    let end = ui.scope(|ui| foot(ui, state)).response.rect.bottom();
+    let used = end - top - room;
+    if (used - below).abs() > 0.5 {
+        ui.ctx().data_mut(|d| d.insert_temp(below_id, used));
+        ui.ctx().request_discard("the details' foot changed height");
+    }
+}
 
 /// Between the facts of the details.
 const FACTS_GAP: &str = "  ·  ";
@@ -80,10 +170,14 @@ fn reading_text(ui: &mut Ui, text: &str) {
 /// How tall the actions under the content are.
 const BUTTON_HEIGHT: f32 = 34.0;
 
+/// The main button's word is cut no shorter than this.
+const LEAST_LABEL: f32 = 60.0;
+
 /// The details' main button: the main way to put the item back, with its
-/// key, and an arrow to the other ways when there are any. A long program
-/// name is cut short when the header has no room for it.
-fn main_button(ui: &mut Ui, ways: &[CopyWay]) -> Option<Paste> {
+/// key, and an arrow to the other ways when there are any. It leaves
+/// `reserved` of the row's width to the buttons after it: a long program
+/// name is cut short when the row has no room for it.
+fn main_button(ui: &mut Ui, ways: &[CopyWay], reserved: f32) -> Option<Paste> {
     let (main, others) = ways.split_first()?;
     let height = BUTTON_HEIGHT;
     let arrow_w = if others.is_empty() { 0.0 } else { 30.0 };
@@ -97,14 +191,17 @@ fn main_button(ui: &mut Ui, ways: &[CopyWay]) -> Option<Paste> {
             key_color,
         )
     });
-    let keys_w = if main.keys.trim().is_empty() {
+    let gap = ui.spacing().item_spacing.x;
+    let room = ui.available_width() - reserved - gap - 8.0 - 28.0 - arrow_w;
+    // In a row short of room the key goes first; its tip still names it.
+    let keys_w = if main.keys.trim().is_empty() || room - keys.size().x - 10.0 < LEAST_LABEL {
         0.0
     } else {
         keys.size().x + 10.0
     };
-    let room = ui.available_width() - 8.0 - 28.0 - keys_w - arrow_w;
     let font = FontId::proportional(size::BODY);
-    let label = one_line(ui, &main.text, &[], font, Color32::WHITE, room.max(60.0));
+    let room = (room - keys_w).max(LEAST_LABEL);
+    let label = one_line(ui, &main.text, &[], font, Color32::WHITE, room);
     let main_w = 14.0 + label.size().x + keys_w + 14.0;
     let (rect, _) = ui.allocate_exact_size(Vec2::new(main_w + arrow_w, height), Sense::hover());
     // Laid out left to right, then mirrored for Arabic.
@@ -397,13 +494,13 @@ impl App {
     /// The selected item in full. `closeable` when it is a side pane in Grid or
     /// List view, which gets a back button.
     pub(super) fn details(&mut self, ui: &mut Ui, closeable: bool) {
-        let ctx = ui.ctx().clone();
         let Some(it) = self.selected.and_then(|id| self.library.get(id)).cloned() else {
             self.empty_details(ui);
             return;
         };
         // Back, while the details cover the list. The copied content comes
-        // first, then what you can do with it, one line of facts and the tags.
+        // first, then at the pane's foot what you can do with it, one line
+        // of facts and the tags.
         if closeable {
             row(ui, |ui| {
                 if icons::icon_button_ex(
@@ -422,172 +519,189 @@ impl App {
             });
         }
         ui.add_space(space::SMALL);
-        // Long content scrolls above the facts and tags, which stay in view.
-        let room = (ui.available_height() - FACTS_HEIGHT).max(FACTS_HEIGHT);
-        egui::ScrollArea::vertical()
-            .auto_shrink([false, true])
-            .max_height(room)
-            .show(ui, |ui| match it.kind {
-                Kind::Image => self.image_details(ui, &it),
-                Kind::Files => {
-                    // Checked once per item: the pane draws every frame,
-                    // and a path on an unreachable drive can take seconds.
-                    if self.folders_of.as_ref().is_none_or(|(id, _)| *id != it.id) {
-                        let folders = it
-                            .text
-                            .lines()
-                            .map(|l| std::path::Path::new(l).is_dir())
-                            .collect();
-                        self.folders_of = Some((it.id, folders));
-                    }
-                    let folders = self
-                        .folders_of
-                        .as_ref()
-                        .map(|(_, f)| f.clone())
-                        .unwrap_or_default();
-                    for (index, line) in it.text.lines().enumerate() {
-                        let p = PathBuf::from(line);
-                        let is_folder = folders.get(index).copied().unwrap_or(false);
-                        row(ui, |ui| {
-                            icons::glyph(
-                                ui,
-                                if is_folder { Icon::Folder } else { Icon::File },
-                                15.0,
-                                ui.visuals().text_color(),
-                            );
-                            let name = p
-                                .file_name()
-                                .map(|f| f.to_string_lossy().into_owned())
-                                .unwrap_or_else(|| line.to_string());
-                            if tip(ui.link(txt(&name, size::BODY, None)), line).clicked() {
-                                if let Err(e) = reveal(&p) {
-                                    self.set_error(log_error!(
-                                        "error-opening-folder",
-                                        error = e.to_string()
-                                    ));
-                                }
+        content_over_foot(
+            ui,
+            self,
+            |ui, app| app.details_content(ui, &it),
+            |ui, app| app.details_foot(ui, &it),
+        );
+    }
+
+    /// The copied content, as its kind shows it.
+    fn details_content(&mut self, ui: &mut Ui, it: &Item) {
+        match it.kind {
+            Kind::Image => self.image_details(ui, it),
+            Kind::Files => {
+                // Checked once per item: the pane draws every frame,
+                // and a path on an unreachable drive can take seconds.
+                if self.folders_of.as_ref().is_none_or(|(id, _)| *id != it.id) {
+                    let folders = it
+                        .text
+                        .lines()
+                        .map(|l| std::path::Path::new(l).is_dir())
+                        .collect();
+                    self.folders_of = Some((it.id, folders));
+                }
+                let folders = self
+                    .folders_of
+                    .as_ref()
+                    .map(|(_, f)| f.clone())
+                    .unwrap_or_default();
+                for (index, line) in it.text.lines().enumerate() {
+                    let p = PathBuf::from(line);
+                    let is_folder = folders.get(index).copied().unwrap_or(false);
+                    row(ui, |ui| {
+                        icons::glyph(
+                            ui,
+                            if is_folder { Icon::Folder } else { Icon::File },
+                            15.0,
+                            ui.visuals().text_color(),
+                        );
+                        let name = p
+                            .file_name()
+                            .map(|f| f.to_string_lossy().into_owned())
+                            .unwrap_or_else(|| line.to_string());
+                        if tip(ui.link(txt(&name, size::BODY, None)), line).clicked() {
+                            if let Err(e) = reveal(&p) {
+                                self.set_error(log_error!(
+                                    "error-opening-folder",
+                                    error = e.to_string()
+                                ));
                             }
-                            let parent = p
-                                .parent()
-                                .map(|x| x.display().to_string())
-                                .unwrap_or_default();
-                            ui.label(txt(
-                                &parent,
-                                size::SMALL,
-                                Some(ui.visuals().weak_text_color()),
-                            ));
-                        });
-                    }
+                        }
+                        let parent = p
+                            .parent()
+                            .map(|x| x.display().to_string())
+                            .unwrap_or_default();
+                        ui.label(txt(
+                            &parent,
+                            size::SMALL,
+                            Some(ui.visuals().weak_text_color()),
+                        ));
+                    });
                 }
-                Kind::Link => {
-                    ui.hyperlink_to(
-                        RichText::new(crate::net::readable_url(it.text.trim())).size(size::LARGE),
-                        it.text.trim(),
-                    );
+            }
+            Kind::Link => {
+                ui.hyperlink_to(
+                    RichText::new(crate::net::readable_url(it.text.trim())).size(size::LARGE),
+                    it.text.trim(),
+                );
+            }
+            Kind::Text => {
+                if let Some(color) = color_in(&it.text) {
+                    let line = t!("item-color", value = color_other_way(&it.text, color));
+                    row(ui, |ui| {
+                        let (swatch, _) = ui.allocate_exact_size(Vec2::splat(48.0), Sense::hover());
+                        let edge = ui.visuals().weak_text_color().gamma_multiply(0.3);
+                        ui.painter()
+                            .rect_filled(swatch, CornerRadius::same(radius::MEDIUM), color);
+                        ui.painter().rect_stroke(
+                            swatch,
+                            CornerRadius::same(radius::MEDIUM),
+                            Stroke::new(1.0, edge),
+                            egui::StrokeKind::Inside,
+                        );
+                        lbl(ui, &line, size::BODY, ui.visuals().text_color());
+                    });
+                    ui.add_space(space::SMALL);
                 }
-                Kind::Text => {
-                    if let Some(color) = color_in(&it.text) {
-                        let line = t!("item-color", value = color_other_way(&it.text, color));
-                        row(ui, |ui| {
-                            let (swatch, _) =
-                                ui.allocate_exact_size(Vec2::splat(48.0), Sense::hover());
-                            let edge = ui.visuals().weak_text_color().gamma_multiply(0.3);
-                            ui.painter().rect_filled(
-                                swatch,
-                                CornerRadius::same(radius::MEDIUM),
-                                color,
+                let d = self.detail_text(it);
+                if d.monospace {
+                    let code_bg = ui.visuals().panel_fill;
+                    Frame::new()
+                        .fill(code_bg)
+                        .corner_radius(CornerRadius::same(radius::MEDIUM))
+                        .inner_margin(Margin::same(12))
+                        .show(ui, |ui| {
+                            ui.set_width(ui.available_width());
+                            ui.add(
+                                egui::Label::new(
+                                    RichText::new(d.shown.as_str())
+                                        .monospace()
+                                        .size(size::CONTROL),
+                                )
+                                .selectable(true),
                             );
-                            ui.painter().rect_stroke(
-                                swatch,
-                                CornerRadius::same(radius::MEDIUM),
-                                Stroke::new(1.0, edge),
-                                egui::StrokeKind::Inside,
-                            );
-                            lbl(ui, &line, size::BODY, ui.visuals().text_color());
                         });
-                        ui.add_space(space::SMALL);
-                    }
-                    let d = self.detail_text(&it);
-                    if d.monospace {
-                        let code_bg = ui.visuals().panel_fill;
-                        Frame::new()
-                            .fill(code_bg)
-                            .corner_radius(CornerRadius::same(radius::MEDIUM))
-                            .inner_margin(Margin::same(12))
-                            .show(ui, |ui| {
-                                ui.set_width(ui.available_width());
-                                ui.add(
-                                    egui::Label::new(
-                                        RichText::new(d.shown.as_str())
-                                            .monospace()
-                                            .size(size::CONTROL),
-                                    )
-                                    .selectable(true),
-                                );
-                            });
-                    } else {
-                        // The text itself, the pane's main content, lined up with
-                        // the actions under it; a box around it read as a field.
-                        Frame::new()
-                            .inner_margin(Margin::symmetric(0, 4))
-                            .show(ui, |ui| {
-                                ui.set_width(ui.available_width());
-                                reading_text(ui, &d.shown);
-                            });
-                    }
+                } else {
+                    // The text itself, the pane's main content, lined up with
+                    // the actions under it; a box around it read as a field.
+                    Frame::new()
+                        .inner_margin(Margin::symmetric(0, 4))
+                        .show(ui, |ui| {
+                            ui.set_width(ui.available_width());
+                            reading_text(ui, &d.shown);
+                        });
                 }
-            });
-        ui.add_space(space::MEDIUM);
-        // The actions right under the content, the main one first and Delete
-        // at the far end, apart from the rest.
+            }
+        }
+    }
+
+    /// The pane's foot: the actions, one line of facts and the tags.
+    fn details_foot(&mut self, ui: &mut Ui, it: &Item) {
+        // The actions in one group, the main one first and Delete last.
         row(ui, |ui| {
             let keys = self.cfg.keys.clone();
-            let ways = self.ways_to_copy(&it);
-            if let Some(paste) = main_button(ui, &ways) {
+            let ways = self.ways_to_copy(it);
+            // The main button leaves the buttons after it the room they
+            // took in the frame before.
+            let rest_id = ui.scope_id().with("details-actions");
+            let reserved = ui
+                .ctx()
+                .data(|d| d.get_temp::<f32>(rest_id))
+                .unwrap_or_default();
+            if let Some(paste) = main_button(ui, &ways, reserved) {
                 self.run(Command::Copy(it.id, paste));
             }
-            // A pinned item's pin button says what a click does, with the
-            // filled pin of the pinned state.
-            let pin = if it.pinned {
-                let shade = text_shade(accent(), ui.visuals().dark_mode);
-                let job = pill_job(&t!("details-unpin"), size::CONTROL, shade, None);
-                let r = icons::tinted_button(ui, Icon::PinFilled, job, accent(), BUTTON_HEIGHT);
-                tip(r, &hint(&t!("details-unpin"), &keys.pin))
-            } else {
-                let tip = hint(&t!("details-pin-keep"), &keys.pin);
-                let size = Vec2::splat(BUTTON_HEIGHT);
-                icon_button_ex(ui, Icon::Pin, &tip, size, 16.0, None, None)
-            };
-            if pin.clicked() {
-                self.run(Command::Pin(it.id));
-            }
-            if it.kind == Kind::Image
-                && icons::icon_button(ui, Icon::Save, &t!("details-save-image")).clicked()
-            {
-                self.save_image_as(&it);
-            }
-            if let Some(p) = place_of(&it) {
-                if icons::icon_button(ui, Icon::Folder, &t!("details-show-in-folder")).clicked() {
-                    self.show_in_folder(p);
+            let rest = ui.scope(|ui| {
+                // A pinned item's pin button says what a click does, with
+                // the filled pin of the pinned state.
+                let pin = if it.pinned {
+                    let shade = text_shade(accent(), ui.visuals().dark_mode);
+                    let job = pill_job(&t!("details-unpin"), size::CONTROL, shade, None);
+                    let r = icons::tinted_button(ui, Icon::PinFilled, job, accent(), BUTTON_HEIGHT);
+                    tip(r, &hint(&t!("details-unpin"), &keys.pin))
+                } else {
+                    let tip = hint(&t!("details-pin-keep"), &keys.pin);
+                    let size = Vec2::splat(BUTTON_HEIGHT);
+                    icon_button_ex(ui, Icon::Pin, &tip, size, 16.0, None, None)
+                };
+                if pin.clicked() {
+                    self.run(Command::Pin(it.id));
                 }
-            }
-            if it.kind == Kind::Link
-                && icons::icon_button(ui, Icon::Browser, &t!("details-open-in-browser")).clicked()
-            {
-                ctx.open_url(egui::OpenUrl::new_tab(it.text.trim()));
-            }
-            far(ui, |ui| {
-                if icons::icon_button(ui, Icon::Delete, &hint(&t!("details-delete"), &keys.delete))
-                    .clicked()
+                if it.kind == Kind::Image
+                    && icons::icon_button(ui, Icon::Save, &t!("details-save-image")).clicked()
                 {
+                    self.save_image_as(it);
+                }
+                if let Some(p) = place_of(it) {
+                    if icons::icon_button(ui, Icon::Folder, &t!("details-show-in-folder")).clicked()
+                    {
+                        self.show_in_folder(p);
+                    }
+                }
+                if it.kind == Kind::Link
+                    && icons::icon_button(ui, Icon::Browser, &t!("details-open-in-browser"))
+                        .clicked()
+                {
+                    ui.ctx().open_url(egui::OpenUrl::new_tab(it.text.trim()));
+                }
+                let delete = hint(&t!("details-delete"), &keys.delete);
+                if icons::icon_button(ui, Icon::Delete, &delete).clicked() {
                     self.run(Command::Delete(it.id));
                 }
             });
+            let rest = rest.response.rect.width();
+            if (rest - reserved).abs() > 0.5 {
+                ui.ctx().data_mut(|d| d.insert_temp(rest_id, rest));
+                ui.ctx()
+                    .request_discard("the buttons after Copy changed width");
+            }
         });
         ui.add_space(space::SMALL);
         // One line of facts: when and where it came from first, then how
         // long it is.
-        let mut parts = self.meta_parts(&it);
+        let mut parts = self.meta_parts(it);
         let mut facts = vec![parts.remove(0)];
         if let Some(app) = &it.app {
             // The program's own name once it is known, else its file name.
@@ -615,7 +729,7 @@ impl App {
             self.run(Command::ReadAgain(it.id));
         }
         ui.add_space(space::SMALL);
-        self.tag_editor(ui, &it);
+        self.tag_editor(ui, it);
     }
 
     /// The facts about an item, its time first.
@@ -759,5 +873,89 @@ impl App {
                 });
             }
         });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A window `size` big, for one frame at a time.
+    fn input(size: Vec2) -> egui::RawInput {
+        egui::RawInput {
+            screen_rect: Some(Rect::from_min_size(Pos2::ZERO, size)),
+            ..Default::default()
+        }
+    }
+
+    /// The details pane as it first shows in a window `width` wide, and
+    /// the room left beside it for the list.
+    fn first_pane(width: f32) -> (Rect, Rect) {
+        let ctx = egui::Context::default();
+        let (mut pane, mut rest) = (Rect::NOTHING, Rect::NOTHING);
+        let mut output = ctx.run_ui(input(Vec2::new(width, 700.0)), |ui| {
+            pane = details_panel(ui, |ui| ui.label("Details")).response.rect;
+            rest = ui.available_rect_before_wrap();
+        });
+        // The font atlas upload no renderer takes here.
+        output.textures_delta.clear();
+        (pane, rest)
+    }
+
+    #[test]
+    fn the_details_pane_first_takes_400_to_560_points() {
+        for width in (720..=2000).step_by(10).map(|w| w as f32) {
+            let (pane, rest) = first_pane(width);
+            assert!(
+                DETAILS_FIRST_WIDTH.contains(&pane.width()),
+                "{width}: {pane:?}"
+            );
+            // At the window's reading end, the list beside it.
+            assert_eq!(pane.right(), width, "{width}");
+            assert_eq!(rest.right(), pane.left(), "{width}");
+        }
+        // A window too narrow for both still leaves the list its room.
+        let (pane, rest) = first_pane(560.0);
+        assert_eq!(rest.width(), LIST_LEAST_WIDTH, "{pane:?}");
+    }
+
+    /// Where the foot's first row starts and where the foot ends, under
+    /// `lines` lines of content, and where the pane ends.
+    fn foot_under(lines: usize) -> (f32, f32, f32) {
+        let ctx = egui::Context::default();
+        let (mut actions, mut foot, mut bottom) = (Rect::NOTHING, Rect::NOTHING, 0.0);
+        // The foot's height is the last frame's: the first frames find it.
+        for _ in 0..3 {
+            let mut output = ctx.run_ui(input(Vec2::new(480.0, 600.0)), |ui| {
+                bottom = ui.max_rect().bottom();
+                content_over_foot(
+                    ui,
+                    &mut (),
+                    |ui, _| {
+                        for line in 0..lines {
+                            ui.label(format!("Line {line}"));
+                        }
+                    },
+                    |ui, _| {
+                        actions = ui.button("Copy").rect;
+                        ui.label("Today, 10:30");
+                        let _ = ui.button("Add tag");
+                        foot = ui.min_rect();
+                    },
+                );
+            });
+            output.textures_delta.clear();
+        }
+        (actions.top(), foot.bottom(), bottom)
+    }
+
+    #[test]
+    fn the_foot_stays_at_the_bottom_of_the_pane() {
+        let (short, short_end, bottom) = foot_under(1);
+        let (long, long_end, _) = foot_under(300);
+        assert_eq!(short, long, "the actions row stays in one place");
+        for end in [short_end, long_end] {
+            assert!((end - bottom).abs() <= 0.5, "{end} at {bottom}");
+        }
     }
 }
