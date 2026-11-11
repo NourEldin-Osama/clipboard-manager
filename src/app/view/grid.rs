@@ -34,8 +34,7 @@ fn fitted_height(ui: &Ui, it: &Item, card_w: f32, same: f32) -> f32 {
         };
         picture.max(line_height(ui, &FontId::proportional(size::BODY)))
     } else if it.kind == Kind::Text && color_in(&it.text).is_some() {
-        // The swatch, then its two lines.
-        110.0
+        color_content_height(ui)
     } else if it.kind == Kind::Text && path_in(&it.text).is_some() {
         // The icon, then the name and the folder, as `paint_lines` puts them.
         PATH_ICON
@@ -62,6 +61,20 @@ const PATH_ICON_GAP: f32 = 10.0;
 
 /// Between the lines of a color's or a path's card.
 const LINE_GAP: f32 = 2.0;
+
+/// How big a color's swatch is on its card.
+const SWATCH: f32 = 40.0;
+
+/// Between a color's swatch and its lines.
+const SWATCH_GAP: f32 = space::MEDIUM;
+
+/// How tall a color card's content is: its swatch, or the two lines beside
+/// it when they are taller.
+fn color_content_height(ui: &Ui) -> f32 {
+    let value = line_height(ui, &FontId::proportional(size::BODY));
+    let other_way = line_height(ui, &FontId::proportional(size::SMALL));
+    SWATCH.max(value + LINE_GAP + other_way)
+}
 
 /// Where a card's content goes in `rect`: inside its padding, above its
 /// tags row when it is `tagged`, and above its footer.
@@ -305,10 +318,13 @@ pub(super) fn paint_card(
         }
         _ if color.is_some() => {
             let color = color.expect("checked above");
-            let swatch = Rect::from_min_size(
-                body.min,
-                Vec2::new(body.width(), (body.height() - 46.0).max(24.0)),
-            );
+            // A small swatch at the top, on the side of the color's value,
+            // which is written left to right, and its two lines beside it,
+            // centred on its height. The rest of the card stays empty.
+            let rtl = bidi::starts_rtl(&it.text, i18n::rtl());
+            let content = color_content_height(ui);
+            let at = Pos2::new(body.left(), body.top() + (content - SWATCH) / 2.0);
+            let swatch = flip_if(rtl, body, Rect::from_min_size(at, Vec2::splat(SWATCH)));
             bp.rect_filled(swatch, CornerRadius::same(radius::MEDIUM), color);
             bp.rect_stroke(
                 swatch,
@@ -316,25 +332,34 @@ pub(super) fn paint_card(
                 Stroke::new(1.0, weak.gamma_multiply(0.3)),
                 egui::StrokeKind::Inside,
             );
-            let below = Pos2::new(body.left(), swatch.bottom() + 8.0);
+            let beside = flip_if(
+                rtl,
+                body,
+                Rect::from_min_max(
+                    Pos2::new(body.left() + SWATCH + SWATCH_GAP, body.top()),
+                    body.max,
+                ),
+            );
+            let other_way = bidi::isolate(&color_other_way(&it.text, color));
             let lines = [
                 (
                     it.text.trim().to_string(),
                     size::BODY,
                     v.strong_text_color(),
                 ),
-                (
-                    t!(
-                        "item-color",
-                        value = bidi::isolate(&color_other_way(&it.text, color))
-                    ),
-                    size::SMALL,
-                    weak,
-                ),
-            ];
-            // On the side of the color's value, which is written left to right.
-            let rtl = bidi::starts_rtl(&it.text, i18n::rtl());
-            paint_lines(ui, &bp, body, below, &lines, rtl);
+                (t!("item-color", value = other_way), size::SMALL, weak),
+            ]
+            .map(|(text, text_size, color)| {
+                let font = FontId::proportional(text_size);
+                (one_line(ui, &text, &[], font, color, beside.width()), color)
+            });
+            let height = lines.iter().map(|(g, _)| g.size().y).sum::<f32>() + LINE_GAP;
+            let mut y = body.top() + (content - height) / 2.0;
+            for (line, color) in lines {
+                let at = Rect::from_min_size(Pos2::new(beside.left(), y), line.size());
+                y += line.size().y + LINE_GAP;
+                bp.galley(flip_if(rtl, beside, at).min, line, color);
+            }
         }
         _ if path.is_some() => {
             let path = path.expect("checked above");
@@ -1195,6 +1220,107 @@ mod tests {
             weak_name.chars().count() > strong_name.chars().count(),
             "{weak_name} {strong_name}"
         );
+    }
+
+    /// A color's card: a swatch 40 points square at the top of its body,
+    /// on the side its value is written from, and its two lines 12 points
+    /// beside it, centred on its height. A card as tall as its content is
+    /// as tall as that. From the left, or in Arabic a value with no letters
+    /// from the right.
+    fn check_color_card() {
+        let ctx = egui::Context::default();
+        add_fonts(&ctx);
+        // The fonts apply from the next frame.
+        ctx.run_ui(egui::RawInput::default(), |_| {})
+            .textures_delta
+            .clear();
+        for value in ["#5865F2", "#123456"] {
+            let it = Item::new(1, Kind::Text, Origin::Clipboard, value.into());
+            let color = color_in(value).expect("a color");
+            let other_way = color_other_way(value, color);
+            let rtl = bidi::starts_rtl(value, i18n::rtl());
+            for fitted in [false, true] {
+                let case = format!("{value}, fitted {fitted}, rtl {rtl}");
+                let mut card = Rect::NOTHING;
+                let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+                    let height = if fitted {
+                        fitted_height(ui, &it, 300.0, 210.0)
+                    } else {
+                        210.0
+                    };
+                    card = Rect::from_min_size(Pos2::new(0.0, 100.0), Vec2::new(300.0, height));
+                    paint_card(ui, card, false, &it, None, None, None, false, &[]);
+                });
+                output.textures_delta.clear();
+                let body = card_body(card, false);
+                let mut swatches = Vec::new();
+                let (mut value_line, mut other_line) = (None, None);
+                for clipped in &output.shapes {
+                    match &clipped.shape {
+                        egui::Shape::Rect(shape) if shape.fill == color => {
+                            swatches.push(shape.rect)
+                        }
+                        egui::Shape::Text(text) => {
+                            let at = text.galley.rect.translate(text.pos.to_vec2());
+                            let words = text.galley.text();
+                            if words == value {
+                                value_line = Some(at);
+                            } else if words.contains(&other_way) {
+                                other_line = Some(at);
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+                assert_eq!(swatches.len(), 1, "{case}: {swatches:?}");
+                let swatch = swatches[0];
+                assert_eq!(swatch.size(), Vec2::splat(SWATCH), "{case}");
+                let corner = if rtl {
+                    swatch.right_top() == body.right_top()
+                } else {
+                    swatch.left_top() == body.left_top()
+                };
+                assert!(corner, "{case}: {swatch:?} in {body:?}");
+                let (value_line, other_line) = (value_line.expect(&case), other_line.expect(&case));
+                for line in [value_line, other_line] {
+                    let gap = if rtl {
+                        swatch.left() - line.right()
+                    } else {
+                        line.left() - swatch.right()
+                    };
+                    assert!((gap - SWATCH_GAP).abs() <= 0.5, "{case}: {gap}");
+                }
+                assert!(value_line.bottom() <= other_line.top(), "{case}");
+                let lines_middle = (value_line.top() + other_line.bottom()) / 2.0;
+                assert!((lines_middle - swatch.center().y).abs() <= 1.0, "{case}");
+                if fitted {
+                    // As tall as its content: the swatch fills the body.
+                    assert!((body.height() - SWATCH).abs() <= 0.01, "{case}: {body:?}");
+                    assert!(other_line.bottom() <= body.bottom() + 0.5, "{case}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn a_color_card_shows_a_small_swatch() {
+        check_color_card();
+    }
+
+    #[test]
+    fn a_color_card_shows_a_small_swatch_right_to_left() {
+        crate::i18n::passes_in_arabic(
+            module_path!(),
+            "a_color_card_shows_a_small_swatch_in_arabic",
+        );
+    }
+
+    #[test]
+    #[ignore = "run in a process of its own by a_color_card_shows_a_small_swatch_right_to_left"]
+    fn a_color_card_shows_a_small_swatch_in_arabic() {
+        if crate::i18n::arabic_run() {
+            check_color_card();
+        }
     }
 
     #[test]
