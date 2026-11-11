@@ -78,32 +78,35 @@ pub(super) fn details_panel<R>(
         })
 }
 
-/// The least room the content keeps above the foot, in a very short window.
+/// The least room the content keeps, in a very short window.
 const LEAST_CONTENT_HEIGHT: f32 = 48.0;
 
 /// The room for the content's scroll bar in the pane's margin, beside the
 /// content: as wide as the bar under the pointer, and a little more.
 const SCROLL_BAR_ROOM: f32 = 12.0;
 
-/// The pane's content in a scroll area that takes the room left, then a
-/// thin line and the foot, which ends at the pane's bottom however long the
-/// content is, so its buttons stay in one place from item to item. The
-/// foot's height is the last frame's; when it changes, egui lays the frame
-/// out again.
-fn content_over_foot<T>(
+/// The pane's content in a scroll area as tall as the content, up to the
+/// room the rest leaves; right under it what `under` adds (the facts and
+/// the tags), so they stay in sight however long the content is; and at
+/// the pane's bottom a thin line and the foot, which stays in one place
+/// from item to item. The heights of `under` and of the foot are the last
+/// frame's; when one changes, egui lays the frame out again.
+fn content_under_foot<T>(
     ui: &mut Ui,
     state: &mut T,
     content: impl FnOnce(&mut Ui, &mut T),
+    under: impl FnOnce(&mut Ui, &mut T),
     foot: impl FnOnce(&mut Ui, &mut T),
 ) {
-    // Everything under the content: the gaps, the line and the foot.
-    let below_id = ui.scope_id().with("details-foot");
-    let below = ui
+    // What goes under the content, with the gaps around it, and everything
+    // at the bottom: the gaps, the line and the foot.
+    let heights_id = ui.scope_id().with("details-heights");
+    let [under_height, foot_height] = ui
         .ctx()
-        .data(|d| d.get_temp::<f32>(below_id))
+        .data(|d| d.get_temp::<[f32; 2]>(heights_id))
         .unwrap_or_default();
-    let top = ui.cursor().top();
-    let room = (ui.available_height() - below).max(LEAST_CONTENT_HEIGHT);
+    let bottom = ui.max_rect().bottom();
+    let room = (ui.available_height() - under_height - foot_height).max(LEAST_CONTENT_HEIGHT);
     // The scroll bar floats in the pane's margin, beside the content, so it
     // never covers the text: Arabic lines start at the content's edge.
     let width = ui.available_width();
@@ -111,7 +114,7 @@ fn content_over_foot<T>(
     let area = Rect::from_min_size(at, Vec2::new(width + SCROLL_BAR_ROOM, room));
     let mut scroll = ui.new_child(egui::UiBuilder::new().max_rect(area).layout(*ui.layout()));
     egui::ScrollArea::vertical()
-        .auto_shrink([false, false])
+        .auto_shrink([false, true])
         .content_margin(Margin {
             left: 0,
             right: SCROLL_BAR_ROOM as i8,
@@ -119,7 +122,14 @@ fn content_over_foot<T>(
             bottom: 0,
         })
         .show(&mut scroll, |ui| content(ui, state));
-    ui.advance_cursor_after_rect(Rect::from_min_size(at, Vec2::new(width, room)));
+    let shown = Rect::from_min_size(at, Vec2::new(width, scroll.min_rect().height().min(room)));
+    ui.advance_cursor_after_rect(shown);
+    ui.add_space(space::SMALL);
+    ui.scope(|ui| under(ui, state));
+    let under_used = ui.cursor().top() - shown.bottom();
+    // The foot ends at the pane's bottom.
+    ui.add_space((bottom - foot_height - ui.cursor().top()).max(0.0));
+    let foot_top = ui.cursor().top();
     ui.add_space(space::SMALL);
     let (line, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 1.0), Sense::hover());
     ui.painter().hline(
@@ -128,11 +138,16 @@ fn content_over_foot<T>(
         Stroke::new(1.0, line_color(ui.visuals().dark_mode)),
     );
     ui.add_space(space::SMALL);
-    let end = ui.scope(|ui| foot(ui, state)).response.rect.bottom();
-    let used = end - top - room;
-    if (used - below).abs() > 0.5 {
-        ui.ctx().data_mut(|d| d.insert_temp(below_id, used));
-        ui.ctx().request_discard("the details' foot changed height");
+    let foot_end = ui.scope(|ui| foot(ui, state)).response.rect.bottom();
+    let used = [under_used, foot_end - foot_top];
+    let changed = used
+        .iter()
+        .zip([under_height, foot_height])
+        .any(|(now, before)| (now - before).abs() > 0.5);
+    if changed {
+        ui.ctx().data_mut(|d| d.insert_temp(heights_id, used));
+        ui.ctx()
+            .request_discard("the details' facts, tags or foot changed height");
     }
 }
 
@@ -495,8 +510,8 @@ impl App {
                     ui.visuals().weak_text_color(),
                     None,
                 );
-                // A thin outline, so the pill's edge lines up with the actions
-                // above it.
+                // A thin outline, so the pill reads as a button under the
+                // facts.
                 let pill = icons::pill(ui, Icon::Add, job, accent(), false);
                 ui.painter().rect_stroke(
                     pill.rect,
@@ -533,8 +548,8 @@ impl App {
             return;
         };
         // Back, while the details cover the list. The copied content comes
-        // first, then at the pane's foot what you can do with it, one line
-        // of facts and the tags.
+        // first, right under it one line of facts and the tags, and at the
+        // pane's foot what you can do with it.
         if closeable {
             row(ui, |ui| {
                 if icons::icon_button_ex(
@@ -553,11 +568,12 @@ impl App {
             });
         }
         ui.add_space(space::SMALL);
-        content_over_foot(
+        content_under_foot(
             ui,
             self,
             |ui, app| app.details_content(ui, &it),
-            |ui, app| app.details_foot(ui, &it),
+            |ui, app| app.facts_and_tags(ui, &it),
+            |ui, app| app.details_actions(ui, &it),
         );
     }
 
@@ -660,7 +676,7 @@ impl App {
                         });
                 } else {
                     // The text itself, the pane's main content, lined up with
-                    // the actions under it; a box around it read as a field.
+                    // the facts under it; a box around it read as a field.
                     Frame::new()
                         .inner_margin(Margin::symmetric(0, 4))
                         .show(ui, |ui| {
@@ -672,9 +688,9 @@ impl App {
         }
     }
 
-    /// The pane's foot: the actions, one line of facts and the tags.
-    fn details_foot(&mut self, ui: &mut Ui, it: &Item) {
-        // The actions in one group, the main one first and Delete last.
+    /// The pane's foot: the actions in one group, the main one first and
+    /// Delete last.
+    fn details_actions(&mut self, ui: &mut Ui, it: &Item) {
         row(ui, |ui| {
             let keys = self.cfg.keys.clone();
             let ways = self.ways_to_copy(it);
@@ -733,9 +749,11 @@ impl App {
                     .request_discard("the buttons after Copy changed width");
             }
         });
-        ui.add_space(space::SMALL);
-        // One line of facts: when and where it came from first, then how
-        // long it is.
+    }
+
+    /// Under the content: one line of facts, then the tags.
+    fn facts_and_tags(&mut self, ui: &mut Ui, it: &Item) {
+        // When and where it came from first, then how long it is.
         let mut parts = self.meta_parts(it);
         let mut facts = vec![parts.remove(0)];
         if let Some(app) = &it.app {
@@ -955,34 +973,51 @@ mod tests {
         assert_eq!(rest.width(), LIST_LEAST_WIDTH, "{pane:?}");
     }
 
-    /// Where the foot's first row starts and where the foot ends, under
-    /// `lines` lines of content, and where the pane ends.
-    fn foot_under(lines: usize) -> (f32, f32, f32) {
+    /// Where the pane's parts are with `lines` lines of content: where the
+    /// content's last line ends (below the pane when it doesn't fit), the
+    /// facts, the tags, the actions row, and the pane's bottom.
+    struct Parts {
+        content_end: f32,
+        facts: Rect,
+        tags: Rect,
+        actions: Rect,
+        bottom: f32,
+    }
+
+    fn parts_with(lines: usize) -> Parts {
         let ctx = egui::Context::default();
-        let (mut actions, mut foot, mut bottom) = (Rect::NOTHING, Rect::NOTHING, 0.0);
-        // The foot's height is the last frame's: the first frames find it.
+        let mut parts = Parts {
+            content_end: 0.0,
+            facts: Rect::NOTHING,
+            tags: Rect::NOTHING,
+            actions: Rect::NOTHING,
+            bottom: 0.0,
+        };
+        // The heights under the content are the last frame's: the first
+        // frames find them.
         for _ in 0..3 {
             let mut output = ctx.run_ui(input(Vec2::new(480.0, 600.0)), |ui| {
-                bottom = ui.max_rect().bottom();
-                content_over_foot(
+                parts.bottom = ui.max_rect().bottom();
+                content_under_foot(
                     ui,
-                    &mut (),
-                    |ui, _| {
+                    &mut parts,
+                    |ui, parts| {
                         for line in 0..lines {
                             ui.label(format!("Line {line}"));
                         }
+                        parts.content_end = ui.min_rect().bottom();
                     },
-                    |ui, _| {
-                        actions = ui.button("Copy").rect;
-                        ui.label("Today, 10:30");
-                        let _ = ui.button("Add tag");
-                        foot = ui.min_rect();
+                    |ui, parts| {
+                        parts.facts = ui.label("Today, 10:30").rect;
+                        ui.add_space(space::SMALL);
+                        parts.tags = ui.button("Add a tag").rect;
                     },
+                    |ui, parts| parts.actions = ui.button("Copy").rect,
                 );
             });
             output.textures_delta.clear();
         }
-        (actions.top(), foot.bottom(), bottom)
+        parts
     }
 
     /// Long content keeps the pane's width, and its scroll bar floats
@@ -998,7 +1033,7 @@ mod tests {
                 // Inside the pane's margin, as its frame sets it.
                 pane = ui.max_rect().shrink(20.0);
                 ui.scope_builder(egui::UiBuilder::new().max_rect(pane), |ui| {
-                    content_over_foot(
+                    content_under_foot(
                         ui,
                         &mut (),
                         |ui, _| {
@@ -1009,6 +1044,9 @@ mod tests {
                         },
                         |ui, _| {
                             ui.label("Today, 10:30");
+                        },
+                        |ui, _| {
+                            let _ = ui.button("Copy");
                         },
                     );
                 });
@@ -1143,13 +1181,48 @@ mod tests {
         }
     }
 
+    /// Short content has its facts right under it; long content scrolls,
+    /// and its facts and tags stay in the pane above the actions. The
+    /// actions row ends at the pane's bottom, in one place for both.
     #[test]
-    fn the_foot_stays_at_the_bottom_of_the_pane() {
-        let (short, short_end, bottom) = foot_under(1);
-        let (long, long_end, _) = foot_under(300);
-        assert_eq!(short, long, "the actions row stays in one place");
-        for end in [short_end, long_end] {
-            assert!((end - bottom).abs() <= 0.5, "{end} at {bottom}");
+    fn the_facts_and_tags_follow_the_content_and_the_actions_stay() {
+        let short = parts_with(1);
+        let long = parts_with(300);
+        // The gap between two parts of a pane, as between the facts and
+        // the tags.
+        let between = space::SMALL + egui::Style::default().spacing.item_spacing.y;
+        let gap = short.facts.top() - short.content_end;
+        assert!(
+            (gap - between).abs() <= 0.5,
+            "the facts start right under the content: {gap}"
+        );
+        assert!(short.tags.top() > short.facts.bottom());
+        assert!(
+            short.actions.top() - short.tags.bottom() > 300.0,
+            "the actions stay at the bottom: {:?} {:?}",
+            short.tags,
+            short.actions
+        );
+        assert!(long.content_end > long.bottom, "the content scrolls");
+        for part in [long.facts, long.tags] {
+            assert!(
+                part.bottom() < long.actions.top() && part.top() > 0.0,
+                "{part:?} in the pane above {:?}",
+                long.actions
+            );
+        }
+        assert!(long.facts.top() < long.tags.top());
+        assert_eq!(
+            short.actions, long.actions,
+            "the actions row stays in one place"
+        );
+        for parts in [short, long] {
+            let end = parts.actions.bottom();
+            assert!(
+                (end - parts.bottom).abs() <= 0.5,
+                "{end} at {}",
+                parts.bottom
+            );
         }
     }
 }
