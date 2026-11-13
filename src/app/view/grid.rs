@@ -1459,17 +1459,18 @@ mod tests {
         }
     }
 
-    /// In the dark theme a card at rest has an edge twice as far above the
-    /// card's own gray as the faint gray 70 it had: gray 110 around the
-    /// cards of Lighter panels (gray 30), 130 around Darker's (gray 10).
-    /// In the light theme the edge is not seen.
+    /// In the dark theme a card at rest has an edge as strong with both
+    /// Dark panels choices: gray 110 around the cards of Lighter panels
+    /// (gray 30), 99 around Darker's (gray 10). The theme's tests check
+    /// that both have the same contrast. In the light theme the edge is
+    /// not seen.
     #[test]
-    fn a_dark_cards_edge_is_twice_as_far_above_its_gray() {
+    fn a_dark_cards_edge_is_as_strong_with_both_panels() {
         use crate::config::DarkPanels;
         let it = Item::new(1, Kind::Text, Origin::Clipboard, "Lunch at noon".into());
         let card = Rect::from_min_size(Pos2::new(0.0, 100.0), Vec2::new(300.0, 210.0));
         for (panels, theme, fill, edge) in [
-            (DarkPanels::Darker, egui::Theme::Dark, 10, Some(130)),
+            (DarkPanels::Darker, egui::Theme::Dark, 10, Some(99)),
             (DarkPanels::Lighter, egui::Theme::Dark, 30, Some(110)),
             (DarkPanels::Lighter, egui::Theme::Light, 255, None),
         ] {

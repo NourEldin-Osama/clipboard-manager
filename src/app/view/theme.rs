@@ -194,18 +194,29 @@ pub(crate) fn menu_line(dark: bool) -> Color32 {
     Color32::from_gray(if dark { 76 } else { 204 })
 }
 
-/// The gray of a dark card's faint edge before it was made brighter.
-const FAINT_CARD_EDGE: u8 = 70;
+/// A card's gray in the dark theme with the default Lighter panels.
+const LIGHTER_PANELS_CARD: u8 = 30;
+
+/// The gray of the edge around a card of the default Lighter panels:
+/// about 3.27 to 1 on it. Every dark card's edge is as strong.
+const LIGHTER_PANELS_CARD_EDGE: u8 = 110;
 
 /// The edge around a card in the dark theme, where its shadow doesn't
-/// show: twice as far above the card's own gray as the faint edge it had,
-/// so it shows with both Dark panels choices (gray 110 around Lighter's
-/// cards, 130 around Darker's). None in the light theme.
+/// show: the dimmest gray with at least as much contrast with the card as
+/// the default edge has with its own card, so the edge is as strong with
+/// both Dark panels choices (gray 110 around Lighter's cards, 99 around
+/// Darker's gray 10). None in the light theme.
 fn card_edge(v: &egui::Visuals) -> Option<Color32> {
     v.dark_mode.then(|| {
-        let card = i32::from(v.extreme_bg_color.r());
-        let edge = card + 2 * (i32::from(FAINT_CARD_EDGE) - card);
-        Color32::from_gray(edge.clamp(0, 255) as u8)
+        let strength = contrast(
+            Color32::from_gray(LIGHTER_PANELS_CARD_EDGE),
+            Color32::from_gray(LIGHTER_PANELS_CARD),
+        );
+        let card = v.extreme_bg_color;
+        (card.r()..=u8::MAX)
+            .map(Color32::from_gray)
+            .find(|edge| contrast(*edge, card) >= strength)
+            .unwrap_or(Color32::WHITE)
     })
 }
 
@@ -789,6 +800,31 @@ mod tests {
         for lit in [0.0, 0.5, 1.0] {
             assert_eq!(picture_tint(false, lit), Color32::WHITE);
         }
+    }
+
+    /// The edge of a card at rest, in the grid and in Settings, is as
+    /// strong with both Dark panels choices: its contrast with its own card
+    /// is the same within 0.05. The default Lighter panels keep gray 110
+    /// around their cards' gray 30.
+    #[test]
+    fn a_card_edge_has_the_same_contrast_with_both_dark_panels() {
+        use crate::config::DarkPanels;
+        let edge_on_card = |panels| {
+            let ctx = egui::Context::default();
+            style(&ctx, panels);
+            let v = ctx.style_of(egui::Theme::Dark).visuals.clone();
+            (card_frame(&v, false).stroke.color, v.extreme_bg_color)
+        };
+        let (edge, card) = edge_on_card(DarkPanels::Lighter);
+        assert_eq!(edge, Color32::from_gray(110));
+        assert_eq!(card, Color32::from_gray(30));
+        let lighter = contrast(edge, card);
+        let (edge, card) = edge_on_card(DarkPanels::Darker);
+        let darker = contrast(edge, card);
+        assert!(
+            (darker - lighter).abs() <= 0.05,
+            "Darker's edge is {darker:.3} to 1, Lighter's {lighter:.3} to 1"
+        );
     }
 
     /// A context styled with each dark-panels choice, in each theme.
