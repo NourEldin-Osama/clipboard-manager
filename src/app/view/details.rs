@@ -85,28 +85,29 @@ const LEAST_CONTENT_HEIGHT: f32 = 48.0;
 /// content: as wide as the bar under the pointer, and a little more.
 const SCROLL_BAR_ROOM: f32 = 12.0;
 
-/// The pane's content in a scroll area as tall as the content, up to the
-/// room the rest leaves; right under it what `under` adds (the facts and
-/// the tags), so they stay in sight however long the content is; and at
-/// the pane's bottom a thin line and the foot, which stays in one place
-/// from item to item. The heights of `under` and of the foot are the last
-/// frame's; when one changes, egui lays the frame out again.
-fn content_under_foot<T>(
+/// The pane's actions row at its top, in one place from item to item;
+/// under it the content in a scroll area as tall as the content, up to the
+/// room the rest leaves; and right under that what `under` adds (the facts
+/// and the tags), so they stay in sight however long the content is. Only
+/// the content scrolls. The height of `under` is the last frame's; when it
+/// changes, egui lays the frame out again.
+fn actions_over_content<T>(
     ui: &mut Ui,
     state: &mut T,
+    actions: impl FnOnce(&mut Ui, &mut T),
     content: impl FnOnce(&mut Ui, &mut T),
     under: impl FnOnce(&mut Ui, &mut T),
-    foot: impl FnOnce(&mut Ui, &mut T),
 ) {
-    // What goes under the content, with the gaps around it, and everything
-    // at the bottom: the gaps, the line and the foot.
-    let heights_id = ui.scope_id().with("details-heights");
-    let [under_height, foot_height] = ui
+    actions(ui, state);
+    // A gap of 12 under the row, with the one egui leaves after it.
+    ui.add_space(space::MEDIUM - ui.spacing().item_spacing.y);
+    // What goes under the content, with the gaps around it.
+    let height_id = ui.scope_id().with("details-under-height");
+    let under_height = ui
         .ctx()
-        .data(|d| d.get_temp::<[f32; 2]>(heights_id))
+        .data(|d| d.get_temp::<f32>(height_id))
         .unwrap_or_default();
-    let bottom = ui.max_rect().bottom();
-    let room = (ui.available_height() - under_height - foot_height).max(LEAST_CONTENT_HEIGHT);
+    let room = (ui.available_height() - under_height).max(LEAST_CONTENT_HEIGHT);
     // The scroll bar floats in the pane's margin, beside the content, so it
     // never covers the text: Arabic lines start at the content's edge.
     let width = ui.available_width();
@@ -126,29 +127,27 @@ fn content_under_foot<T>(
     ui.advance_cursor_after_rect(shown);
     ui.add_space(space::SMALL);
     ui.scope(|ui| under(ui, state));
-    let under_used = ui.cursor().top() - shown.bottom();
-    // The foot ends at the pane's bottom.
-    ui.add_space((bottom - foot_height - ui.cursor().top()).max(0.0));
-    let foot_top = ui.cursor().top();
-    ui.add_space(space::SMALL);
-    let (line, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 1.0), Sense::hover());
-    ui.painter().hline(
-        line.x_range(),
-        line.center().y,
-        Stroke::new(1.0, line_color(ui.visuals().dark_mode)),
-    );
-    ui.add_space(space::SMALL);
-    let foot_end = ui.scope(|ui| foot(ui, state)).response.rect.bottom();
-    let used = [under_used, foot_end - foot_top];
-    let changed = used
-        .iter()
-        .zip([under_height, foot_height])
-        .any(|(now, before)| (now - before).abs() > 0.5);
-    if changed {
-        ui.ctx().data_mut(|d| d.insert_temp(heights_id, used));
+    let used = ui.cursor().top() - shown.bottom();
+    if (used - under_height).abs() > 0.5 {
+        ui.ctx().data_mut(|d| d.insert_temp(height_id, used));
         ui.ctx()
-            .request_discard("the details' facts, tags or foot changed height");
+            .request_discard("the details' facts or tags changed height");
     }
+}
+
+/// The row of the pane's actions: Back first when `back`, while the
+/// details cover the list, then what `add` adds. It is as tall as the
+/// buttons from the start, so Back sits on their line. Back's response,
+/// when it shows.
+fn actions_row(ui: &mut Ui, back: bool, add: impl FnOnce(&mut Ui)) -> Option<egui::Response> {
+    row_of(ui, BUTTON_HEIGHT, |ui| {
+        let back = back.then(|| {
+            let size = Vec2::splat(30.0);
+            icon_button_ex(ui, Icon::Back, &t!("details-close"), size, 20.0, None, None)
+        });
+        add(ui);
+        back
+    })
 }
 
 /// Between two facts of the details, and on a list row's second line.
@@ -216,7 +215,7 @@ fn reading_text(ui: &mut Ui, text: &str) {
     });
 }
 
-/// How tall the actions under the content are.
+/// How tall the actions at the pane's top are.
 const BUTTON_HEIGHT: f32 = 34.0;
 
 /// The main button's word is cut no shorter than this.
@@ -547,33 +546,15 @@ impl App {
             self.empty_details(ui);
             return;
         };
-        // Back, while the details cover the list. The copied content comes
-        // first, right under it one line of facts and the tags, and at the
-        // pane's foot what you can do with it.
-        if closeable {
-            row(ui, |ui| {
-                if icons::icon_button_ex(
-                    ui,
-                    Icon::Back,
-                    &t!("details-close"),
-                    Vec2::splat(30.0),
-                    20.0,
-                    None,
-                    None,
-                )
-                .clicked()
-                {
-                    self.details_open = false;
-                }
-            });
-        }
-        ui.add_space(space::SMALL);
-        content_under_foot(
+        // At the top what you can do with it, after Back while the details
+        // cover the list; under that the copied content, and right under
+        // it one line of facts and the tags.
+        actions_over_content(
             ui,
             self,
+            |ui, app| app.details_actions(ui, &it, closeable),
             |ui, app| app.details_content(ui, &it),
             |ui, app| app.facts_and_tags(ui, &it),
-            |ui, app| app.details_actions(ui, &it),
         );
     }
 
@@ -688,10 +669,10 @@ impl App {
         }
     }
 
-    /// The pane's foot: the actions in one group, the main one first and
-    /// Delete last.
-    fn details_actions(&mut self, ui: &mut Ui, it: &Item) {
-        row(ui, |ui| {
+    /// The actions at the pane's top, in one group: Back first when
+    /// `closeable`, then the main one, and Delete last.
+    fn details_actions(&mut self, ui: &mut Ui, it: &Item, closeable: bool) {
+        let back = actions_row(ui, closeable, |ui| {
             let keys = self.cfg.keys.clone();
             let ways = self.ways_to_copy(it);
             // The main button leaves the buttons after it the room they
@@ -749,6 +730,9 @@ impl App {
                     .request_discard("the buttons after Copy changed width");
             }
         });
+        if back.is_some_and(|back| back.clicked()) {
+            self.details_open = false;
+        }
     }
 
     /// Under the content: one line of facts, then the tags.
@@ -971,47 +955,73 @@ mod tests {
         assert_eq!(rest.width(), LIST_LEAST_WIDTH, "{pane:?}");
     }
 
-    /// Where the pane's parts are with `lines` lines of content: where the
-    /// content's last line ends (below the pane when it doesn't fit), the
-    /// facts, the tags, the actions row, and the pane's bottom.
+    /// Where the pane's parts are: the pane, the room inside its margin,
+    /// Back when it shows, the main button (a stand-in as tall), where the
+    /// content starts and where its last line ends (below the pane when it
+    /// doesn't fit), the facts and the tags.
     struct Parts {
+        pane: Rect,
+        inside: Rect,
+        back: Option<Rect>,
+        main: Rect,
+        content_top: f32,
         content_end: f32,
         facts: Rect,
         tags: Rect,
-        actions: Rect,
-        bottom: f32,
     }
 
-    fn parts_with(lines: usize) -> Parts {
+    /// The pane in a window of the app's first size, with `lines` lines of
+    /// content and Back when `back`. With `to_end`, the content is scrolled
+    /// to its end.
+    fn parts_with(lines: usize, back: bool, to_end: bool) -> Parts {
         let ctx = egui::Context::default();
         let mut parts = Parts {
+            pane: Rect::NOTHING,
+            inside: Rect::NOTHING,
+            back: None,
+            main: Rect::NOTHING,
+            content_top: 0.0,
             content_end: 0.0,
             facts: Rect::NOTHING,
             tags: Rect::NOTHING,
-            actions: Rect::NOTHING,
-            bottom: 0.0,
         };
-        // The heights under the content are the last frame's: the first
-        // frames find them.
-        for _ in 0..3 {
-            let mut output = ctx.run_ui(input(Vec2::new(480.0, 600.0)), |ui| {
-                parts.bottom = ui.max_rect().bottom();
-                content_under_foot(
-                    ui,
-                    &mut parts,
-                    |ui, parts| {
-                        for line in 0..lines {
-                            ui.label(format!("Line {line}"));
-                        }
-                        parts.content_end = ui.min_rect().bottom();
-                    },
-                    |ui, parts| {
-                        parts.facts = ui.label("Today, 10:30").rect;
-                        ui.add_space(space::SMALL);
-                        parts.tags = ui.button("Add a tag").rect;
-                    },
-                    |ui, parts| parts.actions = ui.button("Copy").rect,
-                );
+        let window = Vec2::from(crate::app::WINDOW_SIZE);
+        // The height under the content is the last frame's, and a scroll
+        // moves the content in the frame after it: the first frames find
+        // them.
+        for _ in 0..4 {
+            let mut output = ctx.run_ui(input(window), |ui| {
+                let pane = details_panel(ui, |ui| {
+                    parts.inside = ui.max_rect();
+                    actions_over_content(
+                        ui,
+                        &mut parts,
+                        |ui, parts| {
+                            let size = Vec2::new(120.0, BUTTON_HEIGHT);
+                            let shown = actions_row(ui, back, |ui| {
+                                parts.main = ui.add_sized(size, egui::Button::new("Copy")).rect;
+                            });
+                            parts.back = shown.map(|back| back.rect);
+                        },
+                        |ui, parts| {
+                            parts.content_top = ui.cursor().top();
+                            for line in 0..lines {
+                                ui.label(format!("Line {line}"));
+                            }
+                            parts.content_end = ui.min_rect().bottom();
+                            if to_end {
+                                let at_once = egui::style::ScrollAnimation::none();
+                                ui.scroll_to_cursor_animation(Some(Align::BOTTOM), at_once);
+                            }
+                        },
+                        |ui, parts| {
+                            parts.facts = ui.label("Today, 10:30").rect;
+                            ui.add_space(space::SMALL);
+                            parts.tags = ui.button("Add a tag").rect;
+                        },
+                    );
+                });
+                parts.pane = pane.response.rect;
             });
             output.textures_delta.clear();
         }
@@ -1031,9 +1041,12 @@ mod tests {
                 // Inside the pane's margin, as its frame sets it.
                 pane = ui.max_rect().shrink(20.0);
                 ui.scope_builder(egui::UiBuilder::new().max_rect(pane), |ui| {
-                    content_under_foot(
+                    actions_over_content(
                         ui,
                         &mut (),
+                        |ui, _| {
+                            let _ = ui.button("Copy");
+                        },
                         |ui, _| {
                             content = ui.max_rect();
                             for line in 0..300 {
@@ -1042,9 +1055,6 @@ mod tests {
                         },
                         |ui, _| {
                             ui.label("Today, 10:30");
-                        },
-                        |ui, _| {
-                            let _ = ui.button("Copy");
                         },
                     );
                 });
@@ -1179,48 +1189,94 @@ mod tests {
         }
     }
 
-    /// Short content has its facts right under it; long content scrolls,
-    /// and its facts and tags stay in the pane above the actions. The
-    /// actions row ends at the pane's bottom, in one place for both.
-    #[test]
-    fn the_facts_and_tags_follow_the_content_and_the_actions_stay() {
-        let short = parts_with(1);
-        let long = parts_with(300);
+    /// The actions row starts the pane, in its first 20 points: Back at
+    /// the reading start when it shows, then the main button on its line.
+    /// The content starts 12 points under the row, and the facts and tags
+    /// come right under it. Long content scrolls under the row: the row,
+    /// the facts and the tags keep their places.
+    fn check_the_actions_lead_and_stay() {
+        let rtl = i18n::rtl();
         // The gap between two parts of a pane, as between the facts and
         // the tags.
         let between = space::SMALL + egui::Style::default().spacing.item_spacing.y;
-        let gap = short.facts.top() - short.content_end;
-        assert!(
-            (gap - between).abs() <= 0.5,
-            "the facts start right under the content: {gap}"
-        );
-        assert!(short.tags.top() > short.facts.bottom());
-        assert!(
-            short.actions.top() - short.tags.bottom() > 300.0,
-            "the actions stay at the bottom: {:?} {:?}",
-            short.tags,
-            short.actions
-        );
-        assert!(long.content_end > long.bottom, "the content scrolls");
-        for part in [long.facts, long.tags] {
+        for back in [false, true] {
+            let short = parts_with(1, back, false);
+            let long = parts_with(300, back, false);
+            let scrolled = parts_with(300, back, true);
+            let (pane, inside, main) = (short.pane, short.inside, short.main);
+            let first = short.back.unwrap_or(main);
+            assert_eq!(short.back.is_some(), back);
+            for part in short.back.iter().chain([&main]) {
+                let top = part.top() - pane.top();
+                assert!((0.0..=20.0).contains(&top), "{back}: {part:?} in {pane:?}");
+            }
+            // The row from the reading start, Back first.
+            let start = if rtl {
+                inside.right() - first.right()
+            } else {
+                first.left() - inside.left()
+            };
+            assert!(start.abs() <= 0.5, "{back}: {first:?} in {inside:?}");
+            if let Some(back) = short.back {
+                let after = if rtl {
+                    main.right() < back.left()
+                } else {
+                    main.left() > back.right()
+                };
+                assert!(after, "{main:?} after {back:?}");
+                assert!((main.center().y - back.center().y).abs() <= 0.5);
+            }
+            let gap = short.content_top - main.bottom();
             assert!(
-                part.bottom() < long.actions.top() && part.top() > 0.0,
-                "{part:?} in the pane above {:?}",
-                long.actions
+                (gap - space::MEDIUM).abs() <= 0.5,
+                "{back}: the content starts 12 under the row: {gap}"
             );
+            let gap = short.facts.top() - short.content_end;
+            assert!(
+                (gap - between).abs() <= 0.5,
+                "{back}: the facts start right under the content: {gap}"
+            );
+            assert!(short.tags.top() > short.facts.bottom());
+            // Long content runs past the pane's end and scrolls; its facts
+            // and tags stay in the pane, under it.
+            assert!(
+                long.content_end > pane.bottom(),
+                "{back}: the content is long"
+            );
+            assert!(long.facts.top() > main.bottom() && long.tags.bottom() <= pane.bottom());
+            assert!(
+                scrolled.content_top < long.content_top - 1000.0
+                    && scrolled.content_end <= scrolled.facts.top(),
+                "{back}: the content scrolls to its end: {} to {}",
+                scrolled.content_top,
+                scrolled.content_end
+            );
+            for parts in [&long, &scrolled] {
+                assert_eq!(parts.main, main, "{back}: the main button stays");
+                assert_eq!(parts.back, short.back, "{back}: Back stays");
+            }
+            assert_eq!((scrolled.facts, scrolled.tags), (long.facts, long.tags));
         }
-        assert!(long.facts.top() < long.tags.top());
-        assert_eq!(
-            short.actions, long.actions,
-            "the actions row stays in one place"
+    }
+
+    #[test]
+    fn the_actions_lead_the_pane_and_stay() {
+        check_the_actions_lead_and_stay();
+    }
+
+    #[test]
+    fn the_actions_lead_the_pane_and_stay_right_to_left() {
+        crate::i18n::passes_in_arabic(
+            module_path!(),
+            "the_actions_lead_the_pane_and_stay_in_arabic",
         );
-        for parts in [short, long] {
-            let end = parts.actions.bottom();
-            assert!(
-                (end - parts.bottom).abs() <= 0.5,
-                "{end} at {}",
-                parts.bottom
-            );
+    }
+
+    #[test]
+    #[ignore = "run in a process of its own by the_actions_lead_the_pane_and_stay_right_to_left"]
+    fn the_actions_lead_the_pane_and_stay_in_arabic() {
+        if crate::i18n::arabic_run() {
+            check_the_actions_lead_and_stay();
         }
     }
 }
