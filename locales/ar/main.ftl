@@ -225,6 +225,7 @@ item-copy = نسخ
 item-open-details = فتح التفاصيل
 item-paste-into = لصق في { $app }
 item-paste = لصق
+item-paste-unavailable = افتح هذه النافذة باختصارك من برنامج آخر لتلصق فيه
 item-paste-plain = لصق كنص عادي
 item-copy-only = نسخ فقط
 item-copy-plain = نسخ كنص عادي

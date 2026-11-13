@@ -217,14 +217,29 @@ pub(crate) fn cut_line(
 /// A hover tooltip that wraps Arabic in reading order.
 pub(crate) fn tip(resp: egui::Response, text: &str) -> egui::Response {
     if bidi::has_rtl(text) {
-        let text = text.to_string();
-        resp.on_hover_ui(move |ui| {
-            ui.set_max_width(340.0);
-            let c = ui.visuals().text_color();
-            bidi::paragraph(ui, &text, FontId::proportional(size::CONTROL), c);
-        })
+        resp.on_hover_ui(tip_text(text))
     } else {
         resp.on_hover_text(text)
+    }
+}
+
+/// `tip` for a widget that can't be used now, which egui's own tooltip
+/// leaves out.
+pub(crate) fn tip_when_unavailable(resp: egui::Response, text: &str) -> egui::Response {
+    if bidi::has_rtl(text) {
+        resp.on_disabled_hover_ui(tip_text(text))
+    } else {
+        resp.on_disabled_hover_text(text)
+    }
+}
+
+/// A tooltip's text, wrapped in reading order.
+fn tip_text(text: &str) -> impl FnOnce(&mut Ui) {
+    let text = text.to_string();
+    move |ui| {
+        ui.set_max_width(340.0);
+        let c = ui.visuals().text_color();
+        bidi::paragraph(ui, &text, FontId::proportional(size::CONTROL), c);
     }
 }
 
@@ -503,7 +518,8 @@ pub(super) fn check_row(ui: &mut Ui, text: &str, checked: bool) -> egui::Respons
 }
 
 /// A menu entry: its text at the reading start and its keys at the far end.
-/// `color` tints the text, as red does for Delete.
+/// `color` tints the text, as red does for Delete. In a disabled `ui` it is
+/// grayed out, and screen readers hear that it can't be used.
 pub(super) fn menu_entry(
     ui: &mut Ui,
     text: &str,
@@ -513,7 +529,7 @@ pub(super) fn menu_entry(
 ) -> egui::Response {
     let (rect, resp) =
         ui.allocate_exact_size(Vec2::new(ui.available_width(), MENU_ROW), Sense::click());
-    resp.widget_info(|| egui::WidgetInfo::labeled(egui::Role::MenuItem, true, text));
+    resp.widget_info(|| egui::WidgetInfo::labeled(egui::Role::MenuItem, ui.is_enabled(), text));
     let v = ui.visuals();
     // The keyboard moves through a menu by focus.
     let lit = resp.hovered() || resp.has_focus();

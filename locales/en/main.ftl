@@ -209,6 +209,7 @@ item-copy = Copy
 item-open-details = Open details
 item-paste-into = Paste into { $app }
 item-paste = Paste
+item-paste-unavailable = Open this window with your shortcut from another program to paste into it
 item-paste-plain = Paste as plain text
 item-copy-only = Copy only
 item-copy-plain = Copy as plain text
