@@ -807,10 +807,6 @@ pub struct App {
     details_open: bool,
     /// Cards per row in the grid, from the last frame, for ↑ ↓ navigation.
     grid_cols: usize,
-    /// How many cards a row of the grid holds at the window's width, from
-    /// the last frame, whatever the view: a search with fewer strong
-    /// matches shows its weaker ones at once (D74).
-    cards_in_a_row: usize,
     /// With cards as tall as their content, or with weaker matches on rows
     /// of their own, where each card was drawn last, from the grid's top
     /// left, for the arrow keys. Empty otherwise.
@@ -1030,7 +1026,6 @@ impl App {
             popup_moving: false,
             details_open: false,
             grid_cols: 1,
-            cards_in_a_row: view::cards_per_row(WINDOW_SIZE[0] - view::GRID_SIDES),
             grid_places: Vec::new(),
             card_heights: view::CardHeights::default(),
             update: UpdateState::Idle,
@@ -2515,14 +2510,9 @@ impl App {
     fn show_results(&mut self, (hits, counts): search::Found) {
         self.searching = false;
         self.search_counts = counts;
-        self.weaker_link
-            .results(self.query.trim(), &hits, self.cards_in_a_row);
-        // Weaker matches wait under their link, unless it is open.
-        if self.weaker_folded() {
-            (self.results, self.weaker) = hits.into_iter().partition(|h| !h.weak);
-        } else {
-            (self.results, self.weaker) = (hits, Vec::new());
-        }
+        // Weaker matches wait under their link, unless it was opened for
+        // this search text.
+        (self.results, self.weaker) = self.weaker_link.fold(self.query.trim(), hits);
         let still_there = self
             .selected
             .is_some_and(|id| self.results.iter().any(|h| h.id == id));
@@ -3095,56 +3085,35 @@ use background::{Background, Done};
 use settings::{PendingSend, ServerEditor, SettingsPage};
 use view::{add_fonts, apply_theme, looks_like_code, set_accent, style};
 
-/// Whether a search's weaker matches show at once, below the strong ones:
-/// when the strong ones don't fill a row of `row` cards (D74).
-fn weaker_at_once(hits: &[Hit], row: usize) -> bool {
-    let strong = hits.iter().filter(|h| !h.weak).count();
-    strong < row && strong < hits.len()
-}
-
 /// Whether the link between the strong and the weaker matches is open, so
-/// the weaker ones show below it. Closed by default; open by default when
-/// the strong matches don't fill a row of cards. A click opens or closes
-/// it, and that choice holds while the search text stays the same.
+/// the weaker ones show below it. It starts closed for every search text,
+/// however few the strong matches are. A click opens or closes it, and
+/// that choice holds while the search text stays the same.
 #[derive(Default)]
 struct WeakerLink {
-    /// The search text the rest is for; another one starts from the default.
-    query: Option<String>,
-    open: bool,
-    /// The user opened or closed the link.
-    chosen: bool,
+    /// The search text it is open for; `None` while it is closed.
+    open_for: Option<String>,
 }
 
 impl WeakerLink {
-    /// New results `hits` for `query`, with `row` cards in a row of the
-    /// grid. Open by default, the link stays open for the rest of this
-    /// search, also when later results have more strong matches.
-    fn results(&mut self, query: &str, hits: &[Hit], row: usize) {
-        self.start(query);
-        if !self.chosen && weaker_at_once(hits, row) {
-            self.open = true;
+    /// New results `hits` for `query`: the ones to show, and the weaker
+    /// ones that wait under the closed link. Another search text closes
+    /// it, also when the one it was opened for comes back later.
+    fn fold(&mut self, query: &str, hits: Vec<Hit>) -> (Vec<Hit>, Vec<Hit>) {
+        if self.is_open(query) {
+            return (hits, Vec::new());
         }
+        self.open_for = None;
+        hits.into_iter().partition(|h| !h.weak)
     }
 
     fn is_open(&self, query: &str) -> bool {
-        self.open && self.query.as_deref() == Some(query)
+        self.open_for.as_deref() == Some(query)
     }
 
     /// The user opens the link for `query`, or closes it.
     fn choose(&mut self, query: &str, open: bool) {
-        self.start(query);
-        self.open = open;
-        self.chosen = true;
-    }
-
-    /// Back to the default for a new search text.
-    fn start(&mut self, query: &str) {
-        if self.query.as_deref() != Some(query) {
-            *self = Self {
-                query: Some(query.to_string()),
-                ..Self::default()
-            };
-        }
+        self.open_for = open.then(|| query.to_string());
     }
 }
 
@@ -3164,41 +3133,42 @@ mod tests {
             .collect()
     }
 
+    /// How many results show and how many wait under the link.
+    fn shown_and_folded((shown, folded): (Vec<Hit>, Vec<Hit>)) -> (usize, usize) {
+        (shown.len(), folded.len())
+    }
+
+    /// Two strong matches and 14 weaker ones, fewer strong ones than a row
+    /// of 4 cards holds, start closed: the two show, the 14 wait under the
+    /// link.
     #[test]
-    fn weaker_matches_show_at_once_when_the_strong_ones_dont_fill_a_row() {
-        assert!(weaker_at_once(&hits(2, 14), 4));
-        // A full row of strong matches keeps the weaker ones folded.
-        assert!(!weaker_at_once(&hits(4, 14), 4));
-        // Nothing weaker to show.
-        assert!(!weaker_at_once(&hits(2, 0), 4));
-        assert!(!weaker_at_once(&hits(0, 0), 4));
+    fn two_strong_and_14_weaker_matches_start_closed() {
+        let mut link = WeakerLink::default();
+        let (shown, folded) = link.fold("total", hits(2, 14));
+        assert!(shown.iter().all(|h| !h.weak) && folded.iter().all(|h| h.weak));
+        assert_eq!((shown.len(), folded.len()), (2, 14));
+        assert!(!link.is_open("total"));
     }
 
     #[test]
     fn the_weaker_matches_link_keeps_the_choice_for_one_search_text() {
         let mut link = WeakerLink::default();
-        // Open by default when the strong matches don't fill a row of 4.
-        link.results("cat", &hits(2, 14), 4);
-        assert!(link.is_open("cat"));
-        // Closed by default otherwise.
-        link.results("dog", &hits(4, 14), 4);
-        assert!(!link.is_open("dog"));
+        // A click opens it; more results for the same text show their
+        // weaker matches too.
+        link.fold("cat", hits(2, 14));
+        link.choose("cat", true);
+        assert_eq!(shown_and_folded(link.fold("cat", hits(1, 14))), (15, 0));
+        // A new search text starts closed, also when the old one comes
+        // back.
+        assert_eq!(shown_and_folded(link.fold("cats", hits(2, 14))), (2, 14));
+        assert_eq!(shown_and_folded(link.fold("cat", hits(2, 14))), (2, 14));
         // A click closes an open link; more results for the same text
         // leave it closed.
-        link.results("cat", &hits(2, 14), 4);
+        link.choose("cat", true);
         link.choose("cat", false);
-        link.results("cat", &hits(1, 14), 4);
-        assert!(!link.is_open("cat"));
-        // A new search text starts from the default again, also when it
-        // comes back.
-        link.results("cats", &hits(4, 14), 4);
-        assert!(!link.is_open("cats"));
-        link.results("cat", &hits(2, 14), 4);
-        assert!(link.is_open("cat"));
-        // A click opens a closed one, until the text changes.
-        link.results("dog", &hits(4, 14), 4);
+        assert_eq!(shown_and_folded(link.fold("cat", hits(2, 14))), (2, 14));
+        // The choice is for its own search text only.
         link.choose("dog", true);
-        link.results("dog", &hits(4, 14), 4);
         assert!(link.is_open("dog"));
         assert!(!link.is_open("dogs"));
     }

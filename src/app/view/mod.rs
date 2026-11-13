@@ -45,9 +45,7 @@ use widgets::*;
 
 // The ones the rest of the app uses.
 pub(crate) use details::reveal;
-pub(crate) use grid::{
-    cards_per_row, CardHeights, CARD_CHIP_PADDING, CHIP_SIDE, GRID_GAP, GRID_SIDES,
-};
+pub(crate) use grid::{CardHeights, CARD_CHIP_PADDING, CHIP_SIDE, GRID_GAP};
 pub(crate) use items::looks_like_code;
 pub(crate) use messages::{Question, UpdateParts};
 pub(crate) use theme::{
@@ -64,9 +62,6 @@ pub(crate) use widgets::{
 impl App {
     /// Everything below the top bar: list, grid or list + details, per the view mode.
     fn main_area(&mut self, ui: &mut Ui) {
-        // A row of the grid at this width, also in the other views, so a
-        // search shows the same results in each.
-        self.cards_in_a_row = cards_per_row(ui.available_width() - GRID_SIDES);
         let fill = ui.visuals().panel_fill;
         // The details at the reading end: always in Detail view, and while
         // open over the grid or the list, with a Back button there. The list

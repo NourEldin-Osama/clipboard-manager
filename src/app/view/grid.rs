@@ -6,13 +6,9 @@ use crate::app::programs::Program;
 /// Between cards, across and down.
 pub(crate) const GRID_GAP: f32 = 14.0;
 
-/// The room beside the cards in the main area: the grid's margins and the
-/// place it keeps for the scroll bar.
-pub(crate) const GRID_SIDES: f32 = 16.0 + 4.0 + 12.0;
-
 /// How many cards fit side by side in `width`, each at least 240 points
 /// wide.
-pub(crate) fn cards_per_row(width: f32) -> usize {
+fn cards_per_row(width: f32) -> usize {
     ((width + GRID_GAP) / (240.0 + GRID_GAP)).floor().max(1.0) as usize
 }
 
