@@ -49,7 +49,7 @@ public feature descriptions only, and it shares no code or assets with Planck an
 | **Privacy** | Nothing leaves your machine, and on Windows your history is encrypted on disk with a key tied to your Windows account. Clipboard content that password managers mark as sensitive (`ExcludeClipboardContentFromMonitorProcessing`) is never recorded. Neither is anything that looks like an API key, token, private key or random password (on by default; you can turn it off in *Settings → Privacy*, or click **Save anyway** on the message when it guessed wrong). You can pause recording at any time. |
 | **Smart ranking** | Image and text similarities are each scaled by their best match before being merged, because text-to-image similarity scores are naturally much lower than text-to-text ones. Without this, photos would be buried under text. |
 | **Look and feel** | A list grouped by Pinned / Today / Yesterday / This week, with kind icons, thumbnails, matched words highlighted and relevance bars while searching. Three layouts: **Grid** (cards), **List** (full-width rows) and **Detail** (list plus a details pane with a large preview), switched beside the search box with the Grid and List switch and the details pane button, which also opens the pane beside the grid. Hovering an item shows delete, pin, copy and open-details buttons (the card's content stays put). Light and dark themes, five accent colours, comfortable or compact density. |
-| **Settings that explain themselves** | Seven pages down the side: General, Appearance, Clipboard, Privacy, AI & Search, Shortcuts and pasting, and About. A short line under each setting says what it does, and its ℹ button explains the rest. *Privacy* shows where each kind of data goes. Settings you've changed are highlighted, each with a one-click reset. Changes apply instantly; a server's settings wait for **Save**. |
+| **Settings that explain themselves** | Eight pages down the side: General, Appearance, Clipboard, Privacy, AI & Search, Servers, Shortcuts and pasting, and About. A short line under each setting says what it does, and where there is more to say, an ℹ button explains it. *Privacy* shows where each kind of data goes. Settings you've changed are highlighted, each with a one-click reset. Changes apply instantly; a server's settings wait for **Save**. |
 | **Getting started, and what's new** | A new install shows a short checklist that ticks itself as you copy, paste, pin and, if you like, turn on search by meaning. After an update, the first window says so, and *What's new* shows the notes, built into the app. |
 
 The only network access is the servers you add, models.dev when you click **Fill in details**, and the update check
@@ -115,7 +115,7 @@ Searching by meaning uses an embedding model on a server: one on this PC (llama.
 the bundled Sentence Transformers server) or elsewhere (OpenRouter, or a server on your network).
 
 ### Add a server and its models
-1. **⚙ Settings → AI & Search → Servers → Add server**.
+1. **⚙ Settings → Servers → Add server**.
 2. Pick its type. The usual address fills in: llama.cpp `:8080`, Ollama `:11434`, LM Studio `:1234`, vLLM `:8000`,
    Unsloth `:8888`, OpenRouter `https://openrouter.ai/api/v1`. Change the port if your server uses another one.
 3. If the server needs a key (for example `llama-server --api-key …`, Unsloth, OpenRouter, or LM Studio with auth
