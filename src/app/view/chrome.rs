@@ -15,8 +15,9 @@ fn short_model_name(name: &str) -> &str {
 }
 
 impl App {
-    /// The search model in use: its name and its server's, as menus show
-    /// them, and its name on the server, which may be long.
+    /// The search model in use: its name as menus show it, its server's
+    /// as a sentence shows it, and its name on the server, which may be
+    /// long.
     fn search_model_names(&self) -> Option<(String, String, String)> {
         let at = self.cfg.search_model?;
         let (server, model) = self.cfg.model(at)?;
@@ -38,7 +39,8 @@ impl App {
             }
             _ => super::settings::model_label(model),
         };
-        Some((name, server.label().to_string(), id))
+        let server = super::settings::server_in_sentence(server);
+        Some((name, server, id))
     }
 
     pub(crate) fn model_status(&self) -> (Color32, String) {
@@ -110,7 +112,7 @@ impl App {
                 t!(
                     "status-model-tip-named",
                     model = bidi::isolate(&id),
-                    server = bidi::isolate(&server)
+                    server = server
                 )
             }
             _ => t!("status-model-tip"),

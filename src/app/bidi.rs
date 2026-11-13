@@ -102,6 +102,14 @@ pub(super) fn isolate(text: &str) -> String {
     format!("{start}{text}{ISOLATE_END}")
 }
 
+/// `text` as a part of a line that reads left to right, whatever its
+/// first letter: an address, a link or a file path. `isolate` takes the
+/// window's direction for a part with no letters, and in Arabic an
+/// address such as `[::1]:8080` then showed its parts out of order.
+pub(crate) fn left_to_right(text: &str) -> String {
+    format!("{LTR_ISOLATE}{text}{ISOLATE_END}")
+}
+
 fn mirror(c: char) -> char {
     match c {
         '(' => ')',
@@ -528,6 +536,59 @@ mod tests {
         assert_eq!(shown(&tagged, false), "#work  ·  بكم مرحبا");
         let skipped = [isolate("من Visual Studio Code"), isolate("sk-…6789")].join(" · ");
         assert_eq!(shown(&skipped, true), "sk-…6789 · Visual Studio Code من");
+    }
+
+    /// Whether `text`, laid out as a label lays it out, shows `value`
+    /// whole: its characters in their own order, left to right, in one
+    /// unbroken run. egui draws a laid-out line in the order of its text.
+    fn shows_whole(text: &str, value: &str) -> bool {
+        job(text, FontId::proportional(size::SMALL), Color32::WHITE)
+            .text
+            .contains(value)
+    }
+
+    /// In Arabic, an address or a file path inside the three messages that
+    /// name one keeps its characters in their own order, left to right,
+    /// in one run. Set apart by its first letter, or not at all, an
+    /// address with no letters such as `[::1]:8080` came apart.
+    fn check_addresses_read_left_to_right() {
+        let path = r"C:\Users\Public\AppData\Roaming\clipboard-manager\data\history.redb.old";
+        for value in ["[::1]:8080", "127.0.0.1:18080", path] {
+            let sentences = [
+                crate::net::ServerError::Unreachable {
+                    url: value.to_string(),
+                    reason: String::new(),
+                }
+                .text(),
+                t!("status-connecting", host = left_to_right(value)),
+                t!("error-history-moved-aside", file = left_to_right(value)),
+            ];
+            for sentence in &sentences {
+                assert!(has_rtl(sentence), "{sentence}");
+                assert!(shows_whole(sentence, value), "{value} in {sentence}");
+            }
+        }
+        let address = "[::1]:8080";
+        for set_apart in [address.to_string(), isolate(address)] {
+            let sentence = t!("status-connecting", host = set_apart);
+            assert!(
+                !shows_whole(&sentence, address),
+                "the test sees the fault: {sentence}"
+            );
+        }
+    }
+
+    #[test]
+    fn addresses_read_left_to_right_in_arabic_sentences() {
+        crate::i18n::passes_in_arabic(module_path!(), "addresses_read_left_to_right_in_arabic");
+    }
+
+    #[test]
+    #[ignore = "run in a process of its own by addresses_read_left_to_right_in_arabic_sentences"]
+    fn addresses_read_left_to_right_in_arabic() {
+        if crate::i18n::arabic_run() {
+            check_addresses_read_left_to_right();
+        }
     }
 
     /// A window with the app's fonts.

@@ -135,7 +135,10 @@ impl App {
             } else {
                 let host = crate::net::host(url);
                 (
-                    t!("settings-data-sent", host = super::bidi::isolate(host)),
+                    t!(
+                        "settings-data-sent",
+                        host = super::bidi::left_to_right(host)
+                    ),
                     warn,
                 )
             }

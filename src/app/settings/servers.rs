@@ -86,6 +86,16 @@ pub(in crate::app) fn model_label(model: &Model) -> String {
     }
 }
 
+/// What a server is called inside a sentence: its name in its own
+/// direction, or for a server without a name its address, left to right.
+pub(in crate::app) fn server_in_sentence(server: &Server) -> String {
+    if server.name.trim().is_empty() {
+        super::bidi::left_to_right(server.label())
+    } else {
+        super::bidi::isolate(server.label())
+    }
+}
+
 /// Whether two server addresses name the same place, with `localhost` as
 /// 127.0.0.1.
 fn same_place(a: &str, b: &str) -> bool {
@@ -514,7 +524,7 @@ fn send_question_row(
             let host = crate::net::host(url);
             let question = t!(
                 "settings-server-send-question",
-                host = super::bidi::isolate(host)
+                host = super::bidi::left_to_right(host)
             );
             super::bidi::paragraph(ui, &question, font.clone(), strong);
         }
@@ -522,7 +532,7 @@ fn send_question_row(
             let host = crate::net::host(url);
             let question = t!(
                 "settings-reader-send-question",
-                host = super::bidi::isolate(host)
+                host = super::bidi::left_to_right(host)
             );
             super::bidi::paragraph(ui, &question, font, strong);
         }
@@ -884,7 +894,7 @@ impl App {
                 t!(
                     "settings-model-on-server",
                     model = super::bidi::isolate(&model_label(m)),
-                    server = super::bidi::isolate(server.label())
+                    server = server_in_sentence(server)
                 )
             })
             .unwrap_or_else(|| t!("settings-model-choose"));
@@ -1227,10 +1237,13 @@ impl App {
                 {
                     t!(
                         "settings-server-remote-http",
-                        host = super::bidi::isolate(host)
+                        host = super::bidi::left_to_right(host)
                     )
                 } else {
-                    t!("settings-server-remote", host = super::bidi::isolate(host))
+                    t!(
+                        "settings-server-remote",
+                        host = super::bidi::left_to_right(host)
+                    )
                 };
                 warning(ui, &text);
             }
@@ -1471,7 +1484,7 @@ impl App {
                 if editor.deleting {
                     let question = t!(
                         "settings-server-delete-question",
-                        name = super::bidi::isolate(editor.server.label())
+                        name = server_in_sentence(&editor.server)
                     );
                     lbl(ui, &question, size::CONTROL, strong);
                     if ui
@@ -1941,6 +1954,25 @@ mod tests {
         assert_eq!(model_label(&model), "qwen3-embedding-0.6b");
         model.name = "Qwen3 Embedding".into();
         assert_eq!(model_label(&model), "Qwen3 Embedding");
+    }
+
+    /// In a sentence, a server without a name goes by its address, which
+    /// reads left to right; a name keeps its own direction.
+    #[test]
+    fn a_server_in_a_sentence_reads_in_its_own_direction() {
+        let mut server = Server {
+            base_url: "http://[::1]:8080/v1".into(),
+            ..Default::default()
+        };
+        assert_eq!(
+            server_in_sentence(&server),
+            super::bidi::left_to_right("[::1]:8080")
+        );
+        server.name = "خادم العمل".into();
+        assert_eq!(
+            server_in_sentence(&server),
+            super::bidi::isolate("خادم العمل")
+        );
     }
 
     #[test]

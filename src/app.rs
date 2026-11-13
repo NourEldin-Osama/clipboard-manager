@@ -1103,11 +1103,12 @@ impl App {
             app.save_config();
         }
         if let Some(aside) = app.library.store().moved_aside.clone() {
-            let message = log_error!(
-                "error-history-moved-aside",
-                file = aside.display().to_string()
-            );
-            app.set_error(message);
+            let file = aside.display().to_string();
+            // The log gets the path as it is; the window sets it apart, so
+            // it reads left to right inside an Arabic sentence too.
+            log_error!("error-history-moved-aside", file = file.as_str());
+            let file = bidi::left_to_right(&file);
+            app.set_error(t!("error-history-moved-aside", file = file));
         }
         let win = app.win.clone();
         app.instance.on_show_request(move || win.show());
@@ -3074,7 +3075,7 @@ fn write_clipboard(
 }
 
 mod background;
-mod bidi;
+pub(crate) mod bidi;
 mod icons;
 mod programs;
 mod settings;
