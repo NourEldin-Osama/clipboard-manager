@@ -610,6 +610,7 @@ settings-meaning-none = لا يوجد نموذج للبحث بعد
 settings-meaning-unavailable = لا يمكن استخدام نموذج البحث: تحقق من خادمه
 settings-meaning-section = البحث بالمعنى
 settings-meaning-switch = استخدام البحث بالمعنى
+settings-advanced = خيارات متقدمة
 settings-read-section = قراءة النص في الصور
 settings-servers-section = الخوادم المحفوظة
 settings-read-engine = يقرأ النص

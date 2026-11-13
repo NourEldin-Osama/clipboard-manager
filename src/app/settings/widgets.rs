@@ -396,6 +396,81 @@ pub(super) fn nested<R>(ui: &mut Ui, add: impl FnOnce(&mut Ui) -> R) -> R {
     inner
 }
 
+/// How big the arrow of the Advanced row is.
+const ADVANCED_ARROW: f32 = 16.0;
+
+/// The Advanced row, closed until it is clicked, and the rows `add` draws
+/// under it in the same card while it is open. The row is its name in the
+/// rows' name style and, at the far end, the menus' arrow: pointing down
+/// while open, to the reading end while closed. A click, or Enter or Space
+/// while it has the keyboard focus, opens or closes it, and screen readers
+/// hear a button that says whether it is open. It starts closed when the
+/// app starts and stays as it was left while the app runs; the settings
+/// don't keep it. `id_salt` tells one Advanced row from another.
+pub(super) fn advanced(ui: &mut Ui, id_salt: &str, add: impl FnOnce(&mut Ui)) {
+    let id = egui::Id::unique(("settings-advanced", id_salt));
+    let open_id = id.with("open");
+    let mut open = ui
+        .ctx()
+        .data(|d| d.get_temp::<bool>(open_id))
+        .unwrap_or(false);
+    let name = t!("settings-advanced");
+    card_row(ui, false, |ui| {
+        let strong = ui.visuals().strong_text_color();
+        let galley = txt(&name, size::BODY, Some(strong)).into_galley(
+            ui,
+            Some(egui::TextWrapMode::Extend),
+            f32::INFINITY,
+            egui::FontSelection::Default,
+        );
+        let (content, _) = ui.allocate_exact_size(
+            Vec2::new(ui.available_width(), galley.size().y),
+            Sense::hover(),
+        );
+        // The whole row answers, a little inside its edges.
+        let place = content.expand(space::SMALL);
+        let resp = ui.interact(place, id, Sense::click());
+        if resp.clicked() {
+            open = !open;
+        }
+        resp.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, ui.is_enabled(), &name));
+        ui.ctx()
+            .accesskit_node_builder(resp.id, |node| node.set_expanded(open));
+        let v = ui.visuals();
+        if resp.hovered() {
+            ui.painter().rect_filled(
+                place,
+                CornerRadius::same(radius::MEDIUM),
+                v.widgets.hovered.weak_bg_fill,
+            );
+        }
+        let text_at = flip(content, Rect::from_min_size(content.min, galley.size())).min;
+        ui.painter().galley(text_at, galley, strong);
+        let arrow = flip(
+            content,
+            Rect::from_center_size(
+                Pos2::new(content.right() - ADVANCED_ARROW / 2.0, content.center().y),
+                Vec2::splat(ADVANCED_ARROW),
+            ),
+        );
+        let color = if resp.hovered() {
+            v.strong_text_color()
+        } else {
+            v.text_color()
+        };
+        if open {
+            icons::paint(ui.painter(), arrow, Icon::Dropdown, color);
+        } else {
+            icons::paint_toward_end(ui.painter(), arrow, Icon::Dropdown, color);
+        }
+        let _ = resp.on_hover_cursor(egui::CursorIcon::PointingHand);
+    });
+    ui.ctx().data_mut(|d| d.insert_temp(open_id, open));
+    if open {
+        add(ui);
+    }
+}
+
 /// One setting as a row of its card: its name, a short gray line under it
 /// and an info button with the details, and the control at the far edge.
 /// A value changed from its default tints the row and offers a reset; the
@@ -2162,6 +2237,209 @@ mod tests {
     fn a_long_name_keeps_its_control_beside_it_in_arabic() {
         if arabic_run() {
             check_long_name_keeps_its_control_beside_it();
+        }
+    }
+
+    /// What a frame of a card with How close the meaning must be and the
+    /// Advanced row with Model under it shows: the inside of the card, the
+    /// Advanced row's button and whether screen readers hear it open, the
+    /// lines between rows, its arrow with the place in its texture of the
+    /// arrow's top left corner, and whether Model's gray line is painted.
+    struct AdvancedFrame {
+        inside: Rect,
+        button: Rect,
+        expanded: Option<bool>,
+        lines: Vec<f32>,
+        arrow: Rect,
+        arrow_top_left: Pos2,
+        model: bool,
+    }
+
+    fn advanced_frame(ctx: &egui::Context, events: Vec<egui::Event>) -> AdvancedFrame {
+        let mut inside = Rect::NOTHING;
+        let hint = t!("settings-search-model-hint");
+        let input = egui::RawInput {
+            events,
+            ..Default::default()
+        };
+        let output = frame(ctx, input, |ui| {
+            in_column(ui, |ui| {
+                card(ui, |ui| {
+                    // A row with no control, so the keyboard comes to the
+                    // Advanced row first.
+                    plain_setting(
+                        ui,
+                        &t!("settings-strictness"),
+                        &t!("settings-strictness-hint"),
+                        "",
+                        |_| {},
+                    );
+                    advanced(ui, "test", |ui| {
+                        plain_setting(ui, &t!("settings-model"), &hint, "", |_| {});
+                    });
+                    inside = ui.min_rect();
+                });
+            });
+        });
+        let advanced = t!("settings-advanced");
+        let update = output
+            .platform_output
+            .accesskit_update
+            .as_ref()
+            .expect("a tree");
+        let (bounds, expanded) = update
+            .nodes
+            .iter()
+            .map(|(_, node)| node)
+            .find(|node| {
+                node.role() == egui::accesskit::Role::Button
+                    && node.label() == Some(advanced.as_str())
+            })
+            .map(|node| (node.bounds().expect("a place"), node.is_expanded()))
+            .expect("the Advanced row");
+        let button = Rect::from_min_max(
+            Pos2::new(bounds.x0 as f32, bounds.y0 as f32),
+            Pos2::new(bounds.x1 as f32, bounds.y1 as f32),
+        );
+        let mut lines = Vec::new();
+        let mut arrows = Vec::new();
+        // Model's name and gray line are the only text under the row.
+        let mut model = false;
+        let color = line_color(false);
+        for clipped in &output.shapes {
+            match &clipped.shape {
+                egui::Shape::LineSegment { points, stroke } if stroke.color == color => {
+                    lines.push(points[0].y);
+                }
+                egui::Shape::Mesh(mesh)
+                    if (mesh.calc_bounds().width() - ADVANCED_ARROW).abs() < 0.01 =>
+                {
+                    arrows.push(mesh.clone());
+                }
+                egui::Shape::Text(text) => {
+                    model |= text.pos.y > button.bottom();
+                }
+                _ => {}
+            }
+        }
+        lines.sort_by(f32::total_cmp);
+        assert_eq!(arrows.len(), 1, "one arrow");
+        let arrow = arrows[0].calc_bounds();
+        let arrow_top_left = arrows[0]
+            .vertices
+            .iter()
+            .find(|vertex| (vertex.pos - arrow.left_top()).length() < 0.01)
+            .expect("a corner")
+            .uv;
+        AdvancedFrame {
+            inside,
+            button,
+            expanded,
+            lines,
+            arrow,
+            arrow_top_left,
+            model,
+        }
+    }
+
+    /// The Advanced row: closed at first, the card paints no Model row and
+    /// ends with it, and its arrow at the row's far end points to the
+    /// reading end; a click opens it, its arrow points down, and the Model
+    /// row follows under a line; Space while it has the keyboard focus
+    /// closes it again.
+    fn check_advanced_row() {
+        let ctx = window();
+        crate::app::icons::register(&ctx);
+        // The arrow's texture loads in the first frames.
+        for _ in 0..3 {
+            advanced_frame(&ctx, Vec::new());
+        }
+        let closed = advanced_frame(&ctx, Vec::new());
+        assert_eq!(closed.expanded, Some(false));
+        assert!(!closed.model, "no Model row while closed");
+        assert_eq!(closed.lines.len(), 1, "{:?}", closed.lines);
+        // The row ends the card: its room under its button, and no line.
+        let room = closed.inside.bottom() - closed.button.bottom();
+        assert!(
+            (room - (ROW_VERTICAL_PADDING - space::SMALL)).abs() <= 0.5,
+            "{room}"
+        );
+        // At the far end of the row, a step inside its button's edge.
+        let end = far_edge(closed.arrow) - far_edge(closed.button);
+        let inward = if i18n::rtl() {
+            space::SMALL
+        } else {
+            -space::SMALL
+        };
+        assert!(
+            (end - inward).abs() <= 0.5,
+            "{:?} in {:?}",
+            closed.arrow,
+            closed.button
+        );
+        // A quarter turn of the downward arrow: to the right, or left in
+        // Arabic.
+        let toward_end = if i18n::rtl() {
+            Pos2::new(0.0, 1.0)
+        } else {
+            Pos2::new(1.0, 0.0)
+        };
+        assert_eq!(closed.arrow_top_left, toward_end);
+
+        let at = closed.button.center();
+        let press = |pressed| egui::Event::PointerButton {
+            pos: at,
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: egui::Modifiers::NONE,
+        };
+        advanced_frame(&ctx, vec![egui::Event::PointerMoved(at), press(true)]);
+        advanced_frame(&ctx, vec![press(false)]);
+        let open = advanced_frame(&ctx, Vec::new());
+        assert_eq!(open.expanded, Some(true));
+        assert!(open.model, "the Model row while open");
+        assert_eq!(open.lines.len(), 2, "{:?}", open.lines);
+        let gap = open.lines[1] - open.button.bottom();
+        assert!(
+            (gap - (ROW_VERTICAL_PADDING - space::SMALL)).abs() <= 0.5,
+            "the Model row's line {gap} under the Advanced row"
+        );
+        assert_eq!(open.arrow_top_left, Pos2::ZERO, "pointing down");
+
+        let key = |key| egui::Event::Key {
+            key,
+            physical_key: None,
+            pressed: true,
+            repeat: false,
+            modifiers: egui::Modifiers::NONE,
+        };
+        // The pointer leaves, then Tab and Space.
+        advanced_frame(&ctx, vec![egui::Event::PointerGone]);
+        advanced_frame(&ctx, vec![key(egui::Key::Tab)]);
+        advanced_frame(&ctx, vec![key(egui::Key::Space)]);
+        let again = advanced_frame(&ctx, Vec::new());
+        assert_eq!(again.expanded, Some(false));
+        assert!(!again.model, "closed again");
+        advanced_frame(&ctx, vec![key(egui::Key::Enter)]);
+        let reopened = advanced_frame(&ctx, Vec::new());
+        assert_eq!(reopened.expanded, Some(true), "Enter opens it");
+    }
+
+    #[test]
+    fn the_advanced_row_opens_and_closes() {
+        check_advanced_row();
+    }
+
+    #[test]
+    fn the_advanced_row_opens_and_closes_right_to_left() {
+        passes_in_arabic("the_advanced_row_opens_and_closes_in_arabic");
+    }
+
+    #[test]
+    #[ignore = "run in a process of its own by the_advanced_row_opens_and_closes_right_to_left"]
+    fn the_advanced_row_opens_and_closes_in_arabic() {
+        if arabic_run() {
+            check_advanced_row();
         }
     }
 

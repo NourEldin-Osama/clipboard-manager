@@ -72,13 +72,17 @@ impl App {
             if !in_use {
                 self.found_rows(ui, d);
             }
-            // The model and how close its matches must be, while it is on.
+            // While it is on: how close its matches must be, then the model
+            // in use under Advanced, as most people keep the model they set
+            // up once. A model still to choose comes first, as its menu did.
+            let model_in_use =
+                d.search_engine == SearchEngine::Server && is_model_for(d, d.search_model, true);
             if d.search_engine == SearchEngine::Off {
                 note(ui, &t!("settings-model-off-note"));
             } else {
                 if models_for(d, true).is_empty() {
                     self.no_models(ui, d, &t!("settings-model-none-search"));
-                } else {
+                } else if !model_in_use {
                     self.model_menu(ui, d, true);
                 }
                 setting_for(
@@ -117,6 +121,9 @@ impl App {
                         set_choice_name(&menu.response, &row_title(ui), &current);
                     },
                 );
+                if model_in_use {
+                    advanced(ui, "search-model", |ui| self.model_menu(ui, d, true));
+                }
             }
             self.send_question(ui, d);
         });

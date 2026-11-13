@@ -539,6 +539,7 @@ settings-strictness = How close the meaning must be
 settings-strictness-hint = Stricter choices hide weaker matches; exact words always show
 settings-meaning-section = Search by meaning
 settings-meaning-switch = Use search by meaning
+settings-advanced = Advanced
 settings-meaning-ready = Ready: finds items by what they mean
 settings-meaning-off = Off: search finds words only
 settings-meaning-none = No search model yet

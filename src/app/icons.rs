@@ -251,6 +251,53 @@ pub(super) fn paint_turned(p: &Painter, rect: Rect, icon: Icon, color: Color32) 
     paint_with(p, rect, icon, color, TURNED);
 }
 
+/// A quarter turn: the corners of an icon's texture shown at the top left,
+/// top right, bottom right and bottom left of its square. An arrow that
+/// points down then points right, or left with `TOWARD_LEFT`.
+const TOWARD_RIGHT: [Pos2; 4] = [
+    Pos2::new(1.0, 0.0),
+    Pos2::new(1.0, 1.0),
+    Pos2::new(0.0, 1.0),
+    Pos2::new(0.0, 0.0),
+];
+const TOWARD_LEFT: [Pos2; 4] = [
+    Pos2::new(0.0, 1.0),
+    Pos2::new(0.0, 0.0),
+    Pos2::new(1.0, 0.0),
+    Pos2::new(1.0, 1.0),
+];
+
+/// Paints `icon` as `paint` does, turned a quarter: an arrow that points
+/// down then points to the reading end, right or, in Arabic, left.
+pub(super) fn paint_toward_end(p: &Painter, rect: Rect, icon: Icon, color: Color32) {
+    let side = rect.width().min(rect.height());
+    let square = Rect::from_center_size(rect.center(), Vec2::splat(side));
+    let Some((uri, _)) = source(icon) else {
+        return paint_shape(p, square, icon, color);
+    };
+    let Some(texture) = svg_texture(p, square, uri) else {
+        return;
+    };
+    let turn = if i18n::rtl() {
+        TOWARD_LEFT
+    } else {
+        TOWARD_RIGHT
+    };
+    let corners = [
+        square.left_top(),
+        square.right_top(),
+        square.right_bottom(),
+        square.left_bottom(),
+    ];
+    let mut mesh = egui::Mesh::with_texture(texture);
+    for (pos, uv) in corners.into_iter().zip(turn) {
+        mesh.vertices.push(egui::epaint::Vertex { pos, uv, color });
+    }
+    mesh.add_triangle(0, 1, 2);
+    mesh.add_triangle(0, 2, 3);
+    p.add(mesh);
+}
+
 fn paint_with(p: &Painter, rect: Rect, icon: Icon, color: Color32, uv: Rect) {
     let side = rect.width().min(rect.height());
     let square = Rect::from_center_size(rect.center(), Vec2::splat(side));
@@ -280,6 +327,13 @@ pub(super) fn logo(ui: &mut Ui, kind: ServerKind, size: f32, color: Color32) -> 
 /// Paints the SVG at `uri` into `square`, showing the part `uv` of its
 /// texture.
 fn paint_svg(p: &Painter, square: Rect, uri: &str, tint: Color32, uv: Rect) {
+    if let Some(texture) = svg_texture(p, square, uri) {
+        p.image(texture, square, uv, tint);
+    }
+}
+
+/// The SVG at `uri` as a texture for `square`; none while it loads.
+fn svg_texture(p: &Painter, square: Rect, uri: &str) -> Option<egui::TextureId> {
     let ctx = p.ctx();
     // Rasterised at the pixel size it's shown at, so edges stay sharp.
     let px = (square.width() * ctx.pixels_per_point()).round().max(1.0) as u32;
@@ -289,11 +343,15 @@ fn paint_svg(p: &Painter, square: Rect, uri: &str, tint: Color32, uv: Rect) {
         maintain_aspect_ratio: true,
     };
     match ctx.try_load_texture(uri, TextureOptions::LINEAR, hint) {
-        Ok(TexturePoll::Ready { texture }) => {
-            p.image(texture.id, square, uv, tint);
+        Ok(TexturePoll::Ready { texture }) => Some(texture.id),
+        Ok(TexturePoll::Pending { .. }) => {
+            ctx.request_repaint();
+            None
         }
-        Ok(TexturePoll::Pending { .. }) => ctx.request_repaint(),
-        Err(e) => log::warn!("icon {uri}: {e}"),
+        Err(e) => {
+            log::warn!("icon {uri}: {e}");
+            None
+        }
     }
 }
 
