@@ -230,7 +230,9 @@ impl App {
                     }
                     let start = ui.min_rect();
                     let end = far(ui, |ui| {
-                        self.recording_button(ui, recording);
+                        if recording_button(ui, recording).clicked() {
+                            self.set_recording(!recording);
+                        }
                         ui.min_rect()
                     });
                     // The main keys in the middle of the bar, in the room
@@ -253,35 +255,6 @@ impl App {
             rect.top() + 0.5,
             Stroke::new(1.0, line_color(ui.visuals().dark_mode)),
         );
-    }
-
-    /// Pause recording, quiet, while recording; Resume recording, filled
-    /// amber, while it is paused.
-    fn recording_button(&mut self, ui: &mut Ui, recording: bool) {
-        let (name, galley, size) = recording_label(ui, recording);
-        let (rect, resp) = ui.allocate_exact_size(size, Sense::click());
-        resp.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, &name));
-        let v = ui.visuals();
-        let p = ui.painter();
-        let round = CornerRadius::same(radius::MEDIUM);
-        let (icon, color) = if recording {
-            // The bar's own text, with a fill only under the pointer.
-            if resp.hovered() {
-                p.rect_filled(rect, round, v.widgets.hovered.weak_bg_fill);
-            }
-            (Icon::Pause, v.text_color())
-        } else {
-            p.rect_filled(rect, round, button_fill(AMBER));
-            if resp.hovered() {
-                p.rect_filled(rect, round, theme::lit(false));
-            }
-            (Icon::Play, Color32::WHITE)
-        };
-        let inner = rect.shrink2(Vec2::new(RECORDING_PAD, 0.0));
-        icons::paint_icon_text(p, inner, icon, RECORDING_ICON, galley, color);
-        if tip(resp, &name).clicked() {
-            self.set_recording(!recording);
-        }
     }
 
     /// While several items are selected, the status bar holds what can be
@@ -428,15 +401,45 @@ const RECORDING_ICON: f32 = 14.0;
 /// The room at the recording button's sides.
 const RECORDING_PAD: f32 = 10.0;
 
-/// The recording button's words, laid out, and its size: as tall as the
-/// bar's pills in both states, so the bar keeps its height.
-fn recording_label(ui: &Ui, recording: bool) -> (String, std::sync::Arc<egui::Galley>, Vec2) {
-    let name = if recording {
-        t!("status-pause-recording")
+/// The recording button at the status bar's far end: Pause, quiet, while
+/// recording; Resume, filled amber, while it is paused. Its tip and the
+/// name screen readers hear say it in full: Pause recording, Resume
+/// recording.
+fn recording_button(ui: &mut Ui, recording: bool) -> egui::Response {
+    let (name, galley, size) = recording_label(ui, recording);
+    let (rect, resp) = ui.allocate_exact_size(size, Sense::click());
+    resp.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, &name));
+    let v = ui.visuals();
+    let p = ui.painter();
+    let round = CornerRadius::same(radius::MEDIUM);
+    let (icon, color) = if recording {
+        // The bar's own text, with a fill only under the pointer.
+        if resp.hovered() {
+            p.rect_filled(rect, round, v.widgets.hovered.weak_bg_fill);
+        }
+        (Icon::Pause, v.text_color())
     } else {
-        t!("status-resume-recording")
+        p.rect_filled(rect, round, button_fill(AMBER));
+        if resp.hovered() {
+            p.rect_filled(rect, round, theme::lit(false));
+        }
+        (Icon::Play, Color32::WHITE)
     };
-    let label = txt(&name, size::SMALL, None);
+    let inner = rect.shrink2(Vec2::new(RECORDING_PAD, 0.0));
+    icons::paint_icon_text(p, inner, icon, RECORDING_ICON, galley, color);
+    tip(resp, &name)
+}
+
+/// The recording button's name in full, its short word laid out, and its
+/// size: as tall as the bar's pills in both states, so the bar keeps its
+/// height.
+fn recording_label(ui: &Ui, recording: bool) -> (String, std::sync::Arc<egui::Galley>, Vec2) {
+    let (name, word) = if recording {
+        (t!("status-pause-recording"), t!("status-pause"))
+    } else {
+        (t!("status-resume-recording"), t!("status-resume"))
+    };
+    let label = txt(&word, size::SMALL, None);
     let (galley, inner) = icons::icon_text_size(ui, &label, size::SMALL, RECORDING_ICON);
     let height = icons::pill_height(galley.size().y);
     (
@@ -600,6 +603,91 @@ mod tests {
             });
             assert_eq!(lines.len(), 2, "two texts at {scale} pixels per point");
             assert_eq!(lines[0], lines[1], "at {scale} pixels per point");
+        }
+    }
+
+    /// The recording button in one frame of `ctx` with `events`: where it
+    /// is, the texts drawn, and the names screen readers hear for buttons.
+    fn recording_drawn(
+        ctx: &egui::Context,
+        recording: bool,
+        events: Vec<egui::Event>,
+    ) -> (Rect, Vec<String>, Vec<String>) {
+        let input = egui::RawInput {
+            events,
+            ..Default::default()
+        };
+        let mut rect = Rect::NOTHING;
+        let mut output = ctx.run_ui(input, |ui| rect = recording_button(ui, recording).rect);
+        output.textures_delta.clear();
+        let texts = output
+            .shapes
+            .iter()
+            .filter_map(|clipped| match &clipped.shape {
+                egui::Shape::Text(text) => Some(text.galley.text().to_string()),
+                _ => None,
+            })
+            .collect();
+        let names = output
+            .platform_output
+            .accesskit_update
+            .iter()
+            .flat_map(|update| &update.nodes)
+            .filter(|(_, node)| node.role() == egui::accesskit::Role::Button)
+            .filter_map(|(_, node)| node.label().map(str::to_string))
+            .collect();
+        (rect, texts, names)
+    }
+
+    /// The recording button shows a short word: Pause while recording,
+    /// Resume while paused. Screen readers and its tip name it in full.
+    fn check_the_recording_button() {
+        let ctx = egui::Context::default();
+        add_fonts(&ctx);
+        ctx.enable_accesskit();
+        ctx.all_styles_mut(|s| s.interaction.tooltip_delay = 0.0);
+        // The fonts apply from the next frame.
+        ctx.run_ui(egui::RawInput::default(), |_| {})
+            .textures_delta
+            .clear();
+        // A text as drawn: Arabic in display order.
+        let drawn =
+            |text: &str| bidi::job(text, FontId::proportional(size::SMALL), Color32::WHITE).text;
+        for (recording, word, name) in [
+            (true, t!("status-pause"), t!("status-pause-recording")),
+            (false, t!("status-resume"), t!("status-resume-recording")),
+        ] {
+            let (rect, texts, names) = recording_drawn(&ctx, recording, Vec::new());
+            assert_eq!(texts, [drawn(&word)], "{recording}");
+            assert_eq!(names, std::slice::from_ref(&name), "{recording}");
+            // The pointer on it shows its tip.
+            let at = vec![egui::Event::PointerMoved(rect.center())];
+            recording_drawn(&ctx, recording, at);
+            let (_, texts, _) = recording_drawn(&ctx, recording, Vec::new());
+            assert!(texts.contains(&drawn(&name)), "{recording}: {texts:?}");
+            // The pointer goes.
+            recording_drawn(&ctx, recording, vec![egui::Event::PointerGone]);
+        }
+    }
+
+    #[test]
+    fn the_recording_button_says_pause_and_names_itself_in_full() {
+        check_the_recording_button();
+    }
+
+    #[test]
+    fn the_recording_button_says_pause_and_names_itself_in_full_right_to_left() {
+        crate::i18n::passes_in_arabic(
+            module_path!(),
+            "the_recording_button_says_pause_and_names_itself_in_full_in_arabic",
+        );
+    }
+
+    #[test]
+    #[ignore = "run in a process of its own by the_recording_button_says_pause_and_names_itself_in_full_right_to_left"]
+    fn the_recording_button_says_pause_and_names_itself_in_full_in_arabic() {
+        if crate::i18n::arabic_run() {
+            check_the_recording_button();
         }
     }
 
