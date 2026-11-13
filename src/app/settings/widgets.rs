@@ -842,12 +842,32 @@ pub(super) fn setting_parts(
     }
     ui.ctx()
         .data_mut(|d| d.insert_temp(row_title_id(), label.to_string()));
+    // The control's own height is that of the places its widgets take:
+    // egui counts each widget of a centred row as tall as the place the
+    // row gives it, which is as tall as the control was the frame before,
+    // so a control that got shorter, such as a box of several lines cut
+    // back to one, would keep its old height.
+    let layer = control_ui.layer_id();
+    let widgets_before = ui
+        .ctx()
+        .viewport(|viewport| viewport.this_pass.widgets.get_layer(layer).count());
     control(&mut control_ui);
     ui.ctx().data_mut(|d| d.remove::<String>(row_title_id()));
     let drawn = control_ui.min_rect();
+    let own = ui.ctx().viewport(|viewport| {
+        let widgets = viewport.this_pass.widgets.get_layer(layer);
+        widgets
+            .skip(widgets_before)
+            .fold(Rect::NOTHING, |own, widget| own.union(widget.rect))
+    });
+    let height = if own.is_positive() {
+        own.height().min(drawn.height())
+    } else {
+        drawn.height()
+    };
 
     let now = RowSizes {
-        control: drawn.size(),
+        control: Vec2::new(drawn.width(), height),
         text: text.height(),
     };
     if last.is_none_or(|last| last.differs(now)) {

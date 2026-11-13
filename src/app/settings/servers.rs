@@ -2114,6 +2114,90 @@ mod tests {
         }
     }
 
+    /// A window in the light theme with the app's fonts and style.
+    fn light_window() -> egui::Context {
+        let ctx = egui::Context::default();
+        crate::app::view::add_fonts(&ctx);
+        crate::app::view::style(&ctx, DarkPanels::Lighter);
+        ctx.set_theme(egui::Theme::Light);
+        // The fonts take effect from the next frame; the font atlas uploads
+        // no renderer takes here are dropped.
+        ctx.run_ui(egui::RawInput::default(), |_| {})
+            .textures_delta
+            .clear();
+        ctx
+    }
+
+    /// `frames` frames of a reading model's settings in a server's editor,
+    /// its prompt `prompt`, set in under the model in the widest column:
+    /// the height of the prompt's row, the last of the card, from the line
+    /// above it.
+    fn prompt_row_height(ctx: &egui::Context, prompt: &str, frames: usize) -> f32 {
+        let mut settings = ReadSettings {
+            kind: ReaderModel::Other,
+            prompt: prompt.to_string(),
+        };
+        let mut inside = Rect::NOTHING;
+        let mut lines = Vec::new();
+        for _ in 0..frames {
+            let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+                // As in the settings' column, where the pages set their gaps.
+                ui.spacing_mut().item_spacing.y = 0.0;
+                let column = Rect::from_min_size(
+                    ui.max_rect().min,
+                    Vec2::new(super::super::COLUMN_WIDTH, 600.0),
+                );
+                ui.scope_builder(egui::UiBuilder::new().max_rect(column), |ui| {
+                    card(ui, |ui| {
+                        nested(ui, |ui| read_settings(ui, &mut settings));
+                        inside = ui.min_rect();
+                    });
+                });
+            });
+            output.textures_delta.clear();
+            let color = line_color(false);
+            lines = output
+                .shapes
+                .iter()
+                .filter_map(|clipped| match &clipped.shape {
+                    egui::Shape::LineSegment { points, stroke } if stroke.color == color => {
+                        Some(points[0].y)
+                    }
+                    _ => None,
+                })
+                .collect();
+        }
+        assert_eq!(lines.len(), 1, "a line between the two rows: {lines:?}");
+        inside.bottom() - lines[0]
+    }
+
+    /// A reading model's prompt of four lines cut back to one, and back to
+    /// four: in the frame it changes in, the prompt's row takes the height
+    /// of one that started with that prompt.
+    #[test]
+    fn a_prompt_rows_height_follows_its_box() {
+        let four = "Read the text.\nKeep its layout.\nKeep its tables.\nAdd nothing.";
+        let one = "Read the text.";
+        let fresh_four = prompt_row_height(&light_window(), four, 4);
+        let fresh_one = prompt_row_height(&light_window(), one, 4);
+        assert!(
+            fresh_four > fresh_one,
+            "{fresh_four} for four lines, {fresh_one} for one"
+        );
+        let ctx = light_window();
+        prompt_row_height(&ctx, four, 4);
+        let cut = prompt_row_height(&ctx, one, 1);
+        assert!(
+            (cut - fresh_one).abs() <= 0.5,
+            "{cut} after the cut, {fresh_one} from the start"
+        );
+        let grown = prompt_row_height(&ctx, four, 1);
+        assert!(
+            (grown - fresh_four).abs() <= 0.5,
+            "{grown} grown again, {fresh_four} from the start"
+        );
+    }
+
     #[test]
     fn type_tiles_share_their_lines_from_the_reading_start() {
         let lines = |places: &[Rect]| {
