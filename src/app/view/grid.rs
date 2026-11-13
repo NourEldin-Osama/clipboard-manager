@@ -91,7 +91,7 @@ fn card_body(rect: Rect, tagged: bool) -> Rect {
 
 /// The height of one line of text in `font`, as egui lays it out: on whole
 /// pixels, so at the screen's scale.
-fn line_height(ui: &Ui, font: &FontId) -> f32 {
+pub(super) fn line_height(ui: &Ui, font: &FontId) -> f32 {
     ui.fonts_mut(|f| f.layout_no_wrap(String::new(), font.clone(), Color32::WHITE))
         .size()
         .y

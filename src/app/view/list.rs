@@ -311,7 +311,9 @@ pub(super) fn thumbs_to_drop(
 /// `under_pinned` sit under the Pinned header, which says they are pinned.
 /// The rows share a time column `time_column` wide, and each keeps the
 /// pin's slot before it, so times, pins and relevance bars line up down
-/// the list.
+/// the list. A one-line row gives its title `title_lines` lines: one, or
+/// two on the popup's selected row when one line cuts its title; the row
+/// is then that much taller, and everything else stays on its first line.
 #[allow(clippy::too_many_arguments)]
 pub(super) fn paint_row(
     ui: &Ui,
@@ -329,9 +331,15 @@ pub(super) fn paint_row(
     dated: bool,
     under_pinned: bool,
     time_column: f32,
+    title_lines: usize,
 ) {
     let show_pin = it.pinned && !under_pinned;
     let v = ui.visuals();
+    // The row's first line: all of it, or all but the title's second line.
+    let below_first = (title_lines.max(1) - 1) as f32;
+    let first = rect.with_max_y(
+        rect.bottom() - below_first * grid::line_height(ui, &FontId::proportional(size::BODY)),
+    );
     let p = ui.painter_at(rect);
     let a = accent();
     // Laid out left to right, then mirrored for Arabic.
@@ -358,12 +366,18 @@ pub(super) fn paint_row(
         );
     }
 
-    let gutter = if numbered { NUMBER_SLOT + 6.0 } else { 0.0 };
+    let across = Across::of(
+        rect.width(),
+        (numbered, compact, hot),
+        time_column,
+        badges(hit, show_pin),
+    );
+    let gutter = across.gutter;
     if let Some(n) = number {
         // The number Ctrl presses to paste it, as a plain quiet digit, so
         // nine of them down the edge don't pull the eye from the text.
         let at = m(Rect::from_center_size(
-            Pos2::new(rect.left() + ROW_PADDING + gutter / 2.0, rect.center().y),
+            Pos2::new(rect.left() + ROW_PADDING + gutter / 2.0, first.center().y),
             Vec2::ZERO,
         ))
         .center();
@@ -381,11 +395,11 @@ pub(super) fn paint_row(
     }
     // The kind's place: a tile on two lines; on one line a slot as wide
     // as a picture's thumbnail, so every title starts on one edge.
-    let av = if compact { ONE_LINE_SLOT } else { 38.0 };
+    let av = across.kind;
     let av_rect = m(Rect::from_min_size(
         Pos2::new(
             rect.left() + ROW_PADDING + gutter,
-            rect.center().y - av / 2.0,
+            first.center().y - av / 2.0,
         ),
         Vec2::splat(av),
     ));
@@ -479,7 +493,7 @@ pub(super) fn paint_row(
         }
         None => symbol(kind_color(it.kind), item_icon(it)),
     }
-    let x = rect.left() + ROW_PADDING + gutter + av + 12.0;
+    let x = rect.left() + across.text_start;
     // Two lines name the program under the title, with a fact and the
     // tags; one line has no room for them.
     let second = if compact {
@@ -487,57 +501,28 @@ pub(super) fn paint_row(
     } else {
         SecondLine::of(it, program)
     };
-    // The pin and the relevance bars sit before the time on the first
-    // line, so the title ends before them. The bars keep the pin's slot
-    // free when there is no pin, so they line up with the bars below.
-    let bars = if relevance_level(hit).is_some() {
-        22.0
-    } else {
-        0.0
-    };
-    let pin = if show_pin || bars > 0.0 {
-        PIN_SLOT
-    } else {
-        0.0
-    };
-    let badges = pin + bars;
     let time = row_time(it.created, dated);
-    let right_w = if hot { 150.0 } else { time_column + 8.0 };
-    let text_w = (rect.right() - x - right_w - 8.0).max(40.0);
-    // While hovered, the buttons take the far end instead.
-    let title_w = if hot {
-        text_w
-    } else {
-        (text_w - badges).max(40.0)
-    };
     // The text column, mirrored with the rest; lines start at its reading edge.
     let column = m(Rect::from_min_size(
         Pos2::new(x, rect.top()),
-        Vec2::new(text_w, rect.height()),
+        Vec2::new(across.text_width, rect.height()),
     ));
     let title_color = v.strong_text_color();
     let weak = v.weak_text_color();
-    let title = row_title(it);
-    let title = if title.is_empty() {
-        t!("item-empty")
-    } else if compact && it.kind == Kind::Image {
-        // One line has no room for the size under the title: it follows it.
-        format!("{title} · {}", subtitle(it))
-    } else {
-        title
-    };
-
-    let tg = one_line(
+    let title = text_lines(
         ui,
-        &title,
+        &shown_title(it, compact),
         terms,
         FontId::proportional(size::BODY),
         title_color,
-        title_w,
+        across.title_width,
+        title_lines.max(1),
     );
-    // One line sits on the row's midline, beside the icon; two lines share it.
+    // One line sits on the first line's middle, beside the icon; a title's
+    // second line goes under it; a second line of facts shares the row.
     let title_y = if second.is_none() {
-        rect.center().y - tg.size().y / 2.0
+        let line = &title[0];
+        first.center().y - line.size().y / line.rows.len().max(1) as f32 / 2.0
     } else {
         rect.top() + 10.0
     };
@@ -548,7 +533,12 @@ pub(super) fn paint_row(
             column.left()
         }
     };
-    p.galley(Pos2::new(line_x(tg.size().x), title_y), tg, title_color);
+    let mut y = title_y;
+    for line in title {
+        let at = Pos2::new(line_x(line.size().x), y);
+        y += line.size().y;
+        p.galley(at, line, title_color);
+    }
     if let Some(second) = &second {
         second.paint(ui, &p, column, rect.top() + 32.0, terms, fill.is_some());
     }
@@ -560,7 +550,7 @@ pub(super) fn paint_row(
     // relevance bars before it.
     let one_line_row = compact || second.is_none();
     let time_y = if one_line_row {
-        rect.center().y
+        first.center().y
     } else {
         rect.top() + 18.0
     };
@@ -600,6 +590,113 @@ pub(super) fn paint_row(
     if let Some(level) = relevance_level(hit) {
         paint_relevance(&p, rect, ix, iy + 6.0, level, a, weak);
     }
+}
+
+/// The room the pin and the relevance bars take before a row's time, on
+/// its first line, so the title ends before them. The bars keep the pin's
+/// slot free when there is no pin, so they line up with the bars below.
+fn badges(hit: &Hit, show_pin: bool) -> f32 {
+    let bars = if relevance_level(hit).is_some() {
+        22.0
+    } else {
+        0.0
+    };
+    let pin = if show_pin || bars > 0.0 {
+        PIN_SLOT
+    } else {
+        0.0
+    };
+    pin + bars
+}
+
+/// Where a row's places go across, from the row's start.
+struct Across {
+    /// The place of the popup's number of quick paste, with its gap.
+    gutter: f32,
+    /// The kind's place.
+    kind: f32,
+    /// Where the text column starts.
+    text_start: f32,
+    text_width: f32,
+    title_width: f32,
+}
+
+impl Across {
+    /// The places across a row `width` wide, `numbered` as the popup's,
+    /// `compact` with one line, `hot` while the pointer is over it. The
+    /// text column ends before the time column at rest, and before the
+    /// hover buttons under the pointer; at rest the title also ends before
+    /// the pin and the bars, `badges` wide.
+    fn of(
+        width: f32,
+        (numbered, compact, hot): (bool, bool, bool),
+        time_column: f32,
+        badges: f32,
+    ) -> Self {
+        let gutter = if numbered { NUMBER_SLOT + 6.0 } else { 0.0 };
+        let kind = if compact { ONE_LINE_SLOT } else { 38.0 };
+        let text_start = ROW_PADDING + gutter + kind + 12.0;
+        let right_w = if hot { 150.0 } else { time_column + 8.0 };
+        let text_width = (width - text_start - right_w - 8.0).max(40.0);
+        let title_width = if hot {
+            text_width
+        } else {
+            (text_width - badges).max(40.0)
+        };
+        Self {
+            gutter,
+            kind,
+            text_start,
+            text_width,
+            title_width,
+        }
+    }
+}
+
+/// The title a row shows for `it`; a `compact` row has one line.
+fn shown_title(it: &Item, compact: bool) -> String {
+    let title = row_title(it);
+    if title.is_empty() {
+        t!("item-empty")
+    } else if compact && it.kind == Kind::Image {
+        // One line has no room for the size under the title: it follows it.
+        format!("{title} · {}", subtitle(it))
+    } else {
+        title
+    }
+}
+
+/// How many lines the title of `it`'s row takes in the popup, at most
+/// two: laid out as `paint_row` lays it out at rest in a row `width` wide
+/// whose times take `time_column`, two when one line cuts it.
+pub(super) fn popup_title_lines(
+    ui: &Ui,
+    it: &Item,
+    hit: &Hit,
+    width: f32,
+    time_column: f32,
+    terms: &[String],
+) -> usize {
+    let across = Across::of(
+        width,
+        (true, true, false),
+        time_column,
+        badges(hit, it.pinned),
+    );
+    let title = text_lines(
+        ui,
+        &shown_title(it, true),
+        terms,
+        FontId::proportional(size::BODY),
+        ui.visuals().strong_text_color(),
+        across.title_width,
+        2,
+    );
+    title
+        .iter()
+        .map(|line| line.rows.len())
+        .sum::<usize>()
+        .clamp(1, 2)
 }
 
 /// The tint of a picture in a row or a card, `id` its place: dimmer at rest
@@ -839,12 +936,28 @@ pub(super) fn one_line(
     color: Color32,
     width: f32,
 ) -> Arc<egui::Galley> {
+    text_lines(ui, text, terms, font, color, width, 1).remove(0)
+}
+
+/// Item text in at most `rows` lines `width` wide, the last cut with "…"
+/// when there is more, query terms highlighted. Text with Arabic comes
+/// from its first line, line by line in reading order; other text is one
+/// galley.
+fn text_lines(
+    ui: &Ui,
+    text: &str,
+    terms: &[String],
+    font: FontId,
+    color: Color32,
+    width: f32,
+    rows: usize,
+) -> Vec<Arc<egui::Galley>> {
     if bidi::has_rtl(text) {
         let first = text.lines().next().unwrap_or("");
         // In the Arabic UI a line with Arabic in it reads right to left, even when
         // it starts with a Latin tag or word.
         let base = if i18n::rtl() { Some(true) } else { None };
-        bidi::lines(
+        let lines: Vec<Arc<egui::Galley>> = bidi::lines(
             ui,
             first,
             terms,
@@ -852,21 +965,24 @@ pub(super) fn one_line(
             color,
             theme::search_hit(ui.visuals().dark_mode),
             width,
-            1,
+            rows,
             base,
         )
         .into_iter()
-        .next()
         .map(|(g, _)| g)
-        .unwrap_or_else(|| {
-            ui.fonts_mut(|f| {
+        .collect();
+        if lines.is_empty() {
+            vec![ui.fonts_mut(|f| {
                 f.layout_no_wrap(String::new(), FontId::proportional(size::SMALL), color)
-            })
-        })
+            })]
+        } else {
+            lines
+        }
     } else {
         let v = ui.visuals();
         let hit = (v.strong_text_color(), theme::search_hit(v.dark_mode));
-        ui.fonts_mut(|f| f.layout_job(highlighted(text, terms, font, color, hit, width, 1)))
+        let job = highlighted(text, terms, font, color, hit, width, rows);
+        vec![ui.fonts_mut(|f| f.layout_job(job))]
     }
 }
 
@@ -945,7 +1061,7 @@ impl App {
                 Line::WeakerLink => WEAKER_LINE,
             };
         }
-        let total = y;
+        let mut total = y;
 
         let mut sa = egui::ScrollArea::vertical().auto_shrink([false, false]);
         if in_popup {
@@ -957,27 +1073,6 @@ impl App {
         } else {
             self.list_view
         };
-        // Until the list has been drawn once, its height is unknown and every
-        // row would seem to be below it: the scroll waits for that frame.
-        if self.scroll_to_selected && view_h > 0.0 {
-            self.scroll_to_selected = false;
-            if let Some(i) = lines.iter().position(
-                |l| matches!(l, Line::Row(r) if Some(self.results[*r].id) == self.selected),
-            ) {
-                let top = ys[i]
-                    - if i > 0 && matches!(lines[i - 1], Line::Header(..)) {
-                        header_h
-                    } else {
-                        0.0
-                    };
-                if top < off {
-                    sa = sa.vertical_scroll_offset(top);
-                } else if ys[i] + row_h > off + view_h {
-                    sa = sa.vertical_scroll_offset(ys[i] + row_h - view_h);
-                }
-            }
-        }
-
         let terms: Vec<String> = if searching {
             self.query
                 .to_lowercase()
@@ -987,7 +1082,85 @@ impl App {
         } else {
             vec![]
         };
+        // Until the list has been drawn once, its height is unknown and every
+        // row would seem to be below it: the scroll waits for that frame.
+        let scrolling = self.scroll_to_selected && view_h > 0.0;
+        if scrolling {
+            self.scroll_to_selected = false;
+        }
+        // The selected row's line and its place in the results, when the
+        // list scrolls to it or it is the popup's.
+        let selected_row = (scrolling || in_popup)
+            .then(|| {
+                lines.iter().enumerate().find_map(|(i, l)| match l {
+                    Line::Row(r) if Some(self.results[*r].id) == self.selected => Some((i, *r)),
+                    _ => None,
+                })
+            })
+            .flatten();
+        // Where the list scrolls so that the selected row, `h` tall, shows
+        // whole, with the lines at `ys`; None while it shows.
+        let scroll_to = |ys: &[f32], h: f32| {
+            let (i, _) = selected_row.filter(|_| scrolling)?;
+            let top = ys[i]
+                - if i > 0 && matches!(lines[i - 1], Line::Header(..)) {
+                    header_h
+                } else {
+                    0.0
+                };
+            if top < off {
+                Some(top)
+            } else if ys[i] + h > off + view_h {
+                Some(ys[i] + h - view_h)
+            } else {
+                None
+            }
+        };
+        // The popup's selected row takes two lines when one line cuts its
+        // title. How much room the title has depends on the time column, so
+        // the popup places its rows across before drawing them, with the
+        // time column of the rows it is going to show (where the list is, or
+        // where it goes to show the selected row) and of the selected row.
+        let popup_across = in_popup.then(|| {
+            let (offset, width) = rows_across(ui, ui.available_width(), centred);
+            let from = scroll_to(&ys, row_h).unwrap_or(off);
+            let rows = (0..lines.len())
+                .filter(|&i| {
+                    let in_view = ys[i] + row_h >= from && ys[i] <= from + view_h;
+                    in_view || selected_row.is_some_and(|(line, _)| line == i)
+                })
+                .filter_map(|i| match lines[i] {
+                    Line::Row(r) => self.library.get(self.results[r].id),
+                    _ => None,
+                });
+            let column = time_column(ui, rows.map(|it| (it, dated(it))));
+            (offset, width, column)
+        });
+        // The selected row's line and how much taller it is, when it is.
+        let mut tall = None;
+        if let (Some((_, width, column)), Some((i, r))) = (popup_across, selected_row) {
+            let hit = &self.results[r];
+            let two = self
+                .library
+                .get(hit.id)
+                .is_some_and(|it| popup_title_lines(ui, it, hit, width, column, &terms) > 1);
+            if two {
+                let extra = grid::line_height(ui, &FontId::proportional(size::BODY));
+                for y in &mut ys[i + 1..] {
+                    *y += extra;
+                }
+                total += extra;
+                tall = Some((i, extra));
+            }
+        }
+        let selected_h = row_h + tall.map_or(0.0, |(_, extra)| extra);
+        if let Some(to) = scroll_to(&ys, selected_h) {
+            sa = sa.vertical_scroll_offset(to);
+        }
+
         let mut actions = Vec::new();
+        // A click on a popup's row selects it, which then shows whole.
+        let mut picked = false;
         // A right-click, or Shift+F10 on the selected row, opens a menu.
         let mut open_menu = None;
         let menu_key = self.menu_by_key;
@@ -1019,36 +1192,46 @@ impl App {
         let out = sa.show_viewport(ui, |ui, viewport| {
             ui.set_height(total);
             let origin = ui.max_rect().min;
-            let (offset, width) = rows_across(ui, ui.available_width(), centred);
+            let (offset, width) = match popup_across {
+                Some((offset, width, _)) => (offset, width),
+                None => rows_across(ui, ui.available_width(), centred),
+            };
             let left = origin.x + offset;
-            let height = |l: &Line| match l {
+            let height = |i: usize| match lines[i] {
                 Line::Header(..) => header_h,
-                Line::Row(_) => row_h,
+                Line::Row(_) => match tall {
+                    Some((line, extra)) if line == i => row_h + extra,
+                    _ => row_h,
+                },
                 Line::WeakerLink => WEAKER_LINE,
             };
-            let shown =
-                |i: usize| ys[i] + height(&lines[i]) >= viewport.min.y && ys[i] <= viewport.max.y;
+            let shown = |i: usize| ys[i] + height(i) >= viewport.min.y && ys[i] <= viewport.max.y;
             // The rows shown share one time column, as wide as the widest
             // of their times, so their pins and times line up down the list.
-            let rows_shown =
-                (0..lines.len())
-                    .filter(|&i| shown(i))
-                    .filter_map(|i| match lines[i] {
-                        Line::Row(r) => library.get(results[r].id),
-                        _ => None,
-                    });
-            let time_column = time_column(ui, rows_shown.map(|it| (it, dated(it))));
+            let time_column = match popup_across {
+                Some((_, _, column)) => column,
+                None => {
+                    let rows_shown =
+                        (0..lines.len())
+                            .filter(|&i| shown(i))
+                            .filter_map(|i| match lines[i] {
+                                Line::Row(r) => library.get(results[r].id),
+                                _ => None,
+                            });
+                    time_column(ui, rows_shown.map(|it| (it, dated(it))))
+                }
+            };
             if let Some(i) = first_unpinned
                 .and_then(|n| lines.iter().position(|l| *l == Line::Row(n - 1)))
                 .filter(|&i| shown(i))
             {
-                let y = origin.y + ys[i] + row_h + (2.0 + GROUP_END_GAP) / 2.0;
+                let y = origin.y + ys[i] + height(i) + (2.0 + GROUP_END_GAP) / 2.0;
                 let x = (left + ROW_PADDING)..=(left + width - ROW_PADDING);
                 let color = line_color(ui.visuals().dark_mode);
                 ui.painter().hline(x, y, Stroke::new(1.0, color));
             }
             for (i, l) in lines.iter().enumerate() {
-                let h = height(l);
+                let h = height(i);
                 if !shown(i) {
                     continue;
                 }
@@ -1106,6 +1289,7 @@ impl App {
                             dated(it),
                             day_headers && Group::of(it, pinned_first) == Group::Pinned,
                             time_column,
+                            if h > row_h { 2 } else { 1 },
                         );
                         if resp.clicked() {
                             // Ctrl and Shift select several, but not in the popup.
@@ -1115,6 +1299,7 @@ impl App {
                                 (false, _, true) => Command::MarkRange(it.id),
                                 _ => Command::Select(it.id),
                             });
+                            picked |= in_popup;
                         }
                         if resp.double_clicked() {
                             actions.push(Command::Copy(it.id, Paste::Yes));
@@ -1160,13 +1345,12 @@ impl App {
                                 - ROW_PADDING
                                 - buttons.len() as f32 * (size + 2.0)
                                 - apart;
+                            // On the row's first line.
+                            let y = rect.top() + row_h / 2.0 - size / 2.0;
                             for (i, (icon, tip, action)) in buttons.into_iter().enumerate() {
                                 let b = flip(
                                     rect,
-                                    Rect::from_min_size(
-                                        Pos2::new(x, rect.center().y - size / 2.0),
-                                        Vec2::splat(size),
-                                    ),
+                                    Rect::from_min_size(Pos2::new(x, y), Vec2::splat(size)),
                                 );
                                 if icon_button_at(
                                     ui,
@@ -1220,6 +1404,9 @@ impl App {
             self.list_view = view;
         }
         self.apply_actions(actions);
+        if picked {
+            self.scroll_to_selected = true;
+        }
         self.after_rows(open_menu, in_popup);
         self.item_menu(ui, in_popup);
     }
@@ -1415,6 +1602,7 @@ mod tests {
                 false,
                 false,
                 column,
+                1,
             );
         });
         output.textures_delta.clear();
@@ -1531,6 +1719,7 @@ mod tests {
                         false,
                         false,
                         column,
+                        1,
                     );
                 }
             });
@@ -1671,6 +1860,7 @@ mod tests {
                         false,
                         false,
                         column,
+                        1,
                     );
                 });
                 output.textures_delta.clear();
@@ -1796,6 +1986,7 @@ mod tests {
                 dated,
                 under_pinned,
                 column,
+                1,
             );
         });
         output.textures_delta.clear();
@@ -2088,6 +2279,7 @@ mod tests {
                     false,
                     false,
                     column,
+                    1,
                 );
             });
             output.textures_delta.clear();
@@ -2170,6 +2362,7 @@ mod tests {
                 false,
                 false,
                 60.0,
+                1,
             );
         });
         output.textures_delta.clear();
@@ -2288,6 +2481,7 @@ mod tests {
                         false,
                         false,
                         60.0,
+                        1,
                     );
                 });
                 output.textures_delta.clear();
@@ -2350,6 +2544,190 @@ mod tests {
     fn a_one_line_rows_picture_shows_as_a_picture_in_arabic() {
         if crate::i18n::arabic_run() {
             check_one_line_picture();
+        }
+    }
+
+    /// What a popup row painted: each line of its title with where it is
+    /// and its words, then where its number, its time and its kind's
+    /// symbol are.
+    type PopupRow = (Vec<(Rect, String)>, Rect, Rect, Rect);
+
+    /// The popup's row of `it`, `selected` or not, giving its title
+    /// `title_lines` lines, at the top of a list: a row 420 points wide and
+    /// one line taller for each line its title takes after the first.
+    fn popup_row(ctx: &egui::Context, it: &Item, selected: bool, title_lines: usize) -> PopupRow {
+        let hit = Hit {
+            id: it.id,
+            closeness: None,
+            weak: false,
+        };
+        let time = row_time(it.created, false);
+        let time = match bidi::has_rtl(&time) {
+            true => bidi::job(&time, FontId::proportional(size::SMALL), Color32::GRAY).text,
+            false => time,
+        };
+        let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+            let line = grid::line_height(ui, &FontId::proportional(size::BODY));
+            let height = 40.0 + (title_lines - 1) as f32 * line;
+            let rect = Rect::from_min_size(Pos2::new(0.0, 100.0), Vec2::new(420.0, height));
+            let column = time_column(ui, std::iter::once((it, false)));
+            paint_row(
+                ui,
+                rect,
+                false,
+                it,
+                &hit,
+                None,
+                None,
+                selected,
+                true,
+                &[],
+                true,
+                Some(1),
+                false,
+                false,
+                column,
+                title_lines,
+            );
+        });
+        output.textures_delta.clear();
+        let (mut title, mut number, mut shown_time, mut symbol) = (Vec::new(), None, None, None);
+        for clipped in &output.shapes {
+            match &clipped.shape {
+                egui::Shape::Text(text) => {
+                    let at = text.galley.rect.translate(text.pos.to_vec2());
+                    match text.galley.text() {
+                        "1" => number = Some(at),
+                        words if words == time => shown_time = Some(at),
+                        _ => {
+                            for row in &text.galley.rows {
+                                let at = row.rect().translate(text.pos.to_vec2());
+                                title.push((at, row.text()));
+                            }
+                        }
+                    }
+                }
+                egui::Shape::Mesh(mesh) if (mesh.calc_bounds().width() - 16.0).abs() < 0.01 => {
+                    symbol = Some(mesh.calc_bounds());
+                }
+                _ => {}
+            }
+        }
+        title.sort_by(|a, b| a.0.top().total_cmp(&b.0.top()));
+        let found = |what: &str, at: Option<Rect>| at.unwrap_or_else(|| panic!("{what}"));
+        (
+            title,
+            found("the number", number),
+            found("the time", shown_time),
+            found("the symbol", symbol),
+        )
+    }
+
+    /// The popup's selected row gives a title one line cuts two lines: the
+    /// second right under the first and ending with "…" when the text is
+    /// longer still, both starting at the same edge, the first where a
+    /// one-line row's title is, and the number, the symbol and the time
+    /// where they are on a one-line row. A short title keeps one line, and
+    /// a long title on a row not selected stays one line cut with "…". In
+    /// English and in Arabic, each language's title in both directions.
+    fn check_popup_selected_title() {
+        let ctx = egui::Context::default();
+        add_fonts(&ctx);
+        icons::register(&ctx);
+        // The fonts apply from the next frame.
+        ctx.run_ui(egui::RawInput::default(), |_| {})
+            .textures_delta
+            .clear();
+        let rtl = i18n::rtl();
+        let near = |a: f32, b: f32| (a - b).abs() <= 0.5;
+        let titles = [
+            "Meeting moved to Thursday at 10:30 in room 4B, with the whole team, the new \
+             budget and the plans for the year after next",
+            "موعد الاجتماع يوم الخميس الساعة العاشرة والنصف صباحًا في القاعة الكبرى مع الفريق \
+             كله لمناقشة الميزانية الجديدة وخطط العام المقبل",
+        ];
+        for text in titles {
+            let it = Item::new(1, Kind::Text, Origin::Clipboard, text.into());
+            let case = format!("rtl {rtl}, {text:?}");
+            // How many lines the popup gives it, as the list asks.
+            let mut lines = 0;
+            let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+                let hit = Hit {
+                    id: 1,
+                    closeness: None,
+                    weak: false,
+                };
+                let column = time_column(ui, std::iter::once((&it, false)));
+                lines = popup_title_lines(ui, &it, &hit, 420.0, column, &[]);
+            });
+            output.textures_delta.clear();
+            assert_eq!(lines, 2, "{case}");
+            let (two, number, time, symbol) = popup_row(&ctx, &it, true, 2);
+            let (one, one_number, one_time, one_symbol) = popup_row(&ctx, &it, false, 1);
+            assert_eq!(two.len(), 2, "{case}: {two:?}");
+            assert_eq!(one.len(), 1, "{case}: {one:?}");
+            let (first, second, cut) = (two[0].0, two[1].0, one[0].0);
+            assert!(near(second.top(), first.bottom()), "{case}: {two:?}");
+            assert!(two[1].1.contains('…'), "{case}: {two:?}");
+            assert!(one[0].1.contains('…'), "{case}: {one:?}");
+            // Both lines from one edge: the right one for Arabic in the
+            // Arabic window, else the left one.
+            let arabic_in_arabic = rtl && bidi::has_rtl(text);
+            let edge = |at: Rect| match arabic_in_arabic {
+                true => at.right(),
+                false => at.left(),
+            };
+            assert!(near(edge(first), edge(second)), "{case}: {two:?}");
+            // The first line, the number, the symbol and the time where a
+            // one-line row has them. In the Arabic window English lines
+            // stand together against its right edge, as one line does.
+            assert!(near(first.top(), cut.top()), "{case}");
+            if rtl && !arabic_in_arabic {
+                let right = first.right().max(second.right());
+                assert!(near(right, cut.right()), "{case}: {two:?} {cut:?}");
+            } else {
+                assert!(near(edge(first), edge(cut)), "{case}: {two:?} {cut:?}");
+            }
+            assert_eq!(
+                (number, time, symbol),
+                (one_number, one_time, one_symbol),
+                "{case}"
+            );
+        }
+        // A short title keeps one line.
+        let short = Item::new(2, Kind::Text, Origin::Clipboard, "Lunch at noon".into());
+        let mut lines = 0;
+        let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+            let hit = Hit {
+                id: 2,
+                closeness: None,
+                weak: false,
+            };
+            let column = time_column(ui, std::iter::once((&short, false)));
+            lines = popup_title_lines(ui, &short, &hit, 420.0, column, &[]);
+        });
+        output.textures_delta.clear();
+        assert_eq!(lines, 1, "rtl {rtl}");
+    }
+
+    #[test]
+    fn the_popups_selected_row_shows_two_lines() {
+        check_popup_selected_title();
+    }
+
+    #[test]
+    fn the_popups_selected_row_shows_two_lines_right_to_left() {
+        crate::i18n::passes_in_arabic(
+            module_path!(),
+            "the_popups_selected_row_shows_two_lines_in_arabic",
+        );
+    }
+
+    #[test]
+    #[ignore = "run in a process of its own by the_popups_selected_row_shows_two_lines_right_to_left"]
+    fn the_popups_selected_row_shows_two_lines_in_arabic() {
+        if crate::i18n::arabic_run() {
+            check_popup_selected_title();
         }
     }
 
@@ -2433,6 +2811,7 @@ mod tests {
                                     false,
                                     false,
                                     column,
+                                    1,
                                 );
                             }
                         });
@@ -2549,6 +2928,7 @@ mod tests {
                             false,
                             false,
                             column,
+                            1,
                         );
                     });
                     output.textures_delta.clear();
@@ -2650,6 +3030,7 @@ mod tests {
                         false,
                         false,
                         60.0,
+                        1,
                     );
                 });
                 output.textures_delta.clear();
