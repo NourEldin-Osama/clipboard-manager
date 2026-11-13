@@ -227,7 +227,7 @@ item-paste-plain = لصق كنص عادي
 item-copy-only = نسخ فقط
 item-copy-plain = نسخ كنص عادي
 item-copy-image-text = نسخ النص الموجود في الصورة
-item-ignore-app = عدم التسجيل أبدًا من { $app }…
+item-ignore-app = عدم التسجيل أبدًا من هذا البرنامج…
 item-menu = الإجراءات
 item-paste-group =
     { $count ->

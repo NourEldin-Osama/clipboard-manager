@@ -869,6 +869,76 @@ mod tests {
         assert_eq!(ruled.rules.len(), cfg.rules.len() + 1);
     }
 
+    /// The texts `toast`'s card draws, each from the left, without the
+    /// invisible marks that set a part apart.
+    fn drawn_texts(toast: &Toast) -> String {
+        let ctx = egui::Context::default();
+        add_fonts(&ctx);
+        // The fonts apply from the next frame.
+        ctx.run_ui(egui::RawInput::default(), |_| {})
+            .textures_delta
+            .clear();
+        let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+            let laid = lay_out(ui, toast, WIDTH, false, None);
+            let card = Rect::from_min_size(Pos2::new(20.0, 20.0), Vec2::new(WIDTH, laid.height));
+            paint_content(ui, card, toast, &laid, &mut Asked::default(), None);
+        });
+        output.textures_delta.clear();
+        let marks = ['\u{2066}', '\u{2067}', '\u{2068}', '\u{2069}'];
+        let texts: Vec<String> = output
+            .shapes
+            .iter()
+            .filter_map(|clipped| match &clipped.shape {
+                egui::Shape::Text(shape) => Some(shape.galley.text().to_string()),
+                _ => None,
+            })
+            .collect();
+        texts
+            .join(" ")
+            .chars()
+            .filter(|c| !marks.contains(c))
+            .collect()
+    }
+
+    /// The item menu's "Never record from this program…" names no program;
+    /// the question after it does, and "Notepad++" keeps "++" right after
+    /// "Notepad", also in an Arabic sentence, where without the marks it
+    /// went to the name's other end.
+    fn check_the_question_keeps_the_name_in_order() {
+        let shown = drawn_texts(&question(false));
+        assert!(shown.contains("Notepad++"), "{shown}");
+        if i18n::rtl() {
+            let mut bare = question(false);
+            bare.text = t!("toast-never-record-question", app = "Notepad++");
+            let bare = drawn_texts(&bare);
+            assert!(
+                bare.contains("++Notepad"),
+                "the test sees the fault: {bare}"
+            );
+        }
+    }
+
+    #[test]
+    fn the_question_keeps_the_program_s_name_in_order() {
+        check_the_question_keeps_the_name_in_order();
+    }
+
+    #[test]
+    fn the_question_keeps_the_program_s_name_in_order_right_to_left() {
+        crate::i18n::passes_in_arabic(
+            module_path!(),
+            "the_question_keeps_the_program_s_name_in_order_in_arabic",
+        );
+    }
+
+    #[test]
+    #[ignore = "run in a process of its own by the_question_keeps_the_program_s_name_in_order_right_to_left"]
+    fn the_question_keeps_the_program_s_name_in_order_in_arabic() {
+        if crate::i18n::arabic_run() {
+            check_the_question_keeps_the_name_in_order();
+        }
+    }
+
     /// Cancel and Esc close only the question, in its own window, and make
     /// no rule: nothing runs.
     #[test]

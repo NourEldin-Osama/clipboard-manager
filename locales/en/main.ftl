@@ -211,7 +211,7 @@ item-paste-plain = Paste as plain text
 item-copy-only = Copy only
 item-copy-plain = Copy as plain text
 item-copy-image-text = Copy the text in the image
-item-ignore-app = Never record from { $app }…
+item-ignore-app = Never record from this program…
 item-menu = Actions
 item-paste-group =
     { $count ->
