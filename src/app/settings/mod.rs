@@ -36,7 +36,7 @@ use widgets::*;
 pub(super) use servers::{model_label, use_found, PendingSend, ServerEditor};
 
 /// How wide a settings page is at most.
-const COLUMN_WIDTH: f32 = 640.0;
+const COLUMN_WIDTH: f32 = 800.0;
 
 /// How far a settings page starts after the page list's rows.
 const COLUMN_GAP: f32 = 32.0;
@@ -454,7 +454,7 @@ mod tests {
     }
 
     fn check_column_beside_page_list() {
-        for width in [1000.0, 1280.0, 1920.0] {
+        for width in [1280.0, 1920.0] {
             let (rows, column) = rows_and_column(width);
             let (gap, _) = gap_and_far_room(width, rows, column);
             assert_eq!(gap, COLUMN_GAP, "{width}: {rows:?} {column:?}");
@@ -462,7 +462,7 @@ mod tests {
         }
         // Narrower than the page list and a whole column: the column takes
         // the room there is, short of the scroll bar's and the shadow's.
-        for width in [560.0, 800.0] {
+        for width in [560.0, 800.0, 1000.0] {
             let (rows, column) = rows_and_column(width);
             let (gap, far) = gap_and_far_room(width, rows, column);
             assert_eq!(gap, COLUMN_GAP, "{width}");

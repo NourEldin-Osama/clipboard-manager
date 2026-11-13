@@ -1351,10 +1351,16 @@ mod tests {
 
     /// `draw` in a settings column of the widest kind.
     fn in_column(ui: &mut Ui, draw: impl FnOnce(&mut Ui)) {
-        let column = Rect::from_min_size(
-            Pos2::new(20.0, 20.0),
-            Vec2::new(super::super::COLUMN_WIDTH, 2000.0),
-        );
+        in_column_of(ui, super::super::COLUMN_WIDTH, draw);
+    }
+
+    /// The column of a window about 910 points wide, narrower than the
+    /// widest column: as wide as that was before it grew to 800 points.
+    const NARROWER_COLUMN: f32 = 640.0;
+
+    /// `draw` in a settings column `width` wide.
+    fn in_column_of(ui: &mut Ui, width: f32, draw: impl FnOnce(&mut Ui)) {
+        let column = Rect::from_min_size(Pos2::new(20.0, 20.0), Vec2::new(width, 2000.0));
         ui.scope_builder(egui::UiBuilder::new().max_rect(column), draw);
     }
 
@@ -1459,7 +1465,7 @@ mod tests {
         }
     }
 
-    /// The "Read by" row of Settings, Search & AI, in the widest column: its
+    /// The "Read by" row of Settings, Search & AI, in a narrower column: its
     /// choice of three leaves its gray line two lines, which come out about
     /// equally long, the last at least half as wide as the first, and the
     /// choice is centred on the name and the two lines.
@@ -1470,7 +1476,7 @@ mod tests {
         let mut engine = 2;
         let mut control = Rect::NOTHING;
         let mut draw = |ui: &mut Ui| {
-            in_column(ui, |ui| {
+            in_column_of(ui, NARROWER_COLUMN, |ui| {
                 card(ui, |ui| {
                     plain_setting(ui, &name, &line, "", |ui| {
                         let engines = [
@@ -1497,6 +1503,94 @@ mod tests {
             });
         let off = control.center().y - text.center().y;
         assert!(off.abs() <= 0.5, "{control:?} on {text:?}");
+    }
+
+    /// The Model, How close the meaning must be and Read by rows of
+    /// Settings, Search & AI, whose gray lines take two lines in a narrower
+    /// column, in the widest one: each gray line takes one line beside its
+    /// control.
+    fn check_search_lines_in_the_widest_column() {
+        let ctx = window();
+        let rows = [
+            (
+                t!("settings-model"),
+                t!("settings-search-model-hint"),
+                String::new(),
+            ),
+            (
+                t!("settings-strictness"),
+                t!("settings-strictness-hint"),
+                String::new(),
+            ),
+            (
+                t!("settings-read-engine"),
+                t!("settings-read-engine-hint"),
+                t!("settings-read-engine-help"),
+            ),
+        ];
+        let (mut chosen, mut engine) = (1, 2);
+        let mut places = [(Rect::NOTHING, Rect::NOTHING); 3];
+        let mut draw = |ui: &mut Ui| {
+            in_column(ui, |ui| {
+                card(ui, |ui| {
+                    for (index, ((name, line, details), place)) in
+                        rows.iter().zip(places.iter_mut()).enumerate()
+                    {
+                        *place = card_row(ui, false, |ui| {
+                            let mut control = Rect::NOTHING;
+                            let _ = setting_content(ui, name, line, details, false, false, |ui| {
+                                if index == 2 {
+                                    let engines = [
+                                        (0, t!("settings-engine-off")),
+                                        (1, t!("settings-engine-windows")),
+                                        (2, t!("settings-engine-server")),
+                                    ];
+                                    segmented(ui, &mut engine, &engines);
+                                } else {
+                                    field_look(ui);
+                                    egui::ComboBox::from_id_salt(index)
+                                        .icon(menu_arrow)
+                                        .width(MENU_WIDTH)
+                                        .selected_text("EmbeddingGemma · llama.cpp")
+                                        .show_ui(ui, |ui| {
+                                            ui.selectable_value(&mut chosen, 1, "EmbeddingGemma");
+                                        });
+                                }
+                                control = ui.min_rect();
+                            });
+                            (ui.min_rect(), control)
+                        });
+                    }
+                });
+            });
+        };
+        frame(&ctx, egui::RawInput::default(), &mut draw);
+        let output = frame(&ctx, egui::RawInput::default(), &mut draw);
+        assert!(!output.platform_output.requested_discard(), "steady");
+        for ((name, _, _), (row, control)) in rows.iter().zip(places) {
+            // The name, and the gray line's lines.
+            let texts = texts_beside(&output, row, control);
+            assert_eq!(texts.len(), 2, "{name}: {texts:?}");
+            assert!(beside_its_text(row, control), "{name}: {control:?}");
+        }
+    }
+
+    #[test]
+    fn search_lines_take_one_line_in_the_widest_column() {
+        check_search_lines_in_the_widest_column();
+    }
+
+    #[test]
+    fn search_lines_take_one_line_in_the_widest_column_right_to_left() {
+        passes_in_arabic("search_lines_take_one_line_in_the_widest_column_in_arabic");
+    }
+
+    #[test]
+    #[ignore = "run in a process of its own by search_lines_take_one_line_in_the_widest_column_right_to_left"]
+    fn search_lines_take_one_line_in_the_widest_column_in_arabic() {
+        if arabic_run() {
+            check_search_lines_in_the_widest_column();
+        }
     }
 
     /// The widest controls in the widest column, the choice and the recorder
@@ -1627,11 +1721,11 @@ mod tests {
     }
 
     /// The Version and Data folder rows of Settings, About, as a development
-    /// build draws them, in the widest column: the update's state and the
+    /// build draws them, in a narrower column: the update's state and the
     /// version, and the folder's Open button and path, would leave their
     /// text less than `TEXT_LEAST_WIDTH`. Each goes under its text, at the
     /// row's far edge, the gray line takes one line, and the path shows in
-    /// full.
+    /// full. (In the widest column both fit beside their text.)
     #[test]
     fn a_long_value_goes_under_its_text() {
         let ctx = window();
@@ -1639,7 +1733,7 @@ mod tests {
         let lines = [t!("settings-version-hint"), t!("settings-data-folder-hint")];
         let mut rows = [(Rect::NOTHING, Rect::NOTHING); 2];
         let mut draw = |ui: &mut Ui| {
-            in_column(ui, |ui| {
+            in_column_of(ui, NARROWER_COLUMN, |ui| {
                 card(ui, |ui| {
                     rows[0] = card_row(ui, false, |ui| {
                         let mut control = Rect::NOTHING;
@@ -1805,7 +1899,7 @@ mod tests {
     /// The width of a field that leaves the prompt row's text its room,
     /// and of one that doesn't.
     const FIELD_BESIDE: f32 = 280.0;
-    const FIELD_UNDER: f32 = 400.0;
+    const FIELD_UNDER: f32 = 520.0;
 
     /// Whether `field` is beside its text, centred on it, rather than under
     /// it, at the bottom of `row`.
@@ -1864,31 +1958,45 @@ mod tests {
         }
     }
 
+    /// The name and the gray line's lines of the prompt row `row`, beside
+    /// its `field`.
+    fn texts_beside(output: &egui::FullOutput, row: Rect, field: Rect) -> Vec<Rect> {
+        output
+            .shapes
+            .iter()
+            .filter_map(|clipped| match &clipped.shape {
+                egui::Shape::Text(text) => Some(text.galley.rect.translate(text.pos.to_vec2())),
+                _ => None,
+            })
+            .filter(|at| row.contains(at.center()) && !field.contains(at.center()))
+            .collect()
+    }
+
     /// The Query prompt and Item prompt rows of a model's settings before
     /// and after a change shows their reset, as when the first letter is
     /// typed: each field stays beside its text, as far along the row, and
-    /// the text gives the reset its room, ending `TEXT_GAP` before it. The
-    /// Item prompt's gray line keeps its two lines there, so its field
-    /// stays where it was; the Query prompt's takes a third, so its field,
-    /// centred on the text, moves down half a line.
+    /// the text gives the reset its room, ending `TEXT_GAP` before it. A
+    /// gray line that keeps its lines there keeps its field where it was;
+    /// one that takes another line moves its field, centred on the text,
+    /// down half a line.
     fn check_reset_keeps_its_control_beside_the_text() {
         let rows = [
             (
                 t!("settings-server-query-prompt"),
                 t!("settings-server-query-prompt-hint"),
-                false,
             ),
             (
                 t!("settings-server-item-prompt"),
                 t!("settings-server-item-prompt-hint"),
-                true,
             ),
         ];
         let reset = t!("settings-back-to-default");
-        for (name, line, keeps_its_lines) in rows {
+        for (name, line) in rows {
             let ctx = window();
-            let (row, without, _) = settled_prompt_row(&ctx, &name, &line, FIELD_BESIDE, false);
+            let (row, without, before) =
+                settled_prompt_row(&ctx, &name, &line, FIELD_BESIDE, false);
             assert!(beside_its_text(row, without), "{name}: {without:?}");
+            let lines_before = texts_beside(&before, row, without).len();
             let (row, with, output) = settled_prompt_row(&ctx, &name, &line, FIELD_BESIDE, true);
             assert!(
                 beside_its_text(row, with),
@@ -1900,20 +2008,23 @@ mod tests {
                 along <= 0.5,
                 "{name}: {with:?} with the reset, {without:?} without"
             );
-            if keeps_its_lines {
+            let texts = texts_beside(&output, row, with);
+            assert!(texts.len() >= 2, "{name}: {texts:?}");
+            if texts.len() == lines_before {
                 assert!(same_place(with, without), "{name}: {with:?}, {without:?}");
+            } else {
+                assert_eq!(texts.len(), lines_before + 1, "{name}: {texts:?}");
+                // A line of the gray line, shorter than the name.
+                let line_height = texts
+                    .iter()
+                    .map(|text| text.height())
+                    .fold(f32::MAX, f32::min);
+                let down = with.top() - without.top();
+                assert!(
+                    (down - line_height / 2.0).abs() <= 0.5,
+                    "{name}: down {down}"
+                );
             }
-            // The name and the gray line's lines.
-            let texts: Vec<Rect> = output
-                .shapes
-                .iter()
-                .filter_map(|clipped| match &clipped.shape {
-                    egui::Shape::Text(text) => Some(text.galley.rect.translate(text.pos.to_vec2())),
-                    _ => None,
-                })
-                .filter(|at| row.contains(at.center()) && !with.contains(at.center()))
-                .collect();
-            assert!(texts.len() >= 3, "{name}: {texts:?}");
             let (_, places) = spoken(output);
             let button = places
                 .iter()
