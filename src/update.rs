@@ -436,6 +436,14 @@ mod tests {
         assert!(notes_in(changelog, "0.4.0").is_empty());
         // The change log in the app has notes for the running version.
         assert!(!notes(VERSION).is_empty());
+        // Each version's notes are whole sentences: a line wrapped without
+        // its two spaces would cut a note short or split it in two.
+        let built_in = include_str!("../CHANGELOG.md");
+        for version in built_in.lines().filter_map(|line| line.strip_prefix("## ")) {
+            for note in notes_in(built_in, version.trim_end()) {
+                assert!(note.ends_with('.'), "{version}: {note}");
+            }
+        }
     }
 
     #[test]
