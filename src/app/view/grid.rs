@@ -282,7 +282,7 @@ pub(super) fn paint_card(
         strip_top - TAG_ROW
     };
     if !it.tags.is_empty() {
-        paint_tags(ui, rect, it, pad, tags_top, strip_top);
+        paint_tags(ui, rect, it, pad, (tags_top, strip_top), selected);
     }
     let body = card_body(rect, !it.tags.is_empty());
     let bp = ui.painter_at(body);
@@ -574,13 +574,29 @@ fn paint_footer(
     );
 }
 
-/// The tags row: as many tags as fit, then "+N tags".
-fn paint_tags(ui: &Ui, rect: Rect, it: &Item, pad: f32, tags_top: f32, strip_top: f32) {
+/// The tags row, from `tags_top` to `strip_top`: as many tags as fit,
+/// then "+N tags". On a `selected` card each chip is the card's own color
+/// at rest, so it stands out from the card's tint, as a list row's chips
+/// do on a tinted row; on other cards a tint of its color.
+fn paint_tags(
+    ui: &Ui,
+    rect: Rect,
+    it: &Item,
+    pad: f32,
+    (tags_top, strip_top): (f32, f32),
+    selected: bool,
+) {
     let row = Rect::from_min_max(
         Pos2::new(rect.left() + pad, tags_top),
         Pos2::new(rect.right() - pad, strip_top - 2.0),
     );
-    let chips = tag_chips(ui, &it.tags, row.width(), CARD_REST_TINT);
+    let mut chips = tag_chips(ui, &it.tags, row.width(), CARD_REST_TINT);
+    if selected {
+        let card = ui.visuals().extreme_bg_color;
+        for (_, _, fill) in &mut chips {
+            *fill = card;
+        }
+    }
     // The row starts on the side its first tag is written from.
     let rtl = it
         .tags
@@ -1365,6 +1381,84 @@ mod tests {
                 assert_eq!(tints, [expected], "{case}");
                 let full = !dark || lit;
                 assert_eq!(expected == Color32::WHITE, full, "{case}");
+            }
+        }
+    }
+
+    /// On a selected card, alone or with others, each tag's chip and the
+    /// "+N tags" chip are the card's own color at rest, opaque; on a card
+    /// at rest or under the pointer they keep their see-through tints. In
+    /// both themes, with both Dark panels choices. The theme's tests check
+    /// the contrasts.
+    #[test]
+    fn a_tag_chip_takes_the_cards_color_on_a_selected_card() {
+        let mut it = Item::new(1, Kind::Text, Origin::Clipboard, "Invoice 4821".into());
+        let tags = [
+            "finance",
+            "quarterly reports",
+            "to read later",
+            "receipts",
+            "travel plans",
+            "taxes 2026",
+        ];
+        it.tags = tags.map(String::from).to_vec();
+        let more: Vec<String> = (1..=tags.len())
+            .map(|n| t!("tags-more", count = n))
+            .collect();
+        let is_more = |shown: &str| more.iter().any(|m| m == shown);
+        let card = Rect::from_min_size(Pos2::new(0.0, 100.0), Vec2::new(300.0, 210.0));
+        for panels in [
+            crate::config::DarkPanels::Darker,
+            crate::config::DarkPanels::Lighter,
+        ] {
+            for theme in [egui::Theme::Light, egui::Theme::Dark] {
+                let ctx = egui::Context::default();
+                add_fonts(&ctx);
+                style(&ctx, panels);
+                ctx.set_theme(theme);
+                // The fonts apply from the next frame.
+                ctx.run_ui(egui::RawInput::default(), |_| {})
+                    .textures_delta
+                    .clear();
+                for (hot, selected) in [(false, false), (true, false), (false, true)] {
+                    let mut fill = Color32::PLACEHOLDER;
+                    let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+                        fill = ui.visuals().extreme_bg_color;
+                        paint_card(ui, card, hot, &it, None, None, None, selected, &[]);
+                    });
+                    output.textures_delta.clear();
+                    let (mut fills, mut words) = (Vec::new(), Vec::new());
+                    for clipped in &output.shapes {
+                        match &clipped.shape {
+                            egui::Shape::Rect(shape) => fills.push((shape.rect, shape.fill)),
+                            egui::Shape::Text(text) => {
+                                let shown = text.galley.text();
+                                if shown.starts_with("# ") || is_more(shown) {
+                                    let at = text.galley.rect.translate(text.pos.to_vec2());
+                                    words.push((shown.to_string(), at));
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                    let case = format!("{panels:?}, {theme:?}, hot {hot}, selected {selected}");
+                    assert!(words.iter().any(|(w, _)| !is_more(w)), "{case}: a tag");
+                    assert!(words.iter().any(|(w, _)| is_more(w)), "{case}: +N tags");
+                    for (shown, at) in &words {
+                        let chip = fills
+                            .iter()
+                            .filter(|(rect, _)| rect.contains_rect(*at) && rect.height() < 40.0)
+                            .min_by(|a, b| a.0.area().total_cmp(&b.0.area()))
+                            .map(|(_, fill)| *fill)
+                            .unwrap_or_else(|| panic!("{case}: the chip of {shown:?}"));
+                        if selected {
+                            assert_eq!(chip, fill, "{case}: {shown:?}");
+                            assert_eq!(chip.a(), 255, "{case}: {shown:?}");
+                        } else {
+                            assert!(chip.a() < 255, "{case}: {shown:?} on {chip:?}");
+                        }
+                    }
+                }
             }
         }
     }

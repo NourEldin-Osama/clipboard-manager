@@ -299,7 +299,7 @@ pub(crate) fn text_shade(color: Color32, dark_mode: bool) -> Color32 {
 }
 
 /// A tag's text, in its color: the text shade, a step lighter in the dark
-/// theme, where a tag's chip can sit on a selected card's tint.
+/// theme.
 pub(crate) fn tag_shade(color: Color32, dark_mode: bool) -> Color32 {
     if dark_mode {
         readable(color, Color32::from_gray(80))
@@ -934,6 +934,36 @@ mod tests {
         }
     }
 
+    /// A selected grid card's tag chips, and its "+N tags", are the card's
+    /// own color at rest, for every accent: opaque, apart from the selected
+    /// card's tint, and each chip's text reads on it at 4.5 to 1 or more.
+    /// In the dark theme chip and card differ by 1.1 to 1 or more. In the
+    /// light theme the card's tint is so faint (5%) that its white, the
+    /// lightest a chip can be, differs from it by about 1.06 to 1.
+    #[test]
+    fn a_selected_cards_tag_chips_stand_out() {
+        for (ctx, theme) in styled() {
+            let v = ctx.style_of(theme).visuals.clone();
+            let (dark, content, weak) = (v.dark_mode, v.extreme_bg_color, v.weak_text_color());
+            let chip = content;
+            assert_eq!(chip.a(), 255, "{theme:?}: an opaque chip");
+            let texts = TAG_COLORS.iter().map(|c| tag_shade(*c, dark)).chain([weak]);
+            for text in texts {
+                let ratio = contrast(text, chip);
+                assert!(ratio >= 4.5, "{theme:?}: text {text:?} {ratio:.2} to 1");
+            }
+            let least = if dark { 1.1 } else { 1.05 };
+            for a in ACCENTS {
+                let card = over(selected_card(a, dark), content);
+                let apart = contrast(chip, card);
+                assert!(
+                    apart >= least,
+                    "{theme:?}, {a:?}: chip and card {apart:.3} to 1"
+                );
+            }
+        }
+    }
+
     /// A scroll bar's handle at rest stays in sight on every surface it
     /// floats over, fainter than under the pointer, and the bar takes no
     /// room from the content.
@@ -997,13 +1027,10 @@ mod tests {
                         "chosen tag filter".to_string(),
                         over(chosen_pill(c, dark), panel),
                     ),
+                    // Also a tag's chip on a selected card, which is the
+                    // card's own color.
                     ("tag suggestion".to_string(), content),
                 ];
-                for a in ACCENTS {
-                    let card = over(selected_card(a, dark), content);
-                    let place = format!("tag on a card selected in {a:?}");
-                    grounds.push((place, over(c.gamma_multiply(tint), card)));
-                }
                 // A list row's tag at rest, and on a row under the pointer
                 // or selected, where its chip is the panel's color.
                 grounds.push(("tag on a row".into(), over(c.gamma_multiply(tint), panel)));
