@@ -18,7 +18,7 @@ pub(super) const WEAKER_LINE: f32 = 48.0;
 /// The room rows keep at the right edge of their scroll area, where the
 /// scroll bar's handle floats in every language: the handle's width at
 /// rest and a gap.
-fn handle_room(ui: &Ui) -> f32 {
+pub(super) fn handle_room(ui: &Ui) -> f32 {
     ui.spacing().scroll.floating_width + space::TINY
 }
 
