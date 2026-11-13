@@ -1465,7 +1465,7 @@ mod tests {
         }
     }
 
-    /// The "Read by" row of Settings, Search & AI, in a narrower column: its
+    /// The "Read by" row of Settings, AI & Search, in a narrower column: its
     /// choice of three leaves its gray line two lines, which come out about
     /// equally long, the last at least half as wide as the first, and the
     /// choice is centred on the name and the two lines.
@@ -1506,7 +1506,7 @@ mod tests {
     }
 
     /// The Model, How close the meaning must be and Read by rows of
-    /// Settings, Search & AI, whose gray lines take two lines in a narrower
+    /// Settings, AI & Search, whose gray lines take two lines in a narrower
     /// column, in the widest one: each gray line takes one line beside its
     /// control.
     fn check_search_lines_in_the_widest_column() {

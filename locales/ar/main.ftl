@@ -396,7 +396,7 @@ toast-images-turned-off = أُوقف إرسال الصور لهذا النموذ
 ## Settings
 
 settings-page-general = عام
-settings-page-search = البحث والذكاء الاصطناعي
+settings-page-search = الذكاء الاصطناعي والبحث
 settings-page-servers = الخوادم
 settings-page-privacy = الخصوصية
 settings-page-about = حول التطبيق

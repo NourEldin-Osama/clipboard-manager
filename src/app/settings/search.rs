@@ -1,4 +1,4 @@
-//! Settings, Search & AI: what searches by meaning, how search works and
+//! Settings, AI & Search: what searches by meaning, how search works and
 //! what reads the text in images. The servers they run on have their own
 //! page.
 

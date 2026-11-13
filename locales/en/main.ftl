@@ -347,7 +347,7 @@ toast-images-turned-off = Send images is off for this model.
 ## Settings
 
 settings-page-general = General
-settings-page-search = Search & AI
+settings-page-search = AI & Search
 settings-page-servers = Servers
 settings-page-privacy = Privacy
 settings-page-about = About

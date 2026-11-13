@@ -29,7 +29,7 @@ cargo deny check -W unmaintained            # licenses, advisories, duplicates, 
 - When the repo lives on Google Drive (as in Colab), build with `CARGO_TARGET_DIR` pointing outside it.
 - `CLIPBOARD_MANAGER_HOME=<dir>` gives a throwaway data folder (config, history) for testing.
 - `CLIPBOARD_MANAGER_LOCAL_PORT_OFFSET=<n>` moves the usual ports the app looks for model servers on this PC on
-  (Settings, Search & AI and Servers, and the checklist), so a stand-in server can take a real one's place in a test copy.
+  (Settings, AI & Search and Servers, and the checklist), so a stand-in server can take a real one's place in a test copy.
 - `--profile dist` (thin LTO) is the shipping build. Don't build the release `.exe` locally; CI publishes it.
 - The UI can be checked under Xvfb (`xclip` to feed the clipboard, `xdotool` to drive it, `import` to screenshot);
   windows need `xdotool windowfocus` before key presses register.
