@@ -304,9 +304,9 @@ pub(super) fn thumbs_to_drop(
 
 /// `hot` while the pointer is over the row: its hover buttons then take the
 /// right edge, so the time and badges are left out. A row with two lines
-/// names the `program` the item came from on its second line. `numbered`
-/// rows leave room at the start for the numbers of quick paste, and show
-/// `number`.
+/// names the `program` the item came from on its second line. Rows
+/// `in_popup` leave room at the start for the numbers of quick paste, and
+/// show `number`; a picture there is a thumbnail at the symbols' size.
 /// `dated` rows sit under a day header, which gives their day; rows
 /// `under_pinned` sit under the Pinned header, which says they are pinned.
 /// The rows share a time column `time_column` wide, and each keeps the
@@ -326,7 +326,7 @@ pub(super) fn paint_row(
     selected: bool,
     compact: bool,
     terms: &[String],
-    numbered: bool,
+    in_popup: bool,
     number: Option<usize>,
     dated: bool,
     under_pinned: bool,
@@ -368,7 +368,7 @@ pub(super) fn paint_row(
 
     let across = Across::of(
         rect.width(),
-        (numbered, compact, hot),
+        (in_popup, compact, hot),
         time_column,
         badges(hit, show_pin),
     );
@@ -418,7 +418,7 @@ pub(super) fn paint_row(
                 c.gamma_multiply(if v.dark_mode { 0.3 } else { 0.13 }),
             );
         }
-        let side = if compact { 16.0 } else { av * 0.46 };
+        let side = if compact { ONE_LINE_SYMBOL } else { av * 0.46 };
         icons::paint(
             &p,
             Rect::from_center_size(av_rect.center(), Vec2::splat(side)),
@@ -427,9 +427,15 @@ pub(super) fn paint_row(
         );
     };
     // On one line a picture is a thumbnail that nearly fills the slot, so
-    // two pictures can be told apart.
+    // two pictures can be told apart; in the popup it is as big as the
+    // other rows' symbols.
     let picture = if compact {
-        Rect::from_center_size(av_rect.center(), Vec2::splat(ONE_LINE_PICTURE))
+        let side = if in_popup {
+            ONE_LINE_SYMBOL
+        } else {
+            ONE_LINE_PICTURE
+        };
+        Rect::from_center_size(av_rect.center(), Vec2::splat(side))
     } else {
         av_rect
     };
@@ -622,18 +628,18 @@ struct Across {
 }
 
 impl Across {
-    /// The places across a row `width` wide, `numbered` as the popup's,
+    /// The places across a row `width` wide, `in_popup` as the popup's,
     /// `compact` with one line, `hot` while the pointer is over it. The
     /// text column ends before the time column at rest, and before the
     /// hover buttons under the pointer; at rest the title also ends before
     /// the pin and the bars, `badges` wide.
     fn of(
         width: f32,
-        (numbered, compact, hot): (bool, bool, bool),
+        (in_popup, compact, hot): (bool, bool, bool),
         time_column: f32,
         badges: f32,
     ) -> Self {
-        let gutter = if numbered { NUMBER_SLOT + 6.0 } else { 0.0 };
+        let gutter = if in_popup { NUMBER_SLOT + 6.0 } else { 0.0 };
         let kind = if compact { ONE_LINE_SLOT } else { 38.0 };
         let text_start = ROW_PADDING + gutter + kind + 12.0;
         let right_w = if hot { 150.0 } else { time_column + 8.0 };
@@ -884,12 +890,16 @@ impl<'a> SecondLine<'a> {
 const NUMBER_SLOT: f32 = 20.0;
 
 /// How wide the kind's place is on a one-line row: a picture's thumbnail
-/// and a point on each side. The kind's symbol and a color's dot sit in its
-/// middle.
+/// and a point on each side. The kind's symbol, a color's dot and the
+/// popup's smaller thumbnail sit in its middle.
 const ONE_LINE_SLOT: f32 = 32.0;
 
 /// How big a picture's thumbnail is on a one-line row.
 const ONE_LINE_PICTURE: f32 = 30.0;
+
+/// How big the kind's symbol is on a one-line row, and a picture's
+/// thumbnail on a popup's row.
+const ONE_LINE_SYMBOL: f32 = 16.0;
 
 /// How big a color's dot is on a one-line row.
 const ONE_LINE_DOT: f32 = 18.0;
@@ -2434,10 +2444,11 @@ mod tests {
         }
     }
 
-    /// On one line, numbered as in the popup or not as in compact density,
-    /// a picture is a thumbnail 30 points square with a thin edge, centred
-    /// on the row in the kind's place, and its title starts where a text's
-    /// does. From the left, or in Arabic from the right.
+    /// On one line a picture is a thumbnail with a thin edge, centred on
+    /// the row in the kind's place: in the popup (numbered) 16 points
+    /// square, the size of the kinds' symbols, and in compact density 30
+    /// points. Its title starts where a text's does. From the left, or in
+    /// Arabic from the right.
     fn check_one_line_picture() {
         let ctx = egui::Context::default();
         add_fonts(&ctx);
@@ -2509,7 +2520,8 @@ mod tests {
             };
             let (shown, strokes, picture_title) = paint(&picture, Some(thumb.clone()), "480");
             let shown = shown.expect("the thumbnail");
-            assert_eq!(shown.size(), Vec2::splat(ONE_LINE_PICTURE), "{case}");
+            let side = if numbered { 16.0 } else { 30.0 };
+            assert_eq!(shown.size(), Vec2::splat(side), "{case}");
             assert!((shown.center().y - row.center().y).abs() <= 0.5, "{case}");
             // In the middle of the kind's place, after the number's.
             let gutter = if numbered { NUMBER_SLOT + 6.0 } else { 0.0 };
