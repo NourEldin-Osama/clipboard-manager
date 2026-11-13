@@ -41,7 +41,7 @@ pub fn rtl() -> bool {
 }
 
 /// The text for `key` in the interface language: `t!("toast-copied")`, or
-/// with values by name: `t!("status-items", count = n)`.
+/// with values by name: `t!("top-results", count = n)`.
 macro_rules! t {
     ($key:literal) => {
         $crate::i18n::text($key, None)
@@ -201,6 +201,42 @@ pub fn month(dt: &DateTime<Local>) -> String {
     }
 }
 
+/// Set by `passes_in_arabic` for the process it starts.
+#[cfg(test)]
+const ARABIC_RUN: &str = "CLIPBOARD_MANAGER_TEST_ARABIC";
+
+/// Runs the test `name` of `module` (the test's `module_path!()`) again in
+/// a process of its own, with Arabic on, and fails if it fails there. The
+/// language is one setting for the whole program, and the tests running
+/// beside this one read it.
+#[cfg(test)]
+pub(crate) fn passes_in_arabic(module: &str, name: &str) {
+    let module = module.split_once("::").map_or("", |(_, path)| path);
+    let test = format!("{module}::{name}");
+    let output = std::process::Command::new(std::env::current_exe().expect("the tests"))
+        .args([&test, "--exact", "--include-ignored", "--test-threads=1"])
+        .env(ARABIC_RUN, "1")
+        .output()
+        .expect("the tests run");
+    let said = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        output.status.success() && said.contains("1 passed"),
+        "{test} in Arabic:\n{said}{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+/// Turns Arabic on when this process was started by `passes_in_arabic`;
+/// false otherwise, and the test has nothing to do.
+#[cfg(test)]
+pub(crate) fn arabic_run() -> bool {
+    let started = std::env::var_os(ARABIC_RUN).is_some();
+    if started {
+        set(Language::Arabic, TimeFormat::H24);
+    }
+    started
+}
+
 #[cfg(test)]
 mod tests {
     use std::collections::{BTreeMap, BTreeSet};
@@ -356,6 +392,48 @@ mod tests {
         assert_eq!(ago(Language::Arabic, 2), "منذ دقيقتين");
         assert_eq!(ago(Language::Arabic, 5), "منذ 5 دقائق");
         assert_eq!(ago(Language::Arabic, 11), "منذ 11 دقيقة");
+    }
+
+    /// Arabic counts from 11 to 99 take their own form ("11 عنصرًا"), so
+    /// every Arabic choice with a form for 3 to 10 has one for them too.
+    #[test]
+    fn arabic_counts_have_a_form_for_11_to_99() {
+        fn without_many(pattern: &ast::Pattern<&str>) -> bool {
+            pattern.elements.iter().any(|element| match element {
+                ast::PatternElement::Placeable {
+                    expression: ast::Expression::Select { variants, .. },
+                } => {
+                    let has = |form: &str| {
+                        variants.iter().any(|v| {
+                            matches!(&v.key, ast::VariantKey::Identifier { name } if *name == form)
+                        })
+                    };
+                    (has("few") && !has("many")) || variants.iter().any(|v| without_many(&v.value))
+                }
+                _ => false,
+            })
+        }
+        let resource = fluent_syntax::parser::parse(ARABIC_TEXTS).expect("the file parses");
+        let missing: Vec<_> = resource
+            .body
+            .iter()
+            .filter_map(|entry| match entry {
+                ast::Entry::Message(message) => message
+                    .value
+                    .as_ref()
+                    .filter(|pattern| without_many(pattern))
+                    .map(|_| message.id.name),
+                _ => None,
+            })
+            .collect();
+        assert!(missing.is_empty(), "no form for 11 to 99: {missing:?}");
+        let results = |count: i64| {
+            let mut args = FluentArgs::new();
+            args.set("count", count);
+            text_in(Language::Arabic, "top-results", Some(&args))
+        };
+        assert_eq!(results(18), "18 نتيجة");
+        assert_eq!(results(5), "5 نتائج");
     }
 
     #[test]

@@ -493,7 +493,9 @@ impl State {
                         t!("status-starting-llama")
                     } else {
                         // The host alone: an address may carry a password.
-                        t!("status-connecting", host = crate::net::host(&cfg.base_url))
+                        // Left to right inside an Arabic sentence too.
+                        let host = crate::app::bidi::left_to_right(crate::net::host(&cfg.base_url));
+                        t!("status-connecting", host = host)
                     }));
                 }
                 ServerEmbedder::new(cfg.as_ref().clone()).and_then(|mut s| {

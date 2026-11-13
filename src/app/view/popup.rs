@@ -35,6 +35,10 @@ impl App {
             ctx.send_viewport_cmd(egui::ViewportCommand::RequestPaintWhileHidden);
             ctx.request_repaint();
         }
+        // A question the popup asked goes with it, answered no.
+        if !self.win.is_popup_open() {
+            super::messages::close_question(&mut self.toasts, true);
+        }
     }
 
     /// Draws the popup's window while it is open. A frame without it closes
@@ -131,14 +135,13 @@ impl App {
         });
     }
 
-    /// The quiet lines at the bottom: each key, then what it does. Keys
-    /// turned off in Settings are left out.
+    /// The quiet line at the bottom: each key, then what it does. Pasting,
+    /// the numbers and F1 for the rest, so it stays one line; keys turned
+    /// off in Settings are left out.
     fn key_hints(&self, ui: &mut Ui) {
         let k = &self.cfg.keys;
         let hints: Vec<(String, String)> = [
             (k.paste.clone(), t!("popup-key-paste")),
-            (k.paste_plain.clone(), t!("popup-key-plain")),
-            (k.copy_only.clone(), t!("popup-key-copy")),
             (t!("quick-paste-keys"), t!("popup-key-quick")),
             ("F1".to_string(), t!("popup-key-all")),
         ]
@@ -272,60 +275,48 @@ impl App {
     }
 }
 
-/// Pairs of keys and what they do, side by side in centered lines. A pair
-/// that doesn't fit on a line starts the next one.
-fn paint_key_hints(ui: &mut Ui, hints: &[(String, String)]) {
-    let (strong, weak) = (ui.visuals().text_color(), ui.visuals().weak_text_color());
-    let room = ui.available_width().max(0.0);
-    let font = FontId::proportional(size::SMALL);
-    let pairs: Vec<_> = hints
-        .iter()
-        .map(|(keys, what)| {
-            (
-                one_line(ui, keys, &[], font.clone(), strong, room),
-                one_line(ui, what, &[], font.clone(), weak, room),
-            )
-        })
-        .collect();
-    // Between a key and its words, and between pairs.
-    let (gap, spacing) = (5.0, 16.0);
-    let width = |i: usize| pairs[i].0.size().x + gap + pairs[i].1.size().x;
-    let mut lines: Vec<Vec<usize>> = Vec::new();
-    let mut used = 0.0;
-    for i in 0..pairs.len() {
+/// Where pairs `widths` wide go in lines `room` wide: each pair's line and
+/// where it starts in it. The pairs of a line spread across it with equal
+/// gaps; a lone pair is centred. In a narrow line the gaps shrink first,
+/// down to `least`, before a pair starts the next line.
+fn spread(widths: &[f32], room: f32, least: f32) -> Vec<(usize, f32)> {
+    let mut lines: Vec<Vec<f32>> = Vec::new();
+    for &width in widths {
         match lines.last_mut() {
-            Some(line) if used + spacing + width(i) <= room => {
-                line.push(i);
-                used += spacing + width(i);
+            Some(line) if line.iter().map(|w| w + least).sum::<f32>() + width <= room => {
+                line.push(width);
             }
-            _ => {
-                lines.push(vec![i]);
-                used = width(i);
-            }
+            _ => lines.push(vec![width]),
         }
     }
-    let line_h = 18.0;
-    let (rect, _) =
-        ui.allocate_exact_size(Vec2::new(room, line_h * lines.len() as f32), Sense::hover());
+    let mut places = Vec::new();
     for (row, line) in lines.iter().enumerate() {
-        let total = line.iter().map(|&i| width(i)).sum::<f32>() + spacing * (line.len() - 1) as f32;
-        let mut x = rect.center().x - total / 2.0;
-        let y = rect.top() + line_h * (row as f32 + 0.5);
-        for &i in line {
-            let (keys, what) = &pairs[i];
-            // Laid out left to right, then mirrored for Arabic.
-            let mut place = |galley: &Arc<egui::Galley>, color: Color32, after: f32| {
-                let size = galley.size();
-                let at = flip(
-                    rect,
-                    Rect::from_min_size(Pos2::new(x, y - size.y / 2.0), size),
-                );
-                ui.painter().galley(at.min, galley.clone(), color);
-                x += size.x + after;
-            };
-            place(keys, strong, gap);
-            place(what, weak, spacing);
+        let total: f32 = line.iter().sum();
+        let (mut x, gap) = match line.len() {
+            1 => ((room - total) / 2.0, 0.0),
+            n => (0.0, (room - total) / (n - 1) as f32),
+        };
+        for width in line {
+            places.push((row, x));
+            x += width + gap;
         }
+    }
+    places
+}
+
+/// Pairs of keys and what they do, spread across a line with equal gaps.
+/// A pair that doesn't fit on a line, even with the gaps at their least,
+/// starts the next one.
+pub(super) fn paint_key_hints(ui: &mut Ui, hints: &[(String, String)]) {
+    let room = ui.available_width().max(0.0);
+    let laid = KeyHints::new(ui, hints, room);
+    let places = spread(&laid.widths(), room, space::MEDIUM);
+    let lines = places.last().map_or(0, |(row, _)| row + 1);
+    let line_h = HINT_CAP + 6.0;
+    let (rect, _) = ui.allocate_exact_size(Vec2::new(room, line_h * lines as f32), Sense::hover());
+    for (n, (row, start)) in places.into_iter().enumerate() {
+        let y = rect.top() + line_h * (row as f32 + 0.5);
+        laid.paint(ui.painter(), rect, n, start, y);
     }
 }
 
@@ -349,4 +340,161 @@ fn popup_corner(ctx: &egui::Context) -> Option<Pos2> {
         })
         .unwrap_or(pointer.scale);
     Some((corner.to_vec2() / (scale * zoom)).to_pos2())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn hints_spread_with_equal_gaps_and_shrink_them_before_wrapping() {
+        // Room to spare: the first at the start, the last at the end.
+        assert_eq!(
+            spread(&[100.0, 120.0, 110.0], 420.0, 12.0),
+            [(0, 0.0), (0, 145.0), (0, 310.0)]
+        );
+        // Just room for the least gaps: still one line.
+        assert_eq!(
+            spread(&[100.0, 120.0, 110.0], 354.0, 12.0),
+            [(0, 0.0), (0, 112.0), (0, 244.0)]
+        );
+        // Less: the last one goes on a line of its own, centred.
+        assert_eq!(
+            spread(&[100.0, 120.0, 110.0], 353.0, 12.0),
+            [(0, 0.0), (0, 233.0), (1, 121.5)]
+        );
+    }
+
+    /// The popup's hints in `language`, at the popup's width: every text
+    /// on them, the caps' names and the words, stands on one line, and the
+    /// hints reach from the line's start to its end.
+    fn check_hints_on_one_line(language: crate::config::Language) {
+        let ctx = egui::Context::default();
+        add_fonts(&ctx);
+        style(&ctx, crate::config::DarkPanels::Lighter);
+        // The fonts apply from the next frame.
+        ctx.run_ui(egui::RawInput::default(), |_| {})
+            .textures_delta
+            .clear();
+        let text = |key: &str| crate::i18n::text_in(language, key, None);
+        let hints = [
+            ("Enter".to_string(), text("popup-key-paste")),
+            (text("quick-paste-keys"), text("popup-key-quick")),
+            ("F1".to_string(), text("popup-key-all")),
+        ];
+        // The popup's width less its hints' margins.
+        let line = Rect::from_min_size(Pos2::new(10.0, 10.0), Vec2::new(POPUP_SIZE.x - 20.0, 60.0));
+        let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+            ui.scope_builder(egui::UiBuilder::new().max_rect(line), |ui| {
+                paint_key_hints(ui, &hints);
+            });
+        });
+        output.textures_delta.clear();
+        let (mut baselines, mut start, mut end) = (Vec::new(), f32::INFINITY, f32::NEG_INFINITY);
+        for clipped in &output.shapes {
+            match &clipped.shape {
+                egui::Shape::Text(text) => {
+                    baselines.push(text.pos.y + shortcut::baseline(&text.galley));
+                    end = end.max(text.pos.x + text.galley.rect.right());
+                }
+                egui::Shape::Rect(shape) => start = start.min(shape.rect.left()),
+                _ => {}
+            }
+        }
+        // Enter, Ctrl, 1, to, 9, F1 and the three words.
+        assert_eq!(baselines.len(), 9, "{language:?}");
+        for at in &baselines {
+            assert!(
+                (at - baselines[0]).abs() <= 0.5,
+                "{language:?}: {baselines:?}"
+            );
+        }
+        assert!((start - line.left()).abs() <= 0.5, "{language:?}: {start}");
+        assert!((end - line.right()).abs() <= 1.0, "{language:?}: {end}");
+    }
+
+    #[test]
+    fn the_hints_fit_on_one_line_in_english_and_arabic() {
+        check_hints_on_one_line(crate::config::Language::English);
+        check_hints_on_one_line(crate::config::Language::Arabic);
+    }
+
+    /// The quick paste hint in the window's language reads Ctrl+1, the
+    /// word, 9, then what the keys do: from the left in English, from the
+    /// right in Arabic, where Ctrl+1 still reads from the left, as a key
+    /// combination is written. Checked by where each piece's centre is.
+    fn check_quick_paste_order() {
+        let ctx = egui::Context::default();
+        add_fonts(&ctx);
+        style(&ctx, crate::config::DarkPanels::Lighter);
+        // The fonts apply from the next frame.
+        ctx.run_ui(egui::RawInput::default(), |_| {})
+            .textures_delta
+            .clear();
+        let keys = t!("quick-paste-keys");
+        let word = keys.split_whitespace().nth(1).expect("a word").to_string();
+        let hints = [(keys.clone(), t!("popup-key-quick"))];
+        let line = Rect::from_min_size(Pos2::new(10.0, 10.0), Vec2::new(POPUP_SIZE.x - 20.0, 60.0));
+        let mut what = String::new();
+        let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+            // What the keys do, as the hints lay it out.
+            let font = FontId::proportional(size::SMALL);
+            what = one_line(ui, &hints[0].1, &[], font, Color32::WHITE, line.width())
+                .text()
+                .to_string();
+            ui.scope_builder(egui::UiBuilder::new().max_rect(line), |ui| {
+                paint_key_hints(ui, &hints);
+            });
+        });
+        output.textures_delta.clear();
+        let centres: Vec<(String, f32)> = output
+            .shapes
+            .iter()
+            .filter_map(|clipped| match &clipped.shape {
+                egui::Shape::Text(text) => Some((
+                    text.galley.text().to_string(),
+                    text.pos.x + text.galley.rect.center().x,
+                )),
+                _ => None,
+            })
+            .collect();
+        let at = |piece: &str| {
+            centres
+                .iter()
+                .find(|(text, _)| text == piece)
+                .map(|(_, x)| *x)
+                .unwrap_or_else(|| panic!("{piece:?} in {centres:?}"))
+        };
+        let [ctrl, one, word, nine, what] = [at("Ctrl"), at("1"), at(&word), at("9"), at(&what)];
+        let from_left = if i18n::rtl() {
+            [what, nine, word, ctrl, one]
+        } else {
+            [ctrl, one, word, nine, what]
+        };
+        assert!(
+            from_left.windows(2).all(|pair| pair[0] < pair[1]),
+            "{keys}: {centres:?}"
+        );
+    }
+
+    #[test]
+    fn the_quick_paste_hint_reads_in_order() {
+        check_quick_paste_order();
+    }
+
+    #[test]
+    fn the_quick_paste_hint_reads_in_order_right_to_left() {
+        crate::i18n::passes_in_arabic(
+            module_path!(),
+            "the_quick_paste_hint_reads_in_order_in_arabic",
+        );
+    }
+
+    #[test]
+    #[ignore = "run in a process of its own by the_quick_paste_hint_reads_in_order_right_to_left"]
+    fn the_quick_paste_hint_reads_in_order_in_arabic() {
+        if crate::i18n::arabic_run() {
+            check_quick_paste_order();
+        }
+    }
 }

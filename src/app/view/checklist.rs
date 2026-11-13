@@ -47,7 +47,25 @@ impl App {
             return;
         }
         let v = ui.visuals().clone();
-        let (mut close, mut set_up) = (false, false);
+        let (mut close, mut set_up, mut turn_on) = (false, false, false);
+        // A model server on this PC with a search model turns it on in one
+        // click; without one, Set up opens Settings.
+        let found = if steps[3].0 {
+            None
+        } else {
+            self.local_servers.look(ui.ctx());
+            self.local_servers.found.iter().find_map(|server| {
+                let model = server
+                    .models
+                    .iter()
+                    .find(|m| crate::catalog::is_search_model(m))?;
+                let saved =
+                    self.cfg.servers.iter().any(|s| {
+                        crate::net::host(&s.base_url) == crate::net::host(&server.base_url)
+                    });
+                (!saved).then(|| (server.clone(), model.clone()))
+            })
+        };
         Frame::new()
             .fill(v.extreme_bg_color)
             .corner_radius(CornerRadius::same(radius::LARGE))
@@ -67,11 +85,25 @@ impl App {
                         } else {
                             v.text_color()
                         };
-                        lbl(ui, text, size::CONTROL, color);
-                        // Search by meaning is set up in Settings.
-                        if i == 3 && !*done {
-                            let link = txt(&t!("checklist-set-up"), size::CONTROL, None);
-                            set_up = ui.link(link).clicked();
+                        match (&found, i == 3 && !*done) {
+                            (Some((server, _)), true) => {
+                                let text = t!(
+                                    "checklist-meaning-found",
+                                    server = bidi::isolate(server.kind.name())
+                                );
+                                lbl(ui, &text, size::CONTROL, color);
+                                let link = txt(&t!("checklist-turn-on"), size::CONTROL, None);
+                                turn_on = ui.link(link).clicked();
+                            }
+                            // Search by meaning is set up in Settings.
+                            (None, true) => {
+                                lbl(ui, text, size::CONTROL, color);
+                                let link = txt(&t!("checklist-set-up"), size::CONTROL, None);
+                                set_up = ui.link(link).clicked();
+                            }
+                            _ => {
+                                lbl(ui, text, size::CONTROL, color);
+                            }
                         }
                     });
                 }
@@ -84,6 +116,11 @@ impl App {
             });
         if set_up {
             self.open_settings(SettingsPage::Search);
+        }
+        if let Some((server, model)) = found.filter(|_| turn_on) {
+            let mut cfg = self.cfg.clone();
+            crate::app::settings::use_found(&mut cfg, &server, &model);
+            self.apply_settings(cfg, ui.ctx(), false);
         }
         if close {
             self.close_checklist();

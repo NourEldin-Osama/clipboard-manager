@@ -217,14 +217,29 @@ pub(crate) fn cut_line(
 /// A hover tooltip that wraps Arabic in reading order.
 pub(crate) fn tip(resp: egui::Response, text: &str) -> egui::Response {
     if bidi::has_rtl(text) {
-        let text = text.to_string();
-        resp.on_hover_ui(move |ui| {
-            ui.set_max_width(340.0);
-            let c = ui.visuals().text_color();
-            bidi::paragraph(ui, &text, FontId::proportional(size::CONTROL), c);
-        })
+        resp.on_hover_ui(tip_text(text))
     } else {
         resp.on_hover_text(text)
+    }
+}
+
+/// `tip` for a widget that can't be used now, which egui's own tooltip
+/// leaves out.
+pub(crate) fn tip_when_unavailable(resp: egui::Response, text: &str) -> egui::Response {
+    if bidi::has_rtl(text) {
+        resp.on_disabled_hover_ui(tip_text(text))
+    } else {
+        resp.on_disabled_hover_text(text)
+    }
+}
+
+/// A tooltip's text, wrapped in reading order.
+fn tip_text(text: &str) -> impl FnOnce(&mut Ui) {
+    let text = text.to_string();
+    move |ui| {
+        ui.set_max_width(340.0);
+        let c = ui.visuals().text_color();
+        bidi::paragraph(ui, &text, FontId::proportional(size::CONTROL), c);
     }
 }
 
@@ -298,8 +313,10 @@ pub(crate) fn pill_job(
     };
     job.halign = egui::Align::LEFT;
     if let Some((n, c)) = count {
+        // The count in the label's size, so it sits on the same line,
+        // in a quieter color.
         let fmt = TextFormat {
-            font_id: FontId::proportional(size::SMALL),
+            font_id: FontId::proportional(size),
             color: c,
             ..Default::default()
         };
@@ -321,6 +338,15 @@ pub(crate) fn pill_job(
     job
 }
 
+/// One line of text laid out in display order, as `paint_text` draws it.
+pub(super) fn line_galley(ui: &Ui, text: &str, font: FontId, color: Color32) -> Arc<egui::Galley> {
+    if bidi::has_rtl(text) {
+        ui.fonts_mut(|f| f.layout_job(bidi::job(text, font, color)))
+    } else {
+        ui.fonts_mut(|f| f.layout_no_wrap(text.to_string(), font, color))
+    }
+}
+
 /// Paints one line of text anchored at `pos`, in display order. Returns its rect.
 pub(crate) fn paint_text(
     ui: &Ui,
@@ -331,11 +357,7 @@ pub(crate) fn paint_text(
     font: FontId,
     color: Color32,
 ) -> Rect {
-    let g = if bidi::has_rtl(text) {
-        ui.fonts_mut(|f| f.layout_job(bidi::job(text, font, color)))
-    } else {
-        ui.fonts_mut(|f| f.layout_no_wrap(text.to_string(), font, color))
-    };
+    let g = line_galley(ui, text, font, color);
     let rect = anchor.anchor_size(pos, g.size());
     p.galley(rect.min, g, color);
     rect
@@ -353,7 +375,13 @@ pub(crate) fn start_anchor(vertical: egui::Align) -> Align2 {
 
 /// Mirrors `r` inside `within` for right-to-left layout.
 pub(crate) fn flip(within: Rect, r: Rect) -> Rect {
-    if i18n::rtl() {
+    flip_if(i18n::rtl(), within, r)
+}
+
+/// Mirrors `r` inside `within` when `rtl`: for content that keeps the side
+/// of its own script whatever the window's language.
+pub(crate) fn flip_if(rtl: bool, within: Rect, r: Rect) -> Rect {
+    if rtl {
         Rect::from_min_max(
             Pos2::new(within.left() + within.right() - r.right(), r.top()),
             Pos2::new(within.left() + within.right() - r.left(), r.bottom()),
@@ -490,16 +518,18 @@ pub(super) fn check_row(ui: &mut Ui, text: &str, checked: bool) -> egui::Respons
 }
 
 /// A menu entry: its text at the reading start and its keys at the far end.
-/// `color` tints the text, as red does for Delete.
+/// `color` tints the text, as red does for Delete. In a disabled `ui` it is
+/// grayed out, and screen readers hear that it can't be used.
 pub(super) fn menu_entry(
     ui: &mut Ui,
     text: &str,
     keys: &str,
     color: Option<Color32>,
+    icon: Option<Icon>,
 ) -> egui::Response {
     let (rect, resp) =
-        ui.allocate_exact_size(Vec2::new(ui.available_width(), 30.0), Sense::click());
-    resp.widget_info(|| egui::WidgetInfo::labeled(egui::Role::MenuItem, true, text));
+        ui.allocate_exact_size(Vec2::new(ui.available_width(), MENU_ROW), Sense::click());
+    resp.widget_info(|| egui::WidgetInfo::labeled(egui::Role::MenuItem, ui.is_enabled(), text));
     let v = ui.visuals();
     // The keyboard moves through a menu by focus.
     let lit = resp.hovered() || resp.has_focus();
@@ -522,10 +552,25 @@ pub(super) fn menu_entry(
         )
         .min
     };
+    // The action's icon at the start, as the app shows it elsewhere.
+    let text_at = match icon {
+        Some(icon) => {
+            let place = flip(
+                rect,
+                Rect::from_center_size(
+                    Pos2::new(rect.left() + 18.0, rect.center().y),
+                    Vec2::splat(16.0),
+                ),
+            );
+            icons::paint(ui.painter(), place, icon, color);
+            rect.left() + 34.0
+        }
+        None => rect.left() + 10.0,
+    };
     paint_text(
         ui,
         ui.painter(),
-        at(rect.left() + 10.0),
+        at(text_at),
         start_anchor(egui::Align::Center),
         text,
         FontId::proportional(size::BODY),
@@ -550,6 +595,9 @@ pub(super) fn menu_entry(
     resp
 }
 
+/// How tall a menu's row is.
+const MENU_ROW: f32 = 28.0;
+
 /// Wide enough for the widest of `entries`, each its text and its keys.
 pub(super) fn menu_width<'a>(
     ui: &Ui,
@@ -564,7 +612,7 @@ pub(super) fn menu_width<'a>(
     };
     entries
         .into_iter()
-        .map(|(text, keys)| width(text, size::BODY) + 36.0 + width(keys, size::SMALL) + 20.0)
+        .map(|(text, keys)| width(text, size::BODY) + 60.0 + width(keys, size::SMALL) + 20.0)
         .fold(MENU_W, f32::max)
         .min(440.0)
 }
@@ -572,7 +620,7 @@ pub(super) fn menu_width<'a>(
 /// A thin line between groups of a menu, as tall as egui's separator.
 pub(crate) fn divider(ui: &mut Ui) {
     let (rect, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 6.0), Sense::hover());
-    let color = super::theme::line_color(ui.visuals().dark_mode);
+    let color = super::theme::menu_line(ui.visuals().dark_mode);
     ui.painter().hline(
         rect.x_range().shrink(4.0),
         rect.center().y,

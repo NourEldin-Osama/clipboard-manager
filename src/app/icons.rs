@@ -55,6 +55,9 @@ pub(super) enum Icon {
     Warning,
     Time,
     Language,
+    Server,
+    /// A program that has no icon of its own.
+    AppGeneric,
     /// A plain filled circle (status light), not an icon.
     Dot,
 }
@@ -153,11 +156,13 @@ fn source(icon: Icon) -> Option<(&'static str, &'static [u8])> {
         Icon::Warning => svg!("warning"),
         Icon::Time => svg!("time"),
         Icon::Language => svg!("language"),
+        Icon::Server => svg!("server"),
+        Icon::AppGeneric => svg!("app_generic"),
         Icon::Dot => return None,
     })
 }
 
-const ALL: [Icon; 41] = [
+const ALL: [Icon; 43] = [
     Icon::Refresh,
     Icon::Eye,
     Icon::EyeOff,
@@ -198,6 +203,8 @@ const ALL: [Icon; 41] = [
     Icon::Warning,
     Icon::Time,
     Icon::Language,
+    Icon::Server,
+    Icon::AppGeneric,
     Icon::Dot,
 ];
 
@@ -215,19 +222,89 @@ pub(super) fn register(ctx: &egui::Context) {
     }
 }
 
-/// Icons that point somewhere, turned around for right-to-left.
+/// Icons that point somewhere, turned around for right-to-left, and the
+/// details pane's, which opens on the left there.
 fn mirrored(icon: Icon) -> bool {
-    matches!(icon, Icon::Back)
+    matches!(icon, Icon::Back | Icon::Detail)
 }
+
+/// The parts of an icon's texture its square shows: all of it, as drawn.
+const UPRIGHT: Rect = Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0));
+/// Left and right swapped.
+const MIRRORED: Rect = Rect::from_min_max(Pos2::new(1.0, 0.0), Pos2::new(0.0, 1.0));
+/// Half a turn: left and right, and top and bottom swapped.
+const TURNED: Rect = Rect::from_min_max(Pos2::new(1.0, 1.0), Pos2::ZERO);
 
 /// Paints `icon` filling the square at the centre of `rect`, tinted `color`.
 pub(super) fn paint(p: &Painter, rect: Rect, icon: Icon, color: Color32) {
+    let uv = if mirrored(icon) && i18n::rtl() {
+        MIRRORED
+    } else {
+        UPRIGHT
+    };
+    paint_with(p, rect, icon, color, uv);
+}
+
+/// Paints `icon` as `paint` does, turned half a turn: an arrow that points
+/// down then points up.
+pub(super) fn paint_turned(p: &Painter, rect: Rect, icon: Icon, color: Color32) {
+    paint_with(p, rect, icon, color, TURNED);
+}
+
+/// A quarter turn: the corners of an icon's texture shown at the top left,
+/// top right, bottom right and bottom left of its square. An arrow that
+/// points down then points right, or left with `TOWARD_LEFT`.
+const TOWARD_RIGHT: [Pos2; 4] = [
+    Pos2::new(1.0, 0.0),
+    Pos2::new(1.0, 1.0),
+    Pos2::new(0.0, 1.0),
+    Pos2::new(0.0, 0.0),
+];
+const TOWARD_LEFT: [Pos2; 4] = [
+    Pos2::new(0.0, 1.0),
+    Pos2::new(0.0, 0.0),
+    Pos2::new(1.0, 0.0),
+    Pos2::new(1.0, 1.0),
+];
+
+/// Paints `icon` as `paint` does, turned a quarter: an arrow that points
+/// down then points to the reading end, right or, in Arabic, left.
+pub(super) fn paint_toward_end(p: &Painter, rect: Rect, icon: Icon, color: Color32) {
     let side = rect.width().min(rect.height());
     let square = Rect::from_center_size(rect.center(), Vec2::splat(side));
     let Some((uri, _)) = source(icon) else {
         return paint_shape(p, square, icon, color);
     };
-    paint_svg(p, square, uri, color, mirrored(icon) && i18n::rtl());
+    let Some(texture) = svg_texture(p, square, uri) else {
+        return;
+    };
+    let turn = if i18n::rtl() {
+        TOWARD_LEFT
+    } else {
+        TOWARD_RIGHT
+    };
+    let corners = [
+        square.left_top(),
+        square.right_top(),
+        square.right_bottom(),
+        square.left_bottom(),
+    ];
+    let mut mesh = egui::Mesh::with_texture(texture);
+    for (pos, uv) in corners.into_iter().zip(turn) {
+        mesh.vertices.push(egui::epaint::Vertex { pos, uv, color });
+    }
+    mesh.add_triangle(0, 1, 2);
+    mesh.add_triangle(0, 2, 3);
+    p.add(mesh);
+}
+
+fn paint_with(p: &Painter, rect: Rect, icon: Icon, color: Color32, uv: Rect) {
+    let side = rect.width().min(rect.height());
+    let square = Rect::from_center_size(rect.center(), Vec2::splat(side));
+    let Some((uri, _)) = source(icon) else {
+        return paint_shape(p, square, icon, color);
+    };
+    paint_svg(p, square, uri, color, uv);
 }
 
 /// Paints the logo of a server type filling the square at the centre of
@@ -237,7 +314,7 @@ pub(super) fn paint_logo(p: &Painter, rect: Rect, kind: ServerKind, color: Color
     let square = Rect::from_center_size(rect.center(), Vec2::splat(side));
     let ((uri, _), coloured) = logo_source(kind);
     let tint = if coloured { Color32::WHITE } else { color };
-    paint_svg(p, square, uri, tint, false);
+    paint_svg(p, square, uri, tint, UPRIGHT);
 }
 
 /// The logo of a server type as an inline widget.
@@ -247,7 +324,16 @@ pub(super) fn logo(ui: &mut Ui, kind: ServerKind, size: f32, color: Color32) -> 
     resp
 }
 
-fn paint_svg(p: &Painter, square: Rect, uri: &str, tint: Color32, mirror: bool) {
+/// Paints the SVG at `uri` into `square`, showing the part `uv` of its
+/// texture.
+fn paint_svg(p: &Painter, square: Rect, uri: &str, tint: Color32, uv: Rect) {
+    if let Some(texture) = svg_texture(p, square, uri) {
+        p.image(texture, square, uv, tint);
+    }
+}
+
+/// The SVG at `uri` as a texture for `square`; none while it loads.
+fn svg_texture(p: &Painter, square: Rect, uri: &str) -> Option<egui::TextureId> {
     let ctx = p.ctx();
     // Rasterised at the pixel size it's shown at, so edges stay sharp.
     let px = (square.width() * ctx.pixels_per_point()).round().max(1.0) as u32;
@@ -257,16 +343,15 @@ fn paint_svg(p: &Painter, square: Rect, uri: &str, tint: Color32, mirror: bool) 
         maintain_aspect_ratio: true,
     };
     match ctx.try_load_texture(uri, TextureOptions::LINEAR, hint) {
-        Ok(TexturePoll::Ready { texture }) => {
-            let uv = if mirror {
-                Rect::from_min_max(Pos2::new(1.0, 0.0), Pos2::new(0.0, 1.0))
-            } else {
-                Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0))
-            };
-            p.image(texture.id, square, uv, tint);
+        Ok(TexturePoll::Ready { texture }) => Some(texture.id),
+        Ok(TexturePoll::Pending { .. }) => {
+            ctx.request_repaint();
+            None
         }
-        Ok(TexturePoll::Pending { .. }) => ctx.request_repaint(),
-        Err(e) => log::warn!("icon {uri}: {e}"),
+        Err(e) => {
+            log::warn!("icon {uri}: {e}");
+            None
+        }
     }
 }
 
@@ -439,6 +524,28 @@ pub(super) fn pill(
     color: Color32,
     selected: bool,
 ) -> egui::Response {
+    pill_with(ui, icon, job, color, selected, None)
+}
+
+/// A pill button whose icon has a color of its own, such as the dot of a
+/// state.
+pub(super) fn state_pill(
+    ui: &mut Ui,
+    icon: Icon,
+    job: egui::text::LayoutJob,
+    icon_color: Color32,
+) -> egui::Response {
+    pill_with(ui, icon, job, icon_color, false, Some(icon_color))
+}
+
+fn pill_with(
+    ui: &mut Ui,
+    icon: Icon,
+    job: egui::text::LayoutJob,
+    color: Color32,
+    selected: bool,
+    icon_color: Option<Color32>,
+) -> egui::Response {
     let g = ui.fonts_mut(|f| f.layout_job(job));
     let width = 14.0 + 6.0 + g.size().x + PILL_PAD.x * 2.0;
     let size = Vec2::new(width, pill_height(g.size().y));
@@ -448,7 +555,7 @@ pub(super) fn pill(
         ui.painter().rect_filled(
             rect,
             CornerRadius::same(radius::ROUND),
-            color.gamma_multiply(0.13),
+            view::chosen_pill(color, v.dark_mode),
         );
     } else if resp.hovered() {
         ui.painter().rect_filled(
@@ -457,10 +564,10 @@ pub(super) fn pill(
             v.widgets.hovered.weak_bg_fill,
         );
     }
-    let icon_color = if selected {
-        view::text_shade(color, v.dark_mode)
-    } else {
-        v.text_color()
+    let icon_color = match icon_color {
+        Some(c) => c,
+        None if selected => view::text_shade(color, v.dark_mode),
+        None => v.text_color(),
     };
     paint_icon_text(
         ui.painter(),
@@ -469,6 +576,37 @@ pub(super) fn pill(
         14.0,
         g,
         icon_color,
+    );
+    resp
+}
+
+/// A button tinted with `color`, `height` tall with the corners of a
+/// button: the quieter partner of a filled button beside it.
+pub(super) fn tinted_button(
+    ui: &mut Ui,
+    icon: Icon,
+    job: egui::text::LayoutJob,
+    color: Color32,
+    height: f32,
+) -> egui::Response {
+    let g = ui.fonts_mut(|f| f.layout_job(job));
+    let pad = 14.0;
+    let size = Vec2::new(pad + 14.0 + 6.0 + g.size().x + pad, height);
+    let (rect, resp) = ui.allocate_exact_size(size, Sense::click());
+    let tint = if resp.hovered() { 0.2 } else { 0.13 };
+    ui.painter().rect_filled(
+        rect,
+        CornerRadius::same(radius::MEDIUM),
+        color.gamma_multiply(tint),
+    );
+    let shade = view::text_shade(color, ui.visuals().dark_mode);
+    paint_icon_text(
+        ui.painter(),
+        rect.shrink2(Vec2::new(pad, 0.0)),
+        icon,
+        14.0,
+        g,
+        shade,
     );
     resp
 }

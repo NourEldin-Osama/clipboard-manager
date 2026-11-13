@@ -85,29 +85,202 @@ fn types_text(k: egui::Key) -> bool {
     n.chars().count() == 1 || matches!(k, egui::Key::Space | egui::Key::Backspace)
 }
 
-/// Draws `s` as key caps ("Ctrl" "P"), centred on the row.
+/// Draws `s` as key caps ("Ctrl" "P"), centred on the row, in their own
+/// order in every language (see `Caps`). `dim` draws the keys' names in
+/// gray, for keys that can't be changed.
 pub(super) fn keycaps(ui: &mut Ui, s: &str, dim: bool) {
-    let parts: Vec<&str> = s
-        .split('+')
-        .map(str::trim)
-        .filter(|p| !p.is_empty())
-        .collect();
-    ui.horizontal(|ui| {
-        ui.spacing_mut().item_spacing.x = 4.0;
-        for p in parts {
-            keycap(ui, p, dim);
-        }
-    });
-}
-
-fn keycap(ui: &mut Ui, label: &str, dim: bool) {
-    let v = ui.visuals().clone();
+    let v = ui.visuals();
     let color = if dim {
         v.weak_text_color()
     } else {
         v.strong_text_color()
     };
-    // Arrow names read better as arrows.
+    let caps = Caps::new(ui, s, KEYCAPS, (color, v.weak_text_color()));
+    let size = Vec2::new(caps.width(), KEYCAPS.height);
+    let (rect, _) = ui.allocate_exact_size(size, Sense::hover());
+    caps.paint(ui.painter(), rect.min, ui.visuals().dark_mode);
+}
+
+/// How tall a key cap is.
+pub(super) const KEYCAP_HEIGHT: f32 = 24.0;
+
+/// How big a shortcut's key caps are drawn: how tall, and the gap
+/// between two.
+#[derive(Clone, Copy)]
+pub(super) struct CapSize {
+    pub(super) height: f32,
+    pub(super) gap: f32,
+}
+
+/// Settings' and the key sheet's caps.
+const KEYCAPS: CapSize = CapSize {
+    height: KEYCAP_HEIGHT,
+    gap: 4.0,
+};
+
+/// A part of a shortcut as drawn: a key on its cap, or a word between two
+/// keys, such as "to" in "1 to 9".
+enum Piece {
+    Cap(Arc<egui::Galley>),
+    Word(Arc<egui::Galley>),
+}
+
+/// A shortcut laid out as key caps, every place it shows drawing it the
+/// same way: in parts that each read left to right (a key combination, a
+/// word between keys, a key), in reading order. So in Arabic "Ctrl+1 to
+/// 9" reads Ctrl+1 from the right, then the word, then 9.
+pub(super) struct Caps {
+    /// From the left.
+    pieces: Vec<Piece>,
+    size: CapSize,
+    /// The keys' names, and the words between keys.
+    colors: (Color32, Color32),
+}
+
+impl Caps {
+    /// `keys` ("Ctrl+P", "Ctrl+1 to 9") laid out `size` big, the keys'
+    /// names and the words between keys in `colors`.
+    pub(super) fn new(ui: &Ui, keys: &str, size: CapSize, colors: (Color32, Color32)) -> Self {
+        let cap = |key: &str| Piece::Cap(keycap_label(ui, key, colors.0));
+        let (mut units, mut unit) = (Vec::new(), Vec::new());
+        for part in keys.split('+').map(str::trim).filter(|k| !k.is_empty()) {
+            // A range such as "1 to 9" is two keys with the word between.
+            // The first key ends the combination before it, as in Ctrl+1;
+            // the word and the last key follow it.
+            let words: Vec<&str> = part.split_whitespace().collect();
+            if words.len() >= 3 {
+                let between = words[1..words.len() - 1].join(" ");
+                unit.push(cap(words[0]));
+                units.push(std::mem::take(&mut unit));
+                units.push(vec![Piece::Word(word_label(ui, &between, colors.1))]);
+                unit.push(cap(words[words.len() - 1]));
+            } else {
+                unit.push(cap(part));
+            }
+        }
+        units.push(unit);
+        // From the left: in Arabic the last part first.
+        if i18n::rtl() {
+            units.reverse();
+        }
+        Self {
+            pieces: units.into_iter().flatten().collect(),
+            size,
+            colors,
+        }
+    }
+
+    fn piece_width(&self, piece: &Piece) -> f32 {
+        match piece {
+            Piece::Cap(g) => keycap_size(g, self.size.height).x,
+            Piece::Word(g) => g.size().x,
+        }
+    }
+
+    /// How wide the caps are, with the gaps between them.
+    pub(super) fn width(&self) -> f32 {
+        let gaps = self.size.gap * self.pieces.len().saturating_sub(1) as f32;
+        self.pieces.iter().map(|p| self.piece_width(p)).sum::<f32>() + gaps
+    }
+
+    /// Where the keys' names stand, from the caps' top; the words between
+    /// keys, and others beside the caps, stand there too.
+    pub(super) fn baseline(&self) -> f32 {
+        self.pieces
+            .iter()
+            .find_map(|piece| match piece {
+                Piece::Cap(g) => Some((self.size.height - g.size().y) / 2.0 + baseline(g)),
+                Piece::Word(_) => None,
+            })
+            .unwrap_or(self.size.height / 2.0)
+    }
+
+    /// Paints the caps from `at`, their top left corner.
+    pub(super) fn paint(&self, p: &egui::Painter, at: Pos2, dark: bool) {
+        let base = at.y + self.baseline();
+        let mut x = at.x;
+        for piece in &self.pieces {
+            match piece {
+                Piece::Cap(g) => {
+                    let size = keycap_size(g, self.size.height);
+                    let cap = Rect::from_min_size(Pos2::new(x, at.y), size);
+                    paint_keycap(p, cap, g.clone(), self.colors.0, dark);
+                }
+                Piece::Word(g) => {
+                    p.galley(Pos2::new(x, base - baseline(g)), g.clone(), self.colors.1);
+                }
+            }
+            x += self.piece_width(piece) + self.size.gap;
+        }
+    }
+}
+
+/// Where a galley's first line stands, from its top.
+pub(super) fn baseline(galley: &egui::Galley) -> f32 {
+    galley
+        .rows
+        .first()
+        .and_then(|row| row.row.glyphs.first().map(|glyph| row.pos.y + glyph.pos.y))
+        .unwrap_or(galley.size().y)
+}
+
+/// Whether the quick paste keys drawn in `shapes` read in order, by where
+/// each part's centre is: Ctrl, 1, the word, 9 from the left in English,
+/// and from the right in Arabic, where Ctrl+1 still reads from the left,
+/// as a key combination is written.
+#[cfg(test)]
+pub(super) fn quick_paste_order(shapes: &[egui::epaint::ClippedShape]) -> Result<(), String> {
+    let keys = t!("quick-paste-keys");
+    let word = keys
+        .split_whitespace()
+        .nth(1)
+        .unwrap_or_default()
+        .to_string();
+    let centres: Vec<(String, f32)> = shapes
+        .iter()
+        .filter_map(|clipped| match &clipped.shape {
+            egui::Shape::Text(text) => Some((
+                text.galley.text().to_string(),
+                text.pos.x + text.galley.rect.center().x,
+            )),
+            _ => None,
+        })
+        .collect();
+    let at = |piece: &str| {
+        centres
+            .iter()
+            .find(|(text, _)| text == piece)
+            .map(|(_, x)| *x)
+            .ok_or_else(|| format!("{piece:?} in {centres:?}"))
+    };
+    let [ctrl, one, word, nine] = [at("Ctrl")?, at("1")?, at(&word)?, at("9")?];
+    let from_left = if i18n::rtl() {
+        [nine, word, ctrl, one]
+    } else {
+        [ctrl, one, word, nine]
+    };
+    if from_left.windows(2).all(|pair| pair[0] < pair[1]) {
+        Ok(())
+    } else {
+        Err(format!("{keys}: {centres:?}"))
+    }
+}
+
+/// A word between two keys, such as "to" in "1 to 9", in reading order.
+fn word_label(ui: &Ui, word: &str, color: Color32) -> Arc<egui::Galley> {
+    let font = FontId::proportional(size::SMALL);
+    ui.fonts_mut(|f| {
+        if super::bidi::has_rtl(word) {
+            f.layout_job(super::bidi::job(word, font, color))
+        } else {
+            f.layout_no_wrap(word.to_string(), font, color)
+        }
+    })
+}
+
+/// A key's name laid out for its cap: the arrow keys as arrows, and a
+/// translated name in reading order.
+pub(super) fn keycap_label(ui: &Ui, label: &str, color: Color32) -> Arc<egui::Galley> {
     let shown = match label {
         "Up" | "ArrowUp" => "↑",
         "Down" | "ArrowDown" => "↓",
@@ -115,20 +288,31 @@ fn keycap(ui: &mut Ui, label: &str, dim: bool) {
         "Right" | "ArrowRight" => "→",
         l => l,
     };
-    // A translated key such as "1 حتى 9" (1 to 9) is shown in reading order.
     let font = FontId::proportional(size::SMALL);
-    let g = ui.fonts_mut(|f| {
+    ui.fonts_mut(|f| {
         if super::bidi::has_rtl(shown) {
             f.layout_job(super::bidi::job(shown, font, color))
         } else {
             f.layout_no_wrap(shown.to_string(), font, color)
         }
-    });
-    let size = Vec2::new((g.size().x + 14.0).max(24.0), 24.0);
-    let (rect, _) = ui.allocate_exact_size(size, Sense::hover());
-    let p = ui.painter();
-    let (fill, edge) = view::key_cap(v.dark_mode);
-    // A slightly darker bottom edge makes it read as a key.
+    })
+}
+
+/// The size of a key cap `height` tall around its laid-out name.
+pub(super) fn keycap_size(label: &egui::Galley, height: f32) -> Vec2 {
+    Vec2::new((label.size().x + 14.0).max(height), height)
+}
+
+/// Paints a key cap in `rect`: its face and edge, with a slightly darker
+/// bottom edge that makes it read as a key, and its name in the middle.
+pub(super) fn paint_keycap(
+    p: &egui::Painter,
+    rect: Rect,
+    label: Arc<egui::Galley>,
+    color: Color32,
+    dark: bool,
+) {
+    let (fill, edge) = view::key_cap(dark);
     p.rect_filled(
         rect.translate(Vec2::new(0.0, 1.5)),
         CornerRadius::same(radius::SMALL),
@@ -141,7 +325,7 @@ fn keycap(ui: &mut Ui, label: &str, dim: bool) {
         Stroke::new(1.0, edge),
         egui::StrokeKind::Inside,
     );
-    p.galley(rect.center() - g.size() / 2.0, g, color);
+    p.galley(rect.center() - label.size() / 2.0, label, color);
 }
 
 const FIELD: Vec2 = Vec2::new(170.0, 32.0);
@@ -154,12 +338,7 @@ pub(super) fn fixed(ui: &mut Ui, s: &str) {
             .max_rect(rect.shrink2(Vec2::new(10.0, 4.0)))
             .layout(view::row_layout()),
     );
-    let keys = if i18n::rtl() {
-        s.split('+').rev().collect::<Vec<_>>().join("+")
-    } else {
-        s.to_string()
-    };
-    keycaps(&mut inner, &keys, true);
+    keycaps(&mut inner, s, true);
 }
 
 /// What the recorder did this frame.
@@ -211,10 +390,11 @@ pub(super) fn recorder(
                 *value = format(mods, key);
                 out = Recorded::Changed;
             }
-            // The keys were for the recorder, not for anything else on screen.
+            // The keys were for the recorder, not for anything else on
+            // screen; Ctrl+C also comes as "copy".
             ui.input_mut(|i| {
                 i.events
-                    .retain(|e| !matches!(e, Event::Key { .. } | Event::Text(_)))
+                    .retain(|e| !matches!(e, Event::Key { .. } | Event::Text(_) | Event::Copy))
             });
         }
     }
@@ -271,13 +451,7 @@ pub(super) fn recorder(
             Some(v.weak_text_color()),
         ));
     } else {
-        // Key caps always read left to right ("Ctrl" then "P"); a right-to-left row lays them out backwards.
-        let keys = if i18n::rtl() {
-            value.split('+').rev().collect::<Vec<_>>().join("+")
-        } else {
-            value.clone()
-        };
-        keycaps(&mut inner, &keys, false);
+        keycaps(&mut inner, value, false);
         let pen = view::flip(
             rect,
             Rect::from_center_size(

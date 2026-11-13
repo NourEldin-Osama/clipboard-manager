@@ -8,36 +8,59 @@ pub(super) type KeyField = fn(&mut Config) -> &mut String;
 impl App {
     pub(super) fn shortcuts_page(&mut self, ui: &mut Ui, d: &mut Config, apply_keys: &mut bool) {
         let def = Config::default();
-        section(ui, &t!("settings-shortcuts-global"));
-        let globals: [(ShortcutField, String, String, String, KeyField); 3] = [
+        section(ui, &t!("settings-shortcuts-global"), |ui| {
+            self.global_shortcuts(ui, d, &def, apply_keys);
+        });
+        section(ui, &t!("settings-shortcuts-local"), |ui| {
+            self.local_shortcuts(ui, d, &def);
+        });
+        section(ui, &t!("settings-pasting"), |ui| {
+            setting_for(
+                ui,
+                &t!("settings-hide-window"),
+                &t!("settings-hide-window-hint"),
+                "",
+                &mut d.minimize_after_copy,
+                def.minimize_after_copy,
+                toggle,
+            );
+        });
+    }
+
+    /// The shortcuts that work in every program.
+    fn global_shortcuts(
+        &mut self,
+        ui: &mut Ui,
+        d: &mut Config,
+        def: &Config,
+        apply_keys: &mut bool,
+    ) {
+        let globals: [(ShortcutField, String, String, KeyField); 3] = [
             (
                 ShortcutField::Popup,
                 t!("settings-shortcut-popup"),
                 t!("settings-shortcut-popup-hint"),
-                t!("settings-shortcut-popup-help"),
                 |c| &mut c.popup_hotkey,
             ),
             (
                 ShortcutField::Window,
                 t!("settings-shortcut-window"),
                 t!("settings-shortcut-window-hint"),
-                t!("settings-shortcut-window-help"),
                 |c| &mut c.window_hotkey,
             ),
             (
                 ShortcutField::IgnoreNext,
                 t!("settings-shortcut-ignore"),
                 t!("settings-shortcut-ignore-hint"),
-                String::new(),
                 |c| &mut c.ignore_next_hotkey,
             ),
         ];
-        for (id, label, line, details, field) in globals {
+        for (id, label, line, field) in globals {
             let default = field(&mut def.clone()).clone();
             let value = field(d);
             let invalid = !value.trim().is_empty() && HotKey::from_str(value.trim()).is_err();
             let mut result = shortcut::Recorded::Nothing;
-            let reset = setting(ui, &label, &line, &details, *value != default, |ui| {
+            let reset = setting(ui, &label, &line, "", *value != default, |ui| {
                 result = shortcut::recorder(
                     ui,
                     value,
@@ -70,11 +93,13 @@ impl App {
             }
         }
         if let Some(e) = &self.hotkey_error {
-            note(ui, &format!("⚠ {e}"));
+            warning(ui, e);
         }
+    }
 
-        section(ui, &t!("settings-shortcuts-local"));
-        let locals: [(ShortcutField, String, String, String, KeyField); 7] = [
+    /// The shortcuts in this window, then the built-in keys.
+    fn local_shortcuts(&mut self, ui: &mut Ui, d: &mut Config, def: &Config) {
+        let locals: [(ShortcutField, String, String, String, KeyField); 8] = [
             (
                 ShortcutField::Paste,
                 t!("settings-shortcut-paste"),
@@ -123,6 +148,13 @@ impl App {
                 String::new(),
                 String::new(),
                 |c| &mut c.keys.view,
+            ),
+            (
+                ShortcutField::Details,
+                t!("settings-shortcut-details"),
+                String::new(),
+                String::new(),
+                |c| &mut c.keys.details,
             ),
         ];
         let current: Vec<(ShortcutField, String)> = locals
@@ -174,15 +206,5 @@ impl App {
             });
         }
         note(ui, &t!("settings-shortcuts-note"));
-        section(ui, &t!("settings-pasting"));
-        setting_for(
-            ui,
-            &t!("settings-hide-window"),
-            &t!("settings-hide-window-hint"),
-            &t!("settings-hide-window-help"),
-            &mut d.minimize_after_copy,
-            def.minimize_after_copy,
-            toggle,
-        );
     }
 }

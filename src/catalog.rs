@@ -170,6 +170,36 @@ pub fn known_prompts(id: &str) -> Option<(&'static str, &'static str)> {
     }
 }
 
+/// Whether the model `id` names makes vectors for search, judged by its
+/// name as Fill in details does: an embedding model.
+pub fn is_search_model(id: &str) -> bool {
+    let name = plain_name(id);
+    known_prompts(id).is_some()
+        || name.contains("embed")
+        || name.starts_with("bge-")
+        || name.starts_with("gte-")
+        || name.contains("-e5-")
+        || name.starts_with("e5-")
+}
+
+/// Whether the model `id` names reads the text in images, judged by its
+/// name: a text reader, or a model that takes images.
+pub fn is_reading_model(id: &str) -> bool {
+    let name = plain_name(id);
+    reader_kind(id).is_some()
+        || [
+            "ocr",
+            "-vl",
+            "vision",
+            "llava",
+            "minicpm-v",
+            "gemma-3",
+            "gemma-4",
+        ]
+        .iter()
+        .any(|part| name.contains(part))
+}
+
 /// The reading model the app has settings for that `id` names, if any.
 pub fn reader_kind(id: &str) -> Option<ReaderModel> {
     let name = plain_name(id);

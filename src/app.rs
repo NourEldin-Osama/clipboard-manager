@@ -60,6 +60,115 @@ enum BackendState {
     Ready { key: String, images: bool },
 }
 
+/// Model servers found on this PC (D66), asked again at most every 30
+/// seconds while a screen that offers them shows.
+#[derive(Default)]
+struct LocalServers {
+    found: Vec<crate::embed::local::LocalServer>,
+    asked: Option<Instant>,
+    pending: Option<Receiver<Vec<crate::embed::local::LocalServer>>>,
+}
+
+impl LocalServers {
+    const AGAIN: Duration = Duration::from_secs(30);
+
+    /// Looks for them, unless that is running or was done just now.
+    fn look(&mut self, ctx: &egui::Context) {
+        if self.pending.is_some() || self.asked.is_some_and(|t| t.elapsed() < Self::AGAIN) {
+            return;
+        }
+        let (tx, rx) = channel();
+        let wake = ctx.clone();
+        let started = std::thread::Builder::new()
+            .name("local-servers".into())
+            .spawn(move || {
+                let _ = tx.send(crate::embed::local::find());
+                wake.request_repaint();
+            });
+        if started.is_ok() {
+            self.asked = Some(Instant::now());
+            self.pending = Some(rx);
+        }
+    }
+
+    fn poll(&mut self) {
+        if let Some(rx) = &self.pending {
+            match rx.try_recv() {
+                Ok(found) => {
+                    self.found = found;
+                    self.pending = None;
+                }
+                Err(TryRecvError::Disconnected) => self.pending = None,
+                Err(TryRecvError::Empty) => {}
+            }
+        }
+    }
+}
+
+/// The models each saved server lists, for the model menus (D67): asked once
+/// each time Settings opens.
+#[derive(Default)]
+struct ServerLists {
+    /// By the server's address and key.
+    found: HashMap<String, Vec<String>>,
+    pending: HashMap<String, Receiver<Vec<String>>>,
+}
+
+impl ServerLists {
+    fn key(server: &crate::config::Server) -> String {
+        format!("{}|{}", server.base_url.trim(), server.api_key.trim())
+    }
+
+    /// Asks each server not asked yet.
+    fn ask(&mut self, servers: &[crate::config::Server], ctx: &egui::Context) {
+        for server in servers {
+            let key = Self::key(server);
+            if self.found.contains_key(&key) || self.pending.contains_key(&key) {
+                continue;
+            }
+            let (tx, rx) = channel();
+            let (url, api_key, kind) =
+                (server.base_url.clone(), server.api_key.clone(), server.kind);
+            let wake = ctx.clone();
+            let started = std::thread::Builder::new()
+                .name("server-models".into())
+                .spawn(move || {
+                    let models = match crate::embed::local::models_at(&url, &api_key, kind) {
+                        crate::embed::local::Listed::Models(models) => models,
+                        _ => Vec::new(),
+                    };
+                    let _ = tx.send(models);
+                    wake.request_repaint();
+                });
+            if started.is_ok() {
+                self.pending.insert(key, rx);
+            }
+        }
+    }
+
+    fn poll(&mut self) {
+        let mut done = Vec::new();
+        for (key, rx) in &self.pending {
+            match rx.try_recv() {
+                Ok(models) => done.push((key.clone(), models)),
+                Err(TryRecvError::Disconnected) => done.push((key.clone(), Vec::new())),
+                Err(TryRecvError::Empty) => {}
+            }
+        }
+        for (key, models) in done {
+            self.pending.remove(&key);
+            self.found.insert(key, models);
+        }
+    }
+
+    /// What `server` listed, once it answered.
+    fn models(&self, server: &crate::config::Server) -> &[String] {
+        self.found
+            .get(&Self::key(server))
+            .map_or(&[], |models| models.as_slice())
+    }
+}
+
 /// Models offered by a server, fetched in the background.
 #[derive(Default)]
 struct ModelList {
@@ -311,6 +420,9 @@ struct Toast {
     /// Makes this the update's message (D65): its text, buttons and progress
     /// follow `App::update`, and it lasts until the update is done or closed.
     update: Option<view::UpdateParts>,
+    /// Makes this a question that waits for its answer: its button, or
+    /// Cancel, Esc or its window closing, which answer no.
+    question: Option<view::Question>,
 }
 
 impl Toast {
@@ -362,8 +474,10 @@ pub(super) enum Command {
     /// Turns off Send images for the search model with this key, after its
     /// server refused an image.
     StopSendingImages(String),
-    /// Shows the weaker matches folded below the results.
+    /// Opens the weaker matches below their link, under the strong ones.
     ShowWeaker,
+    /// Folds the weaker matches back under their link.
+    HideWeaker,
     /// Ctrl+click: adds an item to the ones selected together, or takes it
     /// out.
     ToggleMark(u64),
@@ -385,6 +499,12 @@ pub(super) enum Command {
     ReadAgain(u64),
     /// Opens Settings at a page.
     OpenSettings(settings::SettingsPage),
+    /// Records copies from a program again: Undo after its rule was added.
+    RecordAppAgain(String),
+    /// Stops recording copies from a program (its file name, and its name
+    /// as shown) with a rule: Never record, the answer to the question
+    /// the item's menu asks.
+    IgnoreApp(String, String),
 }
 
 /// Whether putting an item back on the clipboard also pastes it into the
@@ -424,6 +544,7 @@ enum ShortcutField {
     Delete,
     Tag,
     View,
+    Details,
 }
 
 /// How long a deleted item can still be brought back.
@@ -443,6 +564,16 @@ fn texts_together<'a>(items: impl Iterator<Item = &'a Item>) -> (usize, String, 
     let (pictures, texts): (Vec<_>, Vec<_>) = items.partition(|it| it.kind == Kind::Image);
     let texts: Vec<&str> = texts.iter().map(|it| it.text.trim_end()).collect();
     (texts.len(), texts.join("\n"), pictures.len())
+}
+
+/// `cfg` with a rule that stops recording copies from the program `app`.
+fn ignoring_app(cfg: &Config, app: &str) -> Config {
+    let mut d = cfg.clone();
+    d.rules.push(crate::rules::Rule {
+        app: app.to_string(),
+        ..Default::default()
+    });
+    d
 }
 
 /// eframe's entry for the window's place and size in app.ron.
@@ -589,11 +720,14 @@ pub struct App {
     results: Vec<Hit>,
     /// While searching, how many results each filter and tag would show.
     search_counts: Option<search::Counts>,
-    /// Weaker matches, folded under one line below the results.
+    /// Weaker matches, folded under their link below the results.
     weaker: Vec<Hit>,
-    /// The search the weaker matches were shown for; another search folds
-    /// them again.
-    weaker_shown_for: Option<String>,
+    /// The item the app selected by itself for the results: until another
+    /// is picked, a better ranking that comes later moves the selection to
+    /// the best match.
+    auto_selected: Option<u64>,
+    /// For which search text the weaker matches are open below their link.
+    weaker_link: WeakerLink,
     /// The history or the query changed: search again.
     dirty: bool,
     searcher: Searcher,
@@ -645,6 +779,10 @@ pub struct App {
     hotkey_conflicts: Vec<String>,
     /// What the search model's server offers, for the default model's name.
     model_list: ModelList,
+    /// Model servers found on this PC (D66).
+    local_servers: LocalServers,
+    /// What the saved servers list, for the model menus (D67).
+    server_lists: ServerLists,
     settings_page: SettingsPage,
     confirm: Option<Confirm>,
     /// The server being added or edited in Settings.
@@ -669,6 +807,13 @@ pub struct App {
     details_open: bool,
     /// Cards per row in the grid, from the last frame, for ↑ ↓ navigation.
     grid_cols: usize,
+    /// With cards as tall as their content, or with weaker matches on rows
+    /// of their own, where each card was drawn last, from the grid's top
+    /// left, for the arrow keys. Empty otherwise.
+    grid_places: Vec<(u64, egui::Rect)>,
+    /// The heights of cards as tall as their content, measured once for
+    /// each layout of the grid.
+    card_heights: view::CardHeights,
     win: WindowCtl,
     /// Marks this as the running copy; another start shows this window.
     instance: crate::single_instance::Guard,
@@ -829,7 +974,8 @@ impl App {
             results: Vec::new(),
             search_counts: None,
             weaker: Vec::new(),
-            weaker_shown_for: None,
+            auto_selected: None,
+            weaker_link: WeakerLink::default(),
             dirty: true,
             searcher: {
                 let c = ctx.clone();
@@ -866,6 +1012,8 @@ impl App {
             hotkey_error: None,
             hotkey_conflicts: Vec::new(),
             model_list: ModelList::default(),
+            local_servers: LocalServers::default(),
+            server_lists: ServerLists::default(),
             settings_page: SettingsPage::Search,
             confirm: None,
             server_editor: None,
@@ -878,6 +1026,8 @@ impl App {
             popup_moving: false,
             details_open: false,
             grid_cols: 1,
+            grid_places: Vec::new(),
+            card_heights: view::CardHeights::default(),
             update: UpdateState::Idle,
             update_rx: None,
             update_hidden: false,
@@ -953,11 +1103,12 @@ impl App {
             app.save_config();
         }
         if let Some(aside) = app.library.store().moved_aside.clone() {
-            let message = log_error!(
-                "error-history-moved-aside",
-                file = aside.display().to_string()
-            );
-            app.set_error(message);
+            let file = aside.display().to_string();
+            // The log gets the path as it is; the window sets it apart, so
+            // it reads left to right inside an Arabic sentence too.
+            log_error!("error-history-moved-aside", file = file.as_str());
+            let file = bidi::left_to_right(&file);
+            app.set_error(t!("error-history-moved-aside", file = file));
         }
         let win = app.win.clone();
         app.instance.on_show_request(move || win.show());
@@ -1484,6 +1635,7 @@ impl App {
             drawn: false,
             id: self.toast_seq,
             update: None,
+            question: None,
         });
         self.toasts.last_mut().expect("a message was just added")
     }
@@ -1605,6 +1757,13 @@ impl App {
             Command::Import(paths) => self.import(paths),
             Command::ClearHistory => self.clear_history(),
             Command::UndoDelete => self.undo_delete(),
+            Command::RecordAppAgain(app) => {
+                let mut d = self.cfg.clone();
+                d.rules.retain(|r| !r.skips_app(&app));
+                let ctx = self.win.ctx.clone();
+                self.apply_settings(d, &ctx, false);
+            }
+            Command::IgnoreApp(app, name) => self.ignore_app(&app, &name),
             Command::SaveSkipped(capture) => {
                 // Said first, so a warning the copy brings (the history 90%
                 // full) comes in front of it.
@@ -1613,6 +1772,7 @@ impl App {
             }
             Command::StopSendingImages(key) => self.stop_sending_images(&key),
             Command::ShowWeaker => self.show_weaker(),
+            Command::HideWeaker => self.hide_weaker(),
             Command::ShowWhatsNew => {
                 self.win.show_full();
                 self.whats_new_open = true;
@@ -1694,15 +1854,15 @@ impl App {
                 // Its program asked for it not to be kept: only its name.
                 (SkipReason::Private, _) => (
                     t!("toast-skipped-private"),
-                    from.map(|p| t!("toast-skipped-by", program = p)),
+                    from.map(|p| t!("toast-skipped-by", program = bidi::isolate(&p))),
                 ),
                 (SkipReason::Secret, Some(secret)) => (
                     secret_title(secret.kind),
-                    from.map(|p| t!("toast-skipped-from", program = p)),
+                    from.map(|p| t!("toast-skipped-from", program = bidi::isolate(&p))),
                 ),
                 (SkipReason::Secret, None) => (
                     secret_title(crate::privacy::SecretKind::Key),
-                    from.map(|p| t!("toast-skipped-from", program = p)),
+                    from.map(|p| t!("toast-skipped-from", program = bidi::isolate(&p))),
                 ),
             };
             let hint = found.map(|s| hint_text(&s.hint));
@@ -1724,7 +1884,7 @@ impl App {
             log::info!("copy not saved: a rule matched");
             let from = self.program_name(app.as_deref(), program.as_deref());
             let detail = from
-                .map(|p| t!("toast-skipped-from", program = p))
+                .map(|p| t!("toast-skipped-from", program = bidi::isolate(&p)))
                 .into_iter()
                 .collect();
             let kept = Capture {
@@ -1744,17 +1904,17 @@ impl App {
         });
     }
 
-    /// Stops recording copies from `app`, with a rule the user can remove
-    /// in Settings.
-    fn ignore_app(&mut self, app: &str) {
-        let mut d = self.cfg.clone();
-        d.rules.push(crate::rules::Rule {
-            app: app.to_string(),
-            ..Default::default()
-        });
+    /// Stops recording copies from `app`, shown as `name`, with a rule; the
+    /// message offers Undo, and the rule stays in Settings, Privacy.
+    fn ignore_app(&mut self, app: &str, name: &str) {
+        let d = ignoring_app(&self.cfg, app);
         let ctx = self.win.ctx.clone();
         self.apply_settings(d, &ctx, false);
-        self.toast_for(t!("toast-app-ignored", app = app), Duration::from_secs(6));
+        let toast = self.toast_with(
+            t!("toast-app-ignored", app = bidi::isolate(name)),
+            Duration::from_secs(8),
+        );
+        toast.action = Some((t!("toast-undo"), Command::RecordAppAgain(app.to_string())));
     }
 
     /// The ways to put an item back, the main one first: paste into the
@@ -1772,7 +1932,7 @@ impl App {
             return ways;
         }
         let paste = match self.paste_target_name(window) {
-            Some(name) => t!("item-paste-into", app = name.as_str()),
+            Some(name) => t!("item-paste-into", app = bidi::isolate(&name)),
             None => t!("item-paste"),
         };
         let mut ways = vec![way(paste, keys.paste, Paste::Yes)];
@@ -1814,7 +1974,10 @@ impl App {
         });
         let toast = self.toast_with(title, how_long);
         toast.icon = Some(icons::Icon::Lock);
-        toast.detail = (!detail.is_empty()).then(|| detail.join(" · "));
+        // Each part in its own direction, so in Arabic a program's name
+        // and a hint after it don't run together.
+        let parts: Vec<String> = detail.iter().map(|part| bidi::isolate(part)).collect();
+        toast.detail = (!parts.is_empty()).then(|| parts.join(" · "));
         toast.secret = secret;
         toast.action = kept.map(|c| (t!("toast-save-anyway"), Command::SaveSkipped(c)));
         let on_screen = self.note_wanted();
@@ -1829,7 +1992,7 @@ impl App {
         program
             .and_then(|p| self.programs.get(p))
             .map(|p| p.name.clone())
-            .or_else(|| app.map(str::to_string))
+            .or_else(|| app.map(programs::tidy))
     }
 
     /// Adds a copy to the history, or moves its duplicate to the top.
@@ -2127,6 +2290,8 @@ impl App {
 
     fn handle_events(&mut self, ctx: &egui::Context) {
         self.model_list.poll();
+        self.local_servers.poll();
+        self.server_lists.poll();
         loop {
             match self.captures.try_recv() {
                 Ok(c) => self.on_capture(c),
@@ -2346,19 +2511,30 @@ impl App {
     fn show_results(&mut self, (hits, counts): search::Found) {
         self.searching = false;
         self.search_counts = counts;
-        // Weaker matches wait under one line, unless shown for this search.
-        if self.weaker_shown_for.as_deref() == Some(self.query.trim()) {
-            (self.results, self.weaker) = (hits, Vec::new());
-        } else {
-            (self.results, self.weaker) = hits.into_iter().partition(|h| !h.weak);
-        }
+        // Weaker matches wait under their link, unless it was opened for
+        // this search text.
+        (self.results, self.weaker) = self.weaker_link.fold(self.query.trim(), hits);
         let still_there = self
             .selected
             .is_some_and(|id| self.results.iter().any(|h| h.id == id));
-        if !still_there {
-            self.selected = self.results.first().map(|h| h.id);
-            self.scroll_to_selected = true;
+        // Until another item is picked, the selection follows the best match,
+        // also when a ranking by meaning comes after the one by words.
+        let searching = !self.query.trim().is_empty();
+        let untouched = searching && self.selected.is_some() && self.selected == self.auto_selected;
+        if !still_there || untouched {
+            let best = self.results.first().map(|h| h.id);
+            if best != self.selected {
+                self.scroll_to_selected = true;
+            }
+            self.selected = best;
+            self.auto_selected = best;
         }
+    }
+
+    /// Whether the weaker matches of this search wait folded under their
+    /// link.
+    fn weaker_folded(&self) -> bool {
+        !self.weaker_link.is_open(self.query.trim())
     }
 
     /// Takes removed items out of the list at once, before the next search
@@ -2681,11 +2857,29 @@ impl App {
         self.group_tag = None;
     }
 
-    /// Shows the weaker matches folded below the results, until the search
-    /// changes.
+    /// Opens the weaker matches below their link, while the search text
+    /// stays the same.
     fn show_weaker(&mut self) {
-        self.weaker_shown_for = Some(self.query.trim().to_string());
+        self.weaker_link.choose(self.query.trim(), true);
         self.results.append(&mut self.weaker);
+    }
+
+    /// Folds the weaker matches back under their link, while the search
+    /// text stays the same. A weaker match that was selected gives the
+    /// selection to the last strong one, beside the link.
+    fn hide_weaker(&mut self) {
+        self.weaker_link.choose(self.query.trim(), false);
+        let (strong, weak): (Vec<Hit>, Vec<Hit>) = std::mem::take(&mut self.results)
+            .into_iter()
+            .partition(|h| !h.weak);
+        (self.results, self.weaker) = (strong, weak);
+        let hidden = self
+            .selected
+            .is_some_and(|id| self.weaker.iter().any(|h| h.id == id));
+        if hidden {
+            self.selected = self.results.last().map(|h| h.id);
+            self.scroll_to_selected = true;
+        }
     }
 
     fn move_selection(&mut self, delta: i32) {
@@ -2705,6 +2899,70 @@ impl App {
         };
         self.selected = Some(self.results[next].id);
         self.scroll_to_selected = true;
+    }
+
+    /// With cards stacked in columns, selects the card below the selected
+    /// one in its column, or above it.
+    fn step_in_column(&mut self, down: bool) {
+        let Some(at) = self.selected_place() else {
+            return self.move_selection(0);
+        };
+        let next = self
+            .grid_places
+            .iter()
+            .filter(|(_, p)| (p.left() - at.left()).abs() < 1.0)
+            .filter(|(_, p)| {
+                if down {
+                    p.top() > at.top()
+                } else {
+                    p.top() < at.top()
+                }
+            })
+            .min_by(|(_, a), (_, b)| {
+                (a.top() - at.top())
+                    .abs()
+                    .total_cmp(&(b.top() - at.top()).abs())
+            })
+            .map(|(id, _)| *id);
+        // Going on from the end shows the weaker matches below.
+        if next.is_none() && down && !self.weaker.is_empty() {
+            self.show_weaker();
+        }
+        if let Some(id) = next {
+            self.selected = Some(id);
+            self.scroll_to_selected = true;
+        }
+    }
+
+    /// With cards stacked in columns, selects the card in the column
+    /// `columns` away whose middle is nearest the selected one's.
+    fn step_across(&mut self, columns: i32) {
+        let Some(at) = self.selected_place() else {
+            return self.move_selection(0);
+        };
+        let target = at.left() + columns as f32 * (at.width() + view::GRID_GAP);
+        let next = self
+            .grid_places
+            .iter()
+            .filter(|(_, p)| (p.left() - target).abs() < 1.0)
+            .min_by(|(_, a), (_, b)| {
+                let (a, b) = (a.center().y - at.center().y, b.center().y - at.center().y);
+                a.abs().total_cmp(&b.abs())
+            })
+            .map(|(id, _)| *id);
+        if let Some(id) = next {
+            self.selected = Some(id);
+            self.scroll_to_selected = true;
+        }
+    }
+
+    /// Where the selected card was drawn, with cards stacked in columns.
+    fn selected_place(&self) -> Option<egui::Rect> {
+        let id = self.selected?;
+        self.grid_places
+            .iter()
+            .find(|(i, _)| *i == id)
+            .map(|(_, p)| *p)
     }
 
     fn preview(&mut self, it: &Item) -> Preview {
@@ -2817,7 +3075,7 @@ fn write_clipboard(
 }
 
 mod background;
-mod bidi;
+pub(crate) mod bidi;
 mod icons;
 mod programs;
 mod settings;
@@ -2828,10 +3086,93 @@ use background::{Background, Done};
 use settings::{PendingSend, ServerEditor, SettingsPage};
 use view::{add_fonts, apply_theme, looks_like_code, set_accent, style};
 
+/// Whether the link between the strong and the weaker matches is open, so
+/// the weaker ones show below it. It starts closed for every search text,
+/// however few the strong matches are. A click opens or closes it, and
+/// that choice holds while the search text stays the same.
+#[derive(Default)]
+struct WeakerLink {
+    /// The search text it is open for; `None` while it is closed.
+    open_for: Option<String>,
+}
+
+impl WeakerLink {
+    /// New results `hits` for `query`: the ones to show, and the weaker
+    /// ones that wait under the closed link. Another search text closes
+    /// it, also when the one it was opened for comes back later.
+    fn fold(&mut self, query: &str, hits: Vec<Hit>) -> (Vec<Hit>, Vec<Hit>) {
+        if self.is_open(query) {
+            return (hits, Vec::new());
+        }
+        self.open_for = None;
+        hits.into_iter().partition(|h| !h.weak)
+    }
+
+    fn is_open(&self, query: &str) -> bool {
+        self.open_for.as_deref() == Some(query)
+    }
+
+    /// The user opens the link for `query`, or closes it.
+    fn choose(&mut self, query: &str, open: bool) {
+        self.open_for = open.then(|| query.to_string());
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use eframe::Storage as _;
+
+    /// Results with `strong` strong matches, then `weak` weaker ones.
+    fn hits(strong: usize, weak: usize) -> Vec<Hit> {
+        (0..strong + weak)
+            .map(|i| Hit {
+                id: i as u64,
+                closeness: None,
+                weak: i >= strong,
+            })
+            .collect()
+    }
+
+    /// How many results show and how many wait under the link.
+    fn shown_and_folded((shown, folded): (Vec<Hit>, Vec<Hit>)) -> (usize, usize) {
+        (shown.len(), folded.len())
+    }
+
+    /// Two strong matches and 14 weaker ones, fewer strong ones than a row
+    /// of 4 cards holds, start closed: the two show, the 14 wait under the
+    /// link.
+    #[test]
+    fn two_strong_and_14_weaker_matches_start_closed() {
+        let mut link = WeakerLink::default();
+        let (shown, folded) = link.fold("total", hits(2, 14));
+        assert!(shown.iter().all(|h| !h.weak) && folded.iter().all(|h| h.weak));
+        assert_eq!((shown.len(), folded.len()), (2, 14));
+        assert!(!link.is_open("total"));
+    }
+
+    #[test]
+    fn the_weaker_matches_link_keeps_the_choice_for_one_search_text() {
+        let mut link = WeakerLink::default();
+        // A click opens it; more results for the same text show their
+        // weaker matches too.
+        link.fold("cat", hits(2, 14));
+        link.choose("cat", true);
+        assert_eq!(shown_and_folded(link.fold("cat", hits(1, 14))), (15, 0));
+        // A new search text starts closed, also when the old one comes
+        // back.
+        assert_eq!(shown_and_folded(link.fold("cats", hits(2, 14))), (2, 14));
+        assert_eq!(shown_and_folded(link.fold("cat", hits(2, 14))), (2, 14));
+        // A click closes an open link; more results for the same text
+        // leave it closed.
+        link.choose("cat", true);
+        link.choose("cat", false);
+        assert_eq!(shown_and_folded(link.fold("cat", hits(2, 14))), (2, 14));
+        // The choice is for its own search text only.
+        link.choose("dog", true);
+        assert!(link.is_open("dog"));
+        assert!(!link.is_open("dogs"));
+    }
 
     #[test]
     fn an_indexing_run_grows_with_new_work_and_ends_when_empty() {

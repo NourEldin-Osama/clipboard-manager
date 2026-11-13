@@ -13,13 +13,14 @@ use super::bidi;
 use super::icons::{self, icon_button_at, icon_button_ex, view_icon, Icon};
 use super::shortcut;
 use super::*;
-use crate::config::Density;
+use crate::config::{CardHeight, Density};
 
 mod checklist;
 mod chrome;
 mod details;
 mod grid;
 mod items;
+mod key_hints;
 mod keyboard;
 mod keys_sheet;
 mod list;
@@ -35,6 +36,7 @@ mod widgets;
 
 // The helpers of every part, for this file and its parts.
 use items::*;
+use key_hints::*;
 use keyboard::*;
 use list::*;
 use theme::*;
@@ -43,77 +45,30 @@ use widgets::*;
 
 // The ones the rest of the app uses.
 pub(crate) use details::reveal;
+pub(crate) use grid::{CardHeights, CARD_CHIP_PADDING, CHIP_SIDE, GRID_GAP};
 pub(crate) use items::looks_like_code;
-pub(crate) use messages::UpdateParts;
+pub(crate) use messages::{Question, UpdateParts};
 pub(crate) use theme::{
-    accent, accent_name, add_fonts, apply_theme, button_fill, key_cap, lit, radius, semibold,
-    set_accent, size, space, style, text_shade, ACCENTS, AMBER, GREEN, READING_WIDTH, RED,
+    accent, accent_name, add_fonts, apply_theme, button_fill, card_frame, choice_track,
+    chosen_face, chosen_pill, key_cap, line_color, lit, note_fill, radius, semibold, set_accent,
+    size, space, style, text_shade, warning_fill, ACCENTS, AMBER, GREEN, READING_WIDTH, RED,
 };
 pub(crate) use widgets::{
-    chip, cut_line, divider, far, flip, lbl, paint_progress, paint_text, primary_button, row,
-    row_layout, row_wrapped, section_title, set_choice_name, set_name, slow_spinner, start_anchor,
-    tip, title_lbl, txt, Reacts, PROGRESS_LINE,
+    chip, cut_line, divider, far, far_layout, flip, lbl, paint_progress, paint_text, pill_job,
+    primary_button, row, row_layout, row_of, row_wrapped, section_title, set_choice_name, set_name,
+    slow_spinner, start_anchor, tip, title_lbl, txt, Reacts, PROGRESS_LINE,
 };
 
 impl App {
     /// Everything below the top bar: list, grid or list + details, per the view mode.
     fn main_area(&mut self, ui: &mut Ui) {
         let fill = ui.visuals().panel_fill;
-        // Panels swap sides right to left: the list starts on the reading side.
-        let (start, end) = if i18n::rtl() {
-            (egui::Panel::right("list"), egui::Panel::left("details"))
-        } else {
-            (egui::Panel::left("list"), egui::Panel::right("details"))
-        };
-        if self.cfg.view == ViewMode::Detail {
-            start
-                .resizable(true)
-                .show_separator_line(false)
-                .default_size(ui.available_width() * 0.42)
-                .size_range(300.0..=900.0)
-                .frame(
-                    Frame::new()
-                        .inner_margin(Margin {
-                            left: 8,
-                            right: 8,
-                            top: 4,
-                            bottom: 4,
-                        })
-                        .fill(fill),
-                )
-                .show(ui, |ui| self.list(ui, false));
-            let detail_fill = ui.visuals().extreme_bg_color;
-            egui::CentralPanel::default()
-                .frame(
-                    Frame::new()
-                        .inner_margin(Margin {
-                            left: 24,
-                            right: 20,
-                            top: 14,
-                            bottom: 14,
-                        })
-                        .fill(detail_fill),
-                )
-                .show(ui, |ui| self.details(ui, false));
-            return;
-        }
-        if self.details_open && self.selected.is_some() {
-            let detail_fill = ui.visuals().extreme_bg_color;
-            end.resizable(true)
-                .show_separator_line(false)
-                .default_size(ui.available_width() * 0.45)
-                .size_range(320.0..=1100.0)
-                .frame(
-                    Frame::new()
-                        .inner_margin(Margin {
-                            left: 20,
-                            right: 20,
-                            top: 14,
-                            bottom: 14,
-                        })
-                        .fill(detail_fill),
-                )
-                .show(ui, |ui| self.details(ui, true));
+        // The details at the reading end: always in Detail view, and while
+        // open over the grid or the list, with a Back button there. The list
+        // or the grid takes the rest.
+        if self.pane_shown() {
+            let closeable = self.cfg.view != ViewMode::Detail;
+            details::details_panel(ui, |ui| self.details(ui, closeable));
         }
         // The cards end 16 points from the window's edge, after the 12 the
         // grid keeps for its scroll bar; rows add their own 8 to the 8 here.
@@ -148,6 +103,34 @@ impl App {
         self.details_open = false;
         self.scroll_to_selected = true;
         self.save_config();
+    }
+
+    /// The details pane shows beside the list or the grid: always in
+    /// Detail, and after Open details in the other two.
+    fn pane_shown(&self) -> bool {
+        self.cfg.view == ViewMode::Detail || (self.details_open && self.selected.is_some())
+    }
+
+    /// Shows `view` with the details pane `open` beside it or not, as the
+    /// layout controls ask. Only the view is saved: the pane beside the grid
+    /// or the list is the one Open details opens.
+    fn show_layout(&mut self, (view, open): (ViewMode, bool)) {
+        if view != self.cfg.view {
+            self.set_view(view);
+        }
+        if view == ViewMode::Detail {
+            return;
+        }
+        if !open {
+            self.details_open = false;
+            return;
+        }
+        // With none selected, the pane shows the first item shown.
+        if self.selected.is_none() {
+            self.selected = self.results.first().map(|hit| hit.id);
+            self.scroll_to_selected = true;
+        }
+        self.details_open = self.selected.is_some();
     }
 
     /// A file dialog took the keyboard focus away: the search box gets it

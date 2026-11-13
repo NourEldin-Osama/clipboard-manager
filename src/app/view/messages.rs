@@ -66,12 +66,54 @@ pub(crate) struct UpdateParts {
     buttons: Vec<(String, UpdateAction, Look)>,
 }
 
+/// What a question has that other messages don't: it waits for its
+/// answer, and shows only in the window that asked it.
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct Question {
+    /// Asked in the popup: it shows there, and goes when the popup closes.
+    pub(crate) in_popup: bool,
+    /// Its button takes the keyboard when it first shows: the question was
+    /// asked from the keyboard.
+    pub(crate) focus: bool,
+}
+
+/// Makes `toast` the question before a rule that stops recording copies
+/// from the program `app`, shown as `name`: Never record makes the rule;
+/// it waits for its answer in the window that asked it (`in_popup` or
+/// not), and takes the keyboard when it was asked from the keyboard.
+pub(super) fn ask_to_ignore(
+    toast: &mut Toast,
+    app: &str,
+    name: &str,
+    in_popup: bool,
+    by_key: bool,
+) {
+    toast.text = t!("toast-never-record-question", app = bidi::isolate(name));
+    toast.how_long = Duration::MAX;
+    let rule = Command::IgnoreApp(app.to_string(), name.to_string());
+    toast.action = Some((t!("toast-never-record"), rule));
+    toast.question = Some(Question {
+        in_popup,
+        focus: by_key,
+    });
+}
+
+/// Takes the question of the popup's window (`in_popup`) or the full
+/// window out of `toasts`, with no answer. Whether there was one.
+pub(super) fn close_question(toasts: &mut Vec<Toast>, in_popup: bool) -> bool {
+    let before = toasts.len();
+    toasts.retain(|t| t.question.as_ref().is_none_or(|q| q.in_popup != in_popup));
+    toasts.len() < before
+}
+
 /// A message laid out at its width.
 pub(super) struct Laid {
     title: Vec<(Arc<Galley>, bool)>,
     detail: Vec<(Arc<Galley>, bool)>,
     /// The button's label, with its keys in a fainter color.
     action: Option<Arc<Galley>>,
+    /// A question's Cancel, a plain text button after its main one.
+    cancel: Option<Arc<Galley>>,
     /// "Show", for the text of a copy that wasn't saved.
     show: Option<Arc<Galley>>,
     /// The update message's buttons, from the far end.
@@ -91,6 +133,10 @@ pub(super) struct Laid {
 pub(super) struct Asked {
     /// The id of the message whose button was clicked.
     pub(super) action: Option<u64>,
+    /// The id of the question whose Cancel was clicked.
+    cancel: Option<u64>,
+    /// The id of the question whose button took the keyboard.
+    focused: Option<u64>,
     /// The id of the message whose Show is held down.
     show: Option<u64>,
     /// A button of the update's message.
@@ -211,8 +257,13 @@ impl App {
                 self.error = None;
             }
         }
-        // Messages on the screen's corner show in the note instead.
-        let in_window = |t: &Toast| !t.on_screen && !(popup && t.update.is_some());
+        // Messages on the screen's corner show in the note instead, and a
+        // question only in the window that asked it.
+        let in_window = |t: &Toast| {
+            !t.on_screen
+                && !(popup && t.update.is_some())
+                && t.question.as_ref().is_none_or(|q| q.in_popup == popup)
+        };
         let shown: Vec<&Toast> = self.toasts.iter().filter(|t| in_window(t)).collect();
         if shown.is_empty() {
             self.toasts_hovered = false;
@@ -302,13 +353,29 @@ impl App {
             ctx.request_repaint();
         }
         self.toast_showing = asked.show;
+        if let Some(id) = asked.focused {
+            let question = self.toasts.iter_mut().find(|t| t.id == id);
+            if let Some(question) = question.and_then(|t| t.question.as_mut()) {
+                question.focus = false;
+            }
+            // The keyboard is on the question's button: show where.
+            self.keyboard_focus = true;
+        }
         if let Some(id) = asked.action {
             if let Some(at) = self.toasts.iter().position(|t| t.id == id) {
                 let toast = self.toasts.remove(at);
+                // Typing goes to the search field again, as after a menu.
+                if toast.question.is_some() {
+                    self.focus_search.store(true, Ordering::SeqCst);
+                }
                 if let Some((_, command)) = toast.action {
                     self.run(command);
                 }
             }
+        }
+        if let Some(id) = asked.cancel {
+            self.toasts.retain(|t| t.id != id);
+            self.focus_search.store(true, Ordering::SeqCst);
         }
         if let Some(action) = asked.update {
             self.update_action(action, ctx);
@@ -380,6 +447,10 @@ pub(super) fn lay_out(
         let job = pill_job(label, size::SMALL, label_color, keys);
         ui.fonts_mut(|f| f.layout_job(job))
     });
+    let cancel = toast.question.as_ref().map(|_| {
+        let job = pill_job(&t!("common-cancel"), size::SMALL, v.text_color(), None);
+        ui.fonts_mut(|f| f.layout_job(job))
+    });
     let update_buttons: Vec<(Arc<Galley>, UpdateAction, Look)> = toast
         .update
         .iter()
@@ -402,9 +473,11 @@ pub(super) fn lay_out(
             let job = pill_job(&t!("toast-show"), size::SMALL, v.hyperlink_color, None);
             ui.fonts_mut(|f| f.layout_job(job))
         });
-    let buttons = action
-        .as_ref()
-        .map_or(0.0, |g| g.size().x + 2.0 * BUTTON_PAD + SPACE)
+    let buttons = [&action, &cancel]
+        .into_iter()
+        .flatten()
+        .map(|g| g.size().x + 2.0 * BUTTON_PAD + SPACE)
+        .sum::<f32>()
         + show
             .as_ref()
             .map_or(0.0, |g| ICON + 4.0 + g.size().x + SPACE);
@@ -442,9 +515,15 @@ pub(super) fn lay_out(
         let detail = second.map_or_else(Vec::new, |d| lines(d, size::SMALL, v.weak_text_color()));
         (title, detail)
     };
-    let mut text_w = (room - buttons).max(40.0);
+    // The update's message and a question have their buttons under their
+    // text, which takes the whole width.
+    let mut below = !update_buttons.is_empty() || cancel.is_some();
+    let mut text_w = if below {
+        room
+    } else {
+        (room - buttons).max(40.0)
+    };
     let (mut title, mut detail) = text_in(text_w);
-    let mut below = !update_buttons.is_empty();
     if buttons > 0.0 && title.len() + detail.len() > 2 {
         let (wide_title, wide_detail) = text_in(room);
         if wide_title.len() + wide_detail.len() < title.len() + detail.len() {
@@ -462,6 +541,7 @@ pub(super) fn lay_out(
         title,
         detail,
         action,
+        cancel,
         show,
         update_buttons,
         below,
@@ -617,6 +697,16 @@ pub(super) fn paint_content(
         }
         right -= w + SPACE;
     }
+    // A question's Cancel comes after its main button, at the far end.
+    let cancel_at = laid.cancel.as_ref().map(|g| {
+        let w = g.size().x + 2.0 * BUTTON_PAD;
+        let at = m(Rect::from_min_size(
+            Pos2::new(right - w, buttons_mid - BUTTON_H / 2.0),
+            Vec2::new(w, BUTTON_H),
+        ));
+        right -= w + SPACE;
+        at
+    });
     if let Some(g) = &laid.action {
         let w = g.size().x + 2.0 * BUTTON_PAD;
         let at = m(Rect::from_min_size(
@@ -630,8 +720,13 @@ pub(super) fn paint_content(
             Sense::click(),
         );
         r.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, label));
+        // A question asked from the keyboard hands it to its button.
+        if toast.question.as_ref().is_some_and(|q| q.focus) && !ui.is_sizing_pass() {
+            r.request_focus();
+            asked.focused = Some(toast.id);
+        }
         let (fill, _) = theme::message_button(v.dark_mode);
-        let fill = if r.hovered() {
+        let fill = if r.hovered() || r.has_focus() {
             fill.gamma_multiply(0.85)
         } else {
             fill
@@ -645,6 +740,27 @@ pub(super) fn paint_content(
             asked.action = Some(toast.id);
         }
         right -= w + SPACE;
+    }
+    // Made after the main button, so Tab goes from it to Cancel.
+    if let (Some(g), Some(at)) = (&laid.cancel, cancel_at) {
+        let r = ui.interact(
+            at,
+            egui::Id::unique(("toast-cancel", toast.id)),
+            Sense::click(),
+        );
+        let label = t!("common-cancel");
+        r.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, &label));
+        if r.hovered() || r.has_focus() {
+            let lit = v.widgets.hovered.weak_bg_fill;
+            ui.painter()
+                .rect_filled(at, CornerRadius::same(radius::SMALL), lit);
+        }
+        let text_at = at.center() - g.size() / 2.0;
+        ui.painter()
+            .galley(text_at, g.clone(), Color32::PLACEHOLDER);
+        if r.clicked() {
+            asked.cancel = Some(toast.id);
+        }
     }
     if let Some(g) = &laid.show {
         let w = ICON + 4.0 + g.size().x;
@@ -717,7 +833,240 @@ mod tests {
             drawn: false,
             id: 1,
             update: None,
+            question: None,
         }
+    }
+
+    /// The question before a rule for Notepad++, asked in the full window,
+    /// from the keyboard when `by_key`.
+    fn question(by_key: bool) -> Toast {
+        let mut toast = message("", None, None);
+        (toast.icon, toast.secret, toast.id) = (None, None, 7);
+        ask_to_ignore(&mut toast, "notepad++.exe", "Notepad++", false, by_key);
+        toast
+    }
+
+    /// Asking makes no rule: the question waits, with no time limit, and
+    /// only its Never record carries the command that makes the rule,
+    /// the same rule as before there was a question.
+    #[test]
+    fn asking_makes_no_rule_until_never_record() {
+        let toast = question(false);
+        assert!(toast.text.contains("Notepad++"), "{}", toast.text);
+        assert_eq!(toast.how_long, Duration::MAX);
+        let Some((label, Command::IgnoreApp(app, name))) = &toast.action else {
+            panic!("Never record makes the rule");
+        };
+        assert_eq!(label, &t!("toast-never-record"));
+        assert_eq!(
+            (app.as_str(), name.as_str()),
+            ("notepad++.exe", "Notepad++")
+        );
+        let cfg = crate::config::Config::default();
+        assert!(!cfg.rules.iter().any(|r| r.skips_app("notepad++.exe")));
+        let ruled = crate::app::ignoring_app(&cfg, "notepad++.exe");
+        assert!(ruled.rules.iter().any(|r| r.skips_app("notepad++.exe")));
+        assert_eq!(ruled.rules.len(), cfg.rules.len() + 1);
+    }
+
+    /// The texts `toast`'s card draws, each from the left, without the
+    /// invisible marks that set a part apart.
+    fn drawn_texts(toast: &Toast) -> String {
+        let ctx = egui::Context::default();
+        add_fonts(&ctx);
+        // The fonts apply from the next frame.
+        ctx.run_ui(egui::RawInput::default(), |_| {})
+            .textures_delta
+            .clear();
+        let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+            let laid = lay_out(ui, toast, WIDTH, false, None);
+            let card = Rect::from_min_size(Pos2::new(20.0, 20.0), Vec2::new(WIDTH, laid.height));
+            paint_content(ui, card, toast, &laid, &mut Asked::default(), None);
+        });
+        output.textures_delta.clear();
+        let marks = ['\u{2066}', '\u{2067}', '\u{2068}', '\u{2069}'];
+        let texts: Vec<String> = output
+            .shapes
+            .iter()
+            .filter_map(|clipped| match &clipped.shape {
+                egui::Shape::Text(shape) => Some(shape.galley.text().to_string()),
+                _ => None,
+            })
+            .collect();
+        texts
+            .join(" ")
+            .chars()
+            .filter(|c| !marks.contains(c))
+            .collect()
+    }
+
+    /// The item menu's "Never record from this program…" names no program;
+    /// the question after it does, and "Notepad++" keeps "++" right after
+    /// "Notepad", also in an Arabic sentence, where without the marks it
+    /// went to the name's other end.
+    fn check_the_question_keeps_the_name_in_order() {
+        let shown = drawn_texts(&question(false));
+        assert!(shown.contains("Notepad++"), "{shown}");
+        if i18n::rtl() {
+            let mut bare = question(false);
+            bare.text = t!("toast-never-record-question", app = "Notepad++");
+            let bare = drawn_texts(&bare);
+            assert!(
+                bare.contains("++Notepad"),
+                "the test sees the fault: {bare}"
+            );
+        }
+    }
+
+    #[test]
+    fn the_question_keeps_the_program_s_name_in_order() {
+        check_the_question_keeps_the_name_in_order();
+    }
+
+    #[test]
+    fn the_question_keeps_the_program_s_name_in_order_right_to_left() {
+        crate::i18n::passes_in_arabic(
+            module_path!(),
+            "the_question_keeps_the_program_s_name_in_order_in_arabic",
+        );
+    }
+
+    #[test]
+    #[ignore = "run in a process of its own by the_question_keeps_the_program_s_name_in_order_right_to_left"]
+    fn the_question_keeps_the_program_s_name_in_order_in_arabic() {
+        if crate::i18n::arabic_run() {
+            check_the_question_keeps_the_name_in_order();
+        }
+    }
+
+    /// Cancel and Esc close only the question, in its own window, and make
+    /// no rule: nothing runs.
+    #[test]
+    fn cancel_or_esc_closes_only_the_question() {
+        let mut older = message("Copied", None, None);
+        older.id = 3;
+        let mut toasts = vec![older, question(false)];
+        // The popup's Esc leaves the full window's question alone.
+        assert!(!close_question(&mut toasts, true));
+        assert_eq!(toasts.len(), 2);
+        assert!(close_question(&mut toasts, false));
+        let left: Vec<u64> = toasts.iter().map(|t| t.id).collect();
+        assert_eq!(left, [3], "the other message stays");
+        assert!(!close_question(&mut toasts, false), "closed once");
+    }
+
+    /// One frame of the question's card, with `events`: what its buttons
+    /// asked for, and the screen reader's buttons with where they are.
+    fn question_frame(
+        ctx: &egui::Context,
+        toast: &Toast,
+        events: Vec<egui::Event>,
+    ) -> (Asked, Vec<(String, Rect)>) {
+        let input = egui::RawInput {
+            events,
+            focused: true,
+            ..Default::default()
+        };
+        let mut asked = Asked::default();
+        let mut output = ctx.run_ui(input, |ui| {
+            let laid = lay_out(ui, toast, WIDTH, false, None);
+            assert!(laid.below, "the buttons sit under the question");
+            let card = Rect::from_min_size(Pos2::new(20.0, 20.0), Vec2::new(WIDTH, laid.height));
+            paint_content(ui, card, toast, &laid, &mut asked, None);
+        });
+        output.textures_delta.clear();
+        // Only while a screen reader listens, or a test asks for it.
+        let tree = output.platform_output.accesskit_update;
+        let buttons = tree
+            .iter()
+            .flat_map(|tree| &tree.nodes)
+            .filter(|(_, node)| node.role() == egui::accesskit::Role::Button)
+            .map(|(_, node)| {
+                let b = node.bounds().expect("a place");
+                let rect = Rect::from_min_max(
+                    Pos2::new(b.x0 as f32, b.y0 as f32),
+                    Pos2::new(b.x1 as f32, b.y1 as f32),
+                );
+                (node.label().unwrap_or("").to_string(), rect)
+            })
+            .collect();
+        (asked, buttons)
+    }
+
+    /// A click on the button named `name`, over three frames.
+    fn click(ctx: &egui::Context, toast: &Toast, name: &str) -> Asked {
+        let (_, buttons) = question_frame(ctx, toast, Vec::new());
+        let at = buttons
+            .iter()
+            .find(|(n, _)| n == name)
+            .unwrap_or_else(|| panic!("{name} in {buttons:?}"))
+            .1
+            .center();
+        let button = |pressed| egui::Event::PointerButton {
+            pos: at,
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: egui::Modifiers::NONE,
+        };
+        question_frame(ctx, toast, vec![egui::Event::PointerMoved(at)]);
+        question_frame(ctx, toast, vec![button(true)]);
+        question_frame(ctx, toast, vec![button(false)]).0
+    }
+
+    /// Never record, filled, then Cancel at the far end; each answers.
+    #[test]
+    fn the_question_s_buttons_answer_it() {
+        let toast = question(false);
+        let ctx = egui::Context::default();
+        ctx.enable_accesskit();
+        let (_, buttons) = question_frame(&ctx, &toast, Vec::new());
+        let never = t!("toast-never-record");
+        let cancel = t!("common-cancel");
+        let place = |name: &str| buttons.iter().find(|(n, _)| n == name).map(|(_, r)| *r);
+        let (never_at, cancel_at) = (
+            place(&never).expect("Never record"),
+            place(&cancel).expect("Cancel"),
+        );
+        assert!(never_at.right() < cancel_at.left(), "{buttons:?}");
+        assert!((cancel_at.right() - (20.0 + WIDTH - PAD)).abs() <= 0.5);
+        let asked = click(&ctx, &toast, &never);
+        assert_eq!((asked.action, asked.cancel), (Some(7), None));
+        let asked = click(&ctx, &toast, &cancel);
+        assert_eq!((asked.action, asked.cancel), (None, Some(7)));
+    }
+
+    /// Asked from the keyboard, Never record takes the keyboard: Enter
+    /// answers with it, and Tab goes on to Cancel. Asked with the mouse,
+    /// the keyboard stays where it was.
+    #[test]
+    fn a_question_asked_from_the_keyboard_takes_it() {
+        let key = |key: egui::Key| egui::Event::Key {
+            key,
+            physical_key: Some(key),
+            pressed: true,
+            repeat: false,
+            modifiers: egui::Modifiers::NONE,
+        };
+        let never = egui::Id::unique(("toast-action", 7_u64));
+        let cancel = egui::Id::unique(("toast-cancel", 7_u64));
+        let ctx = egui::Context::default();
+        ctx.enable_accesskit();
+        let (asked, _) = question_frame(&ctx, &question(true), Vec::new());
+        assert_eq!(asked.focused, Some(7));
+        // The app marks the question's keyboard as handed over.
+        let toast = question(false);
+        question_frame(&ctx, &toast, Vec::new());
+        assert!(ctx.memory(|m| m.has_focus(never)));
+        let (asked, _) = question_frame(&ctx, &toast, vec![key(egui::Key::Enter)]);
+        assert_eq!(asked.action, Some(7), "Enter answers");
+        question_frame(&ctx, &toast, vec![key(egui::Key::Tab)]);
+        question_frame(&ctx, &toast, Vec::new());
+        assert!(ctx.memory(|m| m.has_focus(cancel)), "Tab reaches Cancel");
+        // With the mouse, nothing takes the keyboard.
+        let ctx = egui::Context::default();
+        let (asked, _) = question_frame(&ctx, &question(false), Vec::new());
+        assert_eq!(asked.focused, None);
+        assert_eq!(ctx.memory(|m| m.focused()), None);
     }
 
     /// The update's message at `state`, as `sync_update_message` makes it.

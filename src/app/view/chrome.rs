@@ -15,8 +15,9 @@ fn short_model_name(name: &str) -> &str {
 }
 
 impl App {
-    /// The search model in use: its name and its server's, as menus show
-    /// them, and its name on the server, which may be long.
+    /// The search model in use: its name as menus show it, its server's
+    /// as a sentence shows it, and its name on the server, which may be
+    /// long.
     fn search_model_names(&self) -> Option<(String, String, String)> {
         let at = self.cfg.search_model?;
         let (server, model) = self.cfg.model(at)?;
@@ -38,7 +39,8 @@ impl App {
             }
             _ => super::settings::model_label(model),
         };
-        Some((name, server.label().to_string(), id))
+        let server = super::settings::server_in_sentence(server);
+        Some((name, server, id))
     }
 
     pub(crate) fn model_status(&self) -> (Color32, String) {
@@ -48,12 +50,55 @@ impl App {
         }
         match (&self.backend, self.search_model_names()) {
             (BackendState::Loading, _) => (AMBER, t!("status-model-loading")),
-            (BackendState::Ready { .. }, Some((model, server, _))) if on => {
-                (GREEN, t!("status-model-on", model = model, server = server))
-            }
+            // The model's name is in the tip: the words say what it does.
+            (BackendState::Ready { .. }, Some(_)) if on => (GREEN, t!("status-model-on")),
             (BackendState::Off, _) if !on => (Color32::GRAY, t!("status-model-off")),
+            // On with no model picked yet: nothing is wrong, there is none.
+            (BackendState::Off, None) => (Color32::GRAY, t!("status-model-none")),
             (BackendState::Off, _) => (RED, t!("status-model-unavailable")),
             (BackendState::Ready { .. }, _) => (Color32::GRAY, t!("status-model-words-only")),
+        }
+    }
+
+    /// The state of search by meaning, for its part of Settings: its color,
+    /// gray for none, a word or two for its chip, and a short line that
+    /// says what it means.
+    pub(crate) fn meaning_state(&self) -> (Color32, String, String) {
+        let on = self.cfg.search_engine == SearchEngine::Server;
+        if on && self.search_retry.is_some() {
+            return (
+                RED,
+                t!("settings-meaning-chip-not-working"),
+                t!("settings-meaning-failing"),
+            );
+        }
+        let picked = self.cfg.search_model.and_then(|at| self.cfg.model(at));
+        match (&self.backend, picked) {
+            _ if !on => (
+                Color32::GRAY,
+                t!("settings-meaning-chip-off"),
+                t!("settings-meaning-off"),
+            ),
+            (BackendState::Loading, _) => (
+                AMBER,
+                t!("settings-meaning-chip-loading"),
+                t!("settings-meaning-loading"),
+            ),
+            (_, None) => (
+                Color32::GRAY,
+                t!("settings-meaning-chip-not-set-up"),
+                t!("settings-meaning-none"),
+            ),
+            (BackendState::Ready { .. }, Some(_)) => (
+                GREEN,
+                t!("settings-meaning-chip-ready"),
+                t!("settings-meaning-ready"),
+            ),
+            (BackendState::Off, Some(_)) => (
+                RED,
+                t!("settings-meaning-chip-not-working"),
+                t!("settings-meaning-unavailable"),
+            ),
         }
     }
 
@@ -64,15 +109,27 @@ impl App {
         }
         match self.search_model_names() {
             Some((_, server, id)) if matches!(self.backend, BackendState::Ready { .. }) => {
-                t!("status-model-tip-named", model = id, server = server)
+                t!(
+                    "status-model-tip-named",
+                    model = bidi::isolate(&id),
+                    server = server
+                )
             }
             _ => t!("status-model-tip"),
         }
     }
 
     pub(super) fn status_bar(&mut self, ui: &mut Ui) {
-        let fill = ui.visuals().panel_fill;
-        egui::Panel::bottom("status")
+        let recording = self.flags.enabled.load(Ordering::SeqCst);
+        let panel = ui.visuals().panel_fill;
+        // While recording is paused, the bar is tinted amber, so the state
+        // can't be missed.
+        let fill = if recording {
+            panel
+        } else {
+            theme::paused_bar(panel, ui.visuals().dark_mode)
+        };
+        let bar = egui::Panel::bottom("status")
             .show_separator_line(false)
             .frame(
                 Frame::new()
@@ -87,21 +144,12 @@ impl App {
                 }
                 row(ui, |ui| {
                     let weak = ui.visuals().weak_text_color();
-                    // The item count goes at the far end. It is laid out first,
-                    // so a long error before it can be cut to the room left.
-                    let pinned = self.library.items().iter().filter(|i| i.pinned).count();
-                    let n = self.library.items().len();
-                    let count = if pinned > 0 {
-                        t!("status-items-pinned", count = n, pinned = pinned)
-                    } else {
-                        t!("status-items", count = n)
-                    };
-                    let count = txt(&count, size::SMALL, Some(weak)).into_galley(
-                        ui,
-                        Some(egui::TextWrapMode::Extend),
-                        f32::INFINITY,
-                        egui::FontSelection::Default,
-                    );
+                    // The recording button comes last, at the far end; an
+                    // error before it leaves it its room.
+                    let gap = ui.spacing().item_spacing.x;
+                    let button = recording_label(ui, recording).2.x + gap;
+                    // No counts here: the filters and the result count beside
+                    // the sort menu say how many.
                     let (dot, text) = self.model_status();
                     let color = if dot == Color32::GRAY {
                         weak
@@ -109,8 +157,9 @@ impl App {
                         text_shade(dot, ui.visuals().dark_mode)
                     };
                     let job = pill_job(&text, size::SMALL, color, None);
+                    // The dot has the state's color, as the words do.
                     let r = tip(
-                        icons::pill(ui, Icon::Dot, job, color, false),
+                        icons::state_pill(ui, Icon::Dot, job, color),
                         &self.model_tip(),
                     );
                     if r.clicked() {
@@ -150,9 +199,6 @@ impl App {
                         slow_spinner(ui, 11.0, Some(weak));
                         ui.label(txt(&self.reader_status, size::SMALL, Some(weak)));
                     }
-                    if !self.flags.enabled.load(Ordering::SeqCst) {
-                        icons::chip(ui, Icon::Pause, &t!("status-recording-paused"), AMBER);
-                    }
                     if self.recording_stopped {
                         let text = t!("status-recording-stopped");
                         let r = icons::chip(ui, Icon::Warning, &text, RED).interact(Sense::click());
@@ -178,17 +224,39 @@ impl App {
                     if let Some((e, _)) = &self.error {
                         let red = text_shade(RED, ui.visuals().dark_mode);
                         icons::glyph(ui, Icon::Warning, 13.0, red);
-                        let room = ui.available_width()
-                            - count.size().x
-                            - 2.0 * ui.spacing().item_spacing.x;
+                        let room = ui.available_width() - gap - button;
                         let r = cut_line(ui, e, room.max(0.0), size::SMALL, red, Sense::click());
                         if tip(r, &t!("status-dismiss-error")).clicked() {
                             self.error = None;
                         }
                     }
-                    far(ui, |ui| ui.label(count));
+                    let start = ui.min_rect();
+                    let end = far(ui, |ui| {
+                        if recording_button(ui, recording).clicked() {
+                            self.set_recording(!recording);
+                        }
+                        ui.min_rect()
+                    });
+                    // The main keys in the middle of the bar, in the room
+                    // the parts at either end leave.
+                    let free = if i18n::rtl() {
+                        egui::Rangef::new(end.right(), start.left())
+                    } else {
+                        egui::Rangef::new(start.right(), end.left())
+                    };
+                    let can_paste = paste::exists(self.win.previous.load(Ordering::SeqCst));
+                    let hints = BarHints::new(&self.cfg.keys, can_paste);
+                    let line = Rect::from_x_y_ranges(ui.max_rect().x_range(), start.y_range());
+                    hints.paint(ui, line, free.shrink(BAR_HINTS_GAP));
                 });
             });
+        // A thin line between the items and the bar: the items go on under it.
+        let rect = bar.response.rect;
+        ui.painter().hline(
+            rect.x_range(),
+            rect.top() + 0.5,
+            Stroke::new(1.0, line_color(ui.visuals().dark_mode)),
+        );
     }
 
     /// While several items are selected, the status bar holds what can be
@@ -267,6 +335,122 @@ impl App {
     }
 }
 
+/// Between two of the status bar's key hints, and between them and the
+/// bar's other parts.
+const BAR_HINTS_GAP: f32 = space::LARGE;
+
+/// The main keys in the status bar, each with its word, as the popup's
+/// hint line shows them. They are no buttons: F1 shows every key.
+struct BarHints {
+    /// From the reading start.
+    hints: Vec<(String, String)>,
+    /// The first is the paste hint, which gives way first.
+    paste_first: bool,
+}
+
+impl BarHints {
+    /// With a program to paste into, the paste key; then the copy key and
+    /// F1. A key switched off in Settings is left out with its word.
+    fn new(keys: &crate::config::Keys, can_paste: bool) -> Self {
+        let paste = (can_paste && !keys.paste.trim().is_empty())
+            .then(|| (keys.paste.clone(), t!("status-key-paste")));
+        let paste_first = paste.is_some();
+        let rest = [
+            (keys.copy_only.clone(), t!("status-key-copy")),
+            ("F1".to_string(), t!("status-key-all")),
+        ]
+        .into_iter()
+        .filter(|(keys, _)| !keys.trim().is_empty());
+        Self {
+            hints: paste.into_iter().chain(rest).collect(),
+            paste_first,
+        }
+    }
+
+    /// Paints the hints on one line, centred in `line`, when they fit in
+    /// `free`: all of them, else all but the paste hint, else none. How
+    /// many it painted.
+    fn paint(&self, ui: &Ui, line: Rect, free: egui::Rangef) -> usize {
+        let laid = KeyHints::new(ui, &self.hints, line.width());
+        let widths = laid.widths();
+        let firsts = if self.paste_first { 0..2 } else { 0..1 };
+        for first in firsts {
+            let shown = &widths[first.min(widths.len())..];
+            if shown.is_empty() {
+                break;
+            }
+            let total = shown.iter().sum::<f32>() + BAR_HINTS_GAP * (shown.len() - 1) as f32;
+            let middle = line.center().x;
+            let across = egui::Rangef::new(middle - total / 2.0, middle + total / 2.0);
+            if across.min < free.min || across.max > free.max {
+                continue;
+            }
+            let within = Rect::from_x_y_ranges(across, line.y_range());
+            let mut x = 0.0;
+            for (n, width) in widths.iter().enumerate().skip(first) {
+                laid.paint(ui.painter(), within, n, x, line.center().y);
+                x += width + BAR_HINTS_GAP;
+            }
+            return shown.len();
+        }
+        0
+    }
+}
+
+/// How big the recording button's icon is.
+const RECORDING_ICON: f32 = 14.0;
+
+/// The room at the recording button's sides.
+const RECORDING_PAD: f32 = 10.0;
+
+/// The recording button at the status bar's far end: Pause, quiet, while
+/// recording; Resume, filled amber, while it is paused. Its tip and the
+/// name screen readers hear say it in full: Pause recording, Resume
+/// recording.
+fn recording_button(ui: &mut Ui, recording: bool) -> egui::Response {
+    let (name, galley, size) = recording_label(ui, recording);
+    let (rect, resp) = ui.allocate_exact_size(size, Sense::click());
+    resp.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, &name));
+    let v = ui.visuals();
+    let p = ui.painter();
+    let round = CornerRadius::same(radius::MEDIUM);
+    let (icon, color) = if recording {
+        // The bar's own text, with a fill only under the pointer.
+        if resp.hovered() {
+            p.rect_filled(rect, round, v.widgets.hovered.weak_bg_fill);
+        }
+        (Icon::Pause, v.text_color())
+    } else {
+        p.rect_filled(rect, round, button_fill(AMBER));
+        if resp.hovered() {
+            p.rect_filled(rect, round, theme::lit(false));
+        }
+        (Icon::Play, Color32::WHITE)
+    };
+    let inner = rect.shrink2(Vec2::new(RECORDING_PAD, 0.0));
+    icons::paint_icon_text(p, inner, icon, RECORDING_ICON, galley, color);
+    tip(resp, &name)
+}
+
+/// The recording button's name in full, its short word laid out, and its
+/// size: as tall as the bar's pills in both states, so the bar keeps its
+/// height.
+fn recording_label(ui: &Ui, recording: bool) -> (String, std::sync::Arc<egui::Galley>, Vec2) {
+    let (name, word) = if recording {
+        (t!("status-pause-recording"), t!("status-pause"))
+    } else {
+        (t!("status-resume-recording"), t!("status-resume"))
+    };
+    let label = txt(&word, size::SMALL, None);
+    let (galley, inner) = icons::icon_text_size(ui, &label, size::SMALL, RECORDING_ICON);
+    let height = icons::pill_height(galley.size().y);
+    (
+        name,
+        galley,
+        Vec2::new(inner.x + 2.0 * RECORDING_PAD, height),
+    )
+}
+
 /// The count of selected items in SemiBold, set like the pills' labels so it
 /// sits on their line: a plain label's letters sit a point lower in its box.
 fn selected_count(ui: &Ui, text: &str, color: Color32) -> std::sync::Arc<egui::Galley> {
@@ -280,6 +464,106 @@ fn selected_count(ui: &Ui, text: &str, color: Color32) -> std::sync::Arc<egui::G
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The status bar's hints painted in a bar 1000 points wide, with the
+    /// room `free` between its other parts: how many were painted, and the
+    /// texts drawn with where they are.
+    fn bar_hints_drawn(hints: &BarHints, free: egui::Rangef) -> (usize, Vec<(String, Rect)>) {
+        let ctx = egui::Context::default();
+        add_fonts(&ctx);
+        // The fonts apply from the next frame.
+        ctx.run_ui(egui::RawInput::default(), |_| {})
+            .textures_delta
+            .clear();
+        let line = Rect::from_min_size(Pos2::new(16.0, 6.0), Vec2::new(1000.0, 26.0));
+        let mut painted = 0;
+        let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+            painted = hints.paint(ui, line, free);
+        });
+        output.textures_delta.clear();
+        let texts = output
+            .shapes
+            .iter()
+            .filter_map(|clipped| match &clipped.shape {
+                egui::Shape::Text(text) => Some((
+                    text.galley.text().to_string(),
+                    text.galley.rect.translate(text.pos.to_vec2()),
+                )),
+                _ => None,
+            })
+            .collect();
+        (painted, texts)
+    }
+
+    /// With a program to paste into: Enter and paste, the copy key and
+    /// copy, F1 and all shortcuts, centred in the bar, on one line.
+    #[test]
+    fn the_main_keys_sit_in_the_middle_of_the_status_bar() {
+        let keys = crate::config::Keys::default();
+        let hints = BarHints::new(&keys, true);
+        let words: Vec<&str> = hints.hints.iter().map(|(_, w)| w.as_str()).collect();
+        assert_eq!(words, ["paste", "copy", "all shortcuts"]);
+        let (painted, texts) = bar_hints_drawn(&hints, egui::Rangef::new(200.0, 800.0));
+        assert_eq!(painted, 3, "{texts:?}");
+        let left = texts
+            .iter()
+            .map(|(_, r)| r.left())
+            .fold(f32::INFINITY, f32::min);
+        let right = texts.iter().map(|(_, r)| r.right()).fold(0.0, f32::max);
+        // The texts' ends are a cap's room in from the hints' ends, at
+        // most.
+        let middle = (left + right) / 2.0;
+        assert!(
+            (middle - 516.0).abs() <= 8.0,
+            "{left} to {right}: {texts:?}"
+        );
+        let top = texts[0].1.center().y;
+        assert!(texts.iter().all(|(_, r)| (r.center().y - top).abs() <= 2.0));
+        assert!(texts.iter().any(|(text, _)| text == "F1"));
+        // Without a program to paste into, copy and F1 only.
+        let hints = BarHints::new(&keys, false);
+        let words: Vec<&str> = hints.hints.iter().map(|(_, w)| w.as_str()).collect();
+        assert_eq!(words, ["copy", "all shortcuts"]);
+    }
+
+    /// In a narrow room the paste hint goes first, then all of them.
+    #[test]
+    fn the_hints_give_way_to_the_bar_s_other_parts() {
+        let hints = BarHints::new(&crate::config::Keys::default(), true);
+        let (all, _) = bar_hints_drawn(&hints, egui::Rangef::new(200.0, 800.0));
+        assert_eq!(all, 3);
+        // Room for copy and F1 only.
+        let (painted, texts) = bar_hints_drawn(&hints, egui::Rangef::new(380.0, 650.0));
+        assert_eq!(painted, 2, "{texts:?}");
+        assert!(!texts.iter().any(|(text, _)| text == "paste"), "{texts:?}");
+        // Room for none: an error fills the bar.
+        let (painted, texts) = bar_hints_drawn(&hints, egui::Rangef::new(500.0, 540.0));
+        assert_eq!(painted, 0);
+        assert!(texts.is_empty(), "{texts:?}");
+    }
+
+    /// The copy key is the one set in Settings; switched off, it is left
+    /// out with its word.
+    #[test]
+    fn the_copy_hint_follows_the_setting() {
+        let mut keys = crate::config::Keys {
+            copy_only: "Ctrl+Shift+C".into(),
+            ..Default::default()
+        };
+        let hints = BarHints::new(&keys, false);
+        assert_eq!(
+            hints.hints[0],
+            ("Ctrl+Shift+C".to_string(), t!("status-key-copy"))
+        );
+        let (_, texts) = bar_hints_drawn(&hints, egui::Rangef::new(200.0, 800.0));
+        let drawn: Vec<&str> = texts.iter().map(|(text, _)| text.as_str()).collect();
+        for cap in ["Ctrl", "Shift", "C", "F1"] {
+            assert!(drawn.contains(&cap), "{cap} in {drawn:?}");
+        }
+        keys.copy_only.clear();
+        let hints = BarHints::new(&keys, false);
+        assert_eq!(hints.hints, [("F1".to_string(), t!("status-key-all"))]);
+    }
 
     /// Where each text that `add` paints has its baseline, in points from
     /// the top, at `scale` pixels per point.
@@ -321,6 +605,91 @@ mod tests {
             });
             assert_eq!(lines.len(), 2, "two texts at {scale} pixels per point");
             assert_eq!(lines[0], lines[1], "at {scale} pixels per point");
+        }
+    }
+
+    /// The recording button in one frame of `ctx` with `events`: where it
+    /// is, the texts drawn, and the names screen readers hear for buttons.
+    fn recording_drawn(
+        ctx: &egui::Context,
+        recording: bool,
+        events: Vec<egui::Event>,
+    ) -> (Rect, Vec<String>, Vec<String>) {
+        let input = egui::RawInput {
+            events,
+            ..Default::default()
+        };
+        let mut rect = Rect::NOTHING;
+        let mut output = ctx.run_ui(input, |ui| rect = recording_button(ui, recording).rect);
+        output.textures_delta.clear();
+        let texts = output
+            .shapes
+            .iter()
+            .filter_map(|clipped| match &clipped.shape {
+                egui::Shape::Text(text) => Some(text.galley.text().to_string()),
+                _ => None,
+            })
+            .collect();
+        let names = output
+            .platform_output
+            .accesskit_update
+            .iter()
+            .flat_map(|update| &update.nodes)
+            .filter(|(_, node)| node.role() == egui::accesskit::Role::Button)
+            .filter_map(|(_, node)| node.label().map(str::to_string))
+            .collect();
+        (rect, texts, names)
+    }
+
+    /// The recording button shows a short word: Pause while recording,
+    /// Resume while paused. Screen readers and its tip name it in full.
+    fn check_the_recording_button() {
+        let ctx = egui::Context::default();
+        add_fonts(&ctx);
+        ctx.enable_accesskit();
+        ctx.all_styles_mut(|s| s.interaction.tooltip_delay = 0.0);
+        // The fonts apply from the next frame.
+        ctx.run_ui(egui::RawInput::default(), |_| {})
+            .textures_delta
+            .clear();
+        // A text as drawn: Arabic in display order.
+        let drawn =
+            |text: &str| bidi::job(text, FontId::proportional(size::SMALL), Color32::WHITE).text;
+        for (recording, word, name) in [
+            (true, t!("status-pause"), t!("status-pause-recording")),
+            (false, t!("status-resume"), t!("status-resume-recording")),
+        ] {
+            let (rect, texts, names) = recording_drawn(&ctx, recording, Vec::new());
+            assert_eq!(texts, [drawn(&word)], "{recording}");
+            assert_eq!(names, std::slice::from_ref(&name), "{recording}");
+            // The pointer on it shows its tip.
+            let at = vec![egui::Event::PointerMoved(rect.center())];
+            recording_drawn(&ctx, recording, at);
+            let (_, texts, _) = recording_drawn(&ctx, recording, Vec::new());
+            assert!(texts.contains(&drawn(&name)), "{recording}: {texts:?}");
+            // The pointer goes.
+            recording_drawn(&ctx, recording, vec![egui::Event::PointerGone]);
+        }
+    }
+
+    #[test]
+    fn the_recording_button_says_pause_and_names_itself_in_full() {
+        check_the_recording_button();
+    }
+
+    #[test]
+    fn the_recording_button_says_pause_and_names_itself_in_full_right_to_left() {
+        crate::i18n::passes_in_arabic(
+            module_path!(),
+            "the_recording_button_says_pause_and_names_itself_in_full_in_arabic",
+        );
+    }
+
+    #[test]
+    #[ignore = "run in a process of its own by the_recording_button_says_pause_and_names_itself_in_full_right_to_left"]
+    fn the_recording_button_says_pause_and_names_itself_in_full_in_arabic() {
+        if crate::i18n::arabic_run() {
+            check_the_recording_button();
         }
     }
 

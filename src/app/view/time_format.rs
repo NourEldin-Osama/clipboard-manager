@@ -39,22 +39,20 @@ pub(super) fn row_time(ts: i64, dated: bool) -> String {
     }
 }
 
-/// "just now", "5 minutes ago", "3 hours ago", then the short date: card headers
-/// have no day groups to lean on.
+/// "Just now", "5 minutes ago", "3 hours ago", then the words a row without a
+/// day header uses: "Yesterday", the weekday, the date. Cards have no day
+/// headers to lean on.
 pub(super) fn ago(ts: i64) -> String {
     let secs = (now() - ts).max(0);
     match secs {
         0..=44 => t!("time-just-now"),
         45..=3_599 => t!("time-minutes-ago", count = (secs / 60).max(1)),
         3_600..=86_399 => t!("time-hours-ago", count = secs / 3_600),
-        _ => match days_ago(ts) {
-            1 => t!("time-yesterday"),
-            _ => row_time(ts, false),
-        },
+        _ => row_time(ts, false),
     }
 }
 
-/// "Today at 09:59", "Yesterday at 6:20 PM", "Mon 14 Oct 2026 at 10:00".
+/// "Today at 09:59", "Yesterday at 6:20 PM", "Monday 14 Oct 2026 at 10:00".
 pub(crate) fn when(ts: i64) -> String {
     let dt = i18n::local(ts);
     let time = i18n::clock(&dt);
@@ -72,7 +70,7 @@ pub(crate) fn when(ts: i64) -> String {
     }
 }
 
-/// The day header an item is listed under while browsing.
+/// The header an item is listed under while browsing: Pinned, or its day.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(super) enum Group {
     Pinned,

@@ -8,7 +8,7 @@
 # A 12-hour clock time, such as "2:05 PM".
 time-clock-am = { $time } AM
 time-clock-pm = { $time } PM
-time-just-now = just now
+time-just-now = Just now
 time-minutes-ago =
     { $count ->
         [one] 1 minute ago
@@ -19,21 +19,20 @@ time-hours-ago =
         [one] 1 hour ago
        *[other] { $count } hours ago
     }
-time-yesterday = yesterday
 time-today-at = Today at { $time }
 time-yesterday-at = Yesterday at { $time }
-# $date is a whole date, such as "Mon 14 Oct 2026".
+# $date is a whole date, such as "Monday 14 Oct 2026".
 time-date-at = { $date } at { $time }
 date-day-month = { $day } { $month }
 date-day-month-year = { $day } { $month } { $year }
 date-weekday-date = { $weekday } { $date }
-weekday-mon = Mon
-weekday-tue = Tue
-weekday-wed = Wed
-weekday-thu = Thu
-weekday-fri = Fri
-weekday-sat = Sat
-weekday-sun = Sun
+weekday-mon = Monday
+weekday-tue = Tuesday
+weekday-wed = Wednesday
+weekday-thu = Thursday
+weekday-fri = Friday
+weekday-sat = Saturday
+weekday-sun = Sunday
 month-jan = Jan
 month-feb = Feb
 month-mar = Mar
@@ -80,7 +79,7 @@ item-image = Image
 search-mode-smart = Smart
 search-mode-meaning = Meaning
 search-mode-words = Exact words
-search-mode-smart-help = Exact words and meaning, merged (recommended)
+search-mode-smart-help = Exact words and similar meanings together (recommended)
 search-mode-meaning-help = Only by meaning: "trip" finds "flight to Jeddah"
 search-mode-words-help = Only items containing the words you type
 top-sort-by = Sort by
@@ -95,6 +94,11 @@ list-show-weaker =
         [one] Show 1 weaker match
        *[other] Show { $count } weaker matches
     }
+list-hide-weaker =
+    { $count ->
+        [one] Hide 1 weaker match
+       *[other] Hide { $count } weaker matches
+    }
 list-empty-title = Your clipboard history will appear here
 list-empty-help =
     Copy anything, or drop files here.
@@ -105,10 +109,8 @@ list-set-up-meaning = Set up meaning search
 popup-open-window = Open the full window
 popup-close = Close
 popup-key-paste = paste
-popup-key-plain = plain text
-popup-key-copy = copy
 popup-key-quick = quick paste
-popup-key-all = all keys
+popup-key-all = all shortcuts
 quick-paste-keys = Ctrl+1 to 9
 list-try-smart = Try “Smart” search instead
 list-try-other-words = Try fewer or different words.
@@ -127,13 +129,11 @@ list-none-yet-pinned = No pinned items yet
 ## Main window
 
 top-settings = Settings
+top-add = Add files
 top-add-files-tip = Add files or a folder to search (you can also drop them on the window)
 top-add-files = Add files…
 top-add-folder = Add a folder…
-top-pause-recording = Pause recording
-top-resume-recording = Resume recording
-top-pause = Pause
-top-resume = Resume
+top-details-pane = Details pane
 search-hint-images = Search text and images by meaning…
 search-hint-meaning = Search by words or meaning…
 search-hint = Search your clipboard…
@@ -177,26 +177,23 @@ status-model-failing = Search server isn't working · Try again
 status-model-failing-tip = Searching by meaning fails now. The app tries again by itself; click to try now.
 status-model-words-only = Words only
 status-model-tip = Search model: click to change
-status-model-on = { $model } · { $server }
+status-model-on = Search by meaning is on
+status-model-none = Words only · add a search model
 status-model-tip-named = Search model: { $model } on { $server }. Click to change.
 status-indexing = Indexing · { $done } of { $total }
 status-adding-files = Adding files · { $count } added
-status-recording-paused = Recording paused
+status-pause-recording = Pause recording
+status-resume-recording = Resume recording
+status-pause = Pause
+status-resume = Resume
 status-recording-stopped = Recording stopped · Start again
 status-recording-stopped-tip = Recording stopped after repeated errors. Click to start it again.
 status-shortcut-taken = Shortcut { $keys } is used by another app
 status-open-shortcut-settings = Open the shortcut settings
 status-dismiss-error = Click to dismiss
-status-items =
-    { $count ->
-        [one] 1 item
-       *[other] { $count } items
-    }
-status-items-pinned =
-    { $count ->
-        [one] 1 item
-       *[other] { $count } items
-    } · { $pinned } pinned
+status-key-paste = paste
+status-key-copy = copy
+status-key-all = all shortcuts
 list-drop-files = Drop to add to your searchable library
 item-files-count =
     { $count ->
@@ -212,11 +209,12 @@ item-copy = Copy
 item-open-details = Open details
 item-paste-into = Paste into { $app }
 item-paste = Paste
+item-paste-unavailable = Open this window with your shortcut from another program to paste into it
 item-paste-plain = Paste as plain text
 item-copy-only = Copy only
 item-copy-plain = Copy as plain text
 item-copy-image-text = Copy the text in the image
-item-ignore-app = Don't record copies from { $app }
+item-ignore-app = Never record from this program…
 item-menu = Actions
 item-paste-group =
     { $count ->
@@ -268,6 +266,8 @@ checklist-paste-no-key = Open this window over another program, then paste an it
 checklist-pin = Pin an item, so it stays at the top
 checklist-meaning = Turn on search by meaning (optional)
 checklist-set-up = Set up
+checklist-meaning-found = Turn on search by meaning with { $server } on this PC
+checklist-turn-on = Turn on
 checklist-close = Close the checklist
 whats-new-title = What's new in { $version }
 whats-new-close = Close
@@ -275,14 +275,14 @@ hint-with-keys = { $action } ({ $keys })
 details-only-this-tag = Show only items with this tag
 details-remove-tag = Remove tag
 details-tag-hint = tag, another…
-details-add-tag = Add tag
+details-add-tag = Add a tag
 details-tag = Tag
 details-add-tag-tip = Add a tag
 details-close = Close details (Esc)
 details-pinned = Pinned
-details-from-files = From your files
-details-formatted = With formatting
-details-copied-from = Copied from { $app }
+details-from-files = from your files
+details-formatted = with formatting
+details-copied-from = from { $app }
 details-delete = Delete
 details-unpin = Unpin
 details-pin-keep = Pin: keep forever
@@ -326,7 +326,7 @@ details-key-paste-plain = paste as plain text
 details-key-copy-only = copy
 details-key-quick = paste one of the first nine
 details-key-menu = menu
-details-key-all = all keys
+details-key-all = all shortcuts
 details-key-pin = pin
 details-key-tag = tag
 details-key-delete = delete
@@ -350,7 +350,8 @@ toast-images-turned-off = Send images is off for this model.
 ## Settings
 
 settings-page-general = General
-settings-page-search = Search & AI
+settings-page-search = AI & Search
+settings-page-servers = Servers
 settings-page-privacy = Privacy
 settings-page-about = About
 settings-page-clipboard = Clipboard
@@ -367,27 +368,23 @@ settings-filter-all = All files
 settings-language-and-time = Language and time
 settings-start-and-tray = Start and tray
 settings-language = Language
-settings-language-hint = The language of the app
-settings-language-help = Arabic also lays the window out right to left.
+settings-language-hint = Menus, buttons and messages
 settings-time-format = Time format
-settings-time-format-hint = How times are shown
-settings-time-format-help = They're stored in UTC and shown in your time zone.
+settings-time-format-hint = Times in the list and details, such as 14:30 or 2:30 PM
 settings-time-24h = 24-hour
 settings-time-12h = 12-hour
 settings-start-at-sign-in = Start when you sign in
-settings-start-at-sign-in-hint = Opens the app each time you sign in to Windows
-settings-start-at-sign-in-help = It starts hidden: in the system tray when that's on, otherwise minimised.
+settings-start-at-sign-in-hint = Opens the app in the background each time you sign in to Windows
 settings-tray = Keep running in the system tray
-settings-tray-hint = Shows an icon in the notification area
-settings-tray-help = Closing or minimising the window hides it there and history keeps recording. Click the icon to open; right-click it to quit.
-settings-startup-note = With both on, the app starts quietly in the tray each time you sign in.
+settings-tray-hint = Shows an icon in the system tray, near the clock
+settings-tray-help = Closing or minimising the window hides it there and history keeps recording. Click the icon to open; right-click it to quit. With Start when you sign in also on, the app starts hidden in the tray.
+settings-startup-note = The app starts hidden in the tray.
 settings-updates = Updates
 settings-update-check = Check for updates automatically
 settings-update-check-hint = Looks for a new version when the app starts and once a day
 settings-update-check-help = Only the version file on GitHub is fetched; nothing about you or your clipboard is sent.
 settings-update-download = Download updates automatically
-settings-update-download-hint = New versions download in the background and install when you quit
-settings-update-download-help = Off: you're asked before anything is downloaded.
+settings-update-download-hint = New versions download in the background and install when you quit; when off, you're asked first
 settings-version = Version
 settings-version-hint = Every download is checked against this app's signing key before it's installed
 settings-check-now = Check now
@@ -416,25 +413,25 @@ accent-amber = Amber
 accent-rose = Rose
 settings-list = List
 settings-layout = Layout
-settings-layout-hint = Grid shows cards, List shows rows; both open details on demand
-settings-layout-help = Detail keeps the selected item beside the list. The view button next to the search box switches too.
+settings-layout-hint = Grid shows cards, List shows rows, Detail keeps the selected item beside the list
 settings-density = Density
 settings-density-hint = Compact fits more items on screen by hiding the second line
 settings-density-comfortable = Comfortable
 settings-density-compact = Compact
+settings-card-height = Card height
+settings-card-height-hint = How tall the cards of the grid are
+settings-card-height-same = All the same
+settings-card-height-fit = Fit the content
 settings-pinned-on-top = Pinned on top
-settings-pinned-on-top-hint = Pinned items come first while you browse, whatever the order
-settings-pinned-on-top-help = Search results are ordered by your sort choice only.
+settings-pinned-on-top-hint = Pinned items come first while you browse; search results keep their own order
 settings-group-by-day = Group by day
 settings-group-by-day-hint = Show Pinned, Today, Yesterday… headers while browsing (not while searching)
 settings-recording = Recording
 settings-how-long = How long items stay
 settings-record = Record clipboard history
 settings-record-hint = Save everything you copy
-settings-record-help = Turn off to pause; the pause button in the main window does the same.
 settings-skip-secrets = Skip passwords and API keys
 settings-skip-secrets-hint = Don't save copies that look like a password, API key, token or private key
-settings-skip-secrets-help = You still can paste them normally.
 note-title = Clipboard Manager note
 settings-screen-notes = Notes on the screen
 settings-screen-notes-hint = A note at the corner of the screen when a copy isn't saved, or the next one won't be
@@ -468,8 +465,7 @@ settings-reader-prompt-hint = What the model is asked with each image
 settings-reader-prompt-help = The model type fills it in. Another model may want its own words, such as "OCR:" for PaddleOCR-VL.
 settings-reader-send-question = Send the images you copy to { $host } to be read? This server is not on this PC.
 settings-hide-window = Hide the window
-settings-hide-window-hint = Hides the window after you copy an item, so you can paste it
-settings-hide-window-help = Pasting always hides the window.
+settings-hide-window-hint = Hides the window after you copy an item, so you can paste it; pasting always hides it
 settings-keep-up-to = Keep up to
 settings-keep-up-to-hint = When there are more, the oldest are deleted
 settings-keep-up-to-help = Pinned and tagged items, and files you added, are never deleted.
@@ -496,6 +492,8 @@ settings-rule-regex = Regular expression
 settings-rule-regex-help = Off: * stands for any text and ? for one character, and the pattern must match the whole copy, so *word* finds a word anywhere. On: a regular expression, found anywhere in the copy.
 settings-rule-delete = Delete this rule
 settings-rule-add = Add a rule
+settings-rule-programs = Programs in your history
+settings-rule-add-other = A text pattern, or another program
 settings-rule-needs = Give a program, a pattern, or both. Until then this rule does nothing.
 settings-rule-bad-pattern = This regular expression can't be used, so the rule does nothing: { $error }
 settings-storage = Storage
@@ -503,8 +501,7 @@ settings-data-folder = Data folder
 settings-data-folder-hint = History, images, models and settings are stored here, on this PC only
 settings-open = Open
 settings-log-file = Log file
-settings-log-file-hint = A record of what the app did in this session
-settings-log-file-help = Attach it when reporting a problem.
+settings-log-file-hint = A record of what the app did in this session; attach it when you report a problem
 settings-bug-report = Bug report
 settings-bug-report-hint = Copies the version, Windows' version, your settings without addresses or keys, and the log's last lines
 settings-bug-report-copy = Copy details
@@ -519,8 +516,7 @@ settings-stored-counts =
        *[other] { $images } images
     } · { $pinned } pinned
 settings-clear-history = Clear clipboard history
-settings-clear-history-hint = Deletes copied items
-settings-clear-history-help = Pinned and tagged items, and files you added, stay.
+settings-clear-history-hint = Deletes copied items; pinned and tagged items, and files you added, stay
 settings-delete-items =
     { $count ->
         [one] Delete 1 item
@@ -531,38 +527,58 @@ settings-reset-all = Reset all settings
 settings-reset-all-hint = Puts every setting back to its default. Your saved servers and rules stay
 settings-reset-everything = Reset everything
 settings-reset = Reset…
-settings-strictness-all = Show all
-settings-strictness-related = Related only
-settings-strictness-close = Close only
+settings-strictness-any = Anything related
+settings-strictness-close = Close
+settings-strictness-very-close = Very close
 settings-strictness-custom = Custom ({ $value })
 settings-search = Search
 settings-search-mode = How search works
-settings-search-mode-hint = How search finds your items
+settings-search-mode-meaning-off = Search by meaning is off, so search finds exact words only
 settings-search-mode-help =
     Smart: finds items that contain your words and items that mean the same thing, merged into one list.
     Meaning: only by meaning (needs a search model).
     Exact words: only items containing what you type.
-settings-strictness = Meaning matches to show
-settings-strictness-hint = How closely an item has to match before it's listed
-settings-strictness-help = "Show all" ranks everything by closeness; stricter options hide weak matches. Exact word matches are always shown.
+settings-strictness = How close the meaning must be
+settings-strictness-hint = Stricter choices hide weaker matches; exact words always show
 settings-meaning-section = Search by meaning
+settings-meaning-switch = Use search by meaning
+settings-advanced = Advanced
+# The state of search by meaning: a word or two on a chip after the
+# switch's name, then a gray line under the name.
+settings-meaning-chip-ready = Ready
+settings-meaning-ready = Finds items by what they mean
+settings-meaning-chip-off = Off
+settings-meaning-off = Search finds words only
+settings-meaning-chip-loading = Loading
+settings-meaning-loading = The search model is starting
+settings-meaning-chip-not-set-up = Not set up
+settings-meaning-none = No search model yet
+settings-meaning-chip-not-working = Not working
+settings-meaning-unavailable = Check the search model's server
+settings-meaning-failing = The server isn't answering; the app tries again by itself
+# Said by screen readers with the switch: the chip's words, then the gray line.
+settings-meaning-spoken = { $state }. { $line }
 settings-read-section = Read text in images
-settings-servers-section = Servers
-settings-engine = Engine
-settings-search-engine-hint = Where meaning search runs
-settings-search-engine-help = Off: search by words only, plus the text found in images. Your own server: a model on one of your servers also finds items by meaning.
-settings-read-engine-hint = What reads the text in images, so screenshots and photos are found by their words
+settings-servers-section = Saved servers
+settings-read-engine = Read by
+settings-search-engine-help = Off: search by words only, plus the text found in images. On: a model on one of your servers, on this PC or another one, also finds items by meaning.
+settings-read-engine-hint = Reads the words in screenshots and photos, so search finds them
 settings-read-engine-help = Windows reads the languages installed in it, Arabic included when it is there. Your own server: a vision model on one of your servers.
 settings-engine-off = Off
 settings-engine-windows = Windows
 settings-engine-server = Your own server
 settings-model = Model
-settings-search-model-hint = The model meaning search uses
-settings-search-model-help = Another one applies at once; each model keeps its own index, so going back to one needs no new indexing.
-settings-read-model-hint = The vision model that reads the text in images
-settings-read-model-help = It reads the images copied from now on; images already read keep their text.
+settings-search-model-hint = Applies at once; each model keeps its own search data, so going back is instant
+settings-read-model-hint = Reads the text in images copied from now on; images already read keep their text
 settings-model-choose = Choose a model
 settings-model-on-server = { $model } · { $server }
+settings-model-on-server-only = on the server
+settings-found-title = Found on this PC
+settings-found-running = { $server } is running on this PC
+settings-found-search = Search
+settings-found-use = Use
+settings-found-add = Add
+settings-found-needs-key = needs its API key
 settings-model-add-server = Add a server…
 settings-model-none-search = No search model yet. Add a server, then a search model on it.
 settings-model-none-read = No reading model yet. Add a server, then a reading model on it.
@@ -579,7 +595,7 @@ settings-server-models-count =
         [one] 1 model
        *[other] { $count } models
     }
-settings-server-back = Back to Search & AI
+settings-server-back = Back to Servers
 settings-server-add-title = Add server
 settings-server-edit-title = Edit server
 settings-server-kind = Type
@@ -614,8 +630,7 @@ settings-model-on-the-server = Model on the server
 settings-model-on-the-server-hint = The model's name on the server
 settings-model-on-the-server-help = Pick one it lists, or type one it doesn't list. Leave it empty for the server's default model.
 settings-model-name = Name in menus
-settings-model-name-hint = A short name for the menus and the status bar
-settings-model-name-help = Leave it empty to show the model's name.
+settings-model-name-hint = A short name for the menus and the status bar; leave it empty to show the model's name
 settings-model-fill = Fill in details
 settings-model-fill-help = Looks the model up on models.dev, a public list of AI models, and fills in its name. The prompts and settings that well-known models need are filled in too. Nothing from your history is sent.
 settings-model-fill-looking = Looking it up on models.dev…
@@ -638,7 +653,6 @@ settings-server-needs-address = Type the server's address to save it.
 settings-vector-all = Full
 settings-server-address = Server address
 settings-server-address-hint = The server's address, usually ending in /v1
-settings-server-address-help = Change the port if your server uses another one.
 settings-server-remote = What you copy is sent to { $host } to be indexed, because this server is not on this PC.
 settings-server-remote-http = What you copy is sent to { $host } to be indexed, because this server is not on this PC. The address starts with http, so it travels without encryption.
 settings-server-send-question = Send your whole history to { $host } to be indexed? This server is not on this PC.
@@ -657,8 +671,7 @@ settings-server-checking = Checking the server…
 settings-server-launch-note = The app starts llama-server itself when a model of this server is in use.
 settings-server-use-them = Use them
 settings-server-query-prompt = Query prompt
-settings-server-query-prompt-hint = Text put before what you search for
-settings-server-query-prompt-help = Some models need it (EmbeddingGemma: “task: search result | query: ”).
+settings-server-query-prompt-hint = Text put before what you search for (EmbeddingGemma: “task: search result | query: ”)
 settings-server-none = none
 settings-server-item-prompt = Item prompt
 settings-server-item-prompt-hint = Text put before each item when it's indexed (EmbeddingGemma: “title: none | text: ”)
@@ -685,10 +698,8 @@ settings-server-extra-args-help = A search model usually needs --pooling mean. A
 settings-shortcuts-global = Anywhere in Windows
 settings-shortcut-popup = Open the quick popup
 settings-shortcut-popup-hint = A small window at the mouse pointer: search, then paste into the program you are in
-settings-shortcut-popup-help = Press again to close it.
 settings-shortcut-window = Open the full window
 settings-shortcut-window-hint = The window with everything: filters, details and settings
-settings-shortcut-window-help = Press again to hide it.
 settings-shortcut-ignore = Don't record the next copy
 settings-shortcut-ignore-hint = Press before copying something private: the next copy is skipped
 settings-shortcut-not-usable = Not usable
@@ -703,6 +714,7 @@ settings-shortcut-pin = Pin or unpin
 settings-shortcut-delete = Delete
 settings-shortcut-tag = Add a tag
 settings-shortcut-view = Switch between Grid, List and Detail
+settings-shortcut-details = Open details
 settings-shortcut-used-twice = Used twice
 settings-shortcut-move = Move through the list
 settings-shortcut-move-grid = Move between cards in the grid
@@ -835,6 +847,8 @@ toast-hint-characters =
        *[other] { $count } characters
     }
 toast-skipped-rule = Not saved: one of your rules skips it
+toast-never-record-question = Never record from { $app }? Copies from it won't be saved.
+toast-never-record = Never record
 toast-app-ignored = Copies from { $app } won't be recorded. You can remove the rule in Settings, Privacy.
 tray-show = Show Clipboard Manager
 tray-pause-recording = Pause recording

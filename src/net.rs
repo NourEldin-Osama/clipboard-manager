@@ -182,7 +182,11 @@ impl ServerError {
     /// The error in the interface language.
     pub fn text(&self) -> String {
         match self {
-            Self::Unreachable { url, .. } => t!("error-server-unreachable", host = host(url)),
+            Self::Unreachable { url, .. } => {
+                // Left to right inside an Arabic sentence too.
+                let host = crate::app::bidi::left_to_right(host(url));
+                t!("error-server-unreachable", host = host)
+            }
             Self::NeedsKey { .. } => t!("error-server-needs-key"),
             Self::NotFound { said, .. } => t!("error-server-not-found", said = said.as_str()),
             Self::Refused { said, .. } => t!("error-server-refused", said = said.as_str()),

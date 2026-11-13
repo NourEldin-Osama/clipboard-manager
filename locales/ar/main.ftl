@@ -11,6 +11,7 @@ time-minutes-ago =
         [one] منذ دقيقة
         [two] منذ دقيقتين
         [few] منذ { $count } دقائق
+        [many] منذ { $count } دقيقة
        *[other] منذ { $count } دقيقة
     }
 time-hours-ago =
@@ -18,9 +19,9 @@ time-hours-ago =
         [one] منذ ساعة
         [two] منذ ساعتين
         [few] منذ { $count } ساعات
+        [many] منذ { $count } ساعة
        *[other] منذ { $count } ساعة
     }
-time-yesterday = أمس
 time-today-at = اليوم { $time }
 time-yesterday-at = أمس { $time }
 time-date-at = { $date } { $time }
@@ -67,10 +68,10 @@ view-grid = شبكة
 view-list = قائمة
 view-detail = تفاصيل
 filter-all = الكل
-filter-text = نص
+filter-text = النصوص
 filter-links = الروابط
 filter-images = الصور
-filter-files = ملفات
+filter-files = الملفات
 filter-pinned = المثبتة
 kind-text = نص
 kind-link = رابط
@@ -80,7 +81,7 @@ item-image = صورة
 search-mode-smart = ذكي
 search-mode-meaning = بالمعنى
 search-mode-words = الكلمات نفسها
-search-mode-smart-help = الكلمات والمعنى معًا (موصى به)
+search-mode-smart-help = الكلمات نفسها والمعاني القريبة معًا (موصى به)
 search-mode-meaning-help = بالمعنى فقط: «رحلة» تجد «طيران إلى جدة»
 search-mode-words-help = العناصر التي تحتوي ما تكتبه فقط
 top-sort-by = ترتيب حسب
@@ -90,6 +91,7 @@ top-results =
         [one] نتيجة واحدة
         [two] نتيجتان
         [few] { $count } نتائج
+        [many] { $count } نتيجة
        *[other] { $count } نتيجة
     }
 list-show-weaker =
@@ -97,7 +99,16 @@ list-show-weaker =
         [one] إظهار نتيجة أضعف واحدة
         [two] إظهار نتيجتين أضعف
         [few] إظهار { $count } نتائج أضعف
+        [many] إظهار { $count } نتيجة أضعف
        *[other] إظهار { $count } نتيجة أضعف
+    }
+list-hide-weaker =
+    { $count ->
+        [one] إخفاء نتيجة أضعف واحدة
+        [two] إخفاء نتيجتين أضعف
+        [few] إخفاء { $count } نتائج أضعف
+        [many] إخفاء { $count } نتيجة أضعف
+       *[other] إخفاء { $count } نتيجة أضعف
     }
 list-empty-title = سيظهر سجل الحافظة هنا
 list-empty-help =
@@ -109,10 +120,8 @@ list-set-up-meaning = فعّل البحث بالمعنى
 popup-open-window = فتح النافذة الكاملة
 popup-close = إغلاق
 popup-key-paste = لصق
-popup-key-plain = نص عادي
-popup-key-copy = نسخ
 popup-key-quick = لصق سريع
-popup-key-all = كل المفاتيح
+popup-key-all = كل الاختصارات
 quick-paste-keys = Ctrl+1 حتى 9
 list-try-smart = جرّب البحث «الذكي» بدلًا منه
 list-try-other-words = جرّب كلمات أقل أو مختلفة.
@@ -131,13 +140,11 @@ list-none-yet-pinned = لا توجد عناصر مثبتة بعد
 ## Main window
 
 top-settings = الإعدادات
+top-add = إضافة ملفات
 top-add-files-tip = أضف ملفات أو مجلدًا للبحث فيه (يمكنك أيضًا إفلاتها على النافذة)
 top-add-files = إضافة ملفات…
 top-add-folder = إضافة مجلد…
-top-pause-recording = إيقاف التسجيل مؤقتًا
-top-resume-recording = استئناف التسجيل
-top-pause = إيقاف مؤقت
-top-resume = استئناف
+top-details-pane = لوحة التفاصيل
 search-hint-images = ابحث في النصوص والصور بالمعنى…
 search-hint-meaning = ابحث بالكلمات أو بالمعنى…
 search-hint = ابحث في الحافظة…
@@ -166,6 +173,7 @@ download-retrying =
         [one] انقطع الاتصال. إعادة المحاولة بعد ثانية واحدة…
         [two] انقطع الاتصال. إعادة المحاولة بعد ثانيتين…
         [few] انقطع الاتصال. إعادة المحاولة بعد { $seconds } ثوانٍ…
+        [many] انقطع الاتصال. إعادة المحاولة بعد { $seconds } ثانية…
        *[other] انقطع الاتصال. إعادة المحاولة بعد { $seconds } ثانية…
     }
 update-skip = تخطَّ هذا الإصدار
@@ -182,36 +190,30 @@ status-model-failing = خادم البحث لا يعمل · حاول مجددً�
 status-model-failing-tip = البحث بالمعنى يفشل الآن. يحاول التطبيق مجددًا من تلقاء نفسه، وانقر لتحاول الآن.
 status-model-words-only = بالكلمات فقط
 status-model-tip = نموذج البحث: انقر للتغيير
-status-model-on = { $model } · { $server }
+status-model-on = البحث بالمعنى يعمل
+status-model-none = بالكلمات فقط · أضف نموذجًا للبحث
 status-model-tip-named = نموذج البحث: { $model } على { $server }. انقر للتغيير.
 status-indexing = جارٍ الفهرسة · { $done } من { $total }
 status-adding-files = جارٍ إضافة الملفات · أُضيف { $count }
-status-recording-paused = التسجيل متوقف
+status-pause-recording = إيقاف التسجيل مؤقتًا
+status-resume-recording = استئناف التسجيل
+status-pause = إيقاف مؤقت
+status-resume = استئناف
 status-recording-stopped = توقف التسجيل بسبب خطأ · ابدأه من جديد
 status-recording-stopped-tip = توقف التسجيل بعد أخطاء متكررة. انقر لتبدأه من جديد.
 status-shortcut-taken = الاختصار { $keys } يستخدمه تطبيق آخر
 status-open-shortcut-settings = افتح إعدادات الاختصارات
 status-dismiss-error = انقر للإغلاق
-status-items =
-    { $count ->
-        [one] عنصر واحد
-        [two] عنصران
-        [few] { $count } عناصر
-       *[other] { $count } عنصر
-    }
-status-items-pinned =
-    { $count ->
-        [one] عنصر واحد
-        [two] عنصران
-        [few] { $count } عناصر
-       *[other] { $count } عنصر
-    } · { $pinned } مثبت
+status-key-paste = لصق
+status-key-copy = نسخ
+status-key-all = كل الاختصارات
 list-drop-files = أفلت لإضافتها إلى مكتبتك القابلة للبحث
 item-files-count =
     { $count ->
         [one] ملف واحد
         [two] ملفان
         [few] { $count } ملفات
+        [many] { $count } ملفًا
        *[other] { $count } ملف
     }
 item-empty = (فارغ)
@@ -223,17 +225,19 @@ item-copy = نسخ
 item-open-details = فتح التفاصيل
 item-paste-into = لصق في { $app }
 item-paste = لصق
+item-paste-unavailable = افتح هذه النافذة باختصارك من برنامج آخر لتلصق فيه
 item-paste-plain = لصق كنص عادي
 item-copy-only = نسخ فقط
 item-copy-plain = نسخ كنص عادي
 item-copy-image-text = نسخ النص الموجود في الصورة
-item-ignore-app = عدم تسجيل النسخ من { $app }
+item-ignore-app = عدم التسجيل أبدًا من هذا البرنامج…
 item-menu = الإجراءات
 item-paste-group =
     { $count ->
         [one] لصق عنصر واحد
         [two] لصق العنصرين معًا
         [few] لصق { $count } عناصر معًا
+        [many] لصق { $count } عنصرًا معًا
        *[other] لصق { $count } عنصر معًا
     }
 item-copy-group =
@@ -241,6 +245,7 @@ item-copy-group =
         [one] نسخ عنصر واحد
         [two] نسخ العنصرين معًا
         [few] نسخ { $count } عناصر معًا
+        [many] نسخ { $count } عنصرًا معًا
        *[other] نسخ { $count } عنصر معًا
     }
 item-pin-group =
@@ -248,6 +253,7 @@ item-pin-group =
         [one] تثبيت عنصر واحد
         [two] تثبيت العنصرين
         [few] تثبيت { $count } عناصر
+        [many] تثبيت { $count } عنصرًا
        *[other] تثبيت { $count } عنصر
     }
 item-unpin-group =
@@ -255,6 +261,7 @@ item-unpin-group =
         [one] إلغاء تثبيت عنصر واحد
         [two] إلغاء تثبيت العنصرين
         [few] إلغاء تثبيت { $count } عناصر
+        [many] إلغاء تثبيت { $count } عنصرًا
        *[other] إلغاء تثبيت { $count } عنصر
     }
 item-tag-group =
@@ -262,6 +269,7 @@ item-tag-group =
         [one] إضافة وسم إلى عنصر واحد
         [two] إضافة وسم إلى العنصرين
         [few] إضافة وسم إلى { $count } عناصر
+        [many] إضافة وسم إلى { $count } عنصرًا
        *[other] إضافة وسم إلى { $count } عنصر
     }
 item-delete-group =
@@ -269,6 +277,7 @@ item-delete-group =
         [one] حذف عنصر واحد
         [two] حذف العنصرين
         [few] حذف { $count } عناصر
+        [many] حذف { $count } عنصرًا
        *[other] حذف { $count } عنصر
     }
 group-selected =
@@ -276,6 +285,7 @@ group-selected =
         [one] عنصر واحد محدد
         [two] عنصران محددان
         [few] { $count } عناصر محددة
+        [many] { $count } عنصرًا محددًا
        *[other] { $count } عنصر محدد
     }
 group-pin = تثبيت
@@ -293,6 +303,8 @@ checklist-paste-no-key = افتح هذه النافذة فوق برنامج آخ
 checklist-pin = ثبّت عنصرًا ليبقى في الأعلى
 checklist-meaning = فعّل البحث بالمعنى (اختياري)
 checklist-set-up = إعداد
+checklist-meaning-found = فعّل البحث بالمعنى مع { $server } على هذا الجهاز
+checklist-turn-on = تفعيل
 checklist-close = إغلاق قائمة البدء
 whats-new-title = ما الجديد في الإصدار { $version }
 whats-new-close = إغلاق
@@ -304,10 +316,10 @@ details-add-tag = إضافة وسم
 details-tag = وسم
 details-add-tag-tip = إضافة وسم
 details-close = إغلاق التفاصيل (Esc)
-details-pinned = المثبتة
+details-pinned = مثبَّت
 details-from-files = من ملفاتك
 details-formatted = مع التنسيق
-details-copied-from = منسوخ من { $app }
+details-copied-from = من { $app }
 details-delete = حذف
 details-unpin = إلغاء التثبيت
 details-pin-keep = تثبيت: احتفظ به دائمًا
@@ -336,6 +348,7 @@ details-words =
         [one] كلمة واحدة
         [two] كلمتان
         [few] { $count } كلمات
+        [many] { $count } كلمة
        *[other] { $count } كلمة
     }
 details-image-size = { $width } × { $height } بكسل
@@ -349,6 +362,7 @@ details-files-count =
         [one] عنصر واحد
         [two] عنصران
         [few] { $count } عناصر
+        [many] { $count } عنصرًا
        *[other] { $count } عنصر
     }
 details-image-missing = ملف الصورة مفقود.
@@ -361,7 +375,7 @@ details-key-paste-plain = لصق كنص عادي
 details-key-copy-only = نسخ
 details-key-quick = لصق أحد العناصر التسعة الأولى
 details-key-menu = القائمة
-details-key-all = كل المفاتيح
+details-key-all = كل الاختصارات
 details-key-pin = تثبيت
 details-key-tag = وسم
 details-key-delete = حذف
@@ -385,7 +399,8 @@ toast-images-turned-off = أُوقف إرسال الصور لهذا النموذ
 ## Settings
 
 settings-page-general = عام
-settings-page-search = البحث والذكاء الاصطناعي
+settings-page-search = الذكاء الاصطناعي والبحث
+settings-page-servers = الخوادم
 settings-page-privacy = الخصوصية
 settings-page-about = حول التطبيق
 settings-page-clipboard = الحافظة
@@ -402,27 +417,23 @@ settings-filter-all = كل الملفات
 settings-language-and-time = اللغة والوقت
 settings-start-and-tray = البدء وعلبة النظام
 settings-language = اللغة
-settings-language-hint = لغة التطبيق
-settings-language-help = العربية تجعل اتجاه النافذة من اليمين إلى اليسار.
+settings-language-hint = القوائم والأزرار والرسائل
 settings-time-format = تنسيق الوقت
-settings-time-format-hint = طريقة عرض الأوقات
-settings-time-format-help = تُحفظ بالتوقيت العالمي (UTC) وتُعرض بتوقيتك المحلي.
+settings-time-format-hint = الأوقات في القائمة والتفاصيل، مثل 14:30 أو 2:30 م
 settings-time-24h = 24 ساعة
 settings-time-12h = 12 ساعة
 settings-start-at-sign-in = التشغيل عند تسجيل الدخول
-settings-start-at-sign-in-hint = يفتح التطبيق كلما سجّلت الدخول إلى ويندوز
-settings-start-at-sign-in-help = يبدأ مخفيًا: في علبة النظام إن كانت مفعّلة، وإلا مصغّرًا.
+settings-start-at-sign-in-hint = يفتح التطبيق في الخلفية كلما سجّلت الدخول إلى ويندوز
 settings-tray = الاستمرار في العمل من علبة النظام
-settings-tray-hint = يعرض أيقونة في منطقة الإشعارات
-settings-tray-help = إغلاق النافذة أو تصغيرها يخفيها هناك ويستمر تسجيل السجل. انقر الأيقونة للفتح، وانقر بالزر الأيمن للخروج.
-settings-startup-note = عند تفعيل الخيارين، يبدأ التطبيق بهدوء في علبة النظام كلما سجّلت الدخول.
+settings-tray-hint = يعرض أيقونة في علبة النظام قرب الساعة
+settings-tray-help = إغلاق النافذة أو تصغيرها يخفيها هناك ويستمر تسجيل السجل. انقر الأيقونة للفتح، وانقر بالزر الأيمن للخروج. ومع تفعيل «التشغيل عند تسجيل الدخول» أيضًا، يبدأ التطبيق مخفيًا في علبة النظام.
+settings-startup-note = يبدأ التطبيق مخفيًا في علبة النظام.
 settings-updates = التحديثات
 settings-update-check = التحقق من التحديثات تلقائيًا
 settings-update-check-hint = يبحث عن إصدار جديد عند بدء التطبيق ومرة يوميًا
 settings-update-check-help = يُجلب ملف الإصدار من GitHub فقط، ولا يُرسل أي شيء عنك أو عن حافظتك.
 settings-update-download = تنزيل التحديثات تلقائيًا
-settings-update-download-hint = تُنزَّل الإصدارات الجديدة في الخلفية وتُثبَّت عند الخروج
-settings-update-download-help = عند إيقافه، يُطلب إذنك قبل تنزيل أي شيء.
+settings-update-download-hint = تُنزَّل الإصدارات الجديدة في الخلفية وتُثبَّت عند الخروج، وعند إيقافه يُطلب إذنك أولًا
 settings-version = الإصدار
 settings-version-hint = يُتحقق من كل تنزيل بمفتاح توقيع هذا التطبيق قبل تثبيته
 settings-check-now = تحقّق الآن
@@ -451,25 +462,25 @@ accent-amber = كهرماني
 accent-rose = وردي
 settings-list = قائمة
 settings-layout = التخطيط
-settings-layout-hint = الشبكة تعرض بطاقات والقائمة تعرض صفوفًا، وكلاهما يفتح التفاصيل عند الطلب
-settings-layout-help = التفاصيل تُبقي العنصر المحدد بجانب القائمة. زر العرض بجانب مربع البحث يبدّل أيضًا.
+settings-layout-hint = الشبكة تعرض بطاقات، والقائمة تعرض صفوفًا، والتفاصيل تُبقي العنصر المحدد بجانب القائمة
 settings-density = الكثافة
 settings-density-hint = المضغوط يعرض عناصر أكثر بإخفاء السطر الثاني
 settings-density-comfortable = مريح
 settings-density-compact = مضغوط
+settings-card-height = ارتفاع البطاقات
+settings-card-height-hint = مدى ارتفاع بطاقات الشبكة
+settings-card-height-same = متساوية
+settings-card-height-fit = بقدر محتواها
 settings-pinned-on-top = المثبتة في الأعلى
-settings-pinned-on-top-hint = تظهر العناصر المثبتة أولًا أثناء التصفح، أيًّا كان الترتيب
-settings-pinned-on-top-help = أما نتائج البحث فتُرتّب حسب اختيارك فقط.
+settings-pinned-on-top-hint = تظهر العناصر المثبتة أولًا أثناء التصفح، وتحتفظ نتائج البحث بترتيبها
 settings-group-by-day = التجميع حسب اليوم
 settings-group-by-day-hint = إظهار عناوين المثبتة واليوم وأمس… أثناء التصفح (لا أثناء البحث)
 settings-recording = التسجيل
 settings-how-long = مدة بقاء العناصر
 settings-record = تسجيل سجل الحافظة
 settings-record-hint = احفظ كل ما تنسخه
-settings-record-help = عطّله للإيقاف المؤقت، وزر الإيقاف في النافذة الرئيسية يفعل الشيء نفسه.
 settings-skip-secrets = تجاهل كلمات المرور ومفاتيح API
 settings-skip-secrets-hint = لا تحفظ النسخ التي تبدو كلمة مرور أو مفتاح API أو رمزًا أو مفتاحًا خاصًا
-settings-skip-secrets-help = ما زال بإمكانك لصقها كالمعتاد.
 note-title = ملاحظة مدير الحافظة
 settings-screen-notes = ملاحظات على الشاشة
 settings-screen-notes-hint = ملاحظة في زاوية الشاشة حين لا تُحفظ نسخة، أو حين لن تُحفظ النسخة التالية
@@ -503,8 +514,7 @@ settings-reader-prompt-hint = ما يُطلب من النموذج مع كل صو
 settings-reader-prompt-help = يملؤه نوع النموذج. وقد يريد نموذج آخر كلماته الخاصة، مثل "OCR:" لـ PaddleOCR-VL.
 settings-reader-send-question = هل تُرسل الصور التي تنسخها إلى { $host } لقراءتها؟ هذا الخادم ليس على هذا الجهاز.
 settings-hide-window = إخفاء النافذة
-settings-hide-window-hint = تخفي النافذة بعد نسخ عنصر، لتلصقه بنفسك
-settings-hide-window-help = أما اللصق فيخفي النافذة دائمًا.
+settings-hide-window-hint = تخفي النافذة بعد نسخ عنصر، لتلصقه بنفسك، واللصق يخفيها دائمًا
 settings-keep-up-to = الاحتفاظ بما يصل إلى
 settings-keep-up-to-hint = عند تجاوز العدد يُحذف الأقدم
 settings-keep-up-to-help = لا تُحذف أبدًا العناصر المثبتة والموسومة والملفات التي أضفتها.
@@ -523,7 +533,8 @@ settings-age-days =
         [one] يوم واحد
         [two] يومان
         [few] { $count } أيام
-       *[other] { $count } يومًا
+        [many] { $count } يومًا
+       *[other] { $count } يوم
     }
 settings-rules = القواعد
 settings-rules-help = لا تُسجَّل النسخ التي تطابقها قاعدة. البرنامج هو اسم ملفه، مثل chrome.exe؛ اتركه فارغًا لكل البرامج. اترك النمط فارغًا لتخطي كل ما يُنسخ من البرنامج.
@@ -532,6 +543,8 @@ settings-rule-pattern = النمط
 settings-rule-regex = تعبير نمطي
 settings-rule-regex-help = عند الإيقاف: * تعني أي نص و? تعني حرفًا واحدًا، ويجب أن يطابق النمط النسخة كلها، لذا *كلمة* تجد الكلمة في أي مكان. عند التشغيل: تعبير نمطي يُبحث عنه في أي مكان من النسخة.
 settings-rule-delete = حذف هذه القاعدة
+settings-rule-programs = البرامج في سجلك
+settings-rule-add-other = نمط نصي، أو برنامج آخر
 settings-rule-add = إضافة قاعدة
 settings-rule-needs = أدخل برنامجًا أو نمطًا أو كليهما. حتى ذلك الحين لا تفعل هذه القاعدة شيئًا.
 settings-rule-bad-pattern = لا يمكن استخدام هذا التعبير النمطي، لذا لا تفعل القاعدة شيئًا: { $error }
@@ -540,8 +553,7 @@ settings-data-folder = مجلد البيانات
 settings-data-folder-hint = يُحفظ السجل والصور والنماذج والإعدادات هنا، على هذا الجهاز فقط
 settings-open = فتح
 settings-log-file = ملف السجل
-settings-log-file-hint = سجل بما فعله التطبيق في هذه الجلسة
-settings-log-file-help = أرفقه عند الإبلاغ عن مشكلة.
+settings-log-file-hint = سجل بما فعله التطبيق في هذه الجلسة، أرفقه عند الإبلاغ عن مشكلة
 settings-bug-report = الإبلاغ عن خطأ
 settings-bug-report-hint = ينسخ الإصدار وإصدار ويندوز وإعداداتك دون العناوين والمفاتيح، وآخر سطور السجل
 settings-bug-report-copy = انسخ التفاصيل
@@ -552,21 +564,29 @@ settings-stored-counts =
         [one] عنصر واحد
         [two] عنصران
         [few] { $count } عناصر
+        [many] { $count } عنصرًا
        *[other] { $count } عنصر
     } · { $images ->
         [one] صورة واحدة
         [two] صورتان
         [few] { $images } صور
+        [many] { $images } صورة
        *[other] { $images } صورة
-    } · { $pinned } مثبت
+    } · { $pinned ->
+        [one] عنصر مثبت
+        [two] عنصران مثبتان
+        [few] { $pinned } عناصر مثبتة
+        [many] { $pinned } عنصرًا مثبتًا
+       *[other] { $pinned } عنصر مثبت
+    }
 settings-clear-history = مسح سجل الحافظة
-settings-clear-history-hint = يحذف العناصر المنسوخة
-settings-clear-history-help = تبقى العناصر المثبتة والموسومة والملفات التي أضفتها.
+settings-clear-history-hint = يحذف العناصر المنسوخة، وتبقى العناصر المثبتة والموسومة والملفات التي أضفتها
 settings-delete-items =
     { $count ->
         [one] حذف عنصر واحد
         [two] حذف عنصرين
         [few] حذف { $count } عناصر
+        [many] حذف { $count } عنصرًا
        *[other] حذف { $count } عنصر
     }
 settings-clear = مسح…
@@ -574,38 +594,55 @@ settings-reset-all = إعادة ضبط كل الإعدادات
 settings-reset-all-hint = يعيد كل إعداد إلى قيمته الافتراضية. تبقى خوادمك المحفوظة وقواعدك
 settings-reset-everything = إعادة ضبط الكل
 settings-reset = إعادة ضبط…
-settings-strictness-all = إظهار الكل
-settings-strictness-related = المرتبطة فقط
-settings-strictness-close = القريبة فقط
+settings-strictness-any = أي شيء ذي صلة
+settings-strictness-close = قريب
+settings-strictness-very-close = قريب جدًا
 settings-strictness-custom = مخصص ({ $value })
 settings-search = البحث
 settings-search-mode = طريقة البحث
-settings-search-mode-hint = كيف يجد البحث عناصرك
+settings-search-mode-meaning-off = البحث بالمعنى متوقف، فيجد البحث الكلمات نفسها فقط
 settings-search-mode-help =
     ذكي: يجد العناصر التي تحتوي كلماتك والعناصر التي تحمل المعنى نفسه في قائمة واحدة.
     بالمعنى: بالمعنى فقط (يحتاج نموذج بحث).
     الكلمات نفسها: العناصر التي تحتوي ما تكتبه فقط.
-settings-strictness = نتائج المعنى المعروضة
-settings-strictness-hint = مدى التطابق المطلوب لعرض العنصر
-settings-strictness-help = «إظهار الكل» يرتّب كل شيء حسب القرب، والخيارات الأشد تخفي التطابقات الضعيفة. تظهر مطابقات الكلمات نفسها دائمًا.
+settings-strictness = مدى قرب المعنى المطلوب
+settings-strictness-hint = الخيارات الأشد تخفي التطابقات الأضعف، وتظهر مطابقات الكلمات نفسها دائمًا
+settings-meaning-chip-ready = جاهز
+settings-meaning-ready = يجد العناصر بمعناها
+settings-meaning-chip-off = متوقف
+settings-meaning-off = يجد البحث الكلمات فقط
+settings-meaning-chip-loading = جارٍ التحميل
+settings-meaning-loading = جارٍ تشغيل نموذج البحث
+settings-meaning-chip-not-set-up = غير مُعدّ
+settings-meaning-none = لا يوجد نموذج للبحث بعد
+settings-meaning-chip-not-working = لا يعمل
+settings-meaning-unavailable = تحقق من خادم نموذج البحث
+settings-meaning-failing = الخادم لا يجيب، ويحاول التطبيق مجددًا من تلقاء نفسه
+settings-meaning-spoken = { $state }. { $line }
 settings-meaning-section = البحث بالمعنى
+settings-meaning-switch = استخدام البحث بالمعنى
+settings-advanced = خيارات متقدمة
 settings-read-section = قراءة النص في الصور
-settings-servers-section = الخوادم
-settings-engine = المحرك
-settings-search-engine-hint = أين يعمل البحث بالمعنى
-settings-search-engine-help = معطّل: البحث بالكلمات فقط، مع النص الموجود في الصور. خادمك: نموذج على أحد خوادمك يجد العناصر بالمعنى أيضًا.
-settings-read-engine-hint = ما يقرأ النص في الصور، لتُوجد لقطات الشاشة والصور بكلماتها
+settings-servers-section = الخوادم المحفوظة
+settings-read-engine = يقرأ النص
+settings-search-engine-help = عند الإيقاف: البحث بالكلمات فقط، مع النص الموجود في الصور. عند التشغيل: نموذج على أحد خوادمك، على هذا الحاسوب أو على غيره، يجد العناصر بالمعنى أيضًا.
+settings-read-engine-hint = يقرأ الكلمات في لقطات الشاشة والصور، ليجدها البحث
 settings-read-engine-help = يقرأ Windows اللغات المثبتة فيه، ومنها العربية إن كانت مثبتة. خادمك: نموذج رؤية على أحد خوادمك.
 settings-engine-off = معطّل
 settings-engine-windows = Windows
 settings-engine-server = خادمك
 settings-model = النموذج
-settings-search-model-hint = النموذج الذي يستخدمه البحث بالمعنى
-settings-search-model-help = يُطبَّق غيره فورًا، ولكل نموذج فهرسه، فلا تحتاج العودة إلى نموذج فهرسةً جديدة.
-settings-read-model-hint = نموذج الرؤية الذي يقرأ النص في الصور
-settings-read-model-help = يقرأ الصور التي تُنسخ من الآن، وتبقى الصور المقروءة بنصها.
+settings-search-model-hint = يُطبَّق فورًا، ولكل نموذج بيانات بحثه، فتكون العودة إليه فورية
+settings-read-model-hint = يقرأ النص في الصور التي تُنسخ من الآن، وتبقى الصور المقروءة بنصها
 settings-model-choose = اختر نموذجًا
 settings-model-on-server = { $model } · { $server }
+settings-model-on-server-only = على الخادم
+settings-found-title = وُجدت على هذا الجهاز
+settings-found-running = يعمل { $server } على هذا الجهاز
+settings-found-search = بحث
+settings-found-use = استخدام
+settings-found-add = إضافة
+settings-found-needs-key = يحتاج مفتاح API الخاص به
 settings-model-add-server = إضافة خادم…
 settings-model-none-search = لا يوجد نموذج بحث بعد. أضف خادمًا، ثم نموذج بحث عليه.
 settings-model-none-read = لا يوجد نموذج قراءة بعد. أضف خادمًا، ثم نموذج قراءة عليه.
@@ -622,9 +659,10 @@ settings-server-models-count =
         [one] نموذج واحد
         [two] نموذجان
         [few] { $count } نماذج
+        [many] { $count } نموذجًا
        *[other] { $count } نموذج
     }
-settings-server-back = العودة إلى البحث والذكاء الاصطناعي
+settings-server-back = العودة إلى الخوادم
 settings-server-add-title = إضافة خادم
 settings-server-edit-title = تعديل الخادم
 settings-server-kind = النوع
@@ -637,6 +675,7 @@ settings-server-found =
         [one] متصل · وُجد نموذج واحد
         [two] متصل · وُجد نموذجان
         [few] متصل · وُجدت { $count } نماذج
+        [many] متصل · وُجد { $count } نموذجًا
        *[other] متصل · وُجد { $count } نموذج
     }
 settings-server-needed = مطلوب
@@ -661,8 +700,7 @@ settings-model-on-the-server = النموذج على الخادم
 settings-model-on-the-server-hint = اسم النموذج على الخادم
 settings-model-on-the-server-help = اختر واحدًا مما يعرضه، أو اكتب اسمًا لا يعرضه. اتركه فارغًا لنموذج الخادم الافتراضي.
 settings-model-name = الاسم في القوائم
-settings-model-name-hint = اسم قصير للقوائم وشريط الحالة
-settings-model-name-help = اتركه فارغًا ليظهر اسم النموذج.
+settings-model-name-hint = اسم قصير للقوائم وشريط الحالة، اتركه فارغًا ليظهر اسم النموذج
 settings-model-fill = املأ التفاصيل
 settings-model-fill-help = يبحث عن النموذج في models.dev، وهي قائمة عامة لنماذج الذكاء الاصطناعي، ويملأ اسمه. وتُملأ أيضًا التعليمات والإعدادات التي تحتاجها النماذج المعروفة. لا يُرسَل شيء من سجلك.
 settings-model-fill-looking = جارٍ البحث عنه في models.dev…
@@ -685,7 +723,6 @@ settings-server-needs-address = اكتب عنوان الخادم لحفظه.
 settings-vector-all = كامل
 settings-server-address = عنوان الخادم
 settings-server-address-hint = عنوان الخادم، ويكون عادةً منتهيًا بـ ‎/v1
-settings-server-address-help = غيّر المنفذ إن كان خادمك يستخدم غيره.
 settings-server-remote = يُرسَل ما تنسخه إلى { $host } لفهرسته، لأن هذا الخادم ليس على هذا الجهاز.
 settings-server-remote-http = يُرسَل ما تنسخه إلى { $host } لفهرسته، لأن هذا الخادم ليس على هذا الجهاز. العنوان يبدأ بـ http، لذا يُنقل دون تشفير.
 settings-server-send-question = هل تُرسل سجلك كله إلى { $host } لفهرسته؟ هذا الخادم ليس على هذا الجهاز.
@@ -704,8 +741,7 @@ settings-server-checking = جارٍ التحقق من الخادم…
 settings-server-launch-note = يشغّل التطبيق llama-server بنفسه حين يُستخدم نموذج من هذا الخادم.
 settings-server-use-them = استخدمها
 settings-server-query-prompt = عبارة الاستعلام
-settings-server-query-prompt-hint = نص يوضع قبل ما تبحث عنه
-settings-server-query-prompt-help = تحتاجه بعض النماذج (EmbeddingGemma: «task: search result | query: »).
+settings-server-query-prompt-hint = نص يوضع قبل ما تبحث عنه (EmbeddingGemma: «task: search result | query: »)
 settings-server-none = لا شيء
 settings-server-item-prompt = عبارة العنصر
 settings-server-item-prompt-hint = نص يوضع قبل كل عنصر عند فهرسته (EmbeddingGemma: «title: none | text: »)
@@ -732,10 +768,8 @@ settings-server-extra-args-help = يحتاج نموذج البحث عادةً إ
 settings-shortcuts-global = في أي مكان في ويندوز
 settings-shortcut-popup = فتح النافذة السريعة
 settings-shortcut-popup-hint = نافذة صغيرة عند مؤشر الماوس: ابحث، ثم الصق في البرنامج الذي أنت فيه
-settings-shortcut-popup-help = اضغط مرة أخرى لإغلاقها.
 settings-shortcut-window = فتح النافذة الكاملة
 settings-shortcut-window-hint = النافذة التي فيها كل شيء: عوامل التصفية والتفاصيل والإعدادات
-settings-shortcut-window-help = اضغط مرة أخرى لإخفائها.
 settings-shortcut-ignore = لا تسجّل النسخة التالية
 settings-shortcut-ignore-hint = اضغطه قبل نسخ شيء خاص، فتُتجاهل النسخة التالية
 settings-shortcut-not-usable = غير صالح
@@ -750,6 +784,7 @@ settings-shortcut-pin = تثبيت أو إلغاء التثبيت
 settings-shortcut-delete = حذف
 settings-shortcut-tag = إضافة وسم
 settings-shortcut-view = التبديل بين الشبكة والقائمة والتفاصيل
+settings-shortcut-details = فتح التفاصيل
 settings-shortcut-used-twice = مستخدم مرتين
 settings-shortcut-move = التنقل في القائمة
 settings-shortcut-move-grid = التنقل بين البطاقات في الشبكة
@@ -809,6 +844,7 @@ toast-pinned-group =
         [one] تم تثبيت عنصر واحد
         [two] تم تثبيت عنصرين
         [few] تم تثبيت { $count } عناصر
+        [many] تم تثبيت { $count } عنصرًا
        *[other] تم تثبيت { $count } عنصر
     }
 toast-unpinned-group =
@@ -816,6 +852,7 @@ toast-unpinned-group =
         [one] تم إلغاء تثبيت عنصر واحد
         [two] تم إلغاء تثبيت عنصرين
         [few] تم إلغاء تثبيت { $count } عناصر
+        [many] تم إلغاء تثبيت { $count } عنصرًا
        *[other] تم إلغاء تثبيت { $count } عنصر
     }
 toast-deleted-group =
@@ -823,6 +860,7 @@ toast-deleted-group =
         [one] تم حذف عنصر واحد
         [two] تم حذف عنصرين
         [few] تم حذف { $count } عناصر
+        [many] تم حذف { $count } عنصرًا
        *[other] تم حذف { $count } عنصر
     }
 toast-copied-group =
@@ -830,6 +868,7 @@ toast-copied-group =
         [one] تم نسخ عنصر واحد
         [two] تم نسخ عنصرين معًا
         [few] تم نسخ { $count } عناصر معًا
+        [many] تم نسخ { $count } عنصرًا معًا
        *[other] تم نسخ { $count } عنصر معًا
     }
 toast-copied-group-pictures =
@@ -837,11 +876,13 @@ toast-copied-group-pictures =
         [one] تم نسخ عنصر واحد
         [two] تم نسخ عنصرين معًا
         [few] تم نسخ { $count } عناصر معًا
+        [many] تم نسخ { $count } عنصرًا معًا
        *[other] تم نسخ { $count } عنصر معًا
     }، دون { $pictures ->
         [one] صورة واحدة
         [two] صورتين
         [few] { $pictures } صور
+        [many] { $pictures } صورة
        *[other] { $pictures } صورة
     }
 toast-pictures-not-together = لا يمكن نسخ الصور معًا
@@ -850,6 +891,7 @@ toast-tag-added-group =
         [one] تمت إضافة #{ $tag } إلى عنصر واحد
         [two] تمت إضافة #{ $tag } إلى عنصرين
         [few] تمت إضافة #{ $tag } إلى { $count } عناصر
+        [many] تمت إضافة #{ $tag } إلى { $count } عنصرًا
        *[other] تمت إضافة #{ $tag } إلى { $count } عنصر
     }
 toast-deleted-key = تم الحذف. في المرة القادمة: { $keys }
@@ -861,6 +903,7 @@ toast-imported =
         [one] تم استيراد ملف واحد
         [two] تم استيراد ملفين
         [few] تم استيراد { $count } ملفات
+        [many] تم استيراد { $count } ملفًا
        *[other] تم استيراد { $count } ملف
     }
 toast-pruned-age =
@@ -884,6 +927,7 @@ toast-cleared =
         [one] تم مسح عنصر واحد
         [two] تم مسح عنصرين
         [few] تم مسح { $count } عناصر
+        [many] تم مسح { $count } عنصرًا
        *[other] تم مسح { $count } عنصر
     }
 toast-tag-removed =
@@ -891,6 +935,7 @@ toast-tag-removed =
         [one] أُزيل #{ $tag } من عنصر واحد
         [two] أُزيل #{ $tag } من عنصرين
         [few] أُزيل #{ $tag } من { $count } عناصر
+        [many] أُزيل #{ $tag } من { $count } عنصرًا
        *[other] أُزيل #{ $tag } من { $count } عنصر
     }
 toast-skipped-private = لم يُحفظ: وُسم بأنه خاص
@@ -911,6 +956,8 @@ toast-hint-characters =
        *[other] { $count } حرف
     }
 toast-skipped-rule = لم يُحفظ: إحدى قواعدك تتخطاه
+toast-never-record-question = عدم التسجيل أبدًا من { $app }؟ لن تُحفظ النسخ منه.
+toast-never-record = عدم التسجيل أبدًا
 toast-app-ignored = لن تُسجَّل النسخ من { $app }. يمكنك حذف القاعدة من الإعدادات، الخصوصية.
 tray-show = إظهار مدير الحافظة
 tray-pause-recording = إيقاف التسجيل مؤقتًا
