@@ -408,8 +408,9 @@ pub(super) fn paint_row(
         .then(|| color_in(&it.text))
         .flatten();
     let path = (it.kind == Kind::Text).then(|| path_in(&it.text)).flatten();
-    // The kind's symbol in its readable shade, so it doesn't look faded: on a
-    // tile of the kind's color, or on its own in a one-line row.
+    // The kind's symbol in its readable shade, so it doesn't look faded,
+    // and darker in the popup's light theme: on a tile of the kind's color,
+    // or on its own in a one-line row.
     let symbol = |c: Color32, icon: Icon| {
         if !compact {
             p.rect_filled(
@@ -419,12 +420,13 @@ pub(super) fn paint_row(
             );
         }
         let side = if compact { ONE_LINE_SYMBOL } else { av * 0.46 };
-        icons::paint(
-            &p,
-            Rect::from_center_size(av_rect.center(), Vec2::splat(side)),
-            icon,
-            text_shade(c, v.dark_mode),
-        );
+        let color = if in_popup {
+            theme::popup_symbol(c, v.dark_mode)
+        } else {
+            text_shade(c, v.dark_mode)
+        };
+        let at = Rect::from_center_size(av_rect.center(), Vec2::splat(side));
+        icons::paint(&p, on_whole_pixels(ui, at), icon, color);
     };
     // On one line a picture is a thumbnail that nearly fills the slot, so
     // two pictures can be told apart; in the popup it is as big as the
@@ -435,7 +437,10 @@ pub(super) fn paint_row(
         } else {
             ONE_LINE_PICTURE
         };
-        Rect::from_center_size(av_rect.center(), Vec2::splat(side))
+        on_whole_pixels(
+            ui,
+            Rect::from_center_size(av_rect.center(), Vec2::splat(side)),
+        )
     } else {
         av_rect
     };
@@ -596,6 +601,16 @@ pub(super) fn paint_row(
     if let Some(level) = relevance_level(hit) {
         paint_relevance(&p, rect, ix, iy + 6.0, level, a, weak);
     }
+}
+
+/// `rect` moved onto whole pixels at its size, so that a symbol or a
+/// thumbnail drawn in it is as sharp on every row. One-line rows are 42
+/// points apart, which at 1.25 pixels per point puts every second row
+/// half a pixel off, and a picture there is drawn blurred.
+fn on_whole_pixels(ui: &Ui, rect: Rect) -> Rect {
+    let scale = ui.pixels_per_point();
+    let min = (rect.min.to_vec2() * scale).round() / scale;
+    Rect::from_min_size(min.to_pos2(), rect.size())
 }
 
 /// The room the pin and the relevance bars take before a row's time, on
@@ -2556,6 +2571,102 @@ mod tests {
     fn a_one_line_rows_picture_shows_as_a_picture_in_arabic() {
         if crate::i18n::arabic_run() {
             check_one_line_picture();
+        }
+    }
+
+    /// At 1.25 pixels per point, on one-line rows 42 points apart as the
+    /// popup and compact density place them, every kind's symbol starts on
+    /// a whole pixel, so every row draws it alike. In the light theme the
+    /// popup's symbols are their text shade with red, green and blue each
+    /// times 0.6; compact density's, and the dark theme's, keep the text
+    /// shade.
+    #[test]
+    fn one_line_symbols_are_sharp_and_darker_in_the_popup() {
+        let items = [
+            (Kind::Text, "Lunch at noon"),
+            (Kind::Link, "https://rust-lang.org/learn"),
+            (Kind::Text, "fn main() {\n    println!(\"Hello\");\n}"),
+            (Kind::Files, "C:/Users/Public/report.pdf"),
+            (Kind::Text, "Meeting moved to Thursday"),
+            (Kind::Text, "Room 4B"),
+        ]
+        .into_iter()
+        .enumerate()
+        .map(|(n, (kind, text))| Item::new(n as u64 + 1, kind, Origin::Clipboard, text.into()))
+        .collect::<Vec<_>>();
+        let scale = 1.25;
+        let whole = |points: f32| ((points * scale) - (points * scale).round()).abs() < 1e-3;
+        for dark in [false, true] {
+            let ctx = egui::Context::default();
+            ctx.set_pixels_per_point(scale);
+            add_fonts(&ctx);
+            icons::register(&ctx);
+            ctx.set_theme(if dark {
+                egui::Theme::Dark
+            } else {
+                egui::Theme::Light
+            });
+            // The fonts apply from the next frame.
+            ctx.run_ui(egui::RawInput::default(), |_| {})
+                .textures_delta
+                .clear();
+            for in_popup in [true, false] {
+                let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+                    for (n, it) in items.iter().enumerate() {
+                        let hit = Hit {
+                            id: it.id,
+                            closeness: None,
+                            weak: false,
+                        };
+                        let top = 100.0 + 42.0 * n as f32;
+                        let rect = Rect::from_min_size(Pos2::new(0.0, top), Vec2::new(420.0, 40.0));
+                        paint_row(
+                            ui,
+                            rect,
+                            false,
+                            it,
+                            &hit,
+                            None,
+                            None,
+                            false,
+                            true,
+                            &[],
+                            in_popup,
+                            in_popup.then_some(n + 1),
+                            false,
+                            false,
+                            60.0,
+                            1,
+                        );
+                    }
+                });
+                output.textures_delta.clear();
+                let symbols: Vec<(Rect, Color32)> = output
+                    .shapes
+                    .iter()
+                    .filter_map(|clipped| match &clipped.shape {
+                        egui::Shape::Mesh(mesh)
+                            if (mesh.calc_bounds().width() - ONE_LINE_SYMBOL).abs() < 0.01 =>
+                        {
+                            Some((mesh.calc_bounds(), mesh.vertices[0].color))
+                        }
+                        _ => None,
+                    })
+                    .collect();
+                let case = format!("dark {dark}, popup {in_popup}");
+                assert_eq!(symbols.len(), items.len(), "{case}: {symbols:?}");
+                for ((at, color), it) in symbols.iter().zip(&items) {
+                    assert!(whole(at.left()) && whole(at.top()), "{case}: {at:?}");
+                    let shade = text_shade(kind_color(it.kind), dark);
+                    let darker = |value: u8| (f32::from(value) * 0.6).round() as u8;
+                    let expected = if in_popup && !dark {
+                        Color32::from_rgb(darker(shade.r()), darker(shade.g()), darker(shade.b()))
+                    } else {
+                        shade
+                    };
+                    assert_eq!(*color, expected, "{case}: {:?}", it.kind);
+                }
+            }
         }
     }
 

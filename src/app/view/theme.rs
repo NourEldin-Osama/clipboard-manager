@@ -317,6 +317,19 @@ pub(crate) fn tag_shade(color: Color32, dark_mode: bool) -> Color32 {
     }
 }
 
+/// A kind's symbol on a popup's row: the text shade of its `color`, 40%
+/// darker in the light theme (red, green and blue each times 0.6), so the
+/// thin symbols read at the popup's small size. The dark theme keeps the
+/// text shade.
+pub(crate) fn popup_symbol(color: Color32, dark_mode: bool) -> Color32 {
+    let shade = text_shade(color, dark_mode);
+    if dark_mode {
+        return shade;
+    }
+    let darker = |value: u8| (f32::from(value) * 0.6).round() as u8;
+    Color32::from_rgb(darker(shade.r()), darker(shade.g()), darker(shade.b()))
+}
+
 /// The pin of a pinned item on rows and cards: the `accent`, in its text
 /// shade in the dark theme, where the plain accent is dim.
 pub(crate) fn pin_color(accent: Color32, dark_mode: bool) -> Color32 {
