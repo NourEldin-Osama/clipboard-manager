@@ -1463,6 +1463,50 @@ mod tests {
         }
     }
 
+    /// In the dark theme a card at rest has an edge twice as far above the
+    /// card's own gray as the faint gray 70 it had: gray 110 around the
+    /// cards of Lighter panels (gray 30), 130 around Darker's (gray 10).
+    /// In the light theme the edge is not seen.
+    #[test]
+    fn a_dark_cards_edge_is_twice_as_far_above_its_gray() {
+        use crate::config::DarkPanels;
+        let it = Item::new(1, Kind::Text, Origin::Clipboard, "Lunch at noon".into());
+        let card = Rect::from_min_size(Pos2::new(0.0, 100.0), Vec2::new(300.0, 210.0));
+        for (panels, theme, fill, edge) in [
+            (DarkPanels::Darker, egui::Theme::Dark, 10, Some(130)),
+            (DarkPanels::Lighter, egui::Theme::Dark, 30, Some(110)),
+            (DarkPanels::Lighter, egui::Theme::Light, 255, None),
+        ] {
+            let ctx = egui::Context::default();
+            add_fonts(&ctx);
+            style(&ctx, panels);
+            ctx.set_theme(theme);
+            let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+                paint_card(ui, card, false, &it, None, None, None, false, &[]);
+            });
+            output.textures_delta.clear();
+            // The card's surface: the rect as big as the card, under its
+            // shadow.
+            let mut shapes: Vec<&egui::Shape> =
+                output.shapes.iter().map(|clipped| &clipped.shape).collect();
+            let mut surfaces = Vec::new();
+            while let Some(shape) = shapes.pop() {
+                match shape {
+                    egui::Shape::Vec(inner) => shapes.extend(inner),
+                    egui::Shape::Rect(rect) if rect.rect == card => surfaces.push(rect.clone()),
+                    _ => {}
+                }
+            }
+            let case = format!("{panels:?}, {theme:?}");
+            assert_eq!(surfaces.len(), 1, "{case}: {surfaces:?}");
+            let surface = &surfaces[0];
+            assert_eq!(surface.fill, Color32::from_gray(fill), "{case}");
+            assert_eq!(surface.stroke.width, 1.0, "{case}");
+            let expected = edge.map_or(Color32::TRANSPARENT, Color32::from_gray);
+            assert_eq!(surface.stroke.color, expected, "{case}");
+        }
+    }
+
     #[test]
     fn a_card_is_measured_once_for_each_layout() {
         let mut heights = CardHeights::default();

@@ -103,11 +103,11 @@ fn card_shadow(dark: bool, hot: bool) -> Color32 {
 }
 
 /// The surface of a card, in the grid and in Settings: the content's fill,
-/// a soft shadow, deeper under the pointer, and the faint edge of the dark
-/// theme. The edge takes its room in the light theme too, unseen, so what a
-/// card holds sits in the same place in both themes.
+/// a soft shadow, deeper under the pointer, and the edge of the dark theme
+/// (`card_edge`). The edge takes its room in the light theme too, unseen,
+/// so what a card holds sits in the same place in both themes.
 pub(crate) fn card_frame(v: &egui::Visuals, hot: bool) -> egui::Frame {
-    let edge = card_edge(v.dark_mode).unwrap_or(Color32::TRANSPARENT);
+    let edge = card_edge(v).unwrap_or(Color32::TRANSPARENT);
     egui::Frame::new()
         .fill(v.extreme_bg_color)
         .stroke(Stroke::new(1.0, edge))
@@ -194,10 +194,19 @@ pub(crate) fn menu_line(dark: bool) -> Color32 {
     Color32::from_gray(if dark { 76 } else { 204 })
 }
 
-/// The faint edge around a card in the dark theme, where its shadow
-/// doesn't show; none in the light theme.
-fn card_edge(dark: bool) -> Option<Color32> {
-    dark.then(|| Color32::from_gray(70))
+/// The gray of a dark card's faint edge before it was made brighter.
+const FAINT_CARD_EDGE: u8 = 70;
+
+/// The edge around a card in the dark theme, where its shadow doesn't
+/// show: twice as far above the card's own gray as the faint edge it had,
+/// so it shows with both Dark panels choices (gray 110 around Lighter's
+/// cards, 130 around Darker's). None in the light theme.
+fn card_edge(v: &egui::Visuals) -> Option<Color32> {
+    v.dark_mode.then(|| {
+        let card = i32::from(v.extreme_bg_color.r());
+        let edge = card + 2 * (i32::from(FAINT_CARD_EDGE) - card);
+        Color32::from_gray(edge.clamp(0, 255) as u8)
+    })
 }
 
 /// How bright a picture in a card or a row is at rest in the dark theme:
