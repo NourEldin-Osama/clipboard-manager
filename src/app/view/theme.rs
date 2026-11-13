@@ -201,15 +201,15 @@ fn card_edge(dark: bool) -> Option<Color32> {
 }
 
 /// How bright a picture in a card or a row is at rest in the dark theme:
-/// about 60%, so a bright screenshot doesn't glare among the dark cards.
-const RESTING_PICTURE: u8 = 153;
+/// about 80%, so a bright screenshot doesn't glare among the dark cards.
+const RESTING_PICTURE: u8 = 204;
 
 /// How long a picture in a card or a row takes to light up or dim again,
 /// in seconds.
 pub(crate) const PICTURE_FADE: f32 = 0.12;
 
 /// How a picture is tinted. In the dark theme a picture in a card or a row
-/// rests at about 60% of its brightness and shows in full while `lit` is
+/// rests at about 80% of its brightness and shows in full while `lit` is
 /// 1: while its card or row is under the pointer or selected, and always
 /// where it is shown large, as in the details. In between while it fades.
 /// The light theme shows every picture in full.
@@ -756,14 +756,14 @@ mod tests {
         }
     }
 
-    /// In the dark theme a picture rests at about 60% of its brightness and
+    /// In the dark theme a picture rests at about 80% of its brightness and
     /// shows in full when lit; the light theme shows it in full.
     #[test]
     fn a_picture_rests_dimmer_only_in_the_dark_theme() {
-        assert_eq!(picture_tint(true, 0.0), Color32::from_gray(153));
+        assert_eq!(picture_tint(true, 0.0), Color32::from_gray(204));
         assert_eq!(picture_tint(true, 1.0), Color32::WHITE);
         let fading = picture_tint(true, 0.5);
-        assert!(fading.r() > 153 && fading.r() < 255, "{fading:?}");
+        assert!(fading.r() > 204 && fading.r() < 255, "{fading:?}");
         for lit in [0.0, 0.5, 1.0] {
             assert_eq!(picture_tint(false, lit), Color32::WHITE);
         }
