@@ -551,7 +551,101 @@ pub(super) fn setting_content(
     let under = (!line.is_empty()).then_some(|ui: &mut Ui| {
         super::bidi::balanced(ui, line, FontId::proportional(size::SMALL), weak);
     });
-    setting_parts(ui, label, under, details, changed, resettable, control)
+    setting_parts(
+        ui, label, None, under, details, changed, resettable, control,
+    )
+}
+
+/// A setting's state as a chip after its name: its color, gray
+/// (`Color32::GRAY`) for a state without one, and a word or two.
+pub(super) struct StateChip {
+    pub(super) color: Color32,
+    pub(super) words: String,
+}
+
+/// How big the dot of a state's chip is.
+const STATE_DOT: f32 = 10.0;
+
+impl StateChip {
+    /// Its words laid out in their color, that color, and its fill: the
+    /// tint of the other chips (`chip`), of the rows' gray for a state
+    /// without a color.
+    fn parts(&self, ui: &Ui) -> (std::sync::Arc<egui::Galley>, Color32, Color32) {
+        let v = ui.visuals();
+        let (text, tint) = if self.color == Color32::GRAY {
+            (v.weak_text_color(), v.weak_text_color())
+        } else {
+            (text_shade(self.color, v.dark_mode), self.color)
+        };
+        let words = txt(&self.words, size::SMALL, Some(text)).into_galley(
+            ui,
+            Some(egui::TextWrapMode::Extend),
+            f32::INFINITY,
+            egui::FontSelection::Default,
+        );
+        (words, text, tint.gamma_multiply(0.14))
+    }
+
+    /// How big the chip of `words` is: as tall as a tag's chip on a card,
+    /// with its room beside the dot and the words.
+    fn size(words: &egui::Galley) -> Vec2 {
+        Vec2::new(
+            CHIP_SIDE + STATE_DOT + space::TINY + words.size().x + CHIP_SIDE,
+            words.size().y + 2.0 * CARD_CHIP_PADDING,
+        )
+    }
+
+    /// The chip, in a place `height` tall in its row and centred on it, the
+    /// dot at its reading-start side and the words after it. It only says
+    /// the state: no edge, nothing under the pointer and no stop for the
+    /// keyboard; screen readers read its words.
+    fn show(
+        &self,
+        ui: &mut Ui,
+        (words, text, fill): (std::sync::Arc<egui::Galley>, Color32, Color32),
+        height: f32,
+    ) {
+        let size = Self::size(&words);
+        let (place, resp) = ui.allocate_exact_size(Vec2::new(size.x, height), Sense::hover());
+        resp.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Label, true, &self.words));
+        let chip = Rect::from_center_size(place.center(), size);
+        let p = ui.painter();
+        p.rect_filled(chip, CornerRadius::same(radius::MEDIUM), fill);
+        let dot = Rect::from_center_size(
+            Pos2::new(chip.left() + CHIP_SIDE + STATE_DOT / 2.0, chip.center().y),
+            Vec2::splat(STATE_DOT),
+        );
+        icons::paint(p, flip(chip, dot), Icon::Dot, text);
+        let words_at = Pos2::new(
+            chip.left() + CHIP_SIDE + STATE_DOT + space::TINY,
+            chip.center().y - words.size().y / 2.0,
+        );
+        let words_at = flip(chip, Rect::from_min_size(words_at, words.size())).min;
+        p.galley(words_at, words, text);
+    }
+}
+
+/// A setting's name wrapped onto `lines`, from the reading-start side, as
+/// tall as they are; screen readers read `label`.
+fn wrapped_name(
+    ui: &mut Ui,
+    label: &str,
+    lines: Vec<(std::sync::Arc<egui::Galley>, bool)>,
+    color: Color32,
+) {
+    let width = lines
+        .iter()
+        .map(|(line, _)| line.size().x)
+        .fold(0.0, f32::max);
+    let height = lines.iter().map(|(line, _)| line.size().y).sum();
+    let (block, resp) = ui.allocate_exact_size(Vec2::new(width, height), Sense::hover());
+    resp.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Label, true, label));
+    let mut top = block.top();
+    for (line, _) in lines {
+        let place = Rect::from_min_size(Pos2::new(block.left(), top), line.size());
+        top += line.size().y;
+        ui.painter().galley(flip(block, place).min, line, color);
+    }
 }
 
 /// What a setting's row measured when it was drawn last, to lay its text
@@ -577,23 +671,27 @@ impl RowSizes {
     }
 }
 
-/// `setting_content` with `under` the name what the caller draws there,
-/// such as a state, in place of the gray line.
+/// `setting_content` with `under` the name what the caller draws there in
+/// place of the gray line, and a `state` chip after the name and its info
+/// button.
 ///
 /// The text takes the width the control and its reset leave, its lines
 /// wrapping there. When the control alone leaves less than
 /// `TEXT_LEAST_WIDTH`, or too little for the name on one line, the control
 /// goes under the text, where it may take the row's whole width. The reset
-/// counts for neither, so one that shows or goes never moves the control.
-/// The control ends on the row's far edge whether the reset shows or not,
-/// so the controls of a card share one edge. The reset sits on the
+/// counts for neither, so one that shows or goes never moves the control,
+/// and nor does the state's chip: the name wraps to leave the chip its
+/// room. The control ends on the row's far edge whether the reset shows or
+/// not, so the controls of a card share one edge. The reset sits on the
 /// control's reading-start side and comes after the info button and
 /// before the control for the keyboard, as it reads. The parts are placed
 /// by their sizes from the frame before; a part that changed size has the
 /// frame drawn again.
+#[allow(clippy::too_many_arguments)]
 pub(super) fn setting_parts(
     ui: &mut Ui,
     label: &str,
+    state: Option<&StateChip>,
     under: Option<impl FnOnce(&mut Ui)>,
     details: &str,
     changed: bool,
@@ -622,12 +720,15 @@ pub(super) fn setting_parts(
         f32::INFINITY,
         egui::FontSelection::Default,
     );
-    let name_height = name.size().y;
     let name_width = if details.is_empty() {
         name.size().x
     } else {
         name.size().x + spacing + INFO_BUTTON_SIZE
     };
+    let state = state.map(|chip| (chip, chip.parts(ui)));
+    let state_width = state
+        .as_ref()
+        .map_or(0.0, |(_, (words, ..))| spacing + StateChip::size(words).x);
 
     // Whether the control fits beside the text. The reset doesn't count, so
     // it never moves the control: it takes its room from the text, whose
@@ -662,6 +763,16 @@ pub(super) fn setting_parts(
         );
         (width, whole.top(), area)
     };
+    // The name wraps where it would leave its state's chip too little room.
+    let wrapped = (state.is_some() && name_width + state_width > text_width).then(|| {
+        let room = text_width - (name_width - name.size().x) - state_width;
+        let font = FontId::proportional(size::BODY);
+        let none = Color32::TRANSPARENT;
+        super::bidi::lines(ui, label, &[], font, color, none, room, usize::MAX, None)
+    });
+    let name_height = wrapped.as_ref().map_or(name.size().y, |lines| {
+        lines.iter().map(|(line, _)| line.size().y).sum()
+    });
 
     let text_rect = Rect::from_min_size(
         Pos2::new(whole.left(), text_top),
@@ -679,9 +790,17 @@ pub(super) fn setting_parts(
     );
     text_ui.spacing_mut().item_spacing.y = 0.0;
     row_of(&mut text_ui, name_height, |ui| {
-        ui.label(name);
+        match wrapped {
+            Some(lines) => wrapped_name(ui, label, lines, color),
+            None => {
+                ui.label(name);
+            }
+        }
         if !details.is_empty() {
             info(ui, details, name_height);
+        }
+        if let Some((chip, parts)) = state {
+            chip.show(ui, parts, name_height);
         }
     });
     if let Some(under) = under {

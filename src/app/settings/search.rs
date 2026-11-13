@@ -14,41 +14,49 @@ fn strictness() -> [(f32, String); 3] {
     ]
 }
 
-/// Search by meaning turned on and off, with its state in words under its
-/// name in place of a gray line, after a dot of the state's color (gray
-/// while off).
-fn meaning_switch(ui: &mut Ui, engine: &mut SearchEngine, (dot, text): (Color32, String)) {
-    let state = |ui: &mut Ui| {
-        let color = if dot == Color32::GRAY {
-            ui.visuals().weak_text_color()
-        } else {
-            text_shade(dot, ui.visuals().dark_mode)
-        };
-        let words = txt(&text, size::SMALL, Some(color)).into_galley(
-            ui,
-            Some(egui::TextWrapMode::Extend),
-            f32::INFINITY,
-            egui::FontSelection::Default,
-        );
-        // As tall as its words, so they start where a gray line would.
-        row_of(ui, words.size().y, |ui| {
-            icons::glyph(ui, Icon::Dot, 10.0, color);
-            ui.label(words);
-        });
-    };
+/// Search by meaning turned on and off: its state as a chip after its name,
+/// in the state's color (gray while off), and what the state means in a
+/// gray line under the name. Screen readers hear both with the switch.
+fn meaning_switch(
+    ui: &mut Ui,
+    engine: &mut SearchEngine,
+    (color, words, line): (Color32, String, String),
+) {
     card_row(ui, false, |ui| {
         let name = t!("settings-meaning-switch");
         let help = t!("settings-search-engine-help");
-        let _ = setting_parts(ui, &name, Some(state), &help, false, false, |ui| {
-            let mut on = *engine == SearchEngine::Server;
-            if toggle(ui, &mut on).changed() {
-                *engine = if on {
-                    SearchEngine::Server
-                } else {
-                    SearchEngine::Off
-                };
-            }
-        });
+        let spoken = t!(
+            "settings-meaning-spoken",
+            state = words.as_str(),
+            line = line.as_str()
+        );
+        let state = StateChip { color, words };
+        let weak = ui.visuals().weak_text_color();
+        let under = |ui: &mut Ui| {
+            super::bidi::balanced(ui, &line, FontId::proportional(size::SMALL), weak);
+        };
+        let _ = setting_parts(
+            ui,
+            &name,
+            Some(&state),
+            Some(under),
+            &help,
+            false,
+            false,
+            |ui| {
+                let mut on = *engine == SearchEngine::Server;
+                let switch = toggle(ui, &mut on);
+                ui.ctx()
+                    .accesskit_node_builder(switch.id, |node| node.set_description(spoken));
+                if switch.changed() {
+                    *engine = if on {
+                        SearchEngine::Server
+                    } else {
+                        SearchEngine::Off
+                    };
+                }
+            },
+        );
     });
 }
 
@@ -207,104 +215,368 @@ impl App {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::i18n::arabic_run;
 
-    /// One frame of the switch with `events`, in a window with the app's
-    /// fonts and style: what was painted, and the screen reader's tree.
+    /// What one frame of the switch's row shows: the card's inside, the
+    /// name's lines, the chip and its words and dot, the gray line's lines,
+    /// the info button, and the switch with what screen readers hear of it.
+    struct Row {
+        inside: Rect,
+        name: Vec<Rect>,
+        chip: Rect,
+        chip_corners: CornerRadius,
+        words: Rect,
+        dot: Pos2,
+        line: Vec<Rect>,
+        info: Rect,
+        switch: Rect,
+        switch_label: Option<String>,
+        switch_description: Option<String>,
+        chip_spoken_as: Option<egui::accesskit::Role>,
+    }
+
+    /// One frame of the switch with `events`, in `state`, in a column `width`
+    /// wide in a window with the app's fonts and style.
     fn switch_frame(
         ctx: &egui::Context,
         engine: &mut SearchEngine,
+        state: &(Color32, String, String),
+        width: f32,
         events: Vec<egui::Event>,
-    ) -> egui::FullOutput {
+    ) -> Row {
         let input = egui::RawInput {
             events,
             ..Default::default()
         };
-        let state = (Color32::GRAY, t!("settings-meaning-off"));
+        let (mut inside, mut fill) = (Rect::NOTHING, Color32::TRANSPARENT);
         let mut output = ctx.run_ui(input, |ui| {
-            let column = Rect::from_min_size(Pos2::new(20.0, 20.0), Vec2::new(600.0, 300.0));
+            let column = Rect::from_min_size(Pos2::new(20.0, 20.0), Vec2::new(width, 300.0));
             ui.scope_builder(egui::UiBuilder::new().max_rect(column), |ui| {
-                card(ui, |ui| meaning_switch(ui, engine, state.clone()));
+                card(ui, |ui| {
+                    meaning_switch(ui, engine, state.clone());
+                    inside = ui.min_rect();
+                });
             });
+            // The chip's tint, of the rows' gray for a state without a color.
+            let (color, ..) = state;
+            let tint = if *color == Color32::GRAY {
+                ui.visuals().weak_text_color()
+            } else {
+                *color
+            };
+            fill = tint.gamma_multiply(0.14);
         });
         // The font atlas upload no renderer takes here.
         output.textures_delta.clear();
-        output
+        let mut texts = Vec::new();
+        let (mut chip, mut chip_corners) = (Rect::NOTHING, CornerRadius::ZERO);
+        let mut dots = Vec::new();
+        for clipped in &output.shapes {
+            match &clipped.shape {
+                egui::Shape::Text(text) => {
+                    let size = text.galley.job.sections[0].format.font_id.size;
+                    texts.push((size, text.galley.rect.translate(text.pos.to_vec2())));
+                }
+                egui::Shape::Rect(rect) if rect.fill == fill => {
+                    chip = rect.rect;
+                    chip_corners = rect.corner_radius;
+                }
+                egui::Shape::Circle(circle) => dots.push(circle.center),
+                _ => {}
+            }
+        }
+        let name: Vec<Rect> = texts
+            .iter()
+            .filter(|(size, _)| *size == size::BODY)
+            .map(|(_, at)| *at)
+            .collect();
+        let words = texts
+            .iter()
+            .find(|(_, at)| chip.contains(at.center()))
+            .map(|(_, at)| *at)
+            .expect("the chip's words");
+        let line: Vec<Rect> = texts
+            .iter()
+            .filter(|(size, at)| *size == size::SMALL && !chip.contains(at.center()))
+            .map(|(_, at)| *at)
+            .collect();
+        let dot = dots
+            .into_iter()
+            .find(|dot| chip.contains(*dot))
+            .expect("a dot in the chip");
+        let update = output.platform_output.accesskit_update.expect("a tree");
+        let place = |node: &egui::accesskit::Node| {
+            let bounds = node.bounds().expect("a place");
+            Rect::from_min_max(
+                Pos2::new(bounds.x0 as f32, bounds.y0 as f32),
+                Pos2::new(bounds.x1 as f32, bounds.y1 as f32),
+            )
+        };
+        let nodes: Vec<&egui::accesskit::Node> =
+            update.nodes.iter().map(|(_, node)| node).collect();
+        let switch = nodes
+            .iter()
+            .find(|node| node.role() == egui::accesskit::Role::Switch)
+            .expect("a switch");
+        let help = t!("settings-search-engine-help");
+        let info = nodes
+            .iter()
+            .find(|node| node.label() == Some(help.as_str()))
+            .expect("the info button");
+        // A label's text is its value.
+        let chip_spoken_as = nodes
+            .iter()
+            .find(|node| node.value() == Some(state.1.as_str()))
+            .map(|node| node.role());
+        Row {
+            inside,
+            name,
+            chip,
+            chip_corners,
+            words,
+            dot,
+            line,
+            info: place(info),
+            switch: place(switch),
+            switch_label: switch.label().map(str::to_string),
+            switch_description: switch.description().map(str::to_string),
+            chip_spoken_as,
+        }
     }
 
-    /// The row's switch carries the section's name for screen readers and
-    /// turns search by meaning on; its state stands under its name.
-    #[test]
-    fn search_by_meaning_is_a_switch_with_its_state_under_its_name() {
+    /// A window with the app's fonts and style, which tells screen readers
+    /// what it shows.
+    fn window() -> egui::Context {
         let ctx = egui::Context::default();
         crate::app::view::add_fonts(&ctx);
         crate::app::view::style(&ctx, DarkPanels::Lighter);
         ctx.enable_accesskit();
+        ctx
+    }
+
+    /// The reading-start edge of `rect`.
+    fn start_edge(rect: Rect) -> f32 {
+        if i18n::rtl() {
+            rect.right()
+        } else {
+            rect.left()
+        }
+    }
+
+    /// The far edge of `rect`.
+    fn far_edge(rect: Rect) -> f32 {
+        if i18n::rtl() {
+            rect.left()
+        } else {
+            rect.right()
+        }
+    }
+
+    /// How far `a` comes before `b` in reading order.
+    fn before(a: f32, b: f32) -> f32 {
+        if i18n::rtl() {
+            a - b
+        } else {
+            b - a
+        }
+    }
+
+    /// Where the row's controls end: its far edge, past the rows' room at
+    /// their sides.
+    fn controls_end(row: &Row) -> f32 {
+        far_edge(row.inside.shrink2(Vec2::new(space::LARGE, 0.0)))
+    }
+
+    /// The switch's row with search by meaning off: the chip sits on the
+    /// name's line after the name and its info button, as tall as a tag's
+    /// chip with its corners, its dot first; the gray line starts under the
+    /// name where a gray line starts; the switch is at the row's far end,
+    /// carries the section's name for screen readers with the state said
+    /// with it, and turns search by meaning on.
+    fn check_switch_and_state() {
+        let ctx = window();
         let mut engine = SearchEngine::Off;
+        let state = (
+            Color32::GRAY,
+            t!("settings-meaning-chip-off"),
+            t!("settings-meaning-off"),
+        );
         // The fonts apply from the next frame.
-        switch_frame(&ctx, &mut engine, Vec::new());
-        let output = switch_frame(&ctx, &mut engine, Vec::new());
-        let name = t!("settings-meaning-switch");
-        let state = t!("settings-meaning-off");
-        let text_rect = |words: &str| {
-            output
-                .shapes
-                .iter()
-                .find_map(|clipped| match &clipped.shape {
-                    egui::Shape::Text(text) if text.galley.text() == words => {
-                        Some(text.galley.rect.translate(text.pos.to_vec2()))
-                    }
-                    _ => None,
-                })
-                .expect(words)
-        };
-        let (title, line) = (text_rect(&name), text_rect(&state));
-        // Where a gray line would start.
+        switch_frame(&ctx, &mut engine, &state, 600.0, Vec::new());
+        let row = switch_frame(&ctx, &mut engine, &state, 600.0, Vec::new());
+        assert_eq!(row.name.len(), 1, "the name on one line: {:?}", row.name);
+        let title = row.name[0];
+        // On the name's line, after the name and the info button.
+        let off = row.chip.center().y - title.center().y;
+        assert!(off.abs() <= 0.5, "{:?} on {title:?}", row.chip);
+        assert!(before(far_edge(title), start_edge(row.info)) >= 0.0);
+        assert!(before(far_edge(row.info), start_edge(row.chip)) >= 0.0);
+        let height = row.words.height() + 2.0 * CARD_CHIP_PADDING;
+        assert!((row.chip.height() - height).abs() <= 0.5, "{:?}", row.chip);
+        assert_eq!(row.chip_corners, CornerRadius::same(radius::MEDIUM));
+        let dot_first = before(row.dot.x, start_edge(row.words));
+        assert!(dot_first > 0.0, "{:?} before {:?}", row.dot, row.words);
+        // Where a gray line starts.
+        let line = row.line[0];
         let gap = line.top() - title.bottom();
         assert!((gap - space::TINY).abs() <= 0.5, "{line:?} under {title:?}");
-        // The dot at the name's reading-start edge, the words after it.
-        let dot = output
-            .shapes
-            .iter()
-            .find_map(|clipped| match &clipped.shape {
-                egui::Shape::Circle(circle) if line.y_range().contains(circle.center.y) => {
-                    Some(circle.center)
-                }
-                _ => None,
-            })
-            .expect("a dot");
-        assert!(
-            (dot.x - 5.0 - title.left()).abs() <= 1.0,
-            "{dot:?} {title:?}"
+        let along = start_edge(line) - start_edge(title);
+        assert!(along.abs() <= 0.5, "{line:?} under {title:?}");
+        let end = far_edge(row.switch) - controls_end(&row);
+        assert!(end.abs() <= 0.5, "{:?} in {:?}", row.switch, row.inside);
+        // Centred on the name and the gray line together.
+        let text = row.line.iter().fold(title, |text, line| text.union(*line));
+        let off = row.switch.center().y - text.center().y;
+        assert!(off.abs() <= 0.5, "{:?} on {text:?}", row.switch);
+        let name = t!("settings-meaning-switch");
+        assert_eq!(row.switch_label.as_deref(), Some(name.as_str()));
+        let spoken = t!(
+            "settings-meaning-spoken",
+            state = state.1.as_str(),
+            line = state.2.as_str()
         );
-        assert!(line.left() > dot.x, "{line:?} after {dot:?}");
-        let update = output.platform_output.accesskit_update.expect("a tree");
-        let switch = update
-            .nodes
-            .iter()
-            .map(|(_, node)| node)
-            .find(|node| node.role() == egui::accesskit::Role::Switch)
-            .expect("a switch");
-        assert_eq!(switch.label(), Some(name.as_str()));
-        let bounds = switch.bounds().expect("a place");
-        let at = Pos2::new(
-            ((bounds.x0 + bounds.x1) / 2.0) as f32,
-            ((bounds.y0 + bounds.y1) / 2.0) as f32,
-        );
-        // Centred on the name and its state together.
-        let off = at.y - title.union(line).center().y;
-        assert!(off.abs() <= 0.5, "{at:?} on {title:?} and {line:?}");
+        assert_eq!(row.switch_description, Some(spoken));
+        assert_eq!(row.chip_spoken_as, Some(egui::accesskit::Role::Label));
+        let at = row.switch.center();
         let press = |pressed| egui::Event::PointerButton {
             pos: at,
             button: egui::PointerButton::Primary,
             pressed,
             modifiers: egui::Modifiers::NONE,
         };
-        switch_frame(
-            &ctx,
-            &mut engine,
-            vec![egui::Event::PointerMoved(at), press(true)],
-        );
-        switch_frame(&ctx, &mut engine, vec![press(false)]);
+        let events = vec![egui::Event::PointerMoved(at), press(true)];
+        switch_frame(&ctx, &mut engine, &state, 600.0, events);
+        switch_frame(&ctx, &mut engine, &state, 600.0, vec![press(false)]);
         assert_eq!(engine, SearchEngine::Server);
+    }
+
+    #[test]
+    fn search_by_meaning_is_a_switch_with_its_state_under_its_name() {
+        check_switch_and_state();
+    }
+
+    #[test]
+    fn search_by_meaning_is_a_switch_with_its_state_under_its_name_right_to_left() {
+        crate::i18n::passes_in_arabic(
+            module_path!(),
+            "search_by_meaning_is_a_switch_with_its_state_under_its_name_in_arabic",
+        );
+    }
+
+    #[test]
+    #[ignore = "run in a process of its own by search_by_meaning_is_a_switch_with_its_state_under_its_name_right_to_left"]
+    fn search_by_meaning_is_a_switch_with_its_state_under_its_name_in_arabic() {
+        if arabic_run() {
+            check_switch_and_state();
+        }
+    }
+
+    /// The switch's row in each state in a column just wide enough for the
+    /// switch beside its text: the switch stays there, at the row's far
+    /// end, nothing comes nearer to it than a setting's text does, and the
+    /// name wraps where its line with the info button and the chip would
+    /// not fit.
+    fn check_narrow_row() {
+        let ctx = window();
+        let gap = ctx.global_style().spacing.item_spacing.x;
+        let states = [
+            (
+                GREEN,
+                "settings-meaning-chip-ready",
+                "settings-meaning-ready",
+            ),
+            (
+                Color32::GRAY,
+                "settings-meaning-chip-off",
+                "settings-meaning-off",
+            ),
+            (
+                AMBER,
+                "settings-meaning-chip-loading",
+                "settings-meaning-loading",
+            ),
+            (
+                Color32::GRAY,
+                "settings-meaning-chip-not-set-up",
+                "settings-meaning-none",
+            ),
+            (
+                RED,
+                "settings-meaning-chip-not-working",
+                "settings-meaning-failing",
+            ),
+        ];
+        for (color, words, line) in states {
+            let state = (
+                color,
+                crate::i18n::text(words, None),
+                crate::i18n::text(line, None),
+            );
+            let mut engine = SearchEngine::Server;
+            // Laid out by the sizes of the frame before.
+            let mut draw = |width: f32| {
+                let mut row = switch_frame(&ctx, &mut engine, &state, width, Vec::new());
+                for _ in 0..3 {
+                    row = switch_frame(&ctx, &mut engine, &state, width, Vec::new());
+                }
+                row
+            };
+            let wide = draw(600.0);
+            let one_line = wide.name[0].width() + gap + wide.info.width() + gap + wide.chip.width();
+            let row = draw(360.0);
+            let end = far_edge(row.switch) - controls_end(&row);
+            assert!(
+                end.abs() <= 0.5,
+                "{words}: {:?} in {:?}",
+                row.switch,
+                row.inside
+            );
+            let text = row
+                .name
+                .iter()
+                .chain(&row.line)
+                .fold(row.chip, |text, part| text.union(*part));
+            let middle = row.switch.center().y;
+            assert!(
+                text.y_range().contains(middle),
+                "{words}: {:?} beside {text:?}",
+                row.switch
+            );
+            let room = before(far_edge(text), start_edge(row.switch));
+            assert!(
+                room >= space::HUGE - 0.5,
+                "{words}: {room}: {text:?} before {:?}",
+                row.switch
+            );
+            let start = start_edge(row.inside.shrink2(Vec2::new(space::LARGE, 0.0)));
+            let text_room = before(start, start_edge(row.switch)) - space::HUGE;
+            let wraps = one_line > text_room;
+            assert_eq!(
+                row.name.len() > 1,
+                wraps,
+                "{words}: {one_line} in {text_room}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_narrow_row_wraps_the_name_before_the_switch_moves() {
+        check_narrow_row();
+    }
+
+    #[test]
+    fn a_narrow_row_wraps_the_name_before_the_switch_moves_right_to_left() {
+        crate::i18n::passes_in_arabic(
+            module_path!(),
+            "a_narrow_row_wraps_the_name_before_the_switch_moves_in_arabic",
+        );
+    }
+
+    #[test]
+    #[ignore = "run in a process of its own by a_narrow_row_wraps_the_name_before_the_switch_moves_right_to_left"]
+    fn a_narrow_row_wraps_the_name_before_the_switch_moves_in_arabic() {
+        if arabic_run() {
+            check_narrow_row();
+        }
     }
 }

@@ -840,6 +840,7 @@ mod tests {
                             v.window_fill,
                         ),
                     ),
+                    // Also search by meaning's state while it has no color.
                     ("gray chip", over(weak.gamma_multiply(0.14), content)),
                     // "+N tags" on a list row at rest; on a tinted row it
                     // is on the panel's color.
@@ -1114,6 +1115,11 @@ mod tests {
                         ("status bar", panel),
                         ("settings", content),
                         ("chip", over(s.gamma_multiply(0.14), panel)),
+                        // The state of search by meaning, in its card.
+                        (
+                            "chip in a settings card",
+                            over(s.gamma_multiply(0.14), content),
+                        ),
                         (
                             "chip in a changed setting",
                             over(s.gamma_multiply(0.14), changed),

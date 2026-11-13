@@ -613,13 +613,13 @@ fn paint_tags(
 }
 
 /// Room in a tag's chip beside its text.
-const CHIP_SIDE: f32 = 7.0;
+pub(crate) const CHIP_SIDE: f32 = 7.0;
 
 /// Between two tags' chips.
 const CHIP_GAP: f32 = 6.0;
 
 /// Room in a card's tag chip above and below its text.
-const CARD_CHIP_PADDING: f32 = 3.0;
+pub(crate) const CARD_CHIP_PADDING: f32 = 3.0;
 
 /// How strong the gray tint behind a card's "+N tags" is.
 const CARD_REST_TINT: f32 = 0.15;

@@ -540,10 +540,21 @@ settings-strictness-hint = Stricter choices hide weaker matches; exact words alw
 settings-meaning-section = Search by meaning
 settings-meaning-switch = Use search by meaning
 settings-advanced = Advanced
-settings-meaning-ready = Ready: finds items by what they mean
-settings-meaning-off = Off: search finds words only
+# The state of search by meaning: a word or two on a chip after the
+# switch's name, then a gray line under the name.
+settings-meaning-chip-ready = Ready
+settings-meaning-ready = Finds items by what they mean
+settings-meaning-chip-off = Off
+settings-meaning-off = Search finds words only
+settings-meaning-chip-loading = Loading
+settings-meaning-loading = The search model is starting
+settings-meaning-chip-not-set-up = Not set up
 settings-meaning-none = No search model yet
-settings-meaning-unavailable = The search model can't be used: check its server
+settings-meaning-chip-not-working = Not working
+settings-meaning-unavailable = Check the search model's server
+settings-meaning-failing = The server isn't answering; the app tries again by itself
+# Said by screen readers with the switch: the chip's words, then the gray line.
+settings-meaning-spoken = { $state }. { $line }
 settings-read-section = Read text in images
 settings-servers-section = Saved servers
 settings-read-engine = Read by

@@ -58,20 +58,45 @@ impl App {
         }
     }
 
-    /// The state of search by meaning in words, for its part of Settings,
-    /// where its model shows below.
-    pub(crate) fn meaning_state(&self) -> (Color32, String) {
+    /// The state of search by meaning, for its part of Settings: its color,
+    /// gray for none, a word or two for its chip, and a short line that
+    /// says what it means.
+    pub(crate) fn meaning_state(&self) -> (Color32, String, String) {
         let on = self.cfg.search_engine == SearchEngine::Server;
         if on && self.search_retry.is_some() {
-            return (RED, t!("status-model-failing"));
+            return (
+                RED,
+                t!("settings-meaning-chip-not-working"),
+                t!("settings-meaning-failing"),
+            );
         }
         let picked = self.cfg.search_model.and_then(|at| self.cfg.model(at));
         match (&self.backend, picked) {
-            _ if !on => (Color32::GRAY, t!("settings-meaning-off")),
-            (BackendState::Loading, _) => (AMBER, t!("status-model-loading")),
-            (_, None) => (Color32::GRAY, t!("settings-meaning-none")),
-            (BackendState::Ready { .. }, Some(_)) => (GREEN, t!("settings-meaning-ready")),
-            (BackendState::Off, Some(_)) => (RED, t!("settings-meaning-unavailable")),
+            _ if !on => (
+                Color32::GRAY,
+                t!("settings-meaning-chip-off"),
+                t!("settings-meaning-off"),
+            ),
+            (BackendState::Loading, _) => (
+                AMBER,
+                t!("settings-meaning-chip-loading"),
+                t!("settings-meaning-loading"),
+            ),
+            (_, None) => (
+                Color32::GRAY,
+                t!("settings-meaning-chip-not-set-up"),
+                t!("settings-meaning-none"),
+            ),
+            (BackendState::Ready { .. }, Some(_)) => (
+                GREEN,
+                t!("settings-meaning-chip-ready"),
+                t!("settings-meaning-ready"),
+            ),
+            (BackendState::Off, Some(_)) => (
+                RED,
+                t!("settings-meaning-chip-not-working"),
+                t!("settings-meaning-unavailable"),
+            ),
         }
     }
 

@@ -11,7 +11,7 @@ use super::view::{
     divider, far, far_layout, flip, lbl, line_color, note_fill, paint_progress, paint_text,
     pill_job, primary_button, radius, reveal, row, row_layout, row_of, set_choice_name, set_name,
     size, slow_spinner, space, start_anchor, text_shade, tip, title_lbl, txt, warning_fill, Reacts,
-    ACCENTS, AMBER, GREEN, PROGRESS_LINE, RED,
+    ACCENTS, AMBER, CARD_CHIP_PADDING, CHIP_SIDE, GREEN, PROGRESS_LINE, RED,
 };
 use super::*;
 use crate::config::{
