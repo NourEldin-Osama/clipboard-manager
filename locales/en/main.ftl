@@ -580,7 +580,7 @@ settings-server-models-count =
         [one] 1 model
        *[other] { $count } models
     }
-settings-server-back = Back to Search & AI
+settings-server-back = Back to Servers
 settings-server-add-title = Add server
 settings-server-edit-title = Edit server
 settings-server-kind = Type

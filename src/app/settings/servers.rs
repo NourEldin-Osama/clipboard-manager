@@ -1,5 +1,5 @@
-//! Settings, Search & AI: the saved servers, the editor of a server and its
-//! models, and the menus that pick the models in use.
+//! Settings, Servers: the saved servers, the editor of a server and its
+//! models, and the menus on AI & Search that pick the models in use.
 
 use super::*;
 use crate::catalog;

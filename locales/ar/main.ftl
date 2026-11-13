@@ -650,7 +650,7 @@ settings-server-models-count =
         [many] { $count } نموذجًا
        *[other] { $count } نموذج
     }
-settings-server-back = العودة إلى البحث والذكاء الاصطناعي
+settings-server-back = العودة إلى الخوادم
 settings-server-add-title = إضافة خادم
 settings-server-edit-title = تعديل الخادم
 settings-server-kind = النوع
