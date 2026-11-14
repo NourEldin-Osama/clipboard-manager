@@ -59,12 +59,13 @@ pub(super) fn focus_outline(ctx: &egui::Context) {
     );
 }
 
-/// How often `slow_spinner` moves.
-const SPINNER_STEP: Duration = Duration::from_millis(200);
+/// How often `slow_spinner` moves: 30 times a second looks smooth, and is
+/// half the frames of drawing every one.
+const SPINNER_STEP: Duration = Duration::from_millis(33);
 
-/// egui's spinner, moving in steps a few times a second. egui's own asks
-/// for a new frame every frame, so the window redrew nonstop while, say,
-/// a long indexing ran.
+/// egui's spinner, moving in steps 30 times a second. egui's own asks for
+/// a new frame every frame, so the window redrew as fast as it could
+/// while, say, a long indexing ran.
 pub(crate) fn slow_spinner(ui: &mut Ui, size: f32, color: Option<Color32>) -> egui::Response {
     let (rect, response) = ui.allocate_exact_size(Vec2::splat(size), Sense::hover());
     response.widget_info(|| egui::WidgetInfo::new(egui::Role::ProgressIndicator));
