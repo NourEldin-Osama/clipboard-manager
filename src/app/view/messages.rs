@@ -3,8 +3,8 @@
 //! status bar. The newest is in front and up to two older ones peek out
 //! above it, each a little narrower and fainter; pointing at the stack opens
 //! it, and their time stops meanwhile. The cards glide to their new places.
-//! The update's message (D65) stays in the stack until the update is done
-//! or closed.
+//! Every message has a close button. The update's message (D65) stays in
+//! the stack until the update is done or closed.
 
 use std::sync::Arc;
 
@@ -40,8 +40,9 @@ const SLIDE_TIME: f32 = 0.2;
 const FADE_TIME: f32 = 0.15;
 /// Between the icon, the text and the buttons.
 const SPACE: f32 = 10.0;
-/// The update message's close button: its size, how far it sits from the
-/// card's top and end, and the room its text keeps free for it.
+/// A message's close button: its size, how far it sits from the card's top
+/// and end, and the room its text and the buttons beside it keep free for
+/// it.
 const CLOSE: f32 = 13.0;
 const CLOSE_AT: f32 = 10.0;
 const CLOSE_ROOM: f32 = 19.0;
@@ -144,6 +145,8 @@ pub(super) struct Asked {
     pub(super) action: Option<u64>,
     /// The id of the question whose Cancel was clicked.
     cancel: Option<u64>,
+    /// The id of the message whose close button was clicked.
+    close: Option<u64>,
     /// The id of the question whose button took the keyboard.
     focused: Option<u64>,
     /// The id of the message whose Show is held down.
@@ -357,6 +360,18 @@ impl App {
         if let Some(id) = asked.cancel {
             self.toasts.retain(|t| t.id != id);
             self.focus_search.store(true, Ordering::SeqCst);
+        }
+        // Only the message goes: a delete it could undo stays in the undo
+        // history, for Ctrl+Z.
+        if let Some(at) = asked
+            .close
+            .and_then(|id| self.toasts.iter().position(|t| t.id == id))
+        {
+            let toast = self.toasts.remove(at);
+            // A question closed so answers no, as Cancel does.
+            if toast.question.is_some() {
+                self.focus_search.store(true, Ordering::SeqCst);
+            }
         }
         if let Some(action) = asked.update {
             self.update_action(action, ctx);
@@ -572,9 +587,10 @@ fn paint_card(ui: &Ui, rect: Rect) {
 /// Lays out a message at `width`: its text beside its icon and buttons, or,
 /// when there it would take more than two lines and fewer across the whole
 /// width, above a row with the buttons. The update's message always has its
-/// buttons under its text, and room for its close button. While `showing`,
-/// the second line is the copy's whole text. With `app_icon` it is the note
-/// on the screen: the app icon, and never Show.
+/// buttons under its text. Every message keeps room for its close button.
+/// While `showing`, the second line is the copy's whole text. With
+/// `app_icon` it is the note on the screen: the app icon, and never Show or
+/// a close button.
 pub(super) fn lay_out(
     ui: &Ui,
     toast: &Toast,
@@ -632,11 +648,7 @@ pub(super) fn lay_out(
     } else {
         0.0
     };
-    let close = if toast.update.is_some() {
-        CLOSE_ROOM
-    } else {
-        0.0
-    };
+    let close = if app_icon.is_none() { CLOSE_ROOM } else { 0.0 };
     let room = width - 2.0 * PAD - icon - close;
     let second = match (&toast.secret, showing) {
         (Some(secret), true) => Some(secret.as_str()),
@@ -719,8 +731,9 @@ fn text_height(
         + gap
 }
 
-/// Paints a message's icon (or `app_icon`), text and buttons in its card,
-/// mirrored in Arabic, and notes a click on its button or a press on Show.
+/// Paints a message's icon (or `app_icon`), text, buttons and close button
+/// in its card, mirrored in Arabic, and notes a click on a button or a press
+/// on Show. The note on the screen (`app_icon`) has no close button.
 pub(super) fn paint_content(
     ui: &mut Ui,
     card: Rect,
@@ -764,7 +777,8 @@ pub(super) fn paint_content(
         icons::paint(ui.painter(), icon_at, icon, color);
         left += ICON + SPACE;
     }
-    if parts.is_some() {
+    let closes = app_icon.is_none();
+    if closes {
         let at = m(Rect::from_min_size(
             Pos2::new(card.right() - CLOSE_AT - CLOSE, card.top() + CLOSE_AT),
             Vec2::splat(CLOSE),
@@ -775,7 +789,7 @@ pub(super) fn paint_content(
             egui::Id::unique(("toast-close", toast.id)),
             Sense::click(),
         );
-        let label = t!("update-close");
+        let label = t!("toast-close");
         r.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, &label));
         let color = if r.hovered() {
             v.strong_text_color()
@@ -784,10 +798,20 @@ pub(super) fn paint_content(
         };
         icons::paint(ui.painter(), at, Icon::Close, color);
         if tip(r, &label).clicked() {
-            asked.update = Some(UpdateAction::Close);
+            // The update's message hides until the update's next step.
+            if parts.is_some() {
+                asked.update = Some(UpdateAction::Close);
+            } else {
+                asked.close = Some(toast.id);
+            }
         }
     }
-    let mut right = inner.right();
+    // Buttons beside the text keep clear of the close button.
+    let mut right = if closes && !laid.below {
+        inner.right() - CLOSE_ROOM
+    } else {
+        inner.right()
+    };
     let labels = parts.iter().flat_map(|p| &p.buttons);
     for ((g, action, look), (label, ..)) in laid.update_buttons.iter().zip(labels) {
         let w = match look {
@@ -1108,19 +1132,48 @@ mod tests {
         toast: &Toast,
         events: Vec<egui::Event>,
     ) -> (Asked, Vec<(String, Rect)>) {
+        let frame = card_frame(ctx, toast, events);
+        assert!(frame.below, "the buttons sit under the question");
+        (frame.asked, frame.buttons)
+    }
+
+    /// What one frame of a message's card showed.
+    struct Frame {
+        card: Rect,
+        /// What its buttons asked for.
+        asked: Asked,
+        /// The screen reader's buttons, with where they are.
+        buttons: Vec<(String, Rect)>,
+        /// Where its texts were drawn, also those in its buttons.
+        texts: Vec<Rect>,
+        /// Its buttons sit under its text.
+        below: bool,
+    }
+
+    /// One frame of `toast`'s card, with `events`.
+    fn card_frame(ctx: &egui::Context, toast: &Toast, events: Vec<egui::Event>) -> Frame {
         let input = egui::RawInput {
             events,
             focused: true,
             ..Default::default()
         };
         let mut asked = Asked::default();
+        let (mut card, mut below) = (Rect::NOTHING, false);
         let mut output = ctx.run_ui(input, |ui| {
             let laid = lay_out(ui, toast, WIDTH, false, None);
-            assert!(laid.below, "the buttons sit under the question");
-            let card = Rect::from_min_size(Pos2::new(20.0, 20.0), Vec2::new(WIDTH, laid.height));
+            below = laid.below;
+            card = Rect::from_min_size(Pos2::new(20.0, 20.0), Vec2::new(WIDTH, laid.height));
             paint_content(ui, card, toast, &laid, &mut asked, None);
         });
         output.textures_delta.clear();
+        let texts = output
+            .shapes
+            .iter()
+            .filter_map(|clipped| match &clipped.shape {
+                egui::Shape::Text(shape) => Some(shape.galley.rect.translate(shape.pos.to_vec2())),
+                _ => None,
+            })
+            .collect();
         // Only while a screen reader listens, or a test asks for it.
         let tree = output.platform_output.accesskit_update;
         let buttons = tree
@@ -1136,12 +1189,18 @@ mod tests {
                 (node.label().unwrap_or("").to_string(), rect)
             })
             .collect();
-        (asked, buttons)
+        Frame {
+            card,
+            asked,
+            buttons,
+            texts,
+            below,
+        }
     }
 
     /// A click on the button named `name`, over three frames.
     fn click(ctx: &egui::Context, toast: &Toast, name: &str) -> Asked {
-        let (_, buttons) = question_frame(ctx, toast, Vec::new());
+        let buttons = card_frame(ctx, toast, Vec::new()).buttons;
         let at = buttons
             .iter()
             .find(|(n, _)| n == name)
@@ -1154,9 +1213,91 @@ mod tests {
             pressed,
             modifiers: egui::Modifiers::NONE,
         };
-        question_frame(ctx, toast, vec![egui::Event::PointerMoved(at)]);
-        question_frame(ctx, toast, vec![button(true)]);
-        question_frame(ctx, toast, vec![button(false)]).0
+        card_frame(ctx, toast, vec![egui::Event::PointerMoved(at)]);
+        card_frame(ctx, toast, vec![button(true)]);
+        card_frame(ctx, toast, vec![button(false)]).asked
+    }
+
+    /// Every message in the window has a close button at its top far
+    /// corner, the top left in Arabic, named for screen readers. Its texts
+    /// and other buttons keep clear of it, and a click on it closes only
+    /// that message, or hides the update's.
+    fn check_every_message_has_a_close_button() {
+        let ctx = egui::Context::default();
+        add_fonts(&ctx);
+        ctx.enable_accesskit();
+        // The fonts apply from the next frame.
+        ctx.run_ui(egui::RawInput::default(), |_| {})
+            .textures_delta
+            .clear();
+        let mut deleted = message(&t!("toast-deleted"), None, Some(&t!("toast-undo")));
+        (deleted.secret, deleted.keys) = (None, Some(UNDO_KEYS.to_string()));
+        let app = "Visual Studio Code";
+        let mut long = message(&t!("toast-app-ignored", app = app), None, None);
+        long.secret = None;
+        let skipped = message(
+            &t!("toast-skipped-password"),
+            Some("From Clipboard Manager · 28 characters"),
+            Some(&t!("toast-save-anyway")),
+        );
+        let release = Release::made_up("0.7.2", 29, 30 << 20);
+        let update = update_toast(&UpdateState::Available(release));
+        let close = t!("toast-close");
+        for toast in [deleted, long, skipped, question(false), update] {
+            let frame = card_frame(&ctx, &toast, Vec::new());
+            let (card, buttons) = (frame.card, &frame.buttons);
+            let at = buttons
+                .iter()
+                .find(|(name, _)| *name == close)
+                .unwrap_or_else(|| panic!("{close} in {buttons:?}"))
+                .1;
+            let from_end = if i18n::rtl() {
+                at.left() - card.left()
+            } else {
+                card.right() - at.right()
+            };
+            assert!(
+                (from_end - (CLOSE_AT - 4.0)).abs() < 0.5,
+                "{at:?} in {card:?}"
+            );
+            assert!((at.top() - card.top() - (CLOSE_AT - 4.0)).abs() < 0.5);
+            for (name, other) in buttons.iter().filter(|(name, _)| *name != close) {
+                assert!(
+                    !other.intersects(at),
+                    "{name} at {other:?}, {close} at {at:?}"
+                );
+            }
+            for text in &frame.texts {
+                assert!(
+                    !text.intersects(at),
+                    "a text at {text:?}, {close} at {at:?}"
+                );
+            }
+            let asked = click(&ctx, &toast, &close);
+            if toast.update.is_some() {
+                assert_eq!(asked.update, Some(UpdateAction::Close));
+            } else {
+                assert_eq!((asked.close, asked.action), (Some(toast.id), None));
+            }
+        }
+    }
+
+    #[test]
+    fn every_message_has_a_close_button() {
+        check_every_message_has_a_close_button();
+    }
+
+    #[test]
+    fn every_message_has_a_close_button_right_to_left() {
+        crate::i18n::passes_in_arabic(module_path!(), "every_message_has_a_close_button_in_arabic");
+    }
+
+    #[test]
+    #[ignore = "run in a process of its own by every_message_has_a_close_button_right_to_left"]
+    fn every_message_has_a_close_button_in_arabic() {
+        if crate::i18n::arabic_run() {
+            check_every_message_has_a_close_button();
+        }
     }
 
     /// Never record, filled, then Cancel at the far end; each answers.
