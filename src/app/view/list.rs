@@ -265,6 +265,23 @@ pub(super) fn with_headers(labels: impl Iterator<Item = Group>) -> Vec<Line> {
     lines
 }
 
+/// Each row's item with where it starts and ends in the list, from the
+/// list's `lines`, where they start (`ys`) and the rows' height.
+fn row_places<'a>(
+    lines: &'a [Line],
+    ys: &'a [f32],
+    results: &'a [Hit],
+    row_h: f32,
+) -> impl Iterator<Item = (u64, f32, f32)> + 'a {
+    lines
+        .iter()
+        .zip(ys)
+        .filter_map(move |(line, &y)| match line {
+            Line::Row(r) => Some((results[*r].id, y, y + row_h)),
+            _ => None,
+        })
+}
+
 /// The item's thumbnail texture, queuing a decode the first time it's seen.
 /// `seen` notes the frame it was drawn in (see `thumbs_to_drop`).
 pub(super) fn thumb_for(
@@ -1088,10 +1105,16 @@ impl App {
         }
         let mut total = y;
 
-        let mut sa = egui::ScrollArea::vertical().auto_shrink([false, false]);
-        if in_popup {
-            // Its own scroll place, apart from the full window's list.
-            sa = sa.id_salt("popup-list");
+        // Scroll places of their own, apart from each other and the grid's.
+        let mut sa = egui::ScrollArea::vertical()
+            .id_salt(if in_popup { "popup-list" } else { "list" })
+            .auto_shrink([false, false]);
+        if !in_popup && self.placing_anchor() {
+            let rows = row_places(&lines, &ys, &self.results, row_h);
+            let view = ui.available_height();
+            if let Some(offset) = anchored_offset(self.view_anchor, rows, view, total) {
+                sa = sa.vertical_scroll_offset(offset);
+            }
         }
         let (off, view_h) = if in_popup {
             self.popup_list_view
@@ -1427,6 +1450,8 @@ impl App {
             self.popup_list_view = view;
         } else {
             self.list_view = view;
+            let rows = row_places(&lines, &ys, &self.results, row_h);
+            self.view_anchor = anchor_among(rows, self.selected, view.0, view.1);
         }
         self.apply_actions(actions);
         if picked {

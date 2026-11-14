@@ -62,6 +62,53 @@ pub(crate) use widgets::{
     set_name, slow_spinner, start_anchor, tip, title_lbl, txt, Reacts, PROGRESS_LINE,
 };
 
+/// Where a view `view` tall scrolls to so that an item `top` from the
+/// content's start and `height` tall sits `at` below the top of what
+/// shows: as near as it can while the item shows whole and the view stays
+/// inside the content, `total` tall.
+fn offset_keeping(top: f32, height: f32, at: f32, view: f32, total: f32) -> f32 {
+    let at = at.clamp(0.0, (view - height).max(0.0));
+    (top - at).clamp(0.0, (total - view).max(0.0))
+}
+
+/// Where a new view `view` tall over content `total` tall scrolls to, to
+/// keep `anchor` (an item and how far it was below the top of what showed)
+/// where it was; None when it isn't among `places`, each item's id with
+/// where it starts and ends.
+fn anchored_offset(
+    anchor: Option<(u64, f32)>,
+    mut places: impl Iterator<Item = (u64, f32, f32)>,
+    view: f32,
+    total: f32,
+) -> Option<f32> {
+    let (id, at) = anchor?;
+    let (_, top, bottom) = places.find(|(item, ..)| *item == id)?;
+    Some(offset_keeping(top, bottom - top, at, view, total))
+}
+
+/// The item a view keeps in place if it changes: the `selected` one while
+/// it shows, else the first that shows (`places` in their order), with how
+/// far its top is below the top of what shows, `offset` down and `view`
+/// tall.
+fn anchor_among(
+    places: impl Iterator<Item = (u64, f32, f32)>,
+    selected: Option<u64>,
+    offset: f32,
+    view: f32,
+) -> Option<(u64, f32)> {
+    let mut first = None;
+    for (id, top, bottom) in places {
+        if bottom <= offset || top >= offset + view {
+            continue;
+        }
+        if Some(id) == selected {
+            return Some((id, top - offset));
+        }
+        first.get_or_insert((id, top - offset));
+    }
+    first
+}
+
 impl App {
     /// Everything below the top bar: list, grid or list + details, per the view mode.
     fn main_area(&mut self, ui: &mut Ui) {
@@ -104,8 +151,19 @@ impl App {
     pub(super) fn set_view(&mut self, v: ViewMode) {
         self.cfg.view = v;
         self.details_open = false;
-        self.scroll_to_selected = true;
+        // The new view keeps the item that showed where it was.
+        self.place_anchor = true;
         self.save_config();
+    }
+
+    /// Whether the view just changed, so the new one places `view_anchor`;
+    /// the anchor then decides where it starts, not the selected item.
+    fn placing_anchor(&mut self) -> bool {
+        let placing = std::mem::take(&mut self.place_anchor);
+        if placing {
+            self.scroll_to_selected = false;
+        }
+        placing
     }
 
     /// The details pane shows beside the list or the grid: always in
@@ -304,5 +362,52 @@ impl eframe::App for App {
             focus_outline(&ctx);
         }
         bidi::read_in_reading_order(&ctx);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{anchor_among, offset_keeping};
+
+    /// Four rows 60 points tall, 2 points apart: the selected one is kept
+    /// while it shows, else the first that shows.
+    #[test]
+    fn a_view_keeps_the_selected_item_else_the_first_that_shows() {
+        let rows = [
+            (1, 0.0, 60.0),
+            (2, 62.0, 122.0),
+            (3, 124.0, 184.0),
+            (4, 186.0, 246.0),
+        ];
+        let anchor =
+            |selected, offset, view| anchor_among(rows.into_iter(), selected, offset, view);
+        assert_eq!(anchor(Some(3), 50.0, 150.0), Some((3, 74.0)));
+        assert_eq!(anchor(Some(4), 0.0, 150.0), Some((1, 0.0)));
+        assert_eq!(anchor(None, 70.0, 150.0), Some((2, -8.0)));
+        assert_eq!(anchor(None, 300.0, 150.0), None);
+    }
+
+    /// An item 60 points tall, 100 points below the top of what showed,
+    /// in a view 700 points tall over content 20,000 points tall.
+    #[test]
+    fn a_new_view_keeps_the_item_where_it_was() {
+        assert_eq!(offset_keeping(6000.0, 60.0, 100.0, 700.0, 20_000.0), 5900.0);
+        // Near the top, the view can't start above the content.
+        assert_eq!(offset_keeping(50.0, 60.0, 100.0, 700.0, 20_000.0), 0.0);
+        // Near the end, nor go past it.
+        assert_eq!(
+            offset_keeping(19_950.0, 60.0, 100.0, 700.0, 20_000.0),
+            19_300.0
+        );
+        // An item that was cut off at the bottom shows whole.
+        assert_eq!(
+            offset_keeping(6000.0, 280.0, 600.0, 700.0, 20_000.0),
+            5580.0
+        );
+        // One that was cut off at the top too.
+        assert_eq!(
+            offset_keeping(6000.0, 280.0, -50.0, 700.0, 20_000.0),
+            6000.0
+        );
     }
 }

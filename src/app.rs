@@ -755,6 +755,12 @@ pub struct App {
     searching: bool,
     selected: Option<u64>,
     scroll_to_selected: bool,
+    /// The item the list or the grid keeps in its place when the view
+    /// changes, and how far its top is below the top of what shows: the
+    /// selected item while it shows, else the first item that shows.
+    view_anchor: Option<(u64, f32)>,
+    /// The view changed: the new one puts `view_anchor` where it was.
+    place_anchor: bool,
     focus_search: Arc<AtomicBool>,
     focused: Arc<AtomicBool>,
 
@@ -1014,6 +1020,8 @@ impl App {
             searching: false,
             selected: None,
             scroll_to_selected: false,
+            view_anchor: None,
+            place_anchor: false,
             focus_search,
             focused: Arc::new(AtomicBool::new(true)),
             thumbs: HashMap::new(),
