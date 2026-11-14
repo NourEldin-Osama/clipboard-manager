@@ -438,9 +438,12 @@ struct Toast {
 }
 
 impl Toast {
-    /// Its button brings back the items just deleted.
-    fn undoes(&self) -> bool {
-        matches!(self.action, Some((_, Command::UndoDelete)))
+    /// The number of the delete its button brings back, if it has one.
+    fn undoes(&self) -> Option<u64> {
+        match self.action {
+            Some((_, Command::UndoDelete(number))) => Some(number),
+            _ => None,
+        }
     }
 }
 
@@ -477,8 +480,12 @@ pub(super) enum Command {
     DeleteTag(String),
     Import(Vec<PathBuf>),
     ClearHistory,
-    /// Brings back the item just deleted.
-    UndoDelete,
+    /// Brings back the items of one delete, by its number in the undo
+    /// history: its message's Undo.
+    UndoDelete(u64),
+    /// Brings back the items of the newest delete that can still be undone:
+    /// Ctrl+Z.
+    UndoNewestDelete,
     /// Records a copy that the secret filter or a rule held back.
     SaveSkipped(Capture),
     /// Copies text read from an image; it is not recorded as a new copy.
@@ -559,13 +566,14 @@ enum ShortcutField {
     Details,
 }
 
-/// How long a deleted item can still be brought back.
-const UNDO_FOR: Duration = Duration::from_secs(8);
+/// How long the message after a delete shows. Its delete can be undone
+/// for longer (`undo::UNDO_WINDOW`).
+const DELETED_MESSAGE_FOR: Duration = Duration::from_secs(8);
 /// How long rows and cards glide after a delete, and the time each glide
 /// takes.
 const GLIDE_FOR: Duration = Duration::from_millis(400);
 const GLIDE_TIME: f32 = 0.2;
-/// The key that undoes a delete while its message shows.
+/// The key that undoes the newest delete, named on its message's Undo.
 const UNDO_KEYS: &str = "Ctrl+Z";
 /// How long a message that names a key stays.
 const KEY_HINT_FOR: Duration = Duration::from_secs(4);
@@ -647,14 +655,6 @@ impl Retry {
     }
 }
 
-/// The last deleted items, kept for "Undo" until its message is gone; only
-/// then are they removed from the database, with their vectors and images.
-struct PendingDelete {
-    /// Taken from the last to the first, so each comes back in its place
-    /// when they go back in the other order.
-    removed: Vec<Removed>,
-}
-
 /// Keeps the registrations alive; dropping the manager unregisters them.
 struct Hotkeys {
     _manager: GlobalHotKeyManager,
@@ -720,7 +720,8 @@ pub struct App {
     /// Until when rows and cards glide to their new places: after a delete
     /// or its Undo, so the gap closes instead of jumping.
     glide_until: Option<Instant>,
-    pending_delete: Option<PendingDelete>,
+    /// The deletes that can still be undone, with their items.
+    undo_history: UndoHistory,
     /// When deleting by age runs next; `None` runs it at the next frame.
     next_age_prune: Option<Instant>,
     /// The search server stopped answering: when the app asks it again.
@@ -983,7 +984,7 @@ impl App {
             app_icon: None,
             skip_next_armed: false,
             glide_until: None,
-            pending_delete: None,
+            undo_history: UndoHistory::default(),
             next_age_prune: None,
             search_retry: None,
             ocr_failed: HashSet::new(),
@@ -1656,14 +1657,11 @@ impl App {
 
     /// Adds a message in front of the others, to be given a button or a
     /// second line. With three showing, the oldest goes, never the update's;
-    /// a delete it could undo becomes final.
+    /// a delete it could undo stays in the undo history for Ctrl+Z.
     fn toast_with(&mut self, s: impl Into<String>, how_long: Duration) -> &mut Toast {
         if self.toasts.len() >= MAX_TOASTS {
             if let Some(at) = self.toasts.iter().position(|t| t.update.is_none()) {
-                let oldest = self.toasts.remove(at);
-                if oldest.undoes() {
-                    self.finish_delete();
-                }
+                self.toasts.remove(at);
             }
         }
         self.toast_seq += 1;
@@ -1686,12 +1684,13 @@ impl App {
     }
 
     /// Runs the messages' time: only while a window shows them and the
-    /// pointer is not on them. A message whose time is up goes, and the
-    /// delete it could undo becomes final.
+    /// pointer is not on them. A message whose time is up goes. The time in
+    /// which a delete can be undone runs the same way, also after its
+    /// message is gone; when it is over, the delete becomes final.
     fn tick_toasts(&mut self, ctx: &egui::Context, shown: bool) {
         let now = Instant::now();
         let last = self.toasts_tick.replace(now);
-        if self.toasts.is_empty() {
+        if self.toasts.is_empty() && self.undo_history.is_empty() {
             return;
         }
         let step = last.map_or(Duration::ZERO, |last| now - last);
@@ -1707,14 +1706,12 @@ impl App {
                     toast.shown_for += step;
                 }
             }
+            if shown && !self.toasts_hovered {
+                self.undo_history.tick(step);
+            }
         }
-        let (over, left): (Vec<Toast>, Vec<Toast>) = std::mem::take(&mut self.toasts)
-            .into_iter()
-            .partition(|t| t.shown_for >= t.how_long);
-        self.toasts = left;
-        if over.iter().any(Toast::undoes) {
-            self.finish_delete();
-        }
+        self.toasts.retain(|t| t.shown_for < t.how_long);
+        self.finish_expired_deletes();
         if shown || self.toasts.iter().any(|t| t.on_screen) {
             ctx.request_repaint_after(Duration::from_millis(100));
         }
@@ -1801,7 +1798,12 @@ impl App {
             Command::DeleteTag(tag) => self.delete_tag(&tag),
             Command::Import(paths) => self.import(paths),
             Command::ClearHistory => self.clear_history(),
-            Command::UndoDelete => self.undo_delete(),
+            Command::UndoDelete(number) => self.undo_delete(number),
+            Command::UndoNewestDelete => {
+                if let Some(number) = self.undo_history.newest() {
+                    self.undo_delete(number);
+                }
+            }
             Command::RecordAppAgain(app) => {
                 let mut d = self.cfg.clone();
                 d.rules.retain(|r| !r.skips_app(&app));
@@ -2152,21 +2154,18 @@ impl App {
         if ids.is_empty() {
             return;
         }
-        // One undo at a time: an earlier delete becomes final now.
-        self.finish_delete();
         let removed = self.take_items(&ids);
         self.drop_stale_tag_filter();
         self.drop_removed(&ids);
         let count = removed.len();
         log::info!("deleted {count} items by age or the history limit");
-        self.pending_delete = Some(PendingDelete { removed });
         let text = if count == over_limit {
             t!("toast-pruned-limit", count = count)
         } else {
             let age = t!("settings-age-days", count = days);
             t!("toast-pruned-age", count = count, age = age)
         };
-        self.undo_toast(text);
+        self.keep_for_undo(text, removed);
         self.dirty = true;
     }
 
@@ -2690,10 +2689,8 @@ impl App {
     }
 
     /// Takes the item out of the list at once; the database follows when the
-    /// "Undo" toast ends (see `finish_delete`).
+    /// delete can no longer be undone (see `finish_expired_deletes`).
     fn delete(&mut self, id: u64) {
-        // One undo at a time: an earlier delete becomes final now.
-        self.finish_delete();
         let Some(removed) = self.library.take(id) else {
             return;
         };
@@ -2709,47 +2706,72 @@ impl App {
                 .get(i.min(self.results.len().saturating_sub(1)))
                 .map(|h| h.id);
         }
-        self.pending_delete = Some(PendingDelete {
-            removed: vec![removed],
-        });
         let keys = self.cfg.keys.delete.clone();
         let text = match self.key_to_teach(&keys) {
             Some(keys) => t!("toast-deleted-key", keys = keys),
             None => t!("toast-deleted"),
         };
-        self.undo_toast(text);
+        self.keep_for_undo(text, vec![removed]);
     }
 
-    /// The message after a delete, with Undo and its key.
-    fn undo_toast(&mut self, text: String) {
-        let toast = self.toast_with(text, UNDO_FOR);
+    /// Keeps the items of a delete in the undo history, and says `text` in
+    /// a message with Undo.
+    fn keep_for_undo(&mut self, text: String, removed: Vec<Removed>) {
+        let number = self.undo_history.add(removed);
+        let toast = self.toast_with(text, DELETED_MESSAGE_FOR);
         toast.icon = Some(icons::Icon::Delete);
-        toast.action = Some((t!("toast-undo"), Command::UndoDelete));
-        toast.keys = Some(UNDO_KEYS.to_string());
+        toast.action = Some((t!("toast-undo"), Command::UndoDelete(number)));
+        self.name_undo_keys();
     }
 
-    /// Makes the pending delete final: database row, vectors and image file.
-    pub(super) fn finish_delete(&mut self) {
-        // Its message can't undo it any more.
-        self.toasts.retain(|t| !t.undoes());
-        if let Some(pending) = self.pending_delete.take() {
-            if let Err(e) = self.library.forget_many(pending.removed) {
-                self.set_error(log_error!("error-deleting", error = e.to_string()));
+    /// Names Ctrl+Z only on the Undo of the delete it would undo: the
+    /// newest that can still be undone.
+    fn name_undo_keys(&mut self) {
+        let newest = self.undo_history.newest();
+        for toast in &mut self.toasts {
+            if let Some(number) = toast.undoes() {
+                toast.keys = (Some(number) == newest).then(|| UNDO_KEYS.to_string());
             }
         }
     }
 
-    fn undo_delete(&mut self) {
-        self.glide();
-        self.toasts.retain(|t| !t.undoes());
-        let Some(pending) = self.pending_delete.take() else {
+    /// Makes the deletes whose time to undo is over final, and takes their
+    /// messages away.
+    fn finish_expired_deletes(&mut self) {
+        let (numbers, removed) = self.undo_history.take_expired();
+        if numbers.is_empty() {
+            return;
+        }
+        self.toasts
+            .retain(|t| t.undoes().is_none_or(|number| !numbers.contains(&number)));
+        self.forget(removed);
+    }
+
+    /// Makes every delete final, as the app quits.
+    pub(super) fn finish_deletes(&mut self) {
+        let removed = self.undo_history.take_all();
+        self.forget(removed);
+    }
+
+    /// Deletes taken items from the disk: database rows, vectors and image
+    /// files.
+    fn forget(&mut self, removed: Vec<Removed>) {
+        if let Err(e) = self.library.forget_many(removed) {
+            self.set_error(log_error!("error-deleting", error = e.to_string()));
+        }
+    }
+
+    /// Brings back the items of the delete `number`, while it can still be
+    /// undone.
+    fn undo_delete(&mut self, number: u64) {
+        self.toasts.retain(|t| t.undoes() != Some(number));
+        let Some(ids) = self.undo_history.undo(number, &mut self.library) else {
             return;
         };
-        // The first in the list was taken last.
-        self.selected = pending.removed.last().map(|r| r.item.id);
-        for removed in pending.removed.into_iter().rev() {
-            self.library.put_back(removed);
-        }
+        self.glide();
+        // The first in the list was taken last, so it went back first.
+        self.selected = ids.first().copied();
+        self.name_undo_keys();
         self.dirty = true;
     }
 
@@ -2854,8 +2876,6 @@ impl App {
     }
 
     fn delete_group(&mut self, ids: &[u64]) {
-        // One undo at a time: an earlier delete becomes final now.
-        self.finish_delete();
         let row = self.results.iter().position(|h| ids.contains(&h.id));
         let removed = self.take_items(ids);
         self.drop_stale_tag_filter();
@@ -2867,8 +2887,7 @@ impl App {
             self.selected = self.results.get(i.min(last)).map(|h| h.id);
         }
         let count = removed.len();
-        self.pending_delete = Some(PendingDelete { removed });
-        self.undo_toast(t!("toast-deleted-group", count = count));
+        self.keep_for_undo(t!("toast-deleted-group", count = count), removed);
         self.dirty = true;
     }
 
@@ -3125,10 +3144,12 @@ mod icons;
 mod programs;
 mod settings;
 mod shortcut;
+mod undo;
 mod view;
 
 use background::{Background, Done};
 use settings::{PendingSend, ServerEditor, SettingsPage};
+use undo::UndoHistory;
 use view::{add_fonts, apply_theme, looks_like_code, set_accent, style};
 
 /// Whether the link between the strong and the weaker matches is open, so

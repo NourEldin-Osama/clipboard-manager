@@ -253,13 +253,14 @@ impl App {
         let copy_only = copy_only && copies_item(ctx);
         // Ctrl+1 to Ctrl+9 paste one of the first nine items shown.
         let quick = if typing { None } else { quick_paste(ctx) };
-        // Ctrl+Z undoes a delete while its message is up, also from the
-        // search field (D55); otherwise it stays the field's own undo.
+        // Ctrl+Z undoes the newest delete while it can still be undone, also
+        // from the search field (D55); otherwise it stays the field's own
+        // undo.
         if !typing
-            && self.pending_delete.is_some()
+            && self.undo_history.newest().is_some()
             && ctx.input_mut(|i| i.consume_key(egui::Modifiers::COMMAND, Key::Z))
         {
-            self.run(Command::UndoDelete);
+            self.run(Command::UndoNewestDelete);
         }
         // Ctrl+A selects every item shown; the popup keeps one at a time.
         if !in_popup
