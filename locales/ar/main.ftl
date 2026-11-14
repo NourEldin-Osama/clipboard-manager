@@ -829,6 +829,7 @@ error-ocr-unavailable = تعذّرت قراءة النص في الصور: { $err
 error-reader-server-stopped = توقف llama-server الخاص بقراءة النص أثناء بدئه ({ $status }). تحقق من ملف النموذج أو اسمه على Hugging Face، ومن الوسائط الإضافية.
 error-server-unreachable = تعذّر الوصول إلى الخادم على { $host }. تأكد من أنه يعمل ومن صحة عنوانه.
 error-server-needs-key = يحتاج الخادم إلى مفتاح API، أو أن المفتاح غير صحيح. راجع المفتاح في إعدادات الخادم.
+error-server-needs-key-said = رفض الخادم المفتاح أو هذا النموذج: «{ $said }». راجع المفتاح في إعدادات الخادم.
 error-server-not-found = لا يعرف الخادم هذا العنوان أو هذا النموذج: «{ $said }»
 error-server-refused = رفض الخادم الطلب: «{ $said }»
 error-server-failed = فشل الخادم (الخطأ { $status }): «{ $said }»

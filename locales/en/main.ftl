@@ -759,6 +759,7 @@ error-ocr-unavailable = Cannot read text in images: { $error }
 error-reader-server-stopped = The llama-server for reading text stopped while starting ({ $status }). Check its model file or Hugging Face name, and its extra arguments.
 error-server-unreachable = Can't reach the server at { $host }. Check that it is running and that its address is right.
 error-server-needs-key = The server needs an API key, or the key is wrong. Check the key in the server's settings.
+error-server-needs-key-said = The server refused the key or this model: “{ $said }”. Check the key in the server's settings.
 error-server-not-found = The server doesn't know this address or model: “{ $said }”
 error-server-refused = The server refused the request: “{ $said }”
 error-server-failed = The server failed (error { $status }): “{ $said }”

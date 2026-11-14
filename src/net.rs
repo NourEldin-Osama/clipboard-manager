@@ -127,8 +127,14 @@ pub fn download(max_body: Duration) -> ureq::Agent {
 pub enum ServerError {
     /// No answer: the server isn't running, or the address is wrong.
     Unreachable { url: String, reason: String },
-    /// 401 or 403: the server needs an API key, or the key is wrong.
-    NeedsKey { url: String, status: StatusCode },
+    /// 401 or 403: the server needs an API key, or the key is wrong, or the
+    /// key may not use this model; `said` is the server's own reason, when
+    /// it gave one.
+    NeedsKey {
+        url: String,
+        status: StatusCode,
+        said: Option<String>,
+    },
     /// 404: the server doesn't know the address or the model.
     NotFound { url: String, said: String },
     /// Another 4xx: the server refused the request, in its own words.
@@ -156,9 +162,14 @@ impl ServerError {
     /// answer, where servers put their own message.
     pub fn from_answer(url: &str, status: StatusCode, body: &str) -> Self {
         let url = url.to_string();
-        let said = server_words(body).unwrap_or_else(|| status.to_string());
+        let words = server_words(body);
+        let said = words.clone().unwrap_or_else(|| status.to_string());
         match status.as_u16() {
-            401 | 403 => Self::NeedsKey { url, status },
+            401 | 403 => Self::NeedsKey {
+                url,
+                status,
+                said: words,
+            },
             404 => Self::NotFound { url, said },
             400..=499 => Self::Refused { url, status, said },
             _ => Self::Failed { url, status, said },
@@ -187,7 +198,10 @@ impl ServerError {
                 let host = crate::app::bidi::left_to_right(host(url));
                 t!("error-server-unreachable", host = host)
             }
-            Self::NeedsKey { .. } => t!("error-server-needs-key"),
+            Self::NeedsKey { said: None, .. } => t!("error-server-needs-key"),
+            Self::NeedsKey {
+                said: Some(said), ..
+            } => t!("error-server-needs-key-said", said = said.as_str()),
             Self::NotFound { said, .. } => t!("error-server-not-found", said = said.as_str()),
             Self::Refused { said, .. } => t!("error-server-refused", said = said.as_str()),
             Self::Failed { status, said, .. } => t!(
@@ -209,10 +223,12 @@ impl fmt::Display for ServerError {
         let at = |url: &str| without_login(url).into_owned();
         match self {
             Self::Unreachable { url, reason } => write!(f, "cannot reach {}: {reason}", at(url)),
-            Self::NeedsKey { url, status } => write!(
+            Self::NeedsKey { url, status, said } => write!(
                 f,
-                "{} answered {status}: the server needs an API key, or the key is wrong",
-                at(url)
+                "{} answered {status}: the server needs an API key, or the key is wrong{}",
+                at(url),
+                said.as_ref()
+                    .map_or(String::new(), |said| format!(" ({said})"))
             ),
             Self::NotFound { url, said } => {
                 write!(f, "{} answered 404 Not Found: {said}", at(url))
@@ -384,10 +400,20 @@ mod tests {
         let error = anyhow::Error::new(ServerError::NeedsKey {
             url: "http://x/v1/models".into(),
             status: StatusCode::UNAUTHORIZED,
+            said: None,
         })
         .context("checking the server");
         assert_eq!(error_text(&error), t!("error-server-needs-key"));
         assert!(format!("{error:#}").contains("http://x/v1/models answered 401 Unauthorized"));
+        // A server that says why is quoted, as OpenRouter is when a key may
+        // not use a model.
+        let body = r#"{"error":{"message":"No allowed providers are available","code":403}}"#;
+        let refused = ServerError::from_answer("http://x/v1/chat", StatusCode::FORBIDDEN, body);
+        let said = "No allowed providers are available";
+        assert_eq!(
+            refused.text(),
+            t!("error-server-needs-key-said", said = said)
+        );
         // Any other error is shown as it is.
         let other = anyhow::anyhow!("disk full");
         assert_eq!(error_text(&other), "disk full");
