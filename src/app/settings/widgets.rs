@@ -2705,6 +2705,27 @@ mod tests {
         }
     }
 
+    /// "Dark panels" shows only while the theme in effect is dark.
+    #[test]
+    fn dark_panels_show_only_in_the_dark_theme() {
+        for (theme, shows) in [(egui::Theme::Light, false), (egui::Theme::Dark, true)] {
+            let ctx = window();
+            ctx.set_theme(theme);
+            let mut d = Config::default();
+            let draw = |ui: &mut Ui| super::super::appearance::appearance_page(ui, &mut d);
+            // The theme takes effect from the next frame.
+            frame(&ctx, egui::RawInput::default(), draw);
+            let output = frame(&ctx, egui::RawInput::default(), |ui| {
+                super::super::appearance::appearance_page(ui, &mut d)
+            });
+            let name = t!("settings-dark-panels");
+            let found = output.shapes.iter().any(|clipped| {
+                matches!(&clipped.shape, egui::Shape::Text(text) if text.galley.text() == name)
+            });
+            assert_eq!(found, shows, "{theme:?}");
+        }
+    }
+
     /// A row, a note, a row and a last note that warns, in a card: the
     /// notes keep the rows' room and inset, have no lines beside them, and
     /// their text follows their icon from the reading-start side.
