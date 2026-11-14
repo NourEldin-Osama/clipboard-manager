@@ -168,7 +168,7 @@ impl eframe::App for App {
     }
 
     fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
-        self.finish_delete();
+        self.finish_deletes();
         self.install_on_exit();
         crate::llama::stop_all();
     }
@@ -180,16 +180,13 @@ impl eframe::App for App {
         if self.hotkeys_paused && self.recording.is_none() {
             self.register_hotkeys(ctx);
         }
-        // The messages' time runs while a window shows them (D55). A delete
-        // becomes final when its message is gone, so its Undo waits while
-        // the window is hidden.
+        // The messages' time runs while a window shows them (D55), and so
+        // does a delete's time to undo, so its Undo waits while the window
+        // is hidden.
         let main_shown = !self.win.hidden.load(Ordering::SeqCst)
             && ctx.input(|i| i.viewport().minimized != Some(true));
         let shown = main_shown || self.win.popup.load(Ordering::SeqCst);
         self.tick_toasts(ctx, shown);
-        if self.pending_delete.is_some() && !self.toasts.iter().any(Toast::undoes) {
-            self.finish_delete();
-        }
         // A search server that stopped answering is asked again now and then,
         // also while hidden.
         if let Some(retry) = &mut self.search_retry {
