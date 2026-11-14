@@ -162,15 +162,37 @@ impl App {
         } else {
             t!("settings-data-off")
         };
+        let rows = [
+            (t!("settings-data-history"), (history, weak)),
+            (t!("settings-data-search"), search),
+            (t!("settings-data-reader"), reader),
+            (t!("settings-data-updates"), (updates, weak)),
+        ];
+        // The answers start on one line, as a column as wide as the longest,
+        // which ends on the card's far edge.
+        let column = rows
+            .iter()
+            .map(|(_, (value, color))| {
+                txt(value, size::BODY, Some(*color))
+                    .into_galley(
+                        ui,
+                        Some(egui::TextWrapMode::Extend),
+                        f32::INFINITY,
+                        egui::FontSelection::Default,
+                    )
+                    .size()
+                    .x
+            })
+            .fold(0.0, f32::max)
+            .ceil();
         section(ui, &t!("settings-data-goes"), |ui| {
-            for (label, (value, color)) in [
-                (t!("settings-data-history"), (history, weak)),
-                (t!("settings-data-search"), search),
-                (t!("settings-data-reader"), reader),
-                (t!("settings-data-updates"), (updates, weak)),
-            ] {
+            for (label, (value, color)) in rows {
                 plain_setting(ui, &label, "", "", |ui| {
-                    lbl(ui, &value, size::BODY, color);
+                    let size = Vec2::new(column, ui.spacing().interact_size.y);
+                    ui.allocate_ui_with_layout(size, row_layout(), |ui| {
+                        ui.set_min_width(column);
+                        lbl(ui, &value, size::BODY, color);
+                    });
                 });
             }
         });
