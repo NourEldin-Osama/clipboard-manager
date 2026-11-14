@@ -4,6 +4,103 @@ What changed in each version, for the people who use the app. Each release
 starts its notes with the section of the version it was built from, so add
 the notes here before a push that makes a release.
 
+## 0.8.0
+
+- Pause moved from the top bar to the far end of the status bar. While
+  recording is paused, it says Resume and the status bar turns amber.
+- The top bar has a Grid and List switch, and a Details pane button
+  that opens or closes the pane beside either one. Ctrl+L still steps
+  through Grid, List and Detail. The Add button says Add files.
+- Settings has a new look. Each page has a title and one card for each
+  section, with a row per setting. Notes have an icon, warnings are
+  amber, and a changed setting's reset button sits beside it.
+- Search by meaning can use a model server running on this PC in one
+  click: the app finds llama.cpp, Ollama, LM Studio, vLLM and Unsloth
+  itself, and offers them in AI & Search and the Get started checklist.
+- Grid cards can fit their content: Settings, Appearance, Card height.
+  All the same stays the default. Cards that fit their content stack in
+  columns, and the up and down keys move within a column.
+- A selected card is tinted as well as outlined. A copied color shows a
+  small swatch beside its value instead of filling the card. Code on
+  cards is a little larger, and an SQL statement shows as code.
+- A copy whose program can't be read, such as one made before 0.6, now
+  shows a proper name: Microsoft Word, not WINWORD.EXE, or Outlook, not
+  OUTLOOK.EXE. A program without an icon shows a plain program icon.
+- List rows name the program on their second line, with its small icon,
+  then one fact for some kinds (a picture's size, a color's other
+  notation, a file's folder) and the tags.
+- Cards, like rows, show an item from the past week by its day, now
+  written in full, such as Monday.
+- The details pane sits beside the grid or the list, about two fifths
+  of the window wide at first, so Detail view gives the list most of
+  the room. A short text shows larger there.
+- The details pane starts with its buttons in one row that stays while
+  you scroll: Paste or Copy, Pin, the item's own actions and Delete.
+  Under the content, one line says when and where it was copied.
+- The status bar shows the main keys: paste, when there is a program to
+  paste into, copy, and F1 for all shortcuts. It no longer counts your
+  items; the filters do.
+- The status bar says "Search by meaning is on", with the model's name
+  in its tip. With no search model yet, it says so in gray, not red.
+- A faint scroll handle stays in sight, and a thin line above the status
+  bar shows that the list goes on. Menus have a firmer shadow, and the
+  cards and rows under an open menu no longer light up.
+- While searching, the selection follows the best match as results come
+  in, until you pick another item. Found words are marked in amber, and
+  only strong matches show relevance bars.
+- Weaker matches wait behind one quiet link under the strong ones: Show
+  N weaker matches, then Hide N weaker matches. The down arrow from the
+  last strong match opens it too.
+- While the weaker matches are hidden, the filters and tags count only
+  the matches on screen, so their numbers add up.
+- The quick popup shows each item on one line, without day headers, so
+  all nine numbered items fit. Its hints fit one line: paste, quick
+  paste and all shortcuts.
+- In the quick popup, the selected row shows a long title on two lines,
+  a thin line sets the pinned items apart, and a fade shows that the
+  list goes on.
+- The right-click menu shows an icon for each action and always starts
+  with Paste. When there is no program to paste into, Paste is grayed
+  out, with a hint that says how to open the window over one.
+- Never record from this program, in the right-click menu, asks first,
+  with Never record and Cancel. The message after it offers Undo.
+- Ctrl+C is the new default key to copy the selected item; with text
+  selected in the search field, it copies that text. An update keeps
+  your key (Ctrl+Enter); Settings, Shortcuts and pasting can change it.
+- Alt+Enter opens the selected item's details. Shortcuts are drawn as
+  the same key caps in every place.
+- The settings column starts beside the page list and uses more of a
+  wide window. The short line under each setting says more, so about
+  half of the info buttons are gone.
+- Settings has eight pages. Search & AI is now AI & Search, and the new
+  Servers page lists your saved servers and those found on this PC,
+  with Add. A server's editor says Back to Servers.
+- AI & Search starts with the Use search by meaning switch. A chip
+  beside it says Ready, Off, Loading, Not set up or Not working, with a
+  gray line under the name that says what this means.
+- Meaning matches to show is now How close the meaning must be, with
+  Anything related, Close and Very close. The model in use sits under
+  Advanced, and Read text in images says Read by instead of Engine.
+- The model menus list every model your saved servers have, not only
+  the ones added in a server's editor. Picking one adds it to its
+  server and uses it.
+- Add a rule, in Settings, Privacy, offers the programs in your history.
+  General says the app starts hidden in the tray only when it will.
+- In Arabic, counts from 11 to 99, and two, take their right forms, also
+  in the pinned count. Arabic text is drawn a tenth larger, so it looks
+  as large as the Latin text beside it.
+- In Arabic, text, links, paths and tags written left to right line up
+  on the left, as in English.
+- In Arabic, program names, addresses and file paths keep their order
+  inside sentences, and shortcuts such as Ctrl+1 to 9, color values and
+  the facts in the details pane read in order.
+- In the dark theme, pictures in cards and rows rest at about 80% of
+  their brightness, and show in full under the pointer, when selected
+  and in the details pane.
+- In the dark theme, cards have a clear edge, as clear with Darker
+  panels as with Lighter, and gray text, tags and pins are easier to
+  read.
+
 ## 0.7.2
 
 - Updates show in one message at the bottom right of the window (bottom
