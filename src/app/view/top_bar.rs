@@ -506,10 +506,13 @@ fn layout_controls(
     .into_iter()
     .enumerate()
     {
+        // Each takes its half of the track, the track's rounded end
+        // included, so a lit one shows no gray around it.
         let at = Rect::from_min_size(
-            switch.min + Vec2::new(LAYOUT_PAD + i as f32 * LAYOUT_BUTTON, LAYOUT_PAD),
-            Vec2::splat(LAYOUT_BUTTON),
+            switch.min + Vec2::new(i as f32 * switch_w / 2.0, 0.0),
+            Vec2::new(switch_w / 2.0, height),
         );
+        let at = flip(switch, at);
         let button = LayoutButton {
             id: egui::Id::unique(("view", i)),
             // A part of a choice of one.
@@ -518,7 +521,8 @@ fn layout_controls(
             icon: view_icon(mode),
             lit: lit_view == mode,
         };
-        if button.show(ui, flip(switch, at)).clicked() && !button.lit {
+        let corners = part_corners(switch, at, radius::MEDIUM);
+        if button.show(ui, at, corners).clicked() && !button.lit {
             clicked = Some(click);
         }
     }
@@ -531,7 +535,10 @@ fn layout_controls(
         icon: Icon::Detail,
         lit: pane_lit,
     };
-    if button.show(ui, pane.shrink(LAYOUT_PAD)).clicked() {
+    if button
+        .show(ui, pane, CornerRadius::same(radius::MEDIUM))
+        .clicked()
+    {
         clicked = Some(LayoutClick::Pane);
     }
     clicked
@@ -549,17 +556,21 @@ struct LayoutButton {
 }
 
 impl LayoutButton {
-    /// Draws the button in `rect`: tinted while lit, lighter under the
-    /// pointer, its icon in the middle.
-    fn show(&self, ui: &Ui, rect: Rect) -> egui::Response {
+    /// Draws the button in `rect` with `round` corners: tinted while lit,
+    /// lighter under the pointer, its icon in the middle.
+    fn show(&self, ui: &Ui, rect: Rect, round: CornerRadius) -> egui::Response {
         let resp = ui.interact(rect, self.id, Sense::click());
         resp.widget_info(|| egui::WidgetInfo::selected(self.role, true, self.lit, &self.name));
         let v = ui.visuals();
-        let round = CornerRadius::same(radius::MEDIUM);
         if self.lit {
-            // Stronger on a dark track, so the lit button stands out.
+            // Stronger on a dark track, so the lit button stands out. Mixed
+            // with the track, so no gray shows through it, and with the
+            // accent's edge, as a chosen setting has.
             let tint = accent().gamma_multiply(if v.dark_mode { 0.34 } else { 0.18 });
-            ui.painter().rect_filled(rect, round, tint);
+            let face = v.widgets.inactive.weak_bg_fill.blend(tint);
+            let edge = Stroke::new(1.0, accent().gamma_multiply(0.55));
+            ui.painter()
+                .rect(rect, round, face, edge, egui::StrokeKind::Inside);
         } else if resp.hovered() {
             ui.painter()
                 .rect_filled(rect, round, v.widgets.hovered.weak_bg_fill);
