@@ -1,6 +1,6 @@
 [package]
 name = "clipboard-manager"
-version = "0.9.1"
+version = "0.10.0"
 edition = "2021"
 description = "Offline clipboard history that reads the text in images and searches by meaning with your own model servers."
 license = "MIT OR Apache-2.0"
