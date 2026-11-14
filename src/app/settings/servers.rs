@@ -151,6 +151,7 @@ fn found_server(d: &Config, found: &LocalServer) -> Server {
         api_key: String::new(),
         models,
         launch: None,
+        allows_data_collection: false,
     }
 }
 
@@ -1277,6 +1278,20 @@ impl App {
                     set_name(&field, &row_title(ui));
                 },
             );
+            if server.kind == ServerKind::OpenRouter {
+                // On unless the user lets providers that keep data answer.
+                let mut private = !server.allows_data_collection;
+                plain_setting(
+                    ui,
+                    &t!("settings-server-private"),
+                    &t!("settings-server-private-hint"),
+                    &t!("settings-server-private-help"),
+                    |ui| {
+                        toggle(ui, &mut private);
+                    },
+                );
+                server.allows_data_collection = !private;
+            }
             if server.kind == ServerKind::LlamaCpp {
                 launch_settings(ui, server);
             }
