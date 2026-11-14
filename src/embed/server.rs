@@ -209,6 +209,9 @@ pub struct ServerModels {
     /// The model the server embeds with when no model is named, found by a
     /// small test request. `Some("")` means it works but didn't say its name.
     pub default: Option<String>,
+    /// The names a server gives its models besides their ids, by id, such
+    /// as OpenRouter's "NVIDIA: Nemotron 3.5 Embed 8B (free)".
+    pub names: std::collections::HashMap<String, String>,
 }
 
 impl ServerModels {
@@ -241,6 +244,7 @@ pub fn list_models(base_url: &str, api_key: &str, embedding_list: bool) -> Resul
     };
     let url = format!("{base}/models");
     let mut listed: Vec<String> = Vec::new();
+    let mut names = std::collections::HashMap::new();
     let mut list_error: Option<ServerError> = None;
     match get(&url) {
         Ok(mut resp) => {
@@ -260,6 +264,7 @@ pub fn list_models(base_url: &str, api_key: &str, embedding_list: bool) -> Resul
                             {
                                 listed.push(id.to_string());
                             }
+                            note_name(&mut names, m);
                         }
                     }
                 }
@@ -295,6 +300,7 @@ pub fn list_models(base_url: &str, api_key: &str, embedding_list: bool) -> Resul
                     if let Some(id) = m["id"].as_str() {
                         embedding.push(id.to_string());
                     }
+                    note_name(&mut names, m);
                 }
             }
         }
@@ -330,7 +336,13 @@ pub fn list_models(base_url: &str, api_key: &str, embedding_list: bool) -> Resul
         listed,
         embedding,
         default,
+        names,
     })
+}
+
+/// Notes a listed model's name, when the server gives it one besides its id.
+fn note_name(names: &mut std::collections::HashMap<String, String>, model: &Value) {
+    names.extend(super::local::name_of(model));
 }
 
 /// What a test request to a search model found.

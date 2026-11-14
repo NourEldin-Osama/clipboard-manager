@@ -197,6 +197,59 @@ pub(super) fn info(ui: &mut Ui, text: &str, height: f32) {
 /// edges line up.
 pub(super) const MENU_WIDTH: f32 = 280.0;
 
+/// How tall the search field at the top of a menu is.
+const MENU_SEARCH_HEIGHT: f32 = 32.0;
+
+/// The search field at the top of a menu, `width` wide, the search icon at
+/// its start, as the window's own search looks: a thin edge, the accent's
+/// while it has the keyboard.
+pub(super) fn menu_search(
+    ui: &mut Ui,
+    text: &mut String,
+    id: egui::Id,
+    hint: &str,
+    width: f32,
+) -> egui::Response {
+    let dark = ui.visuals().dark_mode;
+    let edge = if ui.memory(|m| m.has_focus(id)) {
+        Stroke::new(1.5, accent())
+    } else {
+        Stroke::new(1.0, line_color(dark))
+    };
+    let side: i8 = 10;
+    Frame::new()
+        .fill(search_fill(dark))
+        .corner_radius(CornerRadius::same(radius::MEDIUM))
+        .stroke(edge)
+        .inner_margin(Margin::symmetric(side, 0))
+        .show(ui, |ui| {
+            // The edge counts in the frame's size, so the field is as wide
+            // with the accent's thicker one.
+            ui.set_width(width - 2.0 * (f32::from(side) + edge.width));
+            ui.set_height(MENU_SEARCH_HEIGHT);
+            ui.with_layout(row_layout(), |ui| {
+                let weak = ui.visuals().weak_text_color();
+                icons::glyph(ui, Icon::Search, 14.0, weak);
+                let field = egui::TextEdit::singleline(text)
+                    .id(id)
+                    .frame(Frame::NONE)
+                    .hint_text(txt(hint, size::BODY, Some(weak)))
+                    .font(FontId::proportional(size::BODY))
+                    .align(if i18n::rtl() {
+                        egui::Align2::RIGHT_CENTER
+                    } else {
+                        egui::Align2::LEFT_CENTER
+                    })
+                    .desired_width(ui.available_width());
+                let resp = ui.add(field);
+                set_name(&resp, hint);
+                resp
+            })
+            .inner
+        })
+        .inner
+}
+
 /// The reset button beside a changed setting.
 const RESET_BUTTON_SIZE: f32 = 28.0;
 

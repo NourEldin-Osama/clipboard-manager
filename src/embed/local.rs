@@ -2,6 +2,7 @@
 //! `GET /models` is asked, with nothing from the history, and the servers
 //! found by themselves are only ever looked for on 127.0.0.1.
 
+use std::collections::HashMap;
 use std::time::Duration;
 
 use serde_json::Value;
@@ -64,7 +65,7 @@ fn usual_address(kind: ServerKind, offset: u16) -> Option<String> {
 fn ask(kind: ServerKind, offset: u16) -> Option<LocalServer> {
     let base_url = usual_address(kind, offset)?;
     match models_at(&base_url, "", kind) {
-        Listed::Models(models) if !models.is_empty() => Some(LocalServer {
+        Listed::Models(models, _) if !models.is_empty() => Some(LocalServer {
             kind,
             base_url,
             models,
@@ -83,7 +84,9 @@ fn ask(kind: ServerKind, offset: u16) -> Option<LocalServer> {
 /// What a server answered when asked for its models.
 #[derive(Debug, PartialEq)]
 pub enum Listed {
-    Models(Vec<String>),
+    /// Their ids, and the names it gives some of them besides (see
+    /// `model_names`).
+    Models(Vec<String>, HashMap<String, String>),
     NeedsKey,
     /// Nothing answered, or not as a model server does.
     Nothing,
@@ -131,7 +134,7 @@ pub fn models_at(base_url: &str, api_key: &str, kind: ServerKind) -> Listed {
             Some((status, text)) if (200..300).contains(&status) => {
                 let models = model_ids(&text);
                 if !models.is_empty() {
-                    return Listed::Models(models);
+                    return Listed::Models(models, model_names(&text));
                 }
             }
             Some(_) => {}
@@ -163,9 +166,45 @@ pub fn model_ids(text: &str) -> Vec<String> {
     ids
 }
 
+/// The names a server's list of models gives besides their ids, by id, as
+/// OpenRouter's does: "NVIDIA: Nemotron 3.5 Embed 8B (free)" for
+/// `nvidia/nemotron-3.5-embed-8b:free`.
+pub fn model_names(text: &str) -> HashMap<String, String> {
+    let Ok(v) = serde_json::from_str::<Value>(text) else {
+        return HashMap::new();
+    };
+    ["data", "models"]
+        .iter()
+        .flat_map(|k| v[k].as_array().into_iter().flatten())
+        .filter_map(name_of)
+        .collect()
+}
+
+/// A listed model's id and the name the server gives it, when that is
+/// another name than its id.
+pub fn name_of(model: &Value) -> Option<(String, String)> {
+    let id = model["id"].as_str()?;
+    let name = model["name"].as_str()?.trim();
+    (!name.is_empty() && name != id).then(|| (id.to_string(), name.to_string()))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn openrouter_names_its_models() {
+        let list = r#"{"data":[
+            {"id":"nvidia/nemotron-3.5-embed-8b:free","name":"NVIDIA: Nemotron 3.5 Embed 8B (free)"},
+            {"id":"glm-ocr","name":"glm-ocr"},
+            {"id":"plain"}]}"#;
+        let names = model_names(list);
+        assert_eq!(names.len(), 1);
+        assert_eq!(
+            names["nvidia/nemotron-3.5-embed-8b:free"],
+            "NVIDIA: Nemotron 3.5 Embed 8B (free)"
+        );
+    }
 
     #[test]
     fn usual_addresses_move_by_the_offset() {

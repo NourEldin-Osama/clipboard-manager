@@ -110,9 +110,13 @@ impl LocalServers {
 #[derive(Default)]
 struct ServerLists {
     /// By the server's address and key.
-    found: HashMap<String, Vec<String>>,
-    pending: HashMap<String, Receiver<Vec<String>>>,
+    found: HashMap<String, ListedModels>,
+    pending: HashMap<String, Receiver<ListedModels>>,
 }
+
+/// The ids of the models a server lists, and the names it gives some of
+/// them besides, by id.
+type ListedModels = (Vec<String>, HashMap<String, String>);
 
 impl ServerLists {
     fn key(server: &crate::config::Server) -> String {
@@ -134,8 +138,8 @@ impl ServerLists {
                 .name("server-models".into())
                 .spawn(move || {
                     let models = match crate::embed::local::models_at(&url, &api_key, kind) {
-                        crate::embed::local::Listed::Models(models) => models,
-                        _ => Vec::new(),
+                        crate::embed::local::Listed::Models(ids, names) => (ids, names),
+                        _ => Default::default(),
                     };
                     let _ = tx.send(models);
                     wake.request_repaint();
@@ -151,7 +155,7 @@ impl ServerLists {
         for (key, rx) in &self.pending {
             match rx.try_recv() {
                 Ok(models) => done.push((key.clone(), models)),
-                Err(TryRecvError::Disconnected) => done.push((key.clone(), Vec::new())),
+                Err(TryRecvError::Disconnected) => done.push((key.clone(), Default::default())),
                 Err(TryRecvError::Empty) => {}
             }
         }
@@ -165,7 +169,12 @@ impl ServerLists {
     fn models(&self, server: &crate::config::Server) -> &[String] {
         self.found
             .get(&Self::key(server))
-            .map_or(&[], |models| models.as_slice())
+            .map_or(&[], |(ids, _)| ids.as_slice())
+    }
+
+    /// The names `server` gives the models it lists, by id.
+    fn names(&self, server: &crate::config::Server) -> Option<&HashMap<String, String>> {
+        self.found.get(&Self::key(server)).map(|(_, names)| names)
     }
 }
 
