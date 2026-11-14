@@ -391,6 +391,23 @@ pub(crate) fn flip_if(rtl: bool, within: Rect, r: Rect) -> Rect {
     }
 }
 
+/// The corners of `part`, a part of a `track` with corners `radius` that
+/// takes the track's whole height: the track's round corners on the sides
+/// where the part reaches the track's ends, square ones inside.
+pub(crate) fn part_corners(track: Rect, part: Rect, radius: u8) -> CornerRadius {
+    let round_if = |reaches: bool| if reaches { radius } else { 0 };
+    let (start, end) = (
+        round_if(part.left() <= track.left() + 0.5),
+        round_if(part.right() >= track.right() - 0.5),
+    );
+    CornerRadius {
+        nw: start,
+        sw: start,
+        ne: end,
+        se: end,
+    }
+}
+
 /// "Pin (Ctrl+P)", or just "Pin" when the shortcut is off.
 pub(super) fn hint(what: &str, keys: &str) -> String {
     if keys.trim().is_empty() {

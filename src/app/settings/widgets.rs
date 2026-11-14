@@ -54,56 +54,79 @@ pub(super) fn toggle(ui: &mut Ui, on: &mut bool) -> egui::Response {
     resp
 }
 
-/// Options side by side on a track; the chosen one stands out on it.
-/// Called inside a setting's control area, which fills from the far end,
-/// so options are added in reverse.
+/// How far a choice's text is from the sides of its part of the track, and
+/// from the track's top and bottom.
+const CHOICE_PADDING: Vec2 = Vec2::new(12.0, 7.0);
+
+/// Options side by side on a track in reading order, each in its own part
+/// of it. The chosen one fills its part, the track's rounded end included,
+/// with the accent's face and edge, so no gray shows around it. Every part
+/// keeps its size under the pointer, so nothing moves.
 pub(super) fn segmented<T: PartialEq + Copy, L: AsRef<str>>(
     ui: &mut Ui,
     value: &mut T,
     options: &[(T, L)],
 ) -> bool {
+    let dark = ui.visuals().dark_mode;
+    let (track, _) = choice_track(dark);
+    let parts: Vec<_> = options
+        .iter()
+        .map(|(option, label)| {
+            let chosen = *value == *option;
+            let color = if chosen {
+                text_shade(accent(), dark)
+            } else {
+                ui.visuals().text_color()
+            };
+            let words = txt(label.as_ref(), size::CONTROL, Some(color)).into_galley(
+                ui,
+                Some(egui::TextWrapMode::Extend),
+                f32::INFINITY,
+                egui::FontSelection::Default,
+            );
+            let width = words.size().x + 2.0 * CHOICE_PADDING.x;
+            (chosen, color, words, width)
+        })
+        .collect();
+    let tallest = parts.iter().map(|(.., words, _)| words.size().y);
+    let height = tallest.fold(0.0, f32::max) + 2.0 * CHOICE_PADDING.y;
+    let width = parts.iter().map(|(.., part_width)| part_width).sum();
+    let first_id = ui.next_auto_id();
+    let (whole, _) = ui.allocate_exact_size(Vec2::new(width, height), Sense::hover());
+    ui.painter()
+        .rect_filled(whole, CornerRadius::same(radius::MEDIUM), track);
     let mut changed = false;
-    let (track, _) = choice_track(ui.visuals().dark_mode);
-    Frame::new()
-        .fill(track)
-        .corner_radius(CornerRadius::same(radius::MEDIUM))
-        .inner_margin(Margin::same(2))
-        .show(ui, |ui| {
-            ui.spacing_mut().item_spacing.x = 2.0;
-            for (v, label) in options.iter().rev() {
-                let sel = *value == *v;
-                let text = txt(
-                    label.as_ref(),
-                    size::CONTROL,
-                    Some(if sel {
-                        text_shade(accent(), ui.visuals().dark_mode)
-                    } else {
-                        ui.visuals().text_color()
-                    }),
-                );
-                // The chosen one has the accent's edge as well as its text, so
-                // it stands out from the track at a glance.
-                let edge = if sel {
-                    Stroke::new(1.0, accent().gamma_multiply(0.55))
-                } else {
-                    Stroke::NONE
-                };
-                let fill = if sel {
-                    chosen_face(accent(), ui.visuals().dark_mode)
-                } else {
-                    Color32::TRANSPARENT
-                };
-                let b = egui::Button::new(text)
-                    .frame_when_inactive(sel)
-                    .corner_radius(CornerRadius::same(radius::SMALL))
-                    .fill(fill)
-                    .stroke(edge);
-                if ui.add(b).clicked() && !sel {
-                    *value = *v;
-                    changed = true;
-                }
-            }
+    let mut x = whole.left();
+    for (i, ((option, label), (chosen, color, words, part_width))) in
+        options.iter().zip(parts).enumerate()
+    {
+        // Laid out from the left, then mirrored for Arabic.
+        let part = Rect::from_min_size(Pos2::new(x, whole.top()), Vec2::new(part_width, height));
+        let part = flip(whole, part);
+        x += part_width;
+        let resp = ui.interact(part, first_id.with(("choice", i)), Sense::click());
+        resp.widget_info(|| {
+            egui::WidgetInfo::selected(egui::Role::Button, ui.is_enabled(), chosen, label.as_ref())
         });
+        let corners = part_corners(whole, part, radius::MEDIUM);
+        let v = ui.visuals();
+        let p = ui.painter();
+        if chosen {
+            let edge = Stroke::new(1.0, accent().gamma_multiply(0.55));
+            let face = chosen_face(accent(), dark);
+            p.rect(part, corners, face, edge, egui::StrokeKind::Inside);
+        } else if resp.hovered() || resp.has_focus() {
+            p.rect_filled(part, corners, v.widgets.hovered.weak_bg_fill);
+        }
+        p.galley(part.center() - words.size() / 2.0, words, color);
+        if let Some(cursor) = v.interact_cursor.filter(|_| resp.hovered()) {
+            ui.ctx().set_cursor_icon(cursor);
+        }
+        if resp.clicked() && !chosen {
+            *value = *option;
+            changed = true;
+        }
+    }
     changed
 }
 
@@ -2621,6 +2644,65 @@ mod tests {
         let below = card.bottom() - 1.0 - note[0].bottom();
         assert!(near(above, ROW_VERTICAL_PADDING), "{above} above");
         assert!(near(below, ROW_VERTICAL_PADDING), "{below} below");
+    }
+
+    /// The options of a choice of "24-hour" and "12-hour", as a screen
+    /// reader finds them, with the pointer at `pointer`.
+    fn choice_parts(ctx: &egui::Context, pointer: Option<Pos2>) -> Vec<(String, Rect)> {
+        let mut value = 1;
+        let mut input = egui::RawInput::default();
+        input.events.extend(pointer.map(egui::Event::PointerMoved));
+        let output = frame(ctx, input, |ui| {
+            segmented(ui, &mut value, &[(0, "24-hour"), (1, "12-hour")]);
+        });
+        let (_, places) = spoken(output);
+        let mut parts: Vec<_> = places
+            .into_iter()
+            .filter(|(name, _)| name.ends_with("-hour"))
+            .collect();
+        parts.sort_by(|a, b| a.0.cmp(&b.0));
+        parts
+    }
+
+    /// A choice keeps its size with the pointer over any of its options,
+    /// so nothing beside it moves, and its options fill the track from end
+    /// to end, in reading order.
+    fn check_choice_keeps_its_size() {
+        let ctx = window();
+        let still = choice_parts(&ctx, None);
+        assert_eq!(still.len(), 2, "{still:?}");
+        for (name, part) in &still {
+            // The pointer counts from the frame after it moves.
+            choice_parts(&ctx, Some(part.center()));
+            let pointed = choice_parts(&ctx, Some(part.center()));
+            assert_eq!(pointed, still, "with the pointer on {name}");
+        }
+        // Sorted by name: "12-hour", then "24-hour", which comes first in
+        // reading order.
+        let (second, first) = (still[0].1, still[1].1);
+        if i18n::rtl() {
+            assert!(near(second.right(), first.left()), "{still:?}");
+        } else {
+            assert!(near(first.right(), second.left()), "{still:?}");
+        }
+    }
+
+    #[test]
+    fn a_choice_keeps_its_size_under_the_pointer() {
+        check_choice_keeps_its_size();
+    }
+
+    #[test]
+    fn a_choice_keeps_its_size_under_the_pointer_right_to_left() {
+        passes_in_arabic("a_choice_keeps_its_size_under_the_pointer_in_arabic");
+    }
+
+    #[test]
+    #[ignore = "run in a process of its own by a_choice_keeps_its_size_under_the_pointer_right_to_left"]
+    fn a_choice_keeps_its_size_under_the_pointer_in_arabic() {
+        if arabic_run() {
+            check_choice_keeps_its_size();
+        }
     }
 
     /// A row, a note, a row and a last note that warns, in a card: the
