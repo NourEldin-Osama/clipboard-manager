@@ -4,6 +4,35 @@ What changed in each version, for the people who use the app. Each release
 starts its notes with the section of the version it was built from, so add
 the notes here before a push that makes a release.
 
+## 0.10.0
+
+- Scrolling with a laptop's touchpad is smooth, as in a web browser: the
+  list follows the fingers, coasts on after a quick swipe, and no longer
+  jumps after a long scroll through a big history.
+- Switching between List and Grid keeps the item you were looking at in
+  its place.
+- A double-click on the edge between the details pane and the list gives
+  the pane its first width again.
+- The search-mode menu fits its text in every language, and the spinner
+  that shows while items are indexed turns smoothly.
+- Settings, Clipboard, Advanced has two switches, both off at first, for
+  when the app copies or pastes an item. Trim spaces around text leaves
+  out the spaces and blank lines before and after its text, and Remove
+  Markdown marks makes headings, bold, links and other marks plain text.
+  The history keeps every item as you copied it.
+- OpenRouter has a switch, Only providers that keep no data, on at
+  first. Free models need it off: only providers that may keep what they
+  get serve them.
+- When a server refuses a key or a model, the message says why in the
+  server's own words. A long error wraps in its row, and a button copies
+  it.
+- The model menus on AI & Search and in a server's settings have a
+  search field that finds a model by its name, its id or its server's
+  name. Models show the name their server gives them, such as
+  OpenRouter's, with their id under it. A model added from the list
+  takes that name, and Fill in details uses it when models.dev doesn't
+  list the model.
+
 ## 0.9.1
 
 - On Windows, the app turns start at sign-in on and off itself. It
