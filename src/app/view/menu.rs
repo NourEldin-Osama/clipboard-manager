@@ -113,7 +113,7 @@ fn menu_rows(ui: &mut Ui, groups: &[Vec<Entry>], focus_first: bool) -> Picked {
 /// why.
 fn entry_row(ui: &mut Ui, e: &Entry) -> egui::Response {
     let red = matches!(e.action, Action::Delete | Action::DeleteGroup).then_some(RED);
-    // Open in Photos shows the Photos app's own icon when Windows has it.
+    // Open in Photos shows the Photos app's own icon.
     #[cfg(windows)]
     let logo = matches!(e.action, Action::OpenInPhotos)
         .then(|| crate::app::photos::logo(ui.ctx()))
@@ -149,7 +149,7 @@ impl Action {
             Action::OpenLink => Icon::Browser,
             Action::ShowInFolder(_) => Icon::Folder,
             Action::ViewFullScreen => Icon::FullScreen,
-            // Shown when the Photos app's own icon isn't found.
+            // Shown only if the Photos app's icon can't be read.
             #[cfg(windows)]
             Action::OpenInPhotos => Icon::Image,
             Action::SaveImage => Icon::Save,

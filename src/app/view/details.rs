@@ -889,7 +889,7 @@ impl App {
     }
 
     /// Open in Photos among the pane's actions, with the Photos app's own
-    /// icon when Windows has it.
+    /// icon.
     #[cfg(windows)]
     fn photos_button(&mut self, ui: &mut Ui, it: &Item) {
         let tip = t!("details-open-in-photos");
