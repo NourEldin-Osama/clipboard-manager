@@ -835,6 +835,9 @@ pub struct App {
     /// The heights of cards as tall as their content, measured once for
     /// each layout of the grid.
     card_heights: view::CardHeights,
+    /// Touchpad scrolling between frames: when it last came, and a step
+    /// that may be a swipe's late coasting.
+    touchpad: view::Touchpad,
     win: WindowCtl,
     /// Marks this as the running copy; another start shows this window.
     instance: crate::single_instance::Guard,
@@ -1055,6 +1058,7 @@ impl App {
             grid_cols: 1,
             grid_places: Vec::new(),
             card_heights: view::CardHeights::default(),
+            touchpad: view::Touchpad::default(),
             update: UpdateState::Idle,
             update_rx: None,
             update_hidden: false,

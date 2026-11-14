@@ -48,6 +48,7 @@ use widgets::*;
 pub(crate) use details::reveal;
 pub(crate) use grid::{CardHeights, CARD_CHIP_PADDING, CHIP_SIDE, GRID_GAP};
 pub(crate) use items::looks_like_code;
+pub(crate) use keyboard::Touchpad;
 pub(crate) use messages::{Question, UpdateParts};
 pub(crate) use theme::{
     accent, accent_name, add_fonts, apply_theme, button_fill, card_frame, choice_track,
@@ -161,8 +162,14 @@ impl eframe::App for App {
         let line_points = ctx.options(|o| o.input_options.line_scroll_speed);
         // The keys held as the frame starts; this frame's changes are events.
         let modifiers = ctx.input(|i| i.modifiers);
-        let events = std::mem::take(&mut raw_input.events);
-        raw_input.events = repair_input(events, modifiers, line_points);
+        let events = repair_input(std::mem::take(&mut raw_input.events), modifiers);
+        let now = raw_input.time.unwrap_or_default();
+        let (events, moving) = self.touchpad.steps(events, now, line_points);
+        raw_input.events = events;
+        // The list moves on by itself while it coasts.
+        if moving {
+            ctx.request_repaint();
+        }
     }
 
     fn save(&mut self, storage: &mut dyn eframe::Storage) {
