@@ -204,48 +204,12 @@ impl App {
         let mut close = false;
         let mut apply_keys = false;
 
-        let panel = ui.visuals().panel_fill;
-        egui::Panel::top("settings_top")
-            .show_separator_line(false)
-            .frame(
-                Frame::new()
-                    .inner_margin(Margin {
-                        left: 12,
-                        right: 16,
-                        top: 12,
-                        bottom: 8,
-                    })
-                    .fill(panel),
-            )
-            .show(ui, |ui| {
-                row(ui, |ui| {
-                    if icons::icon_button_ex(
-                        ui,
-                        Icon::Back,
-                        &t!("settings-back"),
-                        Vec2::splat(34.0),
-                        22.0,
-                        None,
-                        None,
-                    )
-                    .clicked()
-                    {
-                        close = true;
-                    }
-                    ui.add_space(space::SMALL);
-                    let strong = ui.visuals().strong_text_color();
-                    title_lbl(ui, &t!("settings-title"), size::TITLE, strong);
-                    // A server's settings wait for its Save.
-                    if self.server_editor.is_none() {
-                        far(ui, |ui| {
-                            let weak = ui.visuals().weak_text_color();
-                            lbl(ui, &t!("settings-saved-automatically"), size::SMALL, weak);
-                            icons::glyph(ui, Icon::Check, 13.0, weak);
-                        });
-                    }
-                });
-            });
+        // A server's settings wait for its Save.
+        if top_bar(ui, self.server_editor.is_none()) {
+            close = true;
+        }
 
+        let panel = ui.visuals().panel_fill;
         page_list_panel(panel).show(ui, |ui| {
             for page in SettingsPage::ALL {
                 let (icon, name) = page.label();
@@ -351,6 +315,76 @@ impl App {
     }
 }
 
+/// The bar over the page list and the page: the back button, the title and,
+/// with `saved_note`, the note that changes are saved. True when the back
+/// button was clicked.
+fn top_bar(ui: &mut Ui, saved_note: bool) -> bool {
+    let mut back = false;
+    egui::Panel::top("settings_top")
+        .show_separator_line(false)
+        .frame(
+            Frame::new()
+                .inner_margin(Margin {
+                    left: 12,
+                    right: 16,
+                    top: 12,
+                    bottom: 8,
+                })
+                .fill(ui.visuals().panel_fill),
+        )
+        .show(ui, |ui| {
+            // The bar ends where the page's column does, so the note at its
+            // far end stays beside the cards it is about.
+            let mut bar = ui.max_rect();
+            if let Some(column) = ui
+                .ctx()
+                .data(|d| d.get_temp::<egui::Rangef>(column_span_id()))
+            {
+                if i18n::rtl() {
+                    bar.min.x = bar.min.x.max(column.min);
+                } else {
+                    bar.max.x = bar.max.x.min(column.max);
+                }
+            }
+            ui.scope_builder(egui::UiBuilder::new().max_rect(bar), |ui| {
+                row(ui, |ui| {
+                    back = icons::icon_button_ex(
+                        ui,
+                        Icon::Back,
+                        &t!("settings-back"),
+                        Vec2::splat(34.0),
+                        22.0,
+                        None,
+                        None,
+                    )
+                    .clicked();
+                    ui.add_space(space::SMALL);
+                    let strong = ui.visuals().strong_text_color();
+                    title_lbl(ui, &t!("settings-title"), size::TITLE, strong);
+                    if saved_note {
+                        far(ui, |ui| {
+                            let weak = ui.visuals().weak_text_color();
+                            lbl(ui, &t!("settings-saved-automatically"), size::SMALL, weak);
+                            icons::glyph(ui, Icon::Check, 13.0, weak);
+                        });
+                    }
+                });
+            });
+        });
+    back
+}
+
+/// Where the page's column is across the window, kept for the top bar,
+/// which is drawn before it.
+fn column_span_id() -> egui::Id {
+    egui::Id::unique("settings-column-span")
+}
+
+/// Where the page's column starts, kept for its first section.
+fn column_top_id() -> egui::Id {
+    egui::Id::unique("settings-column-top")
+}
+
 /// The page list's panel, on the reading-start side.
 fn page_list_panel(fill: Color32) -> egui::Panel {
     let panel = if i18n::rtl() {
@@ -408,6 +442,13 @@ fn page_column(ui: &mut Ui, page: SettingsPage, add: impl FnOnce(&mut Ui)) {
                             Vec2::new(width, area.height()),
                         ),
                     );
+                    let span = column.x_range();
+                    let ctx = ui.ctx().clone();
+                    if ctx.data(|d| d.get_temp::<egui::Rangef>(column_span_id())) != Some(span) {
+                        ctx.data_mut(|d| d.insert_temp(column_span_id(), span));
+                        ctx.request_discard("the settings' top bar follows the page's column");
+                    }
+                    ctx.data_mut(|d| d.insert_temp(column_top_id(), column.top()));
                     ui.scope_builder(egui::UiBuilder::new().max_rect(column), |ui| {
                         // The pages set their own gaps between titles and cards.
                         ui.spacing_mut().item_spacing.y = 0.0;
@@ -474,6 +515,72 @@ mod tests {
     #[test]
     fn the_column_starts_beside_the_page_list() {
         check_column_beside_page_list();
+    }
+
+    /// Where the text `text` is in `shapes`.
+    fn text_rect(shapes: &[egui::epaint::ClippedShape], text: &str) -> Option<Rect> {
+        shapes.iter().find_map(|clipped| match &clipped.shape {
+            egui::Shape::Text(shape) if shape.galley.text() == text => {
+                Some(shape.galley.rect.translate(shape.pos.to_vec2()))
+            }
+            _ => None,
+        })
+    }
+
+    /// The top bar, the page list and the General page in a window `width`
+    /// wide with the app's fonts and look: what they paint, where the page
+    /// list's rows are and where the column is.
+    fn settings_frame(width: f32) -> (Vec<egui::epaint::ClippedShape>, Rect, Rect) {
+        let ctx = egui::Context::default();
+        super::super::view::add_fonts(&ctx);
+        super::super::view::style(&ctx, DarkPanels::Lighter);
+        let (mut rows, mut column) = (Rect::NOTHING, Rect::NOTHING);
+        let mut shapes = Vec::new();
+        let mut d = Config::default();
+        // The fonts apply from the next frame, and the top bar follows the
+        // column from the frame after it is first drawn.
+        for _ in 0..3 {
+            let input = egui::RawInput {
+                screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(width, 800.0))),
+                ..Default::default()
+            };
+            let mut output = ctx.run_ui(input, |ui| {
+                top_bar(ui, true);
+                let fill = ui.visuals().panel_fill;
+                page_list_panel(fill).show(ui, |ui| rows = ui.max_rect());
+                page_column(ui, SettingsPage::General, |ui| {
+                    column = ui.max_rect();
+                    general::general_settings(ui, &mut d);
+                });
+            });
+            output.textures_delta.clear();
+            shapes = output.shapes;
+        }
+        (shapes, rows, column)
+    }
+
+    #[test]
+    fn the_saved_note_ends_with_the_column() {
+        for width in [1280.0, 1536.0, 1920.0] {
+            let (shapes, _, column) = settings_frame(width);
+            let note = text_rect(&shapes, &t!("settings-saved-automatically")).expect("the note");
+            assert!(
+                (note.right() - column.right()).abs() < 0.5,
+                "{width}: {note:?}, column {column:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn the_first_title_is_level_with_the_first_page() {
+        let (shapes, rows, _) = settings_frame(1536.0);
+        let title = text_rect(&shapes, &t!("settings-language-and-time")).expect("the title");
+        // The first page's row is 36 points tall at the top of the rows.
+        let first_page = rows.top() + 18.0;
+        assert!(
+            (title.center().y - first_page).abs() <= 1.5,
+            "{title:?} beside {first_page}"
+        );
     }
 
     #[test]
