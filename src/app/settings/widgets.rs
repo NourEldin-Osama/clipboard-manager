@@ -255,7 +255,11 @@ fn set_card_state(ui: &Ui, state: Option<CardState>) {
 /// settings' gray lines, on the card's reading-start edge, and its
 /// settings in one card under it.
 pub(super) fn section<R>(ui: &mut Ui, title: &str, add: impl FnOnce(&mut Ui) -> R) -> R {
-    ui.add_space(space::HUGE);
+    // The first part of a page has its title level with the first page's
+    // name in the page list; the others keep a wide gap from the card above.
+    let page_top = ui.ctx().data(|d| d.get_temp::<f32>(super::column_top_id()));
+    let first = page_top.is_some_and(|top| ui.cursor().top() <= top + 0.5);
+    ui.add_space(if first { space::SMALL } else { space::HUGE });
     let strong = ui.visuals().strong_text_color();
     ui.scope(|ui| {
         ui.spacing_mut().item_spacing.y = 0.0;
@@ -902,8 +906,10 @@ const NOTE_ICON: f32 = 14.0;
 /// rows around it and not as a row, a field or a button.
 fn callout(ui: &mut Ui, icon: Icon, text: &str, warns: bool) {
     let state = card_state(ui);
-    // A row before it has its room below.
+    // A row before it has its room below, unless its tint fills that room:
+    // then the note keeps as much room above as it has below.
     let above = match state.and_then(|s| s.last) {
+        Some(Part::Row) if state.is_some_and(|s| s.tint.is_some()) => ROW_VERTICAL_PADDING,
         Some(Part::Row) => 0.0,
         Some(Part::Note) => space::SMALL,
         None => ROW_VERTICAL_PADDING,
@@ -2580,6 +2586,41 @@ mod tests {
         if arabic_run() {
             check_advanced_row();
         }
+    }
+
+    /// A note under a changed row keeps as much room above it, from the
+    /// row's tint, as below it, to the card's edge.
+    #[test]
+    fn a_note_under_a_tint_has_even_room() {
+        let shapes = painted(|ui| {
+            card(ui, |ui| {
+                card_row(ui, true, |ui| lbl(ui, "Tray", size::BODY, Color32::GRAY));
+                note(ui, "A note.");
+            });
+        });
+        let filled = |fill: Color32| -> Vec<Rect> {
+            shapes
+                .iter()
+                .filter_map(|shape| match shape {
+                    egui::Shape::Rect(rect) if rect.fill == fill => Some(rect.rect),
+                    _ => None,
+                })
+                .collect()
+        };
+        let (note, tint) = (
+            filled(note_fill(false)),
+            filled(accent().gamma_multiply(0.07)),
+        );
+        assert_eq!((note.len(), tint.len()), (1, 1), "one note, one tint");
+        let card = filled(Color32::WHITE)
+            .into_iter()
+            .find(|rect| rect.width() > note[0].width())
+            .expect("a card");
+        let above = note[0].top() - tint[0].bottom();
+        // The card's edge is inside its rectangle.
+        let below = card.bottom() - 1.0 - note[0].bottom();
+        assert!(near(above, ROW_VERTICAL_PADDING), "{above} above");
+        assert!(near(below, ROW_VERTICAL_PADDING), "{below} below");
     }
 
     /// A row, a note, a row and a last note that warns, in a card: the
