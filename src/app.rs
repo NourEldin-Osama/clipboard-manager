@@ -586,6 +586,24 @@ const GLIDE_TIME: f32 = 0.2;
 const UNDO_KEYS: &str = "Ctrl+Z";
 /// How long a message that names a key stays.
 const KEY_HINT_FOR: Duration = Duration::from_secs(4);
+/// The text the app copies or pastes for `it`, when the Advanced settings
+/// change it: without its Markdown marks (text items), without the spaces
+/// and blank lines around it (text and links). None when it stays as it is,
+/// or would be empty. The history keeps the item as it is.
+fn copied_text(cfg: &Config, it: &Item) -> Option<String> {
+    let mut text = std::borrow::Cow::Borrowed(&*it.text);
+    if cfg.remove_copied_markdown && it.kind == Kind::Text {
+        text = std::borrow::Cow::Owned(crate::markdown::plain(&text));
+    }
+    if cfg.trim_copied_text && matches!(it.kind, Kind::Text | Kind::Link) {
+        let trimmed = text.trim();
+        if trimmed.len() < text.len() {
+            text = std::borrow::Cow::Owned(trimmed.to_string());
+        }
+    }
+    (!text.is_empty() && *text != *it.text).then(|| text.into_owned())
+}
+
 /// What Copy together puts on the clipboard: the texts, links and file
 /// paths of `items`, one after another; with how many there are and how
 /// many pictures are left out.
@@ -2679,13 +2697,20 @@ impl App {
     /// Puts the item on the clipboard in the background; `finish` reports it
     /// and pastes it.
     fn copy(&mut self, id: u64, paste: Paste) {
-        let Some(item) = self.library.get(id).cloned() else {
+        let Some(mut item) = self.library.get(id).cloned() else {
             return;
         };
+        // Cleaned as the user asked; its formatted versions would bring the
+        // old text back, so then it goes as plain text.
+        let cleaned = copied_text(&self.cfg, &item);
+        let plain = cleaned.is_some();
+        if let Some(text) = cleaned {
+            item.text = text.into();
+        }
         let flags = self.flags.clone();
         let store = self.library.store().clone();
         self.background.run(move || {
-            let formats = if item.formatted && paste != Paste::Plain {
+            let formats = if item.formatted && paste != Paste::Plain && !plain {
                 store.formats(id).unwrap_or_else(|e| {
                     log::warn!("reading the formatting failed: {e:#}");
                     None
@@ -2948,8 +2973,19 @@ impl App {
     /// together, one after another in list order, and maybe pastes them.
     /// Pictures are left out.
     fn copy_together(&mut self, ids: &[u64], paste: Paste) {
-        let items = ids.iter().filter_map(|&id| self.library.get(id));
-        let (count, text, pictures) = texts_together(items);
+        // Each cleaned as the user asked.
+        let items: Vec<Item> = ids
+            .iter()
+            .filter_map(|&id| self.library.get(id))
+            .map(|it| {
+                let mut it = it.clone();
+                if let Some(text) = copied_text(&self.cfg, &it) {
+                    it.text = text.into();
+                }
+                it
+            })
+            .collect();
+        let (count, text, pictures) = texts_together(items.iter());
         if count == 0 {
             self.toast(t!("toast-pictures-not-together"));
             return;
@@ -3325,6 +3361,36 @@ mod tests {
             self.0.remove(key);
         }
         fn flush(&mut self) {}
+    }
+
+    #[test]
+    fn copied_text_is_cleaned_as_the_settings_say() {
+        let item = |kind: Kind, text: &str| Item::new(1, kind, Origin::Clipboard, text.into());
+        let text = item(Kind::Text, "  **Note:** see [docs](https://x.com)\n\n");
+        let link = item(Kind::Link, " https://example.com/a_b \n");
+        let mut cfg = Config::default();
+        assert_eq!(copied_text(&cfg, &text), None, "both are off at first");
+        cfg.trim_copied_text = true;
+        let trimmed = copied_text(&cfg, &text);
+        assert_eq!(
+            trimmed.as_deref(),
+            Some("**Note:** see [docs](https://x.com)")
+        );
+        assert_eq!(
+            copied_text(&cfg, &link).as_deref(),
+            Some("https://example.com/a_b")
+        );
+        cfg.remove_copied_markdown = true;
+        assert_eq!(copied_text(&cfg, &text).as_deref(), Some("Note: see docs"));
+        // A link keeps its marks; text that would be empty goes as it is.
+        assert_eq!(
+            copied_text(&cfg, &link).as_deref(),
+            Some("https://example.com/a_b")
+        );
+        assert_eq!(copied_text(&cfg, &item(Kind::Text, "   ")), None);
+        cfg.trim_copied_text = false;
+        let marks_only = copied_text(&cfg, &text);
+        assert_eq!(marks_only.as_deref(), Some("  Note: see docs\n\n"));
     }
 
     #[test]

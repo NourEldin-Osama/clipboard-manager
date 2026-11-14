@@ -100,6 +100,28 @@ impl App {
             );
             self.clear_history_setting(ui);
         });
+        // How the app copies and pastes items; the history keeps them as
+        // they came.
+        section(ui, &t!("settings-advanced"), |ui| {
+            setting_for(
+                ui,
+                &t!("settings-trim-copied"),
+                &t!("settings-trim-copied-hint"),
+                "",
+                &mut d.trim_copied_text,
+                def.trim_copied_text,
+                toggle,
+            );
+            setting_for(
+                ui,
+                &t!("settings-remove-markdown"),
+                &t!("settings-remove-markdown-hint"),
+                &t!("settings-remove-markdown-help"),
+                &mut d.remove_copied_markdown,
+                def.remove_copied_markdown,
+                toggle,
+            );
+        });
     }
 
     fn clear_history_setting(&mut self, ui: &mut Ui) {

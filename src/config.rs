@@ -607,6 +607,12 @@ pub struct Config {
     /// Items older than this many days are deleted; 0 is off.
     pub delete_after_days: u32,
     pub dedupe: bool,
+    /// When the app copies or pastes an item, the spaces and blank lines
+    /// around its text are left out; the history keeps the text whole.
+    pub trim_copied_text: bool,
+    /// When the app copies or pastes a text item, its Markdown marks are
+    /// left out (see `markdown::plain`); the history keeps the text whole.
+    pub remove_copied_markdown: bool,
     /// What reads the text in images.
     pub read_engine: ReadEngine,
     /// The server model that reads text; kept while another reader is
@@ -692,6 +698,8 @@ impl Default for Config {
             history_warned: false,
             delete_after_days: 0,
             dedupe: true,
+            trim_copied_text: false,
+            remove_copied_markdown: false,
             read_engine: ReadEngine::default(),
             read_model: None,
             search_mode: SearchMode::Hybrid,
