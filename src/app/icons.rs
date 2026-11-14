@@ -58,6 +58,7 @@ pub(super) enum Icon {
     Server,
     /// A program that has no icon of its own.
     AppGeneric,
+    FullScreen,
     /// A plain filled circle (status light), not an icon.
     Dot,
 }
@@ -158,11 +159,12 @@ fn source(icon: Icon) -> Option<(&'static str, &'static [u8])> {
         Icon::Language => svg!("language"),
         Icon::Server => svg!("server"),
         Icon::AppGeneric => svg!("app_generic"),
+        Icon::FullScreen => svg!("full_screen"),
         Icon::Dot => return None,
     })
 }
 
-const ALL: [Icon; 43] = [
+const ALL: [Icon; 44] = [
     Icon::Refresh,
     Icon::Eye,
     Icon::EyeOff,
@@ -205,6 +207,7 @@ const ALL: [Icon; 43] = [
     Icon::Language,
     Icon::Server,
     Icon::AppGeneric,
+    Icon::FullScreen,
     Icon::Dot,
 ];
 
@@ -666,6 +669,20 @@ pub(super) fn menu_item(ui: &mut Ui, icon: Icon, text: &str) -> egui::Response {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Each icon draws something, all of it white, so tinting gives it the
+    /// tint's colour.
+    #[test]
+    fn every_icon_draws_in_white() {
+        for (uri, bytes) in ALL.into_iter().filter_map(source) {
+            let image = egui_extras::image::load_svg_bytes(bytes, &Default::default())
+                .unwrap_or_else(|e| panic!("{uri}: {e}"));
+            let drawn: Vec<&Color32> = image.pixels.iter().filter(|p| p.a() > 0).collect();
+            assert!(!drawn.is_empty(), "{uri} draws nothing");
+            let white = drawn.iter().all(|p| p.r() == p.g() && p.g() == p.b());
+            assert!(white, "{uri} is not white");
+        }
+    }
 
     #[test]
     fn every_logo_draws_and_only_those_in_colour_keep_colours() {
