@@ -689,7 +689,7 @@ dependencies = [
 
 [[package]]
 name = "clipboard-manager"
-version = "0.9.0"
+version = "0.9.1"
 dependencies = [
  "anyhow",
  "arboard",
