@@ -211,6 +211,12 @@ const TEXT_GAP: f32 = space::HUGE;
 /// count: it takes its room from the text, so it never moves the control.
 const TEXT_LEAST_WIDTH: f32 = 260.0;
 
+/// How wide a control can be and still sit beside its setting's text, in a
+/// row `width` wide.
+pub(super) fn widest_beside(width: f32) -> f32 {
+    (width - TEXT_GAP - TEXT_LEAST_WIDTH).max(0.0)
+}
+
 /// The room between a setting's text and its control under it.
 const STACKED_GAP: f32 = space::SMALL;
 

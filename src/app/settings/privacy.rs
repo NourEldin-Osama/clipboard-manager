@@ -168,9 +168,10 @@ impl App {
             (t!("settings-data-reader"), reader),
             (t!("settings-data-updates"), (updates, weak)),
         ];
-        // The answers start on one line, as a column as wide as the longest,
-        // which ends on the card's far edge.
-        let column = rows
+        // The answers start on one line, as close to the names as a row lets
+        // a control be: a column that ends on the card's far edge, at least
+        // as wide as the longest answer.
+        let longest = rows
             .iter()
             .map(|(_, (value, color))| {
                 txt(value, size::BODY, Some(*color))
@@ -188,6 +189,9 @@ impl App {
         section(ui, &t!("settings-data-goes"), |ui| {
             for (label, (value, color)) in rows {
                 plain_setting(ui, &label, "", "", |ui| {
+                    // A point short of the most, so a rounding never puts
+                    // the answer under its name.
+                    let column = (widest_beside(ui.available_width()) - 1.0).max(longest);
                     let size = Vec2::new(column, ui.spacing().interact_size.y);
                     ui.allocate_ui_with_layout(size, row_layout(), |ui| {
                         ui.set_min_width(column);
