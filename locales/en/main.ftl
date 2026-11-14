@@ -674,6 +674,7 @@ settings-server-show-key = Show key
 settings-server-private = Only providers that keep no data
 settings-server-private-hint = OpenRouter sends your items only to providers that don't keep them or train on them
 settings-server-private-help = Free models are served only by providers that may keep or train on what they get, so they need this off. Those providers may then keep the text and pictures you copy.
+settings-copy-error = Copy the message
 settings-server-optional = optional
 settings-server-models = Models the server lists
 settings-server-default = Server default

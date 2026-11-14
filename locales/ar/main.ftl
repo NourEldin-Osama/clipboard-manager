@@ -744,6 +744,7 @@ settings-server-show-key = إظهار المفتاح
 settings-server-private = مزوّدون لا يحتفظون بالبيانات فقط
 settings-server-private-hint = يرسل OpenRouter عناصرك فقط إلى مزوّدين لا يحتفظون بها ولا يدرّبون عليها
 settings-server-private-help = لا يقدّم النماذج المجانية إلا مزوّدون قد يحتفظون بما يصلهم أو يدرّبون عليه، لذا تحتاج إلى إيقاف هذا الخيار. وعندها قد يحتفظ هؤلاء المزوّدون بالنصوص والصور التي تنسخها.
+settings-copy-error = نسخ الرسالة
 settings-server-optional = اختياري
 settings-server-models = النماذج التي يعرضها الخادم
 settings-server-default = الافتراضي للخادم

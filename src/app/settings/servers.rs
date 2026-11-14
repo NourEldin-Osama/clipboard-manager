@@ -553,12 +553,20 @@ fn send_question_row(
     })
 }
 
-/// A test's result, in a row under the model's.
-fn test_line(ui: &mut Ui, test: &Test) {
+/// A test's result, in a row under the model's. True when the user asked
+/// to copy the error it failed with.
+fn test_line(ui: &mut Ui, test: &Test) -> bool {
     let Some(result) = &test.result else {
-        return;
+        return false;
     };
-    card_row(ui, false, |ui| test_result(ui, result));
+    card_row(ui, false, |ui| match result {
+        // All of it, in the card's width, and to copy.
+        Err(e) => error_note(ui, e),
+        Ok(_) => {
+            test_result(ui, result);
+            false
+        }
+    })
 }
 
 fn test_result(ui: &mut Ui, result: &Result<Tested, String>) {
@@ -1093,6 +1101,8 @@ impl App {
         let mut close = false;
         let mut save = false;
         let mut delete = false;
+        // An error the user asked to copy.
+        let mut copy: Option<String> = None;
 
         let strong = ui.visuals().strong_text_color();
         let weak = ui.visuals().weak_text_color();
@@ -1197,15 +1207,22 @@ impl App {
                     || found.pending.is_some()
                     || found.error.is_some()
                     || !found.url.is_empty();
-                if said {
+                let error = found
+                    .error
+                    .as_ref()
+                    .filter(|_| !launching && found.pending.is_none());
+                if let Some(e) = error {
+                    // All of it, in the card's width, and to copy.
+                    if error_note(ui, e) {
+                        copy = Some(e.clone());
+                    }
+                } else if said {
                     super::view::row_wrapped(ui, |ui| {
                         if launching {
                             lbl(ui, &t!("settings-server-launch-note"), size::SMALL, weak);
                         } else if found.pending.is_some() {
                             super::view::slow_spinner(ui, 12.0, None);
                             lbl(ui, &t!("settings-server-checking"), size::SMALL, weak);
-                        } else if let Some(e) = &found.error {
-                            icons::chip(ui, Icon::Warning, e, RED);
                         } else if !found.url.is_empty() {
                             let count = found
                                 .found
@@ -1380,7 +1397,9 @@ impl App {
                             );
                         }
                         if let Some(t) = editor.tests.get(&id) {
-                            test_line(ui, t);
+                            if test_line(ui, t) {
+                                copy = t.result.as_ref().and_then(|r| r.as_ref().err()).cloned();
+                            }
                         }
                     });
                 });
@@ -1558,6 +1577,9 @@ impl App {
             });
         });
 
+        if let Some(text) = copy {
+            self.run(Command::CopyText(text));
+        }
         if delete {
             let id = editor.server.id;
             d.servers.retain(|s| s.id != id);
