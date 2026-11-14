@@ -895,7 +895,24 @@ impl App {
         };
         let total = bottom(&places).max(strong_h + link_h);
 
-        let mut sa = egui::ScrollArea::vertical().auto_shrink([false, false]);
+        // A scroll place of its own: the list's rows are shorter than cards.
+        let mut sa = egui::ScrollArea::vertical()
+            .id_salt("grid")
+            .auto_shrink([false, false]);
+        let placing = self.placing_anchor();
+        let card_places = || {
+            self.results
+                .iter()
+                .zip(&places)
+                .map(|(hit, place)| (hit.id, place.top(), place.bottom()))
+        };
+        if placing {
+            let anchor = self.view_anchor;
+            let view = ui.available_height();
+            if let Some(offset) = anchored_offset(anchor, card_places(), view, total) {
+                sa = sa.vertical_scroll_offset(offset);
+            }
+        }
         let (off, view_h) = self.list_view;
         // Until the grid has been drawn once, its height is unknown: the
         // scroll waits for that frame.
@@ -1075,6 +1092,8 @@ impl App {
             }
         });
         self.list_view = (out.state.clamped_offset().y, out.inner_rect.height());
+        let (offset, view) = self.list_view;
+        self.view_anchor = anchor_among(card_places(), self.selected, offset, view);
         self.apply_actions(actions);
         self.after_rows(open_menu, false);
         self.item_menu(ui, false);

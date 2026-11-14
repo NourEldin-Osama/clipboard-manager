@@ -156,8 +156,9 @@ impl ServerReader {
         if !self.cfg.model.trim().is_empty() {
             body["model"] = json!(self.cfg.model.trim());
         }
-        // Only OpenRouter's providers that don't collect user data may answer.
-        if self.cfg.server_kind == ServerKind::OpenRouter {
+        // Only OpenRouter's providers that don't collect user data may
+        // answer, unless the user let the others answer too.
+        if self.cfg.server_kind == ServerKind::OpenRouter && !self.cfg.allows_data_collection {
             body["provider"] = json!({ "data_collection": "deny" });
         }
         let url = format!(
@@ -426,6 +427,16 @@ mod tests {
             request.recv().unwrap()["provider"]["data_collection"],
             "deny"
         );
+        // Unless the user lets every provider answer.
+        let (url, request) = serve_once("Clipboard Manager");
+        test_read(ReaderServer {
+            server_kind: ServerKind::OpenRouter,
+            base_url: url,
+            allows_data_collection: true,
+            ..Default::default()
+        })
+        .unwrap();
+        assert!(request.recv().unwrap().get("provider").is_none());
         // Other servers don't get it.
         let (url, request) = serve_once("Clipboard Manager");
         test_read(ReaderServer {

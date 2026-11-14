@@ -151,6 +151,7 @@ fn found_server(d: &Config, found: &LocalServer) -> Server {
         api_key: String::new(),
         models,
         launch: None,
+        allows_data_collection: false,
     }
 }
 
@@ -169,10 +170,12 @@ pub(in crate::app) fn use_found(d: &mut Config, found: &LocalServer, id: &str) {
 }
 
 /// Adds the model `id` a saved server lists to it, for searching or
-/// reading (D67), and says where it is.
-fn add_model(d: &mut Config, server: u32, id: &str, search: bool) -> Option<ModelRef> {
+/// reading (D67), named in menus with the server's `name` for it, and says
+/// where it is.
+fn add_model(d: &mut Config, server: u32, id: &str, name: &str, search: bool) -> Option<ModelRef> {
     let server = d.servers.iter_mut().find(|s| s.id == server)?;
-    let model = found_model(server.next_model_id(), id, search);
+    let mut model = found_model(server.next_model_id(), id, search);
+    model.name = name.to_string();
     let at = ModelRef {
         server: server.id,
         model: model.id,
@@ -351,12 +354,364 @@ fn kind_tile(
     resp
 }
 
-/// The model's name on the server: typed, or picked from what it lists.
+/// The words of a search, in lower case, as they are looked for.
+fn search_words(search: &str) -> Vec<String> {
+    search.split_whitespace().map(str::to_lowercase).collect()
+}
+
+/// Whether each of the searched `words` is in one of `texts`.
+fn matches(words: &[String], texts: &[&str]) -> bool {
+    let texts: Vec<String> = texts.iter().map(|text| text.to_lowercase()).collect();
+    words
+        .iter()
+        .all(|word| texts.iter().any(|text| text.contains(word.as_str())))
+}
+
+/// The listed models with each of the searched `words` in their id or in
+/// the server's name for them.
+fn models_matching<'a>(
+    listed: &'a [String],
+    names: &'a HashMap<String, String>,
+    words: &'a [String],
+) -> impl Iterator<Item = &'a String> + 'a {
+    listed.iter().filter(move |id| {
+        let name = names.get(*id).map_or("", String::as_str);
+        matches(words, &[id, name])
+    })
+}
+
+/// How tall a list of models gets before it scrolls: less in a short
+/// window, so its menu fits in it.
+fn model_list_height(ctx: &egui::Context) -> f32 {
+    (ctx.content_rect().height() * 0.45).clamp(160.0, 320.0)
+}
+
+/// How wide a list of models is at least, for a model's name and its id
+/// under it.
+const MODEL_LIST_WIDTH: f32 = 380.0;
+
+/// How tall a model's row is with its id under its name, and with one line.
+const MODEL_ROW_TWO_LINES: f32 = 46.0;
+const MODEL_ROW_ONE_LINE: f32 = 32.0;
+
+/// Where a model's name and id start from the row's edge, as a search
+/// mode's do in the window's menu.
+const MODEL_TEXT_START: f32 = 14.0;
+
+/// The room a chosen model's name leaves at the row's end for the tick.
+const MODEL_TICK_ROOM: f32 = 34.0;
+
+/// One line of `text` in `font`, cut with "…" to fit `width`, the searched
+/// `words` marked as in the history's list; and whether it was cut.
+fn model_line(
+    ui: &Ui,
+    text: &str,
+    words: &[String],
+    font: FontId,
+    color: Color32,
+    width: f32,
+) -> (Arc<egui::Galley>, bool) {
+    let whole = ui.fonts_mut(|f| f.layout_no_wrap(text.to_string(), font.clone(), color));
+    let cut = whole.size().x > width;
+    let hit = search_hit(ui.visuals().dark_mode);
+    let lines = super::bidi::lines(ui, text, words, font, color, hit, width, 1, None);
+    match lines.into_iter().next() {
+        Some((galley, _)) => (galley, cut),
+        None => (whole, false),
+    }
+}
+
+/// One model in a list of models, `width` wide: its `name`, and under it in
+/// gray its `id` when that is another text; a `note` at the end of the
+/// name's line. The chosen one is tinted, edged and ticked as the search
+/// modes are in the window's menu, and the searched `words` are marked.
+fn model_option(
+    ui: &mut Ui,
+    width: f32,
+    name: &str,
+    id: Option<&str>,
+    note: Option<&str>,
+    chosen: bool,
+    words: &[String],
+) -> egui::Response {
+    let height = match id {
+        Some(_) => MODEL_ROW_TWO_LINES,
+        None => MODEL_ROW_ONE_LINE,
+    };
+    let (rect, resp) = ui.allocate_exact_size(Vec2::new(width, height), Sense::click());
+    let spoken: Vec<&str> = [Some(name), id, note].into_iter().flatten().collect();
+    resp.widget_info(|| {
+        egui::WidgetInfo::selected(egui::Role::RadioButton, true, chosen, spoken.join(", "))
+    });
+    if resp.gained_focus() {
+        // The arrow keys move through the list; the row they reach shows.
+        resp.scroll_to_me(None);
+    }
+    let v = ui.visuals();
+    let a = accent();
+    let corners = CornerRadius::same(radius::MEDIUM);
+    let p = ui.painter();
+    if chosen {
+        p.rect_filled(
+            rect,
+            corners,
+            a.gamma_multiply(if v.dark_mode { 0.16 } else { 0.10 }),
+        );
+        let bar = Rect::from_min_size(
+            rect.min + Vec2::new(0.0, 10.0),
+            Vec2::new(3.0, rect.height() - 20.0),
+        );
+        p.rect_filled(flip(rect, bar), CornerRadius::same(radius::SMALL), a);
+    }
+    if resp.hovered() || resp.has_focus() {
+        let fill = if chosen {
+            a.gamma_multiply(0.06)
+        } else {
+            v.widgets.hovered.weak_bg_fill
+        };
+        p.rect_filled(rect, corners, fill);
+    }
+    let title = if chosen {
+        text_shade(a, v.dark_mode)
+    } else {
+        v.strong_text_color()
+    };
+    let weak = v.weak_text_color();
+    // The name's line: its middle, level with the tick.
+    let name_middle = match id {
+        Some(_) => rect.top() + 16.0,
+        None => rect.center().y,
+    };
+    // From the row's end: the tick, then the note.
+    let mut end = rect.right()
+        - if chosen {
+            MODEL_TICK_ROOM
+        } else {
+            MODEL_TEXT_START
+        };
+    if chosen {
+        let tick = Rect::from_center_size(
+            Pos2::new(rect.right() - 18.0, name_middle),
+            Vec2::splat(14.0),
+        );
+        icons::paint(p, flip(rect, tick), Icon::Check, title);
+    }
+    if let Some(note) = note {
+        let galley = ui.fonts_mut(|f| {
+            f.layout_no_wrap(note.to_string(), FontId::proportional(size::SMALL), weak)
+        });
+        let place = Rect::from_min_size(
+            Pos2::new(end - galley.size().x, name_middle - galley.size().y / 2.0),
+            galley.size(),
+        );
+        end = place.left() - space::SMALL;
+        p.galley(flip(rect, place).min, galley, weak);
+    }
+    let start = rect.left() + MODEL_TEXT_START;
+    let font = FontId::proportional(size::BODY);
+    let (name_line, name_cut) = model_line(ui, name, words, font, title, end - start);
+    let place = Rect::from_min_size(
+        Pos2::new(start, name_middle - name_line.size().y / 2.0),
+        name_line.size(),
+    );
+    p.galley(flip(rect, place).min, name_line, title);
+    let mut cut = name_cut;
+    if let Some(id) = id {
+        let font = FontId::proportional(size::SMALL);
+        let width = rect.right() - MODEL_TEXT_START - start;
+        let (id_line, id_cut) = model_line(ui, id, words, font, weak, width);
+        let place = Rect::from_min_size(Pos2::new(start, rect.top() + 27.0), id_line.size());
+        p.galley(flip(rect, place).min, id_line, weak);
+        cut |= id_cut;
+    }
+    if let Some(cursor) = v.interact_cursor.filter(|_| resp.hovered()) {
+        ui.ctx().set_cursor_icon(cursor);
+    }
+    // A cut name or id shows whole under the pointer.
+    match (cut, id) {
+        (true, Some(id)) => tip(resp, &format!("{name}\n{id}")),
+        (true, None) => tip(resp, name),
+        (false, _) => resp,
+    }
+}
+
+/// One server's models that a search of the model menu finds: the server,
+/// its models for the job, the ones it lists that aren't added yet, and its
+/// names for the models it lists.
+type FoundModels<'a> = (
+    &'a Server,
+    Vec<&'a Model>,
+    Vec<&'a String>,
+    &'a HashMap<String, String>,
+);
+
+/// Each server's models for the job with each of the searched `words` in
+/// their name, their id, the server's name for them or the server's own
+/// name; `others` has, by server, the ones it lists that aren't added yet
+/// and its names for the models it lists. Servers with none are left out.
+fn models_found<'a>(
+    servers: &'a [Server],
+    others: &'a [(u32, Vec<String>, &'a HashMap<String, String>)],
+    search: bool,
+    words: &[String],
+) -> Vec<FoundModels<'a>> {
+    servers
+        .iter()
+        .filter_map(|server| {
+            let (_, more, names) = others.iter().find(|(id, ..)| *id == server.id)?;
+            let listed_name = |id: &str| names.get(id).map_or("", String::as_str);
+            let models: Vec<&Model> = server
+                .models
+                .iter()
+                .filter(|m| is_search(m) == search)
+                .filter(|m| {
+                    let label = model_label(m);
+                    let texts = [&label, &m.model, listed_name(&m.model), server.label()];
+                    matches(words, &texts)
+                })
+                .collect();
+            let more: Vec<&String> = more
+                .iter()
+                .filter(|id| matches(words, &[id, listed_name(id), server.label()]))
+                .collect();
+            (!models.is_empty() || !more.is_empty()).then_some((server, models, more, *names))
+        })
+        .collect()
+}
+
+/// A server's name above its models in the model menu, its logo first, the
+/// two lined up with the models' names.
+fn server_heading(ui: &mut Ui, width: f32, server: &Server) {
+    let (rect, resp) = ui.allocate_exact_size(Vec2::new(width, 26.0), Sense::hover());
+    resp.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Label, true, server.label()));
+    let weak = ui.visuals().weak_text_color();
+    let p = ui.painter();
+    let logo = Rect::from_min_size(
+        Pos2::new(rect.left() + MODEL_TEXT_START, rect.center().y - 7.0),
+        Vec2::splat(14.0),
+    );
+    icons::paint_logo(p, flip(rect, logo), server.kind, weak);
+    let at = Rect::from_min_size(
+        Pos2::new(logo.right() + space::SMALL, rect.center().y),
+        Vec2::ZERO,
+    );
+    paint_text(
+        ui,
+        p,
+        flip(rect, at).min,
+        start_anchor(egui::Align::Center),
+        &server.label().to_uppercase(),
+        FontId::proportional(size::SMALL),
+        weak,
+    );
+}
+
+/// What a list of models shows when no model has the words searched for.
+fn no_models_match(ui: &mut Ui, width: f32) {
+    let text = t!("settings-model-none-match");
+    let (rect, resp) = ui.allocate_exact_size(Vec2::new(width, 56.0), Sense::hover());
+    resp.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Label, true, &text));
+    paint_text(
+        ui,
+        ui.painter(),
+        rect.center(),
+        egui::Align2::CENTER_CENTER,
+        &text,
+        FontId::proportional(size::BODY),
+        ui.visuals().weak_text_color(),
+    );
+}
+
+/// The search at the top of a list of models, kept while the list is open
+/// and empty each time it opens, with the keyboard in it then; and its
+/// words.
+fn model_search(
+    ui: &mut Ui,
+    id: egui::Id,
+    opened: bool,
+    width: f32,
+) -> (egui::Response, Vec<String>) {
+    let mut search = match opened {
+        true => String::new(),
+        false => ui.data(|d| d.get_temp::<String>(id)).unwrap_or_default(),
+    };
+    let field = menu_search(
+        ui,
+        &mut search,
+        id.with("field"),
+        &t!("settings-model-search"),
+        width,
+    );
+    if opened {
+        field.request_focus();
+    }
+    let words = search_words(&search);
+    ui.data_mut(|d| d.insert_temp(id, search));
+    (field, words)
+}
+
+/// Whether Enter was pressed in the search field `field`: the first model
+/// found is then picked.
+fn enter_in(ui: &Ui, field: &egui::Response) -> bool {
+    field.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter))
+}
+
+/// Puts the model picked from the server's list in `model`, and the
+/// server's name for it in `menu_name`, unless that holds a name of the
+/// user's own: one other than the old model's id or the server's name for
+/// it.
+fn pick_model(
+    model: &mut String,
+    menu_name: Option<&mut String>,
+    names: &HashMap<String, String>,
+    picked: &str,
+) {
+    if let Some(menu_name) = menu_name {
+        let given = menu_name.trim();
+        let own = !given.is_empty()
+            && given != model.trim()
+            && names.get(model.as_str()).is_none_or(|name| name != given);
+        if !own {
+            *menu_name = names.get(picked).cloned().unwrap_or_default();
+        }
+    }
+    *model = picked.to_string();
+}
+
+/// A model the server lists as a row of a list of models: the server's name
+/// for it with its id under it, or its id alone when the server gives no
+/// name.
+fn listed_option(
+    ui: &mut Ui,
+    width: f32,
+    id: &str,
+    names: &HashMap<String, String>,
+    note: Option<&str>,
+    chosen: bool,
+    words: &[String],
+) -> egui::Response {
+    match names.get(id) {
+        Some(name) => model_option(ui, width, name, Some(id), note, chosen, words),
+        None => model_option(ui, width, id, None, note, chosen, words),
+    }
+}
+
+/// The model's name on the server: typed, or picked from what it lists,
+/// found with a search of the list's ids and names. A model picked from
+/// the list gives `menu_name` the server's name for it (see `pick_model`).
 /// The list's button takes its room from the field, so the two are as wide
 /// as the field alone and the control stays where it was when the list
 /// comes.
-fn model_field(ui: &mut Ui, model: &mut String, listed: &[String], default: Option<&str>) {
+fn model_field(
+    ui: &mut Ui,
+    model: &mut String,
+    menu_name: Option<&mut String>,
+    listed: &[String],
+    names: &HashMap<String, String>,
+    default: Option<&str>,
+) {
     let mut width = 280.0;
+    let mut picked = None;
     if !listed.is_empty() {
         let b = icons::icon_button_ex(
             ui,
@@ -368,25 +723,45 @@ fn model_field(ui: &mut Ui, model: &mut String, listed: &[String], default: Opti
             None,
         );
         width -= b.rect.width() + ui.spacing().item_spacing.x;
-        egui::Popup::menu(&b).show(|ui| {
-            ui.set_min_width(320.0);
-            // What is typed narrows the list, unless it is one of them.
-            let typed = model.trim().to_lowercase();
-            let exact = listed.contains(model);
-            egui::ScrollArea::vertical()
-                .max_height(320.0)
-                .show(ui, |ui| {
-                    let shown = listed
-                        .iter()
-                        .filter(|m| exact || m.to_lowercase().contains(&typed))
-                        .take(300);
-                    for m in shown {
-                        if ui.selectable_label(*m == *model, m.as_str()).clicked() {
-                            *model = m.clone();
+        let opened = b.clicked();
+        egui::Popup::menu(&b)
+            .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
+            .show(|ui| {
+                ui.set_width(MODEL_LIST_WIDTH);
+                ui.spacing_mut().item_spacing.y = 2.0;
+                let (field, words) =
+                    model_search(ui, b.id.with("search"), opened, MODEL_LIST_WIDTH);
+                ui.add_space(space::TINY);
+                let shown: Vec<&String> =
+                    models_matching(listed, names, &words).take(300).collect();
+                if enter_in(ui, &field) {
+                    picked = shown.first().map(|id| (*id).clone());
+                }
+                if shown.is_empty() {
+                    no_models_match(ui, MODEL_LIST_WIDTH);
+                }
+                egui::ScrollArea::vertical()
+                    .max_height(model_list_height(ui.ctx()))
+                    .show(ui, |ui| {
+                        let width = ui.available_width();
+                        for id in shown {
+                            let chosen = *id == *model;
+                            let row = listed_option(ui, width, id, names, None, chosen, &words);
+                            if opened && chosen {
+                                row.scroll_to_me(Some(egui::Align::Center));
+                            }
+                            if row.clicked() {
+                                picked = Some(id.clone());
+                            }
                         }
-                    }
-                });
-        });
+                    });
+                if picked.is_some() {
+                    ui.close();
+                }
+            });
+    }
+    if let Some(id) = picked {
+        pick_model(model, menu_name, names, &id);
     }
     let hint = match default {
         Some(name) if !name.is_empty() => t!(
@@ -477,7 +852,13 @@ fn start_fill(model: &mut Model, name: &str, kind: ServerKind, ctx: &egui::Conte
 }
 
 /// What models.dev said, put into the model: its name, if it has none yet.
-fn finish_fill(model: &mut Model, found: Result<Option<catalog::Entry>, String>) -> Vec<String> {
+/// For a model models.dev doesn't list, the name the server gives it
+/// (`listed_name`), if any.
+fn finish_fill(
+    model: &mut Model,
+    found: Result<Option<catalog::Entry>, String>,
+    listed_name: Option<&str>,
+) -> Vec<String> {
     let mut said = Vec::new();
     match found {
         Ok(Some(entry)) => {
@@ -502,7 +883,18 @@ fn finish_fill(model: &mut Model, found: Result<Option<catalog::Entry>, String>)
                 _ => {}
             }
         }
-        Ok(None) => said.push(t!("settings-model-fill-not-found")),
+        Ok(None) => match listed_name {
+            Some(name) => {
+                if model.name.trim().is_empty() {
+                    model.name = name.to_string();
+                }
+                said.push(t!(
+                    "settings-model-fill-server-name",
+                    name = super::bidi::isolate(name)
+                ));
+            }
+            None => said.push(t!("settings-model-fill-not-found")),
+        },
         Err(e) => said.push(e),
     }
     said
@@ -552,12 +944,20 @@ fn send_question_row(
     })
 }
 
-/// A test's result, in a row under the model's.
-fn test_line(ui: &mut Ui, test: &Test) {
+/// A test's result, in a row under the model's. True when the user asked
+/// to copy the error it failed with.
+fn test_line(ui: &mut Ui, test: &Test) -> bool {
     let Some(result) = &test.result else {
-        return;
+        return false;
     };
-    card_row(ui, false, |ui| test_result(ui, result));
+    card_row(ui, false, |ui| match result {
+        // All of it, in the card's width, and to copy.
+        Err(e) => error_note(ui, e),
+        Ok(_) => {
+            test_result(ui, result);
+            false
+        }
+    })
 }
 
 fn test_result(ui: &mut Ui, result: &Result<Tested, String>) {
@@ -917,7 +1317,9 @@ impl App {
                 catalog::is_reading_model(id)
             }
         };
-        let others: Vec<(u32, Vec<String>)> = d
+        // The servers' names for the models they list.
+        let no_names = HashMap::new();
+        let others: Vec<(u32, Vec<String>, &HashMap<String, String>)> = d
             .servers
             .iter()
             .map(|server| {
@@ -934,18 +1336,20 @@ impl App {
                     })
                     .cloned()
                     .collect();
-                (server.id, more)
+                let names = self.server_lists.names(server).unwrap_or(&no_names);
+                (server.id, more, names)
             })
             .collect();
         plain_setting(ui, &t!("settings-model"), &line, "", |ui| {
-            let weak = ui.visuals().weak_text_color();
             let strong = ui.visuals().strong_text_color();
             // The server's logo inside the menu, before the model's name.
             let shown = txt(&current, size::BODY, None);
             field_look(ui);
-            let menu =
-                egui::ComboBox::from_id_salt(if search { "search-model" } else { "read-model" })
-                    .icon(menu_arrow);
+            let salt = if search { "search-model" } else { "read-model" };
+            // The menu's own id, as the menu makes it from `salt`.
+            let menu_id = ui.make_persistent_id(egui::IdSalt::new(salt));
+            let opened = !egui::ComboBox::is_open(ui.ctx(), menu_id);
+            let menu = egui::ComboBox::from_id_salt(salt).icon(menu_arrow);
             let menu = match in_use {
                 Some(kind) => {
                     let logo = egui::Atom::paint(Vec2::splat(18.0), move |ui, args| {
@@ -955,58 +1359,100 @@ impl App {
                 }
                 None => menu.selected_text(shown),
             };
-            let menu = menu.width(MENU_WIDTH).show_ui(ui, |ui| {
-                for server in &d.servers {
-                    let models: Vec<&Model> = server
-                        .models
-                        .iter()
-                        .filter(|m| is_search(m) == search)
-                        .collect();
-                    let more = others
-                        .iter()
-                        .find(|(id, _)| *id == server.id)
-                        .map_or(&[][..], |(_, more)| more.as_slice());
-                    if models.is_empty() && more.is_empty() {
-                        continue;
-                    }
-                    row(ui, |ui| {
-                        icons::logo(ui, server.kind, 14.0, weak);
-                        lbl(ui, &server.label().to_uppercase(), size::SMALL, weak);
-                    });
-                    for m in models {
-                        let at = ModelRef {
-                            server: server.id,
-                            model: m.id,
-                        };
-                        let label = txt(&model_label(m), size::BODY, None);
-                        if ui.selectable_label(chosen == Some(at), label).clicked() {
-                            picked = Some(at);
+            let menu = menu
+                .width(MENU_WIDTH)
+                // The list scrolls under the search field, not the whole menu.
+                .height(f32::INFINITY)
+                .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
+                .show_ui(ui, |ui| {
+                    let width = ui.available_width().max(MODEL_LIST_WIDTH);
+                    ui.set_width(width);
+                    ui.spacing_mut().item_spacing.y = 2.0;
+                    let (field, words) = model_search(ui, menu_id.with("search"), opened, width);
+                    ui.add_space(space::TINY);
+                    let found = models_found(&d.servers, &others, search, &words);
+                    // Enter takes the first model found.
+                    if enter_in(ui, &field) {
+                        if let Some((server, models, more, _)) = found.first() {
+                            match models.first() {
+                                Some(m) => {
+                                    picked = Some(ModelRef {
+                                        server: server.id,
+                                        model: m.id,
+                                    })
+                                }
+                                None => added = more.first().map(|id| (server.id, id.to_string())),
+                            }
                         }
                     }
-                    // The ones it has that aren't added yet, marked so.
-                    for id in more {
-                        let note = (t!("settings-model-on-server-only"), weak);
-                        let label = pill_job(id, size::BODY, strong, Some(note));
-                        if ui.selectable_label(false, label).clicked() {
-                            added = Some((server.id, id.clone()));
-                        }
+                    if found.is_empty() {
+                        no_models_match(ui, width);
                     }
-                }
-                divider(ui);
-                if ui
-                    .selectable_label(
-                        false,
-                        txt(&t!("settings-model-add-server"), size::BODY, None),
-                    )
-                    .clicked()
-                {
-                    add = true;
-                }
-            });
+                    egui::ScrollArea::vertical()
+                        .max_height(model_list_height(ui.ctx()))
+                        .show(ui, |ui| {
+                            let width = ui.available_width();
+                            for (index, (server, models, more, names)) in found.iter().enumerate() {
+                                if index > 0 {
+                                    ui.add_space(space::SMALL);
+                                }
+                                server_heading(ui, width, server);
+                                for m in models {
+                                    let at = ModelRef {
+                                        server: server.id,
+                                        model: m.id,
+                                    };
+                                    let label = model_label(m);
+                                    let id = Some(m.model.trim())
+                                        .filter(|id| !id.is_empty() && *id != label);
+                                    let is_chosen = chosen == Some(at);
+                                    let row = model_option(
+                                        ui, width, &label, id, None, is_chosen, &words,
+                                    );
+                                    if opened && is_chosen {
+                                        row.scroll_to_me(Some(egui::Align::Center));
+                                    }
+                                    if row.clicked() {
+                                        picked = Some(at);
+                                    }
+                                }
+                                // The ones it lists that aren't added yet, marked so.
+                                let note = t!("settings-model-on-server-only");
+                                for id in more {
+                                    let row = listed_option(
+                                        ui,
+                                        width,
+                                        id,
+                                        names,
+                                        Some(&note),
+                                        false,
+                                        &words,
+                                    );
+                                    if row.clicked() {
+                                        added = Some((server.id, id.to_string()));
+                                    }
+                                }
+                            }
+                        });
+                    divider(ui);
+                    let text = t!("settings-model-add-server");
+                    let row = icons::menu_item(ui, Icon::Add, &text);
+                    row.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, &text));
+                    add = row.clicked();
+                    if picked.is_some() || added.is_some() || add {
+                        ui.close();
+                    }
+                });
             set_choice_name(&menu.response, &row_title(ui), &current);
         });
         if let Some((server, id)) = added {
-            picked = add_model(d, server, &id, search);
+            let name = others
+                .iter()
+                .find(|(listed_by, ..)| *listed_by == server)
+                .and_then(|(.., names)| names.get(&id))
+                .cloned()
+                .unwrap_or_default();
+            picked = add_model(d, server, &id, &name, search);
         }
         match picked {
             Some(at) if search => d.search_model = Some(at),
@@ -1092,6 +1538,8 @@ impl App {
         let mut close = false;
         let mut save = false;
         let mut delete = false;
+        // An error the user asked to copy.
+        let mut copy: Option<String> = None;
 
         let strong = ui.visuals().strong_text_color();
         let weak = ui.visuals().weak_text_color();
@@ -1196,15 +1644,22 @@ impl App {
                     || found.pending.is_some()
                     || found.error.is_some()
                     || !found.url.is_empty();
-                if said {
+                let error = found
+                    .error
+                    .as_ref()
+                    .filter(|_| !launching && found.pending.is_none());
+                if let Some(e) = error {
+                    // All of it, in the card's width, and to copy.
+                    if error_note(ui, e) {
+                        copy = Some(e.clone());
+                    }
+                } else if said {
                     super::view::row_wrapped(ui, |ui| {
                         if launching {
                             lbl(ui, &t!("settings-server-launch-note"), size::SMALL, weak);
                         } else if found.pending.is_some() {
                             super::view::slow_spinner(ui, 12.0, None);
                             lbl(ui, &t!("settings-server-checking"), size::SMALL, weak);
-                        } else if let Some(e) = &found.error {
-                            icons::chip(ui, Icon::Warning, e, RED);
                         } else if !found.url.is_empty() {
                             let count = found
                                 .found
@@ -1277,6 +1732,20 @@ impl App {
                     set_name(&field, &row_title(ui));
                 },
             );
+            if server.kind == ServerKind::OpenRouter {
+                // On unless the user lets providers that keep data answer.
+                let mut private = !server.allows_data_collection;
+                plain_setting(
+                    ui,
+                    &t!("settings-server-private"),
+                    &t!("settings-server-private-hint"),
+                    &t!("settings-server-private-help"),
+                    |ui| {
+                        toggle(ui, &mut private);
+                    },
+                );
+                server.allows_data_collection = !private;
+            }
             if server.kind == ServerKind::LlamaCpp {
                 launch_settings(ui, server);
             }
@@ -1358,14 +1827,16 @@ impl App {
                             model_settings(
                                 ui,
                                 model,
-                                listed,
+                                (listed, &found.names),
                                 default,
                                 editor.fills.get(&id),
                                 &mut fill,
                             );
                         }
                         if let Some(t) = editor.tests.get(&id) {
-                            test_line(ui, t);
+                            if test_line(ui, t) {
+                                copy = t.result.as_ref().and_then(|r| r.as_ref().err()).cloned();
+                            }
                         }
                     });
                 });
@@ -1432,12 +1903,19 @@ impl App {
                     t.result = Some(result);
                 }
             }
-            let ServerEditor { server, fills, .. } = &mut editor;
+            let ServerEditor {
+                server,
+                fills,
+                found,
+                ..
+            } = &mut editor;
             for (id, f) in fills.iter_mut() {
-                if let Some(found) = f.running.as_ref().and_then(|rx| rx.try_recv().ok()) {
+                if let Some(answer) = f.running.as_ref().and_then(|rx| rx.try_recv().ok()) {
                     f.running = None;
                     if let Some(model) = server.models.iter_mut().find(|m| m.id == *id) {
-                        f.said.extend(finish_fill(model, found));
+                        let listed_name = found.found.names.get(model.model.trim()).cloned();
+                        f.said
+                            .extend(finish_fill(model, answer, listed_name.as_deref()));
                     }
                 }
             }
@@ -1543,6 +2021,9 @@ impl App {
             });
         });
 
+        if let Some(text) = copy {
+            self.run(Command::CopyText(text));
+        }
         if delete {
             let id = editor.server.id;
             d.servers.retain(|s| s.id != id);
@@ -1619,7 +2100,7 @@ impl App {
 fn model_settings(
     ui: &mut Ui,
     model: &mut Model,
-    listed: &[String],
+    (listed, names): (&[String], &HashMap<String, String>),
     default_name: Option<&str>,
     fill: Option<&Fill>,
     fill_clicked: &mut Option<u32>,
@@ -1634,7 +2115,10 @@ fn model_settings(
         &t!("settings-model-on-the-server"),
         &t!("settings-model-on-the-server-hint"),
         &t!("settings-model-on-the-server-help"),
-        |ui| model_field(ui, &mut model.model, listed, default_name),
+        |ui| {
+            let name = Some(&mut model.name);
+            model_field(ui, &mut model.model, name, listed, names, default_name);
+        },
     );
     plain_setting(
         ui,
@@ -1983,12 +2467,133 @@ mod tests {
             ..Default::default()
         };
         let mut model = Model::default();
-        finish_fill(&mut model, Ok(Some(entry.clone())));
+        finish_fill(&mut model, Ok(Some(entry.clone())), None);
         assert_eq!(model.name, "Nomic Embed v1.5");
         model.name = "Mine".into();
-        finish_fill(&mut model, Ok(Some(entry)));
+        finish_fill(&mut model, Ok(Some(entry)), None);
         assert_eq!(model.name, "Mine");
-        assert_eq!(finish_fill(&mut model, Ok(None)).len(), 1);
+        assert_eq!(finish_fill(&mut model, Ok(None), None).len(), 1);
+        // A model models.dev doesn't list takes the server's name for it.
+        let mut model = Model::default();
+        let said = finish_fill(&mut model, Ok(None), Some("NVIDIA: Nemotron 3.5 Embed 8B"));
+        assert_eq!(model.name, "NVIDIA: Nemotron 3.5 Embed 8B");
+        assert_eq!(said.len(), 1);
+    }
+
+    /// The search finds a model by any words of its id or its name, and a
+    /// model picked from the list takes the server's name for it, but not
+    /// over a name of the user's own.
+    #[test]
+    fn the_model_list_is_searched_and_names_the_model_picked() {
+        let listed: Vec<String> = ["nvidia/nemotron-3.5-embed-8b:free", "cohere/embed-5-fast"]
+            .map(String::from)
+            .into();
+        let names = HashMap::from([(
+            "nvidia/nemotron-3.5-embed-8b:free".to_string(),
+            "NVIDIA: Nemotron 3.5 Embed 8B (free)".to_string(),
+        )]);
+        let found = |search: &str| models_matching(&listed, &names, &search_words(search)).count();
+        assert_eq!(found(""), 2);
+        assert_eq!(found("cohere"), 1);
+        assert_eq!(found("nemotron FREE"), 1);
+        assert_eq!(found("NVIDIA: Nemotron"), 1);
+        assert_eq!(found("mistral"), 0);
+        let (mut model, mut name) = ("cohere/embed-5-fast".to_string(), String::new());
+        pick_model(&mut model, Some(&mut name), &names, &listed[0]);
+        assert_eq!(
+            (model.as_str(), name.as_str()),
+            (listed[0].as_str(), "NVIDIA: Nemotron 3.5 Embed 8B (free)")
+        );
+        // Back to a model without a name: the server's name for the other goes.
+        pick_model(&mut model, Some(&mut name), &names, &listed[1]);
+        assert_eq!(name, "");
+        name = "My search model".into();
+        pick_model(&mut model, Some(&mut name), &names, &listed[0]);
+        assert_eq!(name, "My search model");
+    }
+
+    /// The model menu's search finds a server's models by their name, their
+    /// id, the server's name for them or the server's own name, and leaves
+    /// out the servers it finds nothing on.
+    #[test]
+    fn the_model_menu_is_searched_by_model_and_server() {
+        let model = |model: &str, name: &str| Model {
+            id: 1,
+            model: model.into(),
+            name: name.into(),
+            job: ModelJob::Search(Default::default()),
+        };
+        let servers = [
+            Server {
+                id: 1,
+                kind: ServerKind::OpenRouter,
+                name: "OpenRouter".into(),
+                models: vec![model("nvidia/nemotron-3.5-embed-8b:free", "")],
+                ..Default::default()
+            },
+            Server {
+                id: 2,
+                kind: ServerKind::LlamaCpp,
+                name: "llama.cpp".into(),
+                models: vec![model("embeddinggemma-300m", "Gemma")],
+                ..Default::default()
+            },
+        ];
+        let names = HashMap::from([
+            (
+                "nvidia/nemotron-3.5-embed-8b:free".to_string(),
+                "NVIDIA: Nemotron 3.5 Embed 8B (free)".to_string(),
+            ),
+            (
+                "cohere/embed-5-fast".to_string(),
+                "Cohere: Embed 5 Fast".to_string(),
+            ),
+        ]);
+        let no_names = HashMap::new();
+        let others = [
+            (1, vec!["cohere/embed-5-fast".to_string()], &names),
+            (2, Vec::new(), &no_names),
+        ];
+        // By server: how many models it has and how many it lists besides.
+        let found = |search: &str| -> Vec<(u32, usize, usize)> {
+            models_found(&servers, &others, true, &search_words(search))
+                .iter()
+                .map(|(server, models, more, _)| (server.id, models.len(), more.len()))
+                .collect()
+        };
+        assert_eq!(found(""), [(1, 1, 1), (2, 1, 0)]);
+        assert_eq!(found("OPENROUTER"), [(1, 1, 1)]);
+        assert_eq!(found("nemotron free"), [(1, 1, 0)]);
+        assert_eq!(found("cohere fast"), [(1, 0, 1)]);
+        assert_eq!(found("gemma"), [(2, 1, 0)]);
+        assert_eq!(found("mistral"), Vec::<(u32, usize, usize)>::new());
+    }
+
+    /// A model's name too long for its row is cut to fit and says so; a
+    /// short one stays whole with the words searched for in it.
+    #[test]
+    fn a_long_model_name_is_cut_to_its_row() {
+        let ctx = egui::Context::default();
+        crate::app::view::add_fonts(&ctx);
+        crate::app::view::style(&ctx, DarkPanels::Lighter);
+        // The fonts take effect from the next frame; the font atlas uploads
+        // no renderer takes here are dropped.
+        ctx.run_ui(egui::RawInput::default(), |_| {})
+            .textures_delta
+            .clear();
+        let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+            let font = FontId::proportional(size::BODY);
+            let color = ui.visuals().text_color();
+            let long = "VoyageAI by MongoDB: voyage-multimodal-3.5, a long name for a row";
+            let (line, cut) = model_line(ui, long, &[], font.clone(), color, 200.0);
+            assert!(cut, "cut");
+            assert!(line.size().x <= 200.0, "{} wide", line.size().x);
+            let short = "Cohere: Embed 5 Fast";
+            let (line, cut) = model_line(ui, short, &search_words("embed"), font, color, 200.0);
+            assert!(!cut, "whole");
+            assert_eq!(line.text(), short);
+        });
+        output.textures_delta.clear();
     }
 
     /// In a card of the widest settings column, the seven types of server
@@ -2073,7 +2678,14 @@ mod tests {
                                 false,
                                 false,
                                 |ui| {
-                                    model_field(ui, &mut model, listed, None);
+                                    model_field(
+                                        ui,
+                                        &mut model,
+                                        None,
+                                        listed,
+                                        &HashMap::new(),
+                                        None,
+                                    );
                                     control = ui.min_rect();
                                 },
                             );

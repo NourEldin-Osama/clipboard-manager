@@ -3,45 +3,251 @@
 use super::*;
 use egui::text_edit::TextEditState;
 
-/// Splits one fractional wheel-line scroll into point steps that egui applies
-/// at once: it eases every line step and point steps of 8 or more over
-/// several frames. Windows reports touchpad scrolling as fractions of a line,
-/// so with that easing a fast swipe kept the list moving after the fingers
-/// stopped. A whole mouse-wheel notch (one line or more) keeps the easing.
-pub(super) fn touchpad_scroll(event: egui::Event, line_points: f32) -> Vec<egui::Event> {
-    match event {
-        egui::Event::MouseWheel {
-            unit: egui::MouseWheelUnit::Line,
-            delta,
-            phase,
-            source,
+/// A wheel step in lines, whether it is in fractions of a line, and the
+/// keys held. Windows reports a mouse wheel in whole notches (a line each)
+/// and a touchpad in fractions of one, also when a fast swipe adds up to
+/// several lines. Elsewhere only steps under a line count as fractions.
+fn wheel_step(event: &egui::Event) -> Option<(Vec2, bool, egui::Modifiers)> {
+    let egui::Event::MouseWheel {
+        unit: egui::MouseWheelUnit::Line,
+        delta,
+        modifiers,
+        ..
+    } = event
+    else {
+        return None;
+    };
+    // Windows' own unit: 120 to a notch.
+    let whole = |lines: f32| ((lines * 120.0).round() as i32) % 120 == 0;
+    let fraction = if cfg!(windows) {
+        !(whole(delta.x) && whole(delta.y))
+    } else {
+        delta.x.abs() < 1.0 && delta.y.abs() < 1.0
+    };
+    (*delta != Vec2::ZERO).then_some((*delta, fraction, *modifiers))
+}
+
+/// A movement of `points` as wheel steps that egui applies at once: it
+/// eases every line step and point steps of 8 or more over several frames.
+fn point_steps(points: Vec2, modifiers: egui::Modifiers) -> Vec<egui::Event> {
+    let steps = (points.length() / 7.0).ceil().max(1.0);
+    let step = points / steps;
+    (0..steps as usize)
+        .map(|_| egui::Event::MouseWheel {
+            unit: egui::MouseWheelUnit::Point,
+            delta: step,
+            phase: egui::TouchPhase::Move,
+            source: egui::MouseWheelSource::Unknown,
             modifiers,
-        } if delta != Vec2::ZERO && delta.x.abs() < 1.0 && delta.y.abs() < 1.0 => {
-            let points = delta * line_points;
-            let steps = (points.length() / 7.0).ceil().max(1.0);
-            let step = points / steps;
-            (0..steps as usize)
-                .map(|_| egui::Event::MouseWheel {
-                    unit: egui::MouseWheelUnit::Point,
-                    delta: step,
-                    phase,
-                    source,
-                    modifiers,
-                })
-                .collect()
+        })
+        .collect()
+}
+
+/// Fingers moving on a touchpad send a step every 8 to 17 ms, 40 ms apart
+/// at most as a swipe starts; Windows sends a swipe's coasting 50 to 70 ms
+/// apart.
+const FINGER_GAP: f64 = 0.045;
+
+/// A step this soon after the first of a run shows fingers moving: a
+/// swipe's second step comes 6 to 9 ms after its first.
+const FINGER_FOLLOW: f64 = 0.02;
+
+/// Otherwise this many steps in a row, each at most `FINGER_GAP` after the
+/// one before, show fingers moving.
+const FINGER_RUN: usize = 3;
+
+/// A run that starts with a step up to this many lines starts as soon as a
+/// second step comes (`FINGER_FOLLOW`). A bigger first step needs the whole
+/// run: a fast swipe's steps keep coming, while Windows' coasting held back
+/// as the window drew comes as one big step and at most a small one after.
+const QUICK_START_MOST: f32 = 15.0;
+
+/// A step in whole lines this soon after a touchpad's step is the
+/// touchpad's too: now and then a step adds up to whole lines.
+const TOUCHPAD_FOR: f64 = 1.0;
+
+/// How closely the list follows the fingers: it shows the part of their
+/// steps it hasn't shown yet in about this many seconds, so uneven steps
+/// make an even movement.
+const FOLLOW: f32 = 0.03;
+
+/// After the fingers lift the list coasts on, its speed falling 2.7 times
+/// every this many seconds; in all it goes its speed times this far.
+const COAST: f32 = 0.3;
+
+/// The fastest the list coasts, in points a second.
+const COAST_TOP_SPEED: f32 = 15_000.0;
+
+/// A list coasting faster than the top speed comes down to it over about
+/// this many seconds, rather than at once.
+const TOP_SPEED_EASE: f32 = 0.1;
+
+/// Fingers lifting slower than this, in points a second, leave the list
+/// where they left it: only a quick swipe coasts.
+const COAST_START_SPEED: f32 = 1_500.0;
+
+/// Below this speed, in points a second, the list stops.
+const STOP_SPEED: f32 = 40.0;
+
+/// The longest time a frame counts as, in seconds: the first frame after
+/// a rest moves as one frame, not by the whole rest.
+const LONGEST_FRAME: f32 = 0.02;
+
+/// Touchpad scrolling as egui gets it, smooth and coasting like a browser.
+///
+/// Windows' own coasting after a swipe comes only while the window is
+/// idle: while it draws, the coasting waits and then comes as one big step,
+/// often tens of lines, as the drawing stops. The list stopped where the
+/// fingers left it, then jumped on. So only fingers scroll: a touchpad step
+/// counts once it is part of a run of steps close together, and a run too
+/// short (a lone step, a big step with a small one after it) is Windows'
+/// coasting, left out. The list then coasts on its own from the speed the
+/// fingers left it at.
+#[derive(Default)]
+pub(crate) struct Touchpad {
+    /// When the last touchpad step came, in egui's time.
+    last: Option<f64>,
+    /// A run of steps, in points, not yet long enough to show fingers
+    /// moving, and when it began.
+    waiting: Vec<Vec2>,
+    waiting_since: f64,
+    /// The points the fingers moved that the list hasn't shown yet.
+    owed: Vec2,
+    /// How fast the list moved in the last frame, in points a second.
+    speed: Vec2,
+    /// Whether the list is coasting: it keeps its pace between the
+    /// fingers' steps and after they lift.
+    coasting: bool,
+    /// When the last frame was.
+    frame: Option<f64>,
+}
+
+impl Touchpad {
+    /// This frame's `events` at egui's time `now`, with the touchpad's
+    /// steps (`line_points` to a line) turned into the list's smooth
+    /// movement, and Windows' coasting left out; and whether the list
+    /// moves on in the next frame.
+    pub(crate) fn steps(
+        &mut self,
+        events: Vec<egui::Event>,
+        now: f64,
+        line_points: f32,
+    ) -> (Vec<egui::Event>, bool) {
+        let dt = self.frame.map_or(0.0, |frame| {
+            ((now - frame) as f32).clamp(0.0, LONGEST_FRAME)
+        });
+        self.frame = Some(now);
+        let close = |last: Option<f64>| last.is_some_and(|last| now - last <= FINGER_GAP);
+        // Nothing followed the waiting steps soon enough: they were coasting.
+        if !close(self.last) {
+            self.waiting.clear();
         }
-        other => vec![other],
+        let mut out = Vec::new();
+        let mut fingers = None;
+        for event in events {
+            if matches!(event, egui::Event::PointerButton { pressed: true, .. }) {
+                // A click stops the list.
+                (self.owed, self.speed, self.coasting) = (Vec2::ZERO, Vec2::ZERO, false);
+            }
+            let Some((step, fraction, keys)) = wheel_step(&event) else {
+                out.push(event);
+                continue;
+            };
+            let touchpad = fraction
+                || (cfg!(windows) && self.last.is_some_and(|last| now - last <= TOUCHPAD_FOR));
+            if !touchpad {
+                out.push(event);
+                continue;
+            }
+            if !cfg!(windows) || !keys.is_none() {
+                // Elsewhere, and with a key held (Ctrl for a pinch), at once.
+                out.extend(point_steps(step * line_points, keys));
+                continue;
+            }
+            let points = step * line_points;
+            let moving = close(self.last) && self.waiting.is_empty();
+            self.last = Some(now);
+            if moving {
+                *fingers.get_or_insert(Vec2::ZERO) += points;
+                continue;
+            }
+            if self.waiting.is_empty() {
+                self.waiting_since = now;
+            }
+            let quick = self.waiting.first().is_some_and(|first| {
+                first.length() <= QUICK_START_MOST * line_points
+                    && now - self.waiting_since <= FINGER_FOLLOW
+            });
+            self.waiting.push(points);
+            if quick || self.waiting.len() >= FINGER_RUN {
+                // Fingers: the run scrolls, but not a coasting step that
+                // went the other way.
+                for waiting in self.waiting.drain(..) {
+                    if waiting.dot(points) > 0.0 {
+                        *fingers.get_or_insert(Vec2::ZERO) += waiting;
+                    }
+                }
+            }
+        }
+        let lifted = !close(self.last);
+        let moved = self.motion(fingers, dt, lifted);
+        if moved != Vec2::ZERO {
+            out.extend(point_steps(moved, egui::Modifiers::NONE));
+        }
+        (out, self.speed != Vec2::ZERO || self.owed != Vec2::ZERO)
+    }
+
+    /// How far the list moves in a frame `dt` seconds after the last one,
+    /// with the fingers' new steps, if any; `lifted` once no step has come
+    /// for a while.
+    fn motion(&mut self, fingers: Option<Vec2>, dt: f32, lifted: bool) -> Vec2 {
+        let pace = self.speed * (-dt / COAST).exp();
+        if let Some(fingers) = fingers {
+            // Fingers the other way stop the list first.
+            if fingers.dot(self.speed) < 0.0 {
+                (self.owed, self.speed) = (Vec2::ZERO, Vec2::ZERO);
+            }
+            self.owed += fingers;
+            self.coasting = false;
+        } else if self.speed.length() >= COAST_START_SPEED {
+            self.coasting = true;
+        }
+        let catch_up = self.owed * (1.0 - (-dt / FOLLOW).exp());
+        // Between steps and after the fingers lift, a quick list keeps its
+        // pace, slowing down as it coasts; new steps lead it.
+        let keep_pace =
+            self.coasting && pace.length() * dt > catch_up.length() && pace.dot(self.owed) >= 0.0;
+        let moved = if keep_pace { pace * dt } else { catch_up };
+        // What it shows past the fingers' steps is coasting.
+        let left = self.owed - moved;
+        self.owed = if left.dot(self.owed) > 0.0 {
+            left
+        } else {
+            Vec2::ZERO
+        };
+        if dt > 0.0 {
+            self.speed = moved / dt;
+        }
+        // Only once the fingers lift: between a swipe's steps the list keeps
+        // up with them, however fast.
+        let over = self.speed.length() - COAST_TOP_SPEED;
+        if lifted && over > 0.0 {
+            let eased = COAST_TOP_SPEED + over * (-dt / TOP_SPEED_EASE).exp();
+            self.speed = self.speed.normalized() * eased;
+        }
+        if self.speed.length() < STOP_SPEED && self.owed.length() < 0.5 {
+            (self.owed, self.speed, self.coasting) = (Vec2::ZERO, Vec2::ZERO, false);
+        }
+        moved
     }
 }
 
-/// Fixes a frame's input before egui sees it: touchpad scrolling (see
-/// `touchpad_scroll`), Shift+Delete (see `shift_delete`) and Ctrl+C (see
-/// `ctrl_c`). `modifiers` are the keys held when the frame starts; changes
-/// arrive as events.
+/// Fixes a frame's keys before egui sees them: Shift+Delete (see
+/// `shift_delete`) and Ctrl+C (see `ctrl_c`). `modifiers` are the keys held
+/// when the frame starts; changes arrive as events.
 pub(super) fn repair_input(
     events: Vec<egui::Event>,
     mut modifiers: egui::Modifiers,
-    line_points: f32,
 ) -> Vec<egui::Event> {
     events
         .into_iter()
@@ -49,11 +255,7 @@ pub(super) fn repair_input(
             if let egui::Event::ModifiersChanged(held) = event {
                 modifiers = held;
             }
-            let events = ctrl_c(shift_delete(event, modifiers), modifiers);
-            events
-                .into_iter()
-                .flat_map(|event| touchpad_scroll(event, line_points))
-                .collect::<Vec<_>>()
+            ctrl_c(shift_delete(event, modifiers), modifiers)
         })
         .collect()
 }
@@ -432,23 +634,248 @@ mod tests {
         }
     }
 
-    #[test]
-    fn touchpad_lines_become_small_immediate_steps() {
-        // A fast swipe: 0.9 of a line, 36 points at 40 points per line.
-        let out = touchpad_scroll(
-            wheel(egui::MouseWheelUnit::Line, Vec2::new(0.0, -0.9)),
-            40.0,
-        );
-        let mut total = Vec2::ZERO;
-        for e in &out {
+    /// Points the events scroll by at 40 points to a line, checking that
+    /// a touchpad's come as steps egui applies at once.
+    fn scrolled(events: &[egui::Event]) -> f32 {
+        let mut total = 0.0;
+        for e in events {
             let egui::Event::MouseWheel { unit, delta, .. } = e else {
-                panic!("not a wheel event");
+                continue;
             };
-            assert_eq!(*unit, egui::MouseWheelUnit::Point);
-            assert!(delta.length() < 8.0, "egui would ease a step of {delta:?}");
-            total += *delta;
+            match unit {
+                egui::MouseWheelUnit::Point => {
+                    assert!(delta.length() < 8.0, "egui would ease a step of {delta:?}");
+                    total += delta.y;
+                }
+                _ => total += delta.y * 40.0,
+            }
         }
-        assert!((total.y + 36.0).abs() < 1e-3, "{total:?}");
+        total
+    }
+
+    /// One frame at `now` with a wheel step of `lines`, if any: the points
+    /// the list moves by.
+    fn frame(touchpad: &mut Touchpad, now: f64, lines: Option<f32>) -> f32 {
+        let events = lines
+            .map(|lines| wheel(egui::MouseWheelUnit::Line, Vec2::new(0.0, lines)))
+            .into_iter()
+            .collect();
+        scrolled(&touchpad.steps(events, now, 40.0).0)
+    }
+
+    /// Frames 1/60 s apart from `from` to `to`, and the recorded `steps`
+    /// at their own times: when each frame was and how far it moved the
+    /// list.
+    fn replay(
+        touchpad: &mut Touchpad,
+        from: f64,
+        to: f64,
+        steps: &[(f64, f32)],
+    ) -> Vec<(f64, f32)> {
+        let mut frames: Vec<(f64, Option<f32>)> =
+            steps.iter().map(|&(t, l)| (t, Some(l))).collect();
+        let mut t = from;
+        while t < to {
+            frames.push((t, None));
+            t += 1.0 / 60.0;
+        }
+        frames.sort_by(|a, b| a.0.total_cmp(&b.0));
+        frames
+            .into_iter()
+            .map(|(t, l)| (t, frame(touchpad, t, l)))
+            .collect()
+    }
+
+    fn total(frames: &[(f64, f32)]) -> f32 {
+        frames.iter().map(|(_, moved)| moved).sum()
+    }
+
+    /// A swipe of `steps` lines each, one per frame from `from`.
+    fn swipe(from: f64, steps: &[f32]) -> Vec<(f64, f32)> {
+        let frame = 1.0 / 60.0;
+        steps
+            .iter()
+            .enumerate()
+            .map(|(n, &lines)| (from + frame * n as f64 + 0.001, lines))
+            .collect()
+    }
+
+    #[test]
+    fn a_touchpad_moves_the_list_in_steps_egui_shows_at_once() {
+        // A slow swipe of 0.9 of a line: 36 points at 40 points per line,
+        // and the list stops with the fingers.
+        let frames = replay(&mut Touchpad::default(), 0.0, 1.0, &swipe(0.0, &[-0.3; 3]));
+        let moved = total(&frames);
+        assert!((moved + 36.0).abs() < 0.6, "{moved}");
+    }
+
+    /// Recorded on a Windows touchpad: swipes down, each followed by
+    /// Windows' coasting, either as big steps up to half a second later
+    /// (while the window was drawing) or as steps 50 to 70 ms apart, one
+    /// of them in whole lines. After each swipe the list only slows down
+    /// until the next one: it never stops and then jumps on.
+    #[cfg(windows)]
+    #[test]
+    fn windows_coasting_never_makes_the_list_jump() {
+        let swipes: [&[(f64, f32)]; 3] = [
+            &[
+                (0.0, -2.79),
+                (0.0402, -2.00),
+                (0.0567, -2.23),
+                (0.0735, -3.47),
+                (0.0904, -2.85),
+                (0.1073, -5.27),
+                (0.1239, -8.38),
+            ],
+            &[
+                (2.1151, -2.17),
+                (2.1392, -0.56),
+                (2.1555, -1.32),
+                (2.1721, -1.73),
+                (2.1891, -3.65),
+                (2.2054, -6.62),
+            ],
+            &[
+                (5.181, -3.91),
+                (5.190, -1.58),
+                (5.225, -3.67),
+                (5.242, -4.06),
+                (5.258, -3.91),
+            ],
+        ];
+        let coasting = [
+            (0.4418, -39.75),
+            (0.8069, -0.97),
+            (2.5059, -20.90),
+            (5.309, -17.08),
+            (5.375, -14.88),
+            (5.443, -13.11),
+            (5.509, -11.00),
+            (5.808, -5.08),
+            (5.836, -0.06),
+        ];
+        let all: Vec<(f64, f32)> = swipes.concat().into_iter().chain(coasting).collect();
+        let frames = replay(&mut Touchpad::default(), 0.0, 8.0, &all);
+        let starts: Vec<f64> = swipes.iter().map(|s| s[0].0).chain([8.0]).collect();
+        // How fast the list went in each frame, in points a second, as the
+        // touchpad counts a frame's time.
+        let speeds: Vec<(f64, f32)> = frames
+            .windows(2)
+            .map(|pair| {
+                let dt = ((pair[1].0 - pair[0].0) as f32).clamp(1e-4, LONGEST_FRAME);
+                (pair[1].0, pair[1].1 / dt)
+            })
+            .collect();
+        for (swipe, next) in swipes.iter().zip(&starts[1..]) {
+            let lifted = swipe.last().expect("a step").0;
+            let after: Vec<f32> = speeds
+                .iter()
+                .filter(|(t, _)| *t > lifted && t < next)
+                .map(|(_, speed)| *speed)
+                .collect();
+            for pair in after.windows(2) {
+                assert!(
+                    pair[1] <= 0.0 && pair[1] >= pair[0] * 1.02 - 1.0,
+                    "the list sped up after the swipe ending at {lifted} s: {after:?}"
+                );
+            }
+            assert_eq!(after.last(), Some(&0.0), "it stops before the next swipe");
+        }
+    }
+
+    /// The list coasts on at the fingers' speed and slows down: in all a
+    /// little less than its speed times `COAST` beyond the fingers.
+    #[cfg(windows)]
+    #[test]
+    fn the_list_coasts_on_from_the_fingers_speed() {
+        // 2.05 lines a frame: 82 points, 4,920 points a second.
+        let steps = swipe(0.0, &[-2.05; 18]);
+        let lifted = steps.last().expect("a step").0;
+        let frames = replay(&mut Touchpad::default(), 0.0, 4.0, &steps);
+        let first_after = frames.iter().find(|(t, _)| *t > lifted).expect("a frame").1;
+        assert!(first_after < -60.0, "it keeps its pace: {first_after}");
+        let coast = total(&frames) + 18.0 * 82.0;
+        assert!(coast < -1200.0 && coast > -1700.0, "{coast}");
+    }
+
+    /// A swipe's second step soon after its first starts the list at once;
+    /// a step alone, Windows' late coasting, never moves it.
+    #[cfg(windows)]
+    #[test]
+    fn a_swipe_starts_at_once_and_a_lone_step_waits() {
+        let mut touchpad = Touchpad::default();
+        let lone = replay(&mut touchpad, 0.0, 1.0, &[(0.0, -20.3)]);
+        assert_eq!(total(&lone), 0.0);
+        let started = replay(&mut touchpad, 1.0, 1.05, &[(1.001, -1.05), (1.009, -1.05)]);
+        assert!(total(&started) < -50.0, "{started:?}");
+    }
+
+    /// Recorded: as the list stopped coasting, Windows let out an earlier
+    /// swipe's coasting as one step of 207 lines, and a small step 16 ms
+    /// later. Neither moves the list.
+    #[cfg(windows)]
+    #[test]
+    fn a_late_big_step_with_a_small_one_after_it_never_moves_the_list() {
+        let mut touchpad = Touchpad::default();
+        replay(&mut touchpad, 0.0, 2.0, &swipe(0.0, &[-2.05; 18]));
+        let late = replay(&mut touchpad, 2.0, 3.0, &[(2.001, 207.24), (2.0177, 13.27)]);
+        assert_eq!(total(&late), 0.0, "{late:?}");
+    }
+
+    /// Recorded: a fast swipe whose steps are tens of lines from the first
+    /// one. All of it moves the list.
+    #[cfg(windows)]
+    #[test]
+    fn a_fast_swipe_with_big_first_steps_moves_the_list() {
+        let mut touchpad = Touchpad::default();
+        let lines = [-25.93, -38.22, -25.90];
+        let moved: f32 = swipe(0.0, &lines)
+            .into_iter()
+            .map(|(t, l)| frame(&mut touchpad, t, Some(l)))
+            .sum();
+        // What it has shown and what it is still to show: every step.
+        let counted = moved + touchpad.owed.y;
+        let fingers: f32 = lines.iter().map(|l| l * 40.0).sum();
+        assert!((counted - fingers).abs() < 1.0, "{counted} of {fingers}");
+    }
+
+    /// A list going faster than the top speed when the fingers lift comes
+    /// down to it over a moment: it isn't cut at once.
+    #[cfg(windows)]
+    #[test]
+    fn a_very_fast_swipe_slows_down_gently() {
+        // 30.5 lines a frame: 73,200 points a second.
+        let steps = swipe(0.0, &[-30.5; 12]);
+        let lifted = steps.last().expect("a step").0;
+        let frames = replay(&mut Touchpad::default(), 0.0, 1.0, &steps);
+        let after: Vec<f32> = frames
+            .iter()
+            .filter(|(t, _)| *t > lifted + FINGER_GAP)
+            .take(3)
+            .map(|(_, moved)| -moved * 60.0)
+            .collect();
+        assert!(after[0] > 2.0 * COAST_TOP_SPEED, "cut at once: {after:?}");
+        assert!(after.windows(2).all(|pair| pair[1] < pair[0]), "{after:?}");
+    }
+
+    /// Fingers the other way, or a click, stop the coasting list.
+    #[cfg(windows)]
+    #[test]
+    fn fingers_the_other_way_or_a_click_stop_the_list() {
+        let mut touchpad = Touchpad::default();
+        replay(&mut touchpad, 0.0, 0.4, &swipe(0.0, &[-2.05; 18]));
+        let back = replay(&mut touchpad, 0.4, 0.5, &swipe(0.401, &[1.05; 4]));
+        let last = back.last().expect("a frame").1;
+        assert!(last > 0.0, "it goes the fingers' way: {back:?}");
+        replay(&mut touchpad, 0.5, 1.0, &swipe(0.6, &[-2.05; 18]));
+        let click = egui::Event::PointerButton {
+            pos: Pos2::ZERO,
+            button: egui::PointerButton::Primary,
+            pressed: true,
+            modifiers: egui::Modifiers::NONE,
+        };
+        let (events, moving) = touchpad.steps(vec![click], 1.0, 40.0);
+        assert_eq!((scrolled(&events), moving), (0.0, false));
     }
 
     #[cfg(windows)]
@@ -458,7 +885,7 @@ mod tests {
         let shift = egui::Modifiers::SHIFT;
         let events = vec![egui::Event::ModifiersChanged(shift), egui::Event::Cut];
         let input = egui::RawInput {
-            events: repair_input(events, egui::Modifiers::NONE, 40.0),
+            events: repair_input(events, egui::Modifiers::NONE),
             focused: true,
             ..Default::default()
         };
@@ -470,7 +897,7 @@ mod tests {
         output.textures_delta.clear();
         assert!(pressed, "Shift+Delete must reach the Delete shortcut");
         // Ctrl+X, held since an earlier frame, is still a cut.
-        let cut = repair_input(vec![egui::Event::Cut], egui::Modifiers::COMMAND, 40.0);
+        let cut = repair_input(vec![egui::Event::Cut], egui::Modifiers::COMMAND);
         assert_eq!(cut, vec![egui::Event::Cut]);
     }
 
@@ -484,7 +911,7 @@ mod tests {
     /// What egui-winit sends for Ctrl+C: Ctrl goes down, then "copy".
     fn ctrl_c_pressed() -> Vec<egui::Event> {
         let events = vec![egui::Event::ModifiersChanged(CTRL), egui::Event::Copy];
-        repair_input(events, egui::Modifiers::NONE, 40.0)
+        repair_input(events, egui::Modifiers::NONE)
     }
 
     /// One frame of `events` with the search field holding "hello", its
@@ -552,7 +979,7 @@ mod tests {
         assert!(pressed, "Ctrl+C must reach the copy shortcut");
         // Ctrl+Shift+C comes as a key press of its own: no "copy".
         let shift = CTRL | egui::Modifiers::SHIFT;
-        let copy = repair_input(vec![egui::Event::Copy], shift, 40.0);
+        let copy = repair_input(vec![egui::Event::Copy], shift);
         assert_eq!(copy, vec![egui::Event::Copy]);
     }
 
@@ -655,11 +1082,17 @@ mod tests {
         assert_eq!(press(Key::Num0, ctrl), None);
     }
 
+    /// Whole notches keep egui's easing, also after a pause, and other
+    /// events pass as they are.
     #[test]
     fn mouse_wheel_notches_are_left_alone() {
+        let mut touchpad = Touchpad::default();
         let notch = wheel(egui::MouseWheelUnit::Line, Vec2::new(0.0, 1.0));
-        assert_eq!(touchpad_scroll(notch.clone(), 40.0), vec![notch]);
         let key = egui::Event::Text("a".into());
-        assert_eq!(touchpad_scroll(key.clone(), 40.0), vec![key]);
+        for now in [0.0, 0.3, 0.6] {
+            let events = vec![notch.clone(), key.clone()];
+            let (out, moving) = touchpad.steps(events.clone(), now, 40.0);
+            assert_eq!((out, moving), (events, false));
+        }
     }
 }

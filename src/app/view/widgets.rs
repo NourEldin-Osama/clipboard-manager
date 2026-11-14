@@ -59,12 +59,13 @@ pub(super) fn focus_outline(ctx: &egui::Context) {
     );
 }
 
-/// How often `slow_spinner` moves.
-const SPINNER_STEP: Duration = Duration::from_millis(200);
+/// How often `slow_spinner` moves: 30 times a second looks smooth, and is
+/// half the frames of drawing every one.
+const SPINNER_STEP: Duration = Duration::from_millis(33);
 
-/// egui's spinner, moving in steps a few times a second. egui's own asks
-/// for a new frame every frame, so the window redrew nonstop while, say,
-/// a long indexing ran.
+/// egui's spinner, moving in steps 30 times a second. egui's own asks for
+/// a new frame every frame, so the window redrew as fast as it could
+/// while, say, a long indexing ran.
 pub(crate) fn slow_spinner(ui: &mut Ui, size: f32, color: Option<Color32>) -> egui::Response {
     let (rect, response) = ui.allocate_exact_size(Vec2::splat(size), Sense::hover());
     response.widget_info(|| egui::WidgetInfo::new(egui::Role::ProgressIndicator));
@@ -663,14 +664,45 @@ pub(crate) fn divider(ui: &mut Ui) {
 /// Width of the small icon menus (add files, more tags).
 pub(super) const MENU_W: f32 = 220.0;
 
-/// Wide enough for the longest help line, no wider.
-pub(super) const MODE_MENU_W: f32 = 300.0;
+/// The search modes, in the order their menu shows them.
+pub(super) const MODES: [SearchMode; 3] = [
+    SearchMode::Hybrid,
+    SearchMode::Semantic,
+    SearchMode::Keyword,
+];
 
-/// One search-mode choice: name and help in a single full-width target, the
-/// active one tinted, edged and ticked.
-pub(super) fn mode_option(ui: &mut Ui, m: SearchMode, active: bool) -> egui::Response {
-    let w = MODE_MENU_W;
-    let (rect, resp) = ui.allocate_exact_size(Vec2::new(w, 46.0), Sense::click());
+/// Where a search-mode choice's name and help start, from the row's edge.
+const MODE_TEXT_START: f32 = 14.0;
+
+/// The room a choice's name leaves at the row's end for the tick, which
+/// ends 11 points from the edge.
+const MODE_TICK_ROOM: f32 = 34.0;
+
+/// Wide enough for the longest name with its tick and the longest help
+/// line, no wider, so no text runs past the menu in any language.
+pub(super) fn mode_menu_width(ui: &Ui) -> f32 {
+    let width = |text: &str, size: f32| {
+        ui.fonts_mut(|f| {
+            f.layout_no_wrap(text.to_string(), FontId::proportional(size), Color32::WHITE)
+                .size()
+                .x
+        })
+    };
+    MODES
+        .iter()
+        .map(|&m| {
+            let name = width(&mode_label(m), size::BODY) + MODE_TICK_ROOM;
+            let help = width(&mode_help(m), size::SMALL) + MODE_TEXT_START;
+            MODE_TEXT_START + name.max(help)
+        })
+        .fold(MENU_W, f32::max)
+        .ceil()
+}
+
+/// One search-mode choice, `width` wide: name and help in a single target,
+/// the active one tinted, edged and ticked.
+pub(super) fn mode_option(ui: &mut Ui, m: SearchMode, active: bool, width: f32) -> egui::Response {
+    let (rect, resp) = ui.allocate_exact_size(Vec2::new(width, 46.0), Sense::click());
     resp.widget_info(|| {
         egui::WidgetInfo::selected(egui::Role::RadioButton, true, active, mode_label(m))
     });
@@ -715,7 +747,10 @@ pub(super) fn mode_option(ui: &mut Ui, m: SearchMode, active: bool) -> egui::Res
     let at = |y: f32| {
         flip(
             rect,
-            Rect::from_min_size(Pos2::new(rect.left() + 14.0, rect.top() + y), Vec2::ZERO),
+            Rect::from_min_size(
+                Pos2::new(rect.left() + MODE_TEXT_START, rect.top() + y),
+                Vec2::ZERO,
+            ),
         )
         .min
     };

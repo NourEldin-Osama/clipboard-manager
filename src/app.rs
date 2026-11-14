@@ -110,9 +110,13 @@ impl LocalServers {
 #[derive(Default)]
 struct ServerLists {
     /// By the server's address and key.
-    found: HashMap<String, Vec<String>>,
-    pending: HashMap<String, Receiver<Vec<String>>>,
+    found: HashMap<String, ListedModels>,
+    pending: HashMap<String, Receiver<ListedModels>>,
 }
+
+/// The ids of the models a server lists, and the names it gives some of
+/// them besides, by id.
+type ListedModels = (Vec<String>, HashMap<String, String>);
 
 impl ServerLists {
     fn key(server: &crate::config::Server) -> String {
@@ -134,8 +138,8 @@ impl ServerLists {
                 .name("server-models".into())
                 .spawn(move || {
                     let models = match crate::embed::local::models_at(&url, &api_key, kind) {
-                        crate::embed::local::Listed::Models(models) => models,
-                        _ => Vec::new(),
+                        crate::embed::local::Listed::Models(ids, names) => (ids, names),
+                        _ => Default::default(),
                     };
                     let _ = tx.send(models);
                     wake.request_repaint();
@@ -151,7 +155,7 @@ impl ServerLists {
         for (key, rx) in &self.pending {
             match rx.try_recv() {
                 Ok(models) => done.push((key.clone(), models)),
-                Err(TryRecvError::Disconnected) => done.push((key.clone(), Vec::new())),
+                Err(TryRecvError::Disconnected) => done.push((key.clone(), Default::default())),
                 Err(TryRecvError::Empty) => {}
             }
         }
@@ -165,7 +169,12 @@ impl ServerLists {
     fn models(&self, server: &crate::config::Server) -> &[String] {
         self.found
             .get(&Self::key(server))
-            .map_or(&[], |models| models.as_slice())
+            .map_or(&[], |(ids, _)| ids.as_slice())
+    }
+
+    /// The names `server` gives the models it lists, by id.
+    fn names(&self, server: &crate::config::Server) -> Option<&HashMap<String, String>> {
+        self.found.get(&Self::key(server)).map(|(_, names)| names)
     }
 }
 
@@ -755,6 +764,12 @@ pub struct App {
     searching: bool,
     selected: Option<u64>,
     scroll_to_selected: bool,
+    /// The item the list or the grid keeps in its place when the view
+    /// changes, and how far its top is below the top of what shows: the
+    /// selected item while it shows, else the first item that shows.
+    view_anchor: Option<(u64, f32)>,
+    /// The view changed: the new one puts `view_anchor` where it was.
+    place_anchor: bool,
     focus_search: Arc<AtomicBool>,
     focused: Arc<AtomicBool>,
 
@@ -835,6 +850,9 @@ pub struct App {
     /// The heights of cards as tall as their content, measured once for
     /// each layout of the grid.
     card_heights: view::CardHeights,
+    /// Touchpad scrolling between frames: when it last came, and a step
+    /// that may be a swipe's late coasting.
+    touchpad: view::Touchpad,
     win: WindowCtl,
     /// Marks this as the running copy; another start shows this window.
     instance: crate::single_instance::Guard,
@@ -1011,6 +1029,8 @@ impl App {
             searching: false,
             selected: None,
             scroll_to_selected: false,
+            view_anchor: None,
+            place_anchor: false,
             focus_search,
             focused: Arc::new(AtomicBool::new(true)),
             thumbs: HashMap::new(),
@@ -1055,6 +1075,7 @@ impl App {
             grid_cols: 1,
             grid_places: Vec::new(),
             card_heights: view::CardHeights::default(),
+            touchpad: view::Touchpad::default(),
             update: UpdateState::Idle,
             update_rx: None,
             update_hidden: false,

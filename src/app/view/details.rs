@@ -38,18 +38,29 @@ const DETAILS_FIRST_WIDTH: std::ops::RangeInclusive<f32> = 400.0..=560.0;
 /// narrow for both.
 const LIST_LEAST_WIDTH: f32 = 320.0;
 
+/// The details pane's name in egui, which keeps the pane's width under it.
+const PANE_NAME: &str = "details-pane";
+
 /// The details pane on the reading-end side of `ui`, beside the list or
 /// the grid, with `add` in it. One panel in every view, so it keeps one
-/// width; the user can drag its edge.
+/// width; the user can drag its edge, and a double click on the edge gives
+/// the pane its first width again, as in VS Code.
 pub(super) fn details_panel<R>(
     ui: &mut Ui,
     add: impl FnOnce(&mut Ui) -> R,
 ) -> egui::InnerResponse<R> {
     let panel = if i18n::rtl() {
-        egui::Panel::left("details-pane")
+        egui::Panel::left(PANE_NAME)
     } else {
-        egui::Panel::right("details-pane")
+        egui::Panel::right(PANE_NAME)
     };
+    // egui names the edge after the panel, and keeps the width the user
+    // dragged to under the panel's name until it is removed.
+    let pane = ui.scope_id().with(PANE_NAME);
+    let edge = ui.ctx().read_response(pane.with("__resize"));
+    if edge.is_some_and(|edge| edge.double_clicked()) {
+        ui.ctx().data_mut(|d| d.remove::<egui::PanelState>(pane));
+    }
     let (least, most) = (*DETAILS_FIRST_WIDTH.start(), *DETAILS_FIRST_WIDTH.end());
     let window_width = ui.available_width();
     let room = (window_width - LIST_LEAST_WIDTH).max(0.0);
@@ -990,6 +1001,83 @@ mod tests {
         // A window too narrow for both still leaves the list its room.
         let (pane, rest) = first_pane(560.0);
         assert_eq!(rest.width(), LIST_LEAST_WIDTH, "{pane:?}");
+    }
+
+    #[test]
+    fn a_double_click_on_the_edge_gives_the_pane_its_first_width() {
+        check_double_click_on_the_edge();
+    }
+
+    #[test]
+    fn a_double_click_on_the_edge_gives_the_pane_its_first_width_right_to_left() {
+        crate::i18n::passes_in_arabic(module_path!(), "a_double_click_on_the_edge_in_arabic");
+    }
+
+    #[test]
+    #[ignore = "run in a process of its own by \
+                a_double_click_on_the_edge_gives_the_pane_its_first_width_right_to_left"]
+    fn a_double_click_on_the_edge_in_arabic() {
+        if crate::i18n::arabic_run() {
+            check_double_click_on_the_edge();
+        }
+    }
+
+    /// Drags the edge between the pane and the list towards the list, then
+    /// clicks it twice: the pane is as wide as at first again.
+    fn check_double_click_on_the_edge() {
+        let ctx = egui::Context::default();
+        let mut time = 0.0;
+        // One frame, 50 ms after the one before, with `events`: where the
+        // pane is.
+        let mut frame = |events: Vec<egui::Event>| {
+            time += 0.05;
+            let mut pane = Rect::NOTHING;
+            let raw = egui::RawInput {
+                time: Some(time),
+                events,
+                ..input(Vec2::new(1400.0, 700.0))
+            };
+            let mut output = ctx.run_ui(raw, |ui| {
+                pane = details_panel(ui, |ui| ui.label("Details")).response.rect;
+            });
+            output.textures_delta.clear();
+            pane
+        };
+        let button = |pos, pressed| egui::Event::PointerButton {
+            pos,
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: egui::Modifiers::NONE,
+        };
+        // The edge is on the pane's reading-start side, the list beyond it.
+        let edge_of = |pane: Rect| {
+            let x = if i18n::rtl() {
+                pane.right()
+            } else {
+                pane.left()
+            };
+            Pos2::new(x, 300.0)
+        };
+        let towards_list = Vec2::new(if i18n::rtl() { 1.0 } else { -1.0 }, 0.0);
+        let first = frame(vec![]);
+        // The edge dragged 150 points towards the list.
+        let edge = edge_of(first);
+        let to = edge + 150.0 * towards_list;
+        frame(vec![egui::Event::PointerMoved(edge)]);
+        frame(vec![button(edge, true)]);
+        frame(vec![egui::Event::PointerMoved(edge + 50.0 * towards_list)]);
+        frame(vec![egui::Event::PointerMoved(to)]);
+        frame(vec![button(to, false)]);
+        let dragged = frame(vec![]);
+        assert_eq!(dragged.width(), first.width() + 150.0, "{first:?}");
+        // Then two clicks on it.
+        let edge = edge_of(dragged);
+        frame(vec![egui::Event::PointerMoved(edge)]);
+        frame(vec![button(edge, true)]);
+        frame(vec![button(edge, false)]);
+        frame(vec![button(edge, true)]);
+        frame(vec![button(edge, false)]);
+        assert_eq!(frame(vec![]), first);
     }
 
     /// Where the pane's parts are: the pane, the room inside its margin,

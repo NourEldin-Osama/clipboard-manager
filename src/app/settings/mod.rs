@@ -9,7 +9,7 @@ use super::shortcut;
 use super::view::{
     accent, accent_name, button_fill, card_frame, chip, choice_track, chosen_face, cut_line,
     divider, far, far_layout, flip, lbl, line_color, note_fill, paint_progress, paint_text,
-    part_corners, pill_job, primary_button, radius, reveal, row, row_layout, row_of,
+    part_corners, primary_button, radius, reveal, row, row_layout, row_of, search_fill, search_hit,
     set_choice_name, set_name, size, slow_spinner, space, start_anchor, text_shade, tip, title_lbl,
     txt, warning_fill, Reacts, ACCENTS, AMBER, CARD_CHIP_PADDING, CHIP_SIDE, GREEN, PROGRESS_LINE,
     RED,

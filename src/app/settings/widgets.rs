@@ -197,6 +197,59 @@ pub(super) fn info(ui: &mut Ui, text: &str, height: f32) {
 /// edges line up.
 pub(super) const MENU_WIDTH: f32 = 280.0;
 
+/// How tall the search field at the top of a menu is.
+const MENU_SEARCH_HEIGHT: f32 = 32.0;
+
+/// The search field at the top of a menu, `width` wide, the search icon at
+/// its start, as the window's own search looks: a thin edge, the accent's
+/// while it has the keyboard.
+pub(super) fn menu_search(
+    ui: &mut Ui,
+    text: &mut String,
+    id: egui::Id,
+    hint: &str,
+    width: f32,
+) -> egui::Response {
+    let dark = ui.visuals().dark_mode;
+    let edge = if ui.memory(|m| m.has_focus(id)) {
+        Stroke::new(1.5, accent())
+    } else {
+        Stroke::new(1.0, line_color(dark))
+    };
+    let side: i8 = 10;
+    Frame::new()
+        .fill(search_fill(dark))
+        .corner_radius(CornerRadius::same(radius::MEDIUM))
+        .stroke(edge)
+        .inner_margin(Margin::symmetric(side, 0))
+        .show(ui, |ui| {
+            // The edge counts in the frame's size, so the field is as wide
+            // with the accent's thicker one.
+            ui.set_width(width - 2.0 * (f32::from(side) + edge.width));
+            ui.set_height(MENU_SEARCH_HEIGHT);
+            ui.with_layout(row_layout(), |ui| {
+                let weak = ui.visuals().weak_text_color();
+                icons::glyph(ui, Icon::Search, 14.0, weak);
+                let field = egui::TextEdit::singleline(text)
+                    .id(id)
+                    .frame(Frame::NONE)
+                    .hint_text(txt(hint, size::BODY, Some(weak)))
+                    .font(FontId::proportional(size::BODY))
+                    .align(if i18n::rtl() {
+                        egui::Align2::RIGHT_CENTER
+                    } else {
+                        egui::Align2::LEFT_CENTER
+                    })
+                    .desired_width(ui.available_width());
+                let resp = ui.add(field);
+                set_name(&resp, hint);
+                resp
+            })
+            .inner
+        })
+        .inner
+}
+
 /// The reset button beside a changed setting.
 const RESET_BUTTON_SIZE: f32 = 28.0;
 
@@ -985,6 +1038,49 @@ fn callout(ui: &mut Ui, icon: Icon, text: &str, warns: bool) {
         state.tint = None;
         set_card_state(ui, Some(state));
     }
+}
+
+/// An error as a server or a model gave it: all of its text, wrapped to
+/// the width it has, after a red warning icon on a faint red tint, and a
+/// button at the end that copies it. True when the button was clicked.
+pub(super) fn error_note(ui: &mut Ui, text: &str) -> bool {
+    let dark = ui.visuals().dark_mode;
+    let font = FontId::proportional(size::SMALL);
+    let color = ui.visuals().text_color();
+    let mut copy = false;
+    Frame::new()
+        .fill(RED.gamma_multiply(0.14))
+        .corner_radius(CornerRadius::same(radius::MEDIUM))
+        .inner_margin(Margin::symmetric(space::MEDIUM as i8, space::SMALL as i8))
+        .show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            ui.with_layout(row_layout().with_cross_align(egui::Align::Min), |ui| {
+                ui.spacing_mut().item_spacing.x = space::SMALL;
+                let line = ui.fonts_mut(|f| f.row_height(&font));
+                let (place, _) = ui.allocate_exact_size(Vec2::new(NOTE_ICON, line), Sense::hover());
+                let at = Rect::from_center_size(place.center(), Vec2::splat(NOTE_ICON));
+                icons::paint(ui.painter(), at, Icon::Warning, text_shade(RED, dark));
+                // The button at the far end, the text in the room between.
+                let button = Vec2::splat(24.0);
+                let room = (ui.available_width() - button.x - space::SMALL).max(0.0);
+                ui.allocate_ui_with_layout(
+                    Vec2::new(room, line),
+                    row_layout().with_cross_align(egui::Align::Min),
+                    |ui| super::bidi::paragraph(ui, text, font.clone(), color),
+                );
+                copy = icons::icon_button_ex(
+                    ui,
+                    Icon::Copy,
+                    &t!("settings-copy-error"),
+                    button,
+                    13.0,
+                    None,
+                    None,
+                )
+                .clicked();
+            });
+        });
+    copy
 }
 
 pub(super) fn path_field(ui: &mut Ui, p: &mut PathBuf, ext: &[&str]) {
@@ -2615,6 +2711,46 @@ mod tests {
         if arabic_run() {
             check_advanced_row();
         }
+    }
+
+    /// A server's long error stays in the width it has, wrapped onto more
+    /// lines, with a button a screen reader names that copies it.
+    #[test]
+    fn an_error_wraps_in_its_width_and_can_be_copied() {
+        let error = "The server doesn't know this address or model: \u{201c}No endpoints \
+                     found matching your data policy (Free model training). Configure: \
+                     https://openrouter.ai/settings/privacy\u{201d}";
+        let ctx = window();
+        let width = 420.0;
+        let mut note = Rect::NOTHING;
+        let output = frame(&ctx, egui::RawInput::default(), |ui| {
+            let room = Rect::from_min_size(Pos2::new(20.0, 20.0), Vec2::new(width, 400.0));
+            let mut inside = ui.new_child(egui::UiBuilder::new().max_rect(room));
+            error_note(&mut inside, error);
+            note = inside.min_rect();
+        });
+        let texts: Vec<Rect> = output
+            .shapes
+            .iter()
+            .filter_map(|clipped| match &clipped.shape {
+                egui::Shape::Text(text) => Some(text.visual_bounding_rect()),
+                _ => None,
+            })
+            .collect();
+        assert!(!texts.is_empty());
+        for text in &texts {
+            assert!(text.right() <= 20.0 + width + 0.5, "{text:?} past {width}");
+        }
+        let lines = texts.iter().map(|t| t.height()).sum::<f32>() / size::SMALL;
+        assert!(lines > 2.0, "one line: {texts:?}");
+        assert!(note.width() <= width + 0.5, "{note:?}");
+        let (_, spoken) = spoken(output);
+        assert!(
+            spoken
+                .iter()
+                .any(|(name, _)| *name == t!("settings-copy-error")),
+            "{spoken:?}"
+        );
     }
 
     /// A note under a changed row keeps as much room above it, from the

@@ -180,14 +180,11 @@ impl App {
                         let non_default = mode != SearchMode::Hybrid;
                         let b = mode_button(ui, &mode_label(mode), non_default);
                         egui::Popup::menu(&b).show(|ui| {
-                            ui.set_width(MODE_MENU_W);
+                            let width = mode_menu_width(ui);
+                            ui.set_width(width);
                             ui.spacing_mut().item_spacing.y = 2.0;
-                            for m in [
-                                SearchMode::Hybrid,
-                                SearchMode::Semantic,
-                                SearchMode::Keyword,
-                            ] {
-                                if mode_option(ui, m, mode == m).clicked() {
+                            for m in MODES {
+                                if mode_option(ui, m, mode == m, width).clicked() {
                                     self.cfg.search_mode = m;
                                     self.save_config();
                                     self.query_changed = Some(Instant::now() - QUERY_DEBOUNCE);

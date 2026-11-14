@@ -58,6 +58,9 @@ pub struct ServerConfig {
     pub truncate_dims: usize,
     /// Optionally have clipboard-manager start `llama-server` itself.
     pub launch: Option<LaunchConfig>,
+    /// OpenRouter: providers that keep or train on what they get may answer
+    /// too (see `Server::allows_data_collection`).
+    pub allows_data_collection: bool,
 }
 
 /// What reads the text in images, as the worker needs it.
@@ -102,6 +105,9 @@ pub struct ReaderServer {
     pub prompt: String,
     /// How the app starts llama-server for it, when it does.
     pub launch: Option<Box<LaunchConfig>>,
+    /// OpenRouter: providers that keep or train on what they get may answer
+    /// too (see `Server::allows_data_collection`).
+    pub allows_data_collection: bool,
 }
 
 impl ReaderServer {
@@ -119,6 +125,7 @@ impl Default for ReaderServer {
             kind: ReaderModel::Other,
             prompt: Self::PROMPT.into(),
             launch: None,
+            allows_data_collection: false,
         }
     }
 }
@@ -133,6 +140,7 @@ impl std::fmt::Debug for ReaderServer {
             .field("model", &self.model)
             .field("kind", &self.kind)
             .field("prompt", &self.prompt)
+            .field("allows_data_collection", &self.allows_data_collection)
             .finish()
     }
 }
@@ -179,6 +187,7 @@ impl std::fmt::Debug for ServerConfig {
             .field("images", &self.images)
             .field("truncate_dims", &self.truncate_dims)
             .field("launch", &self.launch)
+            .field("allows_data_collection", &self.allows_data_collection)
             .finish()
     }
 }
@@ -195,6 +204,7 @@ impl ServerConfig {
             images: false,
             truncate_dims: 0,
             launch: None,
+            allows_data_collection: false,
         }
     }
 }
@@ -270,6 +280,11 @@ pub struct Server {
     pub models: Vec<Model>,
     /// The app starts `llama-server` itself with these (llama.cpp only).
     pub launch: Option<LaunchConfig>,
+    /// OpenRouter only: whether its providers that keep or train on what
+    /// they get may answer too. Off unless the user turns it on: only
+    /// providers that keep no data answer, so free models, which need the
+    /// others, can't.
+    pub allows_data_collection: bool,
 }
 
 /// Written by hand so the API key never reaches a log.
@@ -283,6 +298,7 @@ impl std::fmt::Debug for Server {
             .field("api_key", &hidden(&self.api_key))
             .field("models", &self.models)
             .field("launch", &self.launch)
+            .field("allows_data_collection", &self.allows_data_collection)
             .finish()
     }
 }
@@ -320,6 +336,7 @@ impl Server {
             images: s.images,
             truncate_dims: s.dimensions,
             launch: self.launch.clone(),
+            allows_data_collection: self.allows_data_collection,
         })
     }
 
@@ -336,6 +353,7 @@ impl Server {
             kind: r.kind,
             prompt: r.prompt.clone(),
             launch: self.launch.clone().map(Box::new),
+            allows_data_collection: self.allows_data_collection,
         })
     }
 }
@@ -923,6 +941,7 @@ mod tests {
                 },
             ],
             launch: None,
+            allows_data_collection: false,
         }
     }
 
@@ -967,6 +986,7 @@ mod tests {
                 kind: ReaderModel::MiniCpmOcr,
                 prompt: "Text Recognition:".into(),
                 launch: None,
+                allows_data_collection: false,
             })
         );
         assert!(cfg.reads_images());
