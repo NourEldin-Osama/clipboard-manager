@@ -663,14 +663,45 @@ pub(crate) fn divider(ui: &mut Ui) {
 /// Width of the small icon menus (add files, more tags).
 pub(super) const MENU_W: f32 = 220.0;
 
-/// Wide enough for the longest help line, no wider.
-pub(super) const MODE_MENU_W: f32 = 300.0;
+/// The search modes, in the order their menu shows them.
+pub(super) const MODES: [SearchMode; 3] = [
+    SearchMode::Hybrid,
+    SearchMode::Semantic,
+    SearchMode::Keyword,
+];
 
-/// One search-mode choice: name and help in a single full-width target, the
-/// active one tinted, edged and ticked.
-pub(super) fn mode_option(ui: &mut Ui, m: SearchMode, active: bool) -> egui::Response {
-    let w = MODE_MENU_W;
-    let (rect, resp) = ui.allocate_exact_size(Vec2::new(w, 46.0), Sense::click());
+/// Where a search-mode choice's name and help start, from the row's edge.
+const MODE_TEXT_START: f32 = 14.0;
+
+/// The room a choice's name leaves at the row's end for the tick, which
+/// ends 11 points from the edge.
+const MODE_TICK_ROOM: f32 = 34.0;
+
+/// Wide enough for the longest name with its tick and the longest help
+/// line, no wider, so no text runs past the menu in any language.
+pub(super) fn mode_menu_width(ui: &Ui) -> f32 {
+    let width = |text: &str, size: f32| {
+        ui.fonts_mut(|f| {
+            f.layout_no_wrap(text.to_string(), FontId::proportional(size), Color32::WHITE)
+                .size()
+                .x
+        })
+    };
+    MODES
+        .iter()
+        .map(|&m| {
+            let name = width(&mode_label(m), size::BODY) + MODE_TICK_ROOM;
+            let help = width(&mode_help(m), size::SMALL) + MODE_TEXT_START;
+            MODE_TEXT_START + name.max(help)
+        })
+        .fold(MENU_W, f32::max)
+        .ceil()
+}
+
+/// One search-mode choice, `width` wide: name and help in a single target,
+/// the active one tinted, edged and ticked.
+pub(super) fn mode_option(ui: &mut Ui, m: SearchMode, active: bool, width: f32) -> egui::Response {
+    let (rect, resp) = ui.allocate_exact_size(Vec2::new(width, 46.0), Sense::click());
     resp.widget_info(|| {
         egui::WidgetInfo::selected(egui::Role::RadioButton, true, active, mode_label(m))
     });
@@ -715,7 +746,10 @@ pub(super) fn mode_option(ui: &mut Ui, m: SearchMode, active: bool) -> egui::Res
     let at = |y: f32| {
         flip(
             rect,
-            Rect::from_min_size(Pos2::new(rect.left() + 14.0, rect.top() + y), Vec2::ZERO),
+            Rect::from_min_size(
+                Pos2::new(rect.left() + MODE_TEXT_START, rect.top() + y),
+                Vec2::ZERO,
+            ),
         )
         .min
     };
