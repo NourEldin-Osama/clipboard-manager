@@ -1,7 +1,8 @@
 //! Messages at the bottom of the window, in the style of shadcn's Sonner
 //! (D55): a stack at the bottom right (bottom left in Arabic), above the
 //! status bar. The newest is in front and up to two older ones peek out
-//! above it; pointing at the stack opens it, and their time stops meanwhile.
+//! above it, each a little narrower and fainter; pointing at the stack opens
+//! it, and their time stops meanwhile. The cards glide to their new places.
 //! The update's message (D65) stays in the stack until the update is done
 //! or closed.
 
@@ -20,6 +21,14 @@ const ABOVE: f32 = 44.0;
 /// the gap between them while the stack is open.
 const PEEK: f32 = 12.0;
 const GAP: f32 = 12.0;
+/// How many older messages peek out behind the newest, and how much
+/// narrower and fainter each is than the one in front of it.
+const BEHIND: usize = MAX_TOASTS - 1;
+const NARROWER: f32 = 0.05;
+const FAINTER: f32 = 0.2;
+/// How long the cards take to glide to their places: as the stack opens or
+/// closes, and as a message comes or goes.
+const STACK_TIME: f32 = 0.2;
 const PAD: f32 = 14.0;
 const ICON: f32 = 16.0;
 const BUTTON_H: f32 = 24.0;
@@ -271,7 +280,8 @@ impl App {
         }
         let content = ctx.content_rect();
         let width = WIDTH.min(content.width() - 2.0 * EDGE).max(120.0);
-        let (anchor, x) = if i18n::rtl() {
+        let rtl = i18n::rtl();
+        let (anchor, x) = if rtl {
             (Align2::LEFT_BOTTOM, EDGE)
         } else {
             (Align2::RIGHT_BOTTOM, -EDGE)
@@ -279,7 +289,9 @@ impl App {
         let open = self.toasts_hovered;
         let showing = self.toast_showing;
         let mut asked = Asked::default();
-        let area = egui::Area::new(egui::Id::unique("toasts"))
+        let mut stack = Rect::NOTHING;
+        let mut gliding = false;
+        egui::Area::new(egui::Id::unique("toasts"))
             .order(egui::Order::Foreground)
             .anchor(anchor, Vec2::new(x, -ABOVE))
             .show(ctx, |ui| {
@@ -287,63 +299,32 @@ impl App {
                     .iter()
                     .map(|t| lay_out(ui, t, width, showing == Some(t.id), None))
                     .collect();
-                if open {
-                    // All of them, the newest at the bottom.
-                    let total =
-                        laid.iter().map(|l| l.height).sum::<f32>() + GAP * (laid.len() - 1) as f32;
-                    let (rect, _) = ui.allocate_exact_size(Vec2::new(width, total), Sense::hover());
-                    let mut top = rect.top();
-                    for (toast, l) in shown.iter().zip(&laid) {
-                        let card = Rect::from_min_size(
-                            Pos2::new(rect.left(), top),
-                            Vec2::new(width, l.height),
-                        );
-                        let (shift, opacity) = motion(ui.ctx(), toast);
-                        let card = card.translate(Vec2::new(0.0, shift));
-                        ui.scope(|ui| {
-                            ui.multiply_opacity(opacity);
-                            paint_card(ui, card);
-                            paint_content(ui, card, toast, l, &mut asked, None);
-                        });
-                        top += l.height + GAP;
-                    }
-                } else {
-                    // The newest in front; up to two older ones peek out.
-                    let behind = (laid.len() - 1).min(2);
-                    let front = laid.last().expect("there is a message");
-                    let (rect, _) = ui.allocate_exact_size(
-                        Vec2::new(width, front.height + PEEK * behind as f32),
-                        Sense::hover(),
-                    );
-                    let card = Rect::from_min_size(
-                        Pos2::new(rect.left(), rect.bottom() - front.height),
-                        Vec2::new(width, front.height),
-                    );
-                    // The farthest first, so the nearer ones cover it.
-                    for step in (1..=behind).rev() {
-                        let narrower = width * (1.0 - 0.05 * step as f32);
-                        paint_card(
-                            ui,
-                            Rect::from_center_size(
-                                card.center() - Vec2::new(0.0, PEEK * step as f32),
-                                Vec2::new(narrower, front.height),
-                            ),
-                        );
-                    }
-                    let toast = shown.last().expect("there is a message");
+                let heights: Vec<f32> = laid.iter().map(|l| l.height).collect();
+                let places = stack_places(&heights, open);
+                let height = places.iter().map(|p| p.lift + p.height).fold(0.0, f32::max);
+                ui.allocate_exact_size(Vec2::new(width, height), Sense::hover());
+                // Placed from the stack's bottom edge, which stays put while
+                // the area takes a frame to follow a new size.
+                stack = stack_rect(content, width, height, rtl);
+                let ids: Vec<u64> = shown.iter().map(|t| t.id).collect();
+                let on_the_way = glide(ui.ctx(), popup, &ids, &places);
+                gliding = on_the_way != places;
+                // The oldest first, so the newer ones cover it.
+                for ((toast, l), place) in shown.iter().zip(&laid).zip(&on_the_way) {
                     let (shift, opacity) = motion(ui.ctx(), toast);
-                    let card = card.translate(Vec2::new(0.0, shift));
+                    let card = place.card(stack).translate(Vec2::new(0.0, shift));
                     ui.scope(|ui| {
-                        ui.multiply_opacity(opacity);
+                        ui.multiply_opacity(opacity * place.opacity);
                         paint_card(ui, card);
-                        paint_content(ui, card, toast, front, &mut asked, None);
+                        if place.content > 0.0 {
+                            ui.multiply_opacity(place.content);
+                            paint_content(ui, card, toast, l, &mut asked, None);
+                        }
                     });
                 }
             });
-        self.toasts_hovered = ctx
-            .pointer_hover_pos()
-            .is_some_and(|p| area.response.rect.contains(p));
-        let mut moving = false;
+        self.toasts_hovered = ctx.pointer_hover_pos().is_some_and(|p| stack.contains(p));
+        let mut moving = gliding;
         for toast in self.toasts.iter_mut().filter(|t| in_window(t)) {
             let (shift, opacity) = motion(ctx, toast);
             moving |= shift > 0.0 || opacity < 1.0;
@@ -401,6 +382,171 @@ fn motion(ctx: &egui::Context, toast: &Toast) -> (f32, f32) {
     let fading = (left / FADE_TIME).clamp(0.0, 1.0);
     let coming = 1.0 - shift / SLIDE;
     (shift + (1.0 - fading) * SLIDE / 2.0, coming.min(fading))
+}
+
+/// Where a message's card sits in the stack, and how it shows there.
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct Place {
+    /// From the stack's bottom edge to the card's.
+    lift: f32,
+    height: f32,
+    /// Its width, as a part of the stack's.
+    scale: f32,
+    opacity: f32,
+    /// How much its text and buttons show: not at all on an older card
+    /// behind the newest while the stack is closed.
+    content: f32,
+}
+
+impl Place {
+    /// Its card in `stack`, in the middle of its width.
+    fn card(&self, stack: Rect) -> Rect {
+        let half = stack.width() * self.scale / 2.0;
+        let bottom = stack.bottom() - self.lift;
+        Rect::from_min_max(
+            Pos2::new(stack.center().x - half, bottom - self.height),
+            Pos2::new(stack.center().x + half, bottom),
+        )
+    }
+
+    /// The way from here to `to`, `done` of it gone.
+    fn toward(self, to: Place, done: f32) -> Place {
+        if done >= 1.0 {
+            return to;
+        }
+        let mix = |from: f32, to: f32| from + (to - from) * done;
+        Place {
+            lift: mix(self.lift, to.lift),
+            height: mix(self.height, to.height),
+            scale: mix(self.scale, to.scale),
+            opacity: mix(self.opacity, to.opacity),
+            content: mix(self.content, to.content),
+        }
+    }
+}
+
+/// The places of the cards of messages `heights` tall, the oldest first.
+/// Closed, the newest is in front and up to two older ones peek out above
+/// it, each a little narrower and fainter, as tall as the newest and
+/// blank. Open, all of them show whole, the newest at the bottom.
+fn stack_places(heights: &[f32], open: bool) -> Vec<Place> {
+    let Some(&front) = heights.last() else {
+        return Vec::new();
+    };
+    let mut lift = 0.0;
+    let mut places: Vec<Place> = heights
+        .iter()
+        .rev()
+        .enumerate()
+        .map(|(behind, &height)| {
+            if open {
+                let place = Place {
+                    lift,
+                    height,
+                    scale: 1.0,
+                    opacity: 1.0,
+                    content: 1.0,
+                };
+                lift += height + GAP;
+                return place;
+            }
+            let step = behind.min(BEHIND) as f32;
+            Place {
+                lift: PEEK * step,
+                height: front,
+                scale: 1.0 - NARROWER * step,
+                opacity: if behind > BEHIND {
+                    0.0
+                } else {
+                    1.0 - FAINTER * step
+                },
+                content: if behind == 0 { 1.0 } else { 0.0 },
+            }
+        })
+        .collect();
+    places.reverse();
+    places
+}
+
+/// Where a stack `width` wide and `height` tall goes in a window whose
+/// content is `content`: at the bottom right above the status bar, or the
+/// bottom left in Arabic, as the area that holds it is anchored.
+fn stack_rect(content: Rect, width: f32, height: f32, rtl: bool) -> Rect {
+    let left = if rtl {
+        content.left() + EDGE
+    } else {
+        content.right() - EDGE - width
+    };
+    let bottom = content.bottom() - ABOVE;
+    Rect::from_min_max(
+        Pos2::new(left, bottom - height),
+        Pos2::new(left + width, bottom),
+    )
+}
+
+/// A card on its way to its place, from where it was, since when.
+#[derive(Clone, Copy)]
+struct Glide {
+    from: Place,
+    to: Place,
+    since: f64,
+}
+
+/// Where the cards of the messages `ids` are in this frame: each glides to
+/// its place in `places` over `STACK_TIME`, or goes at once when animations
+/// are off. Each window keeps its own.
+fn glide(ctx: &egui::Context, popup: bool, ids: &[u64], places: &[Place]) -> Vec<Place> {
+    let time = if ctx.style_of(ctx.theme()).animation_time == 0.0 {
+        0.0
+    } else {
+        STACK_TIME
+    };
+    let now = ctx.input(|i| i.time);
+    ctx.data_mut(|data| {
+        let key = egui::Id::unique(("toast-glides", popup));
+        let glides = data.get_temp_mut_or_default::<HashMap<u64, Glide>>(key);
+        glide_at(glides, ids, places, now, time)
+    })
+}
+
+/// `glide` at the time `now`, each card taking `time` seconds, with the
+/// glides in `glides`, which forgets the cards no longer shown. A new card
+/// starts at its place.
+fn glide_at(
+    glides: &mut HashMap<u64, Glide>,
+    ids: &[u64],
+    places: &[Place],
+    now: f64,
+    time: f32,
+) -> Vec<Place> {
+    let done = |since: f64| {
+        if time > 0.0 {
+            ((now - since) as f32 / time).clamp(0.0, 1.0)
+        } else {
+            1.0
+        }
+    };
+    glides.retain(|id, _| ids.contains(id));
+    ids.iter()
+        .zip(places)
+        .map(|(&id, &to)| {
+            let glide = glides.entry(id).or_insert(Glide {
+                from: to,
+                to,
+                since: now,
+            });
+            if glide.to != to {
+                // From wherever it is on its way, to its new place.
+                let from = glide.from.toward(glide.to, done(glide.since));
+                *glide = Glide {
+                    from,
+                    to,
+                    since: now,
+                };
+            }
+            glide.from.toward(glide.to, done(glide.since))
+        })
+        .collect()
 }
 
 /// The card behind a message: its shadow, fill and edge.
@@ -1236,5 +1382,107 @@ mod tests {
         });
         // The font atlas upload no renderer takes here.
         output.textures_delta.clear();
+    }
+
+    /// A place's lift, height, width part, opacity and content, rounded to
+    /// hundredths.
+    fn parts(place: &Place) -> [f32; 5] {
+        [
+            place.lift,
+            place.height,
+            place.scale,
+            place.opacity,
+            place.content,
+        ]
+        .map(|value| (value * 100.0).round() / 100.0)
+    }
+
+    /// Closed, the newest is in front and the two before it peek out above
+    /// it, each narrower, fainter and blank, as tall as the newest; an
+    /// older fourth would hide behind them.
+    #[test]
+    fn the_closed_stack_shows_the_newest_with_two_older_ones_peeking_out() {
+        let places = stack_places(&[40.0, 70.0, 52.0, 60.0], false);
+        let parts: Vec<[f32; 5]> = places.iter().map(parts).collect();
+        assert_eq!(
+            parts,
+            [
+                [24.0, 60.0, 0.9, 0.0, 0.0],
+                [24.0, 60.0, 0.9, 0.6, 0.0],
+                [12.0, 60.0, 0.95, 0.8, 0.0],
+                [0.0, 60.0, 1.0, 1.0, 1.0],
+            ]
+        );
+        assert!(stack_places(&[], false).is_empty());
+    }
+
+    /// Open, every message shows whole, the newest at the bottom and each
+    /// older one above it.
+    #[test]
+    fn the_open_stack_shows_every_message_whole() {
+        let places = stack_places(&[70.0, 52.0, 60.0], true);
+        let parts: Vec<[f32; 5]> = places.iter().map(parts).collect();
+        let above_newest = 60.0 + GAP;
+        assert_eq!(
+            parts,
+            [
+                [above_newest + 52.0 + GAP, 70.0, 1.0, 1.0, 1.0],
+                [above_newest, 52.0, 1.0, 1.0, 1.0],
+                [0.0, 60.0, 1.0, 1.0, 1.0],
+            ]
+        );
+    }
+
+    /// The stack sits at the window's bottom right above the status bar, or
+    /// its bottom left in Arabic; the older cards are centered over the
+    /// newest, their tops apart by the part that peeks out.
+    #[test]
+    fn the_cards_sit_in_the_window_s_corner_in_both_directions() {
+        let content = Rect::from_min_size(Pos2::ZERO, Vec2::new(1000.0, 700.0));
+        let ltr = stack_rect(content, WIDTH, 76.0, false);
+        let rtl = stack_rect(content, WIDTH, 76.0, true);
+        assert_eq!((ltr.right(), ltr.bottom()), (1000.0 - EDGE, 700.0 - ABOVE));
+        assert_eq!((rtl.left(), rtl.bottom()), (EDGE, 700.0 - ABOVE));
+        assert_eq!(
+            (ltr.size(), rtl.size()),
+            (Vec2::new(WIDTH, 76.0), ltr.size())
+        );
+        let cards: Vec<Rect> = stack_places(&[52.0, 52.0, 52.0], false)
+            .iter()
+            .map(|place| place.card(ltr))
+            .collect();
+        assert_eq!(cards[2].width(), WIDTH);
+        assert_eq!(cards[2].bottom(), ltr.bottom());
+        for (older, newer) in cards.iter().zip(&cards[1..]) {
+            assert!((older.center().x - newer.center().x).abs() < 0.01);
+            assert!(older.width() < newer.width());
+            assert!((newer.top() - older.top() - PEEK).abs() < 0.01);
+        }
+        assert!(
+            (cards[0].top() - ltr.top()).abs() < 0.01,
+            "the stack holds them"
+        );
+    }
+
+    /// As a message comes, the one in front glides back over `STACK_TIME`
+    /// while the new one takes its place; a card that is gone is
+    /// forgotten; with animations off, the cards go to their places at once.
+    #[test]
+    fn the_cards_glide_to_their_new_places() {
+        let mut glides = HashMap::new();
+        let one = stack_places(&[52.0], false);
+        assert_eq!(glide_at(&mut glides, &[1], &one, 10.0, STACK_TIME), one);
+        let two = stack_places(&[52.0, 52.0], false);
+        let start = glide_at(&mut glides, &[1, 2], &two, 11.0, STACK_TIME);
+        assert_eq!(start, [one[0], two[1]], "each starts where it was");
+        let quarter = 11.0 + f64::from(STACK_TIME) / 4.0;
+        let on_the_way = glide_at(&mut glides, &[1, 2], &two, quarter, STACK_TIME);
+        assert_eq!(parts(&on_the_way[0]), [3.0, 52.0, 0.99, 0.95, 0.75]);
+        assert_eq!(glide_at(&mut glides, &[1, 2], &two, 12.0, STACK_TIME), two);
+        glide_at(&mut glides, &[2], &one, 12.5, STACK_TIME);
+        assert_eq!(glides.len(), 1, "the first is forgotten");
+        // The second message grew taller as it opened.
+        let open = stack_places(&[52.0, 70.0], true);
+        assert_eq!(glide_at(&mut glides, &[1, 2], &open, 12.5, 0.0), open);
     }
 }
