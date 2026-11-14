@@ -21,7 +21,7 @@ ed25519-dalek = { version = "3", default-features = false }
 egui_extras = { version = "0.37", default-features = false, features = ["svg"] }
 # The interface texts in locales/ (Project Fluent).
 fluent-bundle = "0.16"
-global-hotkey = "0.9"
+global-hotkey = "0.10"
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "bmp", "webp", "tiff"] }
 log = "0.4"
 env_logger = "0.11"
