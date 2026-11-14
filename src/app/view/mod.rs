@@ -252,6 +252,8 @@ impl eframe::App for App {
         {
             return;
         }
+        // The window draws, so a show has worked.
+        self.show_check = None;
         if self.draft.is_some() {
             self.settings_ui(ui);
         } else {

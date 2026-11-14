@@ -278,6 +278,9 @@ struct WindowCtl {
     /// Set by `show_popup`: the next frame places the popup at the mouse
     /// pointer and gives it the keyboard.
     popup_placing: Arc<AtomicBool>,
+    /// Set by `show_full` on any thread: the next frame shows the full
+    /// window from the app's own thread, as the tray's Show does.
+    show_wanted: Arc<AtomicBool>,
 }
 
 impl WindowCtl {
@@ -298,10 +301,19 @@ impl WindowCtl {
     fn show_full(&self) {
         self.popup.store(false, Ordering::SeqCst);
         self.hidden.store(false, Ordering::SeqCst);
+        // Shown by the next frame's `window_logic`, on the app's own thread:
+        // shown straight from another thread (a second start, a shortcut),
+        // the window sometimes stayed black until the tray's Show.
+        self.show_wanted.store(true, Ordering::SeqCst);
+        self.focus_search.store(true, Ordering::SeqCst);
+        self.ctx.request_repaint();
+    }
+
+    /// Shows the full window now; only on the app's own thread, in a frame.
+    fn show_now(&self) {
         self.main_window(egui::ViewportCommand::Visible(true));
         self.main_window(egui::ViewportCommand::Minimized(false));
         self.main_window(egui::ViewportCommand::Focus);
-        self.focus_search.store(true, Ordering::SeqCst);
         self.ctx.request_repaint();
     }
 
@@ -604,6 +616,10 @@ fn keep_window_state(
 const IMAGES_REFUSED_FOR: Duration = Duration::from_secs(15);
 /// How often deleting by age runs while it is on.
 const AGE_PRUNE_EVERY: Duration = Duration::from_secs(60 * 60);
+/// How long a shown window that hasn't drawn yet waits before it is shown
+/// again, and for how long after it was first shown.
+const SHOW_AGAIN_AFTER: Duration = Duration::from_millis(250);
+const SHOW_CHECK_FOR: Duration = Duration::from_secs(3);
 
 /// A search server that stopped answering is asked again after this long,
 /// then twice as long each time, up to `RETRY_AT_MOST`.
@@ -825,6 +841,9 @@ pub struct App {
     was_minimized: bool,
     /// Frames left in which to hide a window started by sign-in.
     start_hidden: u8,
+    /// A shown window that hasn't drawn a frame yet: when it was first
+    /// shown, and when it was last asked to show.
+    show_check: Option<(Instant, Instant)>,
     /// The shortcut field listening for keys in Settings, and why the last try was refused.
     recording: Option<ShortcutField>,
     record_problem: Option<String>,
@@ -921,6 +940,7 @@ impl App {
             popup: Arc::new(AtomicBool::new(false)),
             popup_focused: Arc::new(AtomicBool::new(false)),
             popup_placing: Arc::new(AtomicBool::new(false)),
+            show_wanted: Arc::new(AtomicBool::new(false)),
         };
         let (tray_tx, tray_rx) = channel();
         let mut app = Self {
@@ -931,6 +951,7 @@ impl App {
             tray_rx,
             quitting: false,
             was_minimized: false,
+            show_check: None,
             start_hidden: if crate::autostart::launched_minimized() {
                 3
             } else {
@@ -1254,6 +1275,29 @@ impl App {
         self.save_config();
     }
 
+    /// Shows the full window when asked, and asks again while it has drawn
+    /// nothing: a window shown but never drawn stays black.
+    fn show_logic(&mut self, ctx: &egui::Context) {
+        let now = Instant::now();
+        if self.win.show_wanted.swap(false, Ordering::SeqCst) {
+            self.win.show_now();
+            self.show_check = Some((now, now));
+        }
+        let Some((first, last)) = self.show_check else {
+            return;
+        };
+        if self.win.hidden.load(Ordering::SeqCst) || now - first > SHOW_CHECK_FOR {
+            self.show_check = None;
+            return;
+        }
+        if now - last >= SHOW_AGAIN_AFTER {
+            log::info!("the shown window hasn't drawn yet; showing it again");
+            self.win.show_now();
+            self.show_check = Some((first, now));
+        }
+        ctx.request_repaint_after(SHOW_AGAIN_AFTER);
+    }
+
     /// Hides to the tray on close or minimise, and handles tray commands.
     /// Runs every frame, including while the window is hidden.
     fn window_logic(&mut self, ctx: &egui::Context) {
@@ -1271,6 +1315,7 @@ impl App {
                 }
             }
         }
+        self.show_logic(ctx);
         while let Ok(cmd) = self.tray_rx.try_recv() {
             match cmd {
                 TrayCmd::Show => self.win.show(),
