@@ -248,6 +248,17 @@ pub(super) fn paint(p: &Painter, rect: Rect, icon: Icon, color: Color32) {
     paint_with(p, rect, icon, color, uv);
 }
 
+/// Paints `icon` as `paint` does, mirrored: Back then points the other way,
+/// to what comes next.
+pub(super) fn paint_mirrored(p: &Painter, rect: Rect, icon: Icon, color: Color32) {
+    let uv = if mirrored(icon) && i18n::rtl() {
+        UPRIGHT
+    } else {
+        MIRRORED
+    };
+    paint_with(p, rect, icon, color, uv);
+}
+
 /// Paints `icon` as `paint` does, turned half a turn: an arrow that points
 /// down then points up.
 pub(super) fn paint_turned(p: &Painter, rect: Rect, icon: Icon, color: Color32) {

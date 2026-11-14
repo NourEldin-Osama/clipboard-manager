@@ -21,7 +21,7 @@ use crate::config::{
 use crate::download::Progress;
 use crate::embed::Embedding;
 use crate::i18n::{self, log_error, t};
-use crate::images::ImageLoader;
+use crate::images::{ImageLoader, Size};
 use crate::library::{Library, Removed};
 use crate::paste;
 use crate::search::{self, Filter, Hit, Searcher};
@@ -606,14 +606,16 @@ pub const SMALLEST_WINDOW: [f32; 2] = [560.0, 380.0];
 /// eframe saves the window's place and size just before the app's own
 /// `save`, every 30 seconds and when the app quits. A minimized window has
 /// neither: Windows puts it at -32000 with no size, and the next start would
-/// open it tiny, in a corner of the screen. So while the window is minimized,
-/// the entry saved before goes back in; otherwise the new entry is kept.
+/// open it tiny, in a corner of the screen. A window showing a picture full
+/// screen would start full screen. So while the window's state is one of
+/// these temporary ones, the entry saved before goes back in; otherwise the
+/// new entry is kept.
 fn keep_window_state(
     storage: &mut dyn eframe::Storage,
-    minimized: bool,
+    is_temporary: bool,
     kept: &mut Option<String>,
 ) {
-    if !minimized {
+    if !is_temporary {
         *kept = storage.get_string(WINDOW_KEY);
     } else if let Some(entry) = kept {
         storage.set_string(WINDOW_KEY, entry.clone());
@@ -771,6 +773,8 @@ pub struct App {
     /// looked at (see `keyboard`).
     settings_typing: bool,
     preview: Option<(u64, Option<TextureHandle>)>,
+    /// The picture shown full screen, while it is.
+    viewer: Option<view::Viewer>,
     loader: ImageLoader,
     /// The names and icons of the programs copies came from.
     programs: programs::Programs,
@@ -1016,6 +1020,7 @@ impl App {
             settings_typing: false,
             top_actions_w: 300.0,
             preview: None,
+            viewer: None,
             loader: {
                 let c = ctx.clone();
                 ImageLoader::new(image_files, move || c.request_repaint())
@@ -1364,6 +1369,7 @@ impl App {
             self.keys_sheet = None;
             self.clear_marks();
             self.whats_new_open = false;
+            self.close_viewer();
             // An error from while the window was hidden (such as after starting
             // at sign-in) gets its full time on screen.
             if let Some((_, at)) = &mut self.error {
@@ -2451,13 +2457,15 @@ impl App {
             }
         }
         let loaded: Vec<_> = self.loader.finished().collect();
+        let max_side = ctx.input(|i| i.max_texture_side);
         for l in loaded {
             if l.skipped {
-                self.loader.forget(l.id, true);
+                self.loader.forget(l.id, l.size);
                 continue;
             }
-            // Mipmaps keep thumbnails smooth when shrunk into a list row.
-            let opts = if l.preview {
+            // Mipmaps keep thumbnails smooth when shrunk into a list row, and
+            // a picture full screen when shrunk to fit the screen.
+            let opts = if l.size == Size::Preview {
                 egui::TextureOptions::LINEAR
             } else {
                 egui::TextureOptions {
@@ -2465,21 +2473,34 @@ impl App {
                     ..egui::TextureOptions::LINEAR
                 }
             };
-            let tex = l.image.map(|ci| {
-                ctx.load_texture(
-                    format!("{}{}", if l.preview { "preview" } else { "thumb" }, l.id),
-                    ci,
-                    opts,
-                )
-            });
-            if l.preview {
-                // A preview for an item the user already moved past is dropped.
-                if self.selected == Some(l.id) {
-                    self.preview = Some((l.id, tex));
+            let name = match l.size {
+                Size::Thumb => "thumb",
+                Size::Preview => "preview",
+                Size::Full => "full",
+            };
+            // A picture bigger than the graphics card takes can't be a
+            // texture: full screen, its preview stands in.
+            let image = l
+                .image
+                .filter(|image| image.width().max(image.height()) <= max_side);
+            let tex = image.map(|ci| ctx.load_texture(format!("{name}{}", l.id), ci, opts));
+            match l.size {
+                Size::Thumb => {
+                    self.thumbs.insert(l.id, tex);
                 }
-                self.loader.forget(l.id, true);
-            } else {
-                self.thumbs.insert(l.id, tex);
+                Size::Preview => {
+                    // A preview for an item the user already moved past is dropped.
+                    if self.selected == Some(l.id) {
+                        self.preview = Some((l.id, tex));
+                    }
+                    self.loader.forget(l.id, Size::Preview);
+                }
+                Size::Full => {
+                    if let Some(viewer) = &mut self.viewer {
+                        viewer.picture_came(l.id, tex);
+                    }
+                    self.loader.forget(l.id, Size::Full);
+                }
             }
         }
     }
@@ -2695,7 +2716,7 @@ impl App {
             return;
         };
         self.glide();
-        self.loader.forget(id, false);
+        self.loader.forget(id, Size::Thumb);
         self.drop_stale_tag_filter();
         // Keep the selection on a neighbour: the row that takes its place.
         let row = self.results.iter().position(|h| h.id == id);
@@ -2868,7 +2889,7 @@ impl App {
         let mut removed = Vec::with_capacity(ids.len());
         for id in ids {
             if let Some(r) = self.library.take(id) {
-                self.loader.forget(id, false);
+                self.loader.forget(id, Size::Thumb);
                 removed.push(r);
             }
         }
@@ -3037,7 +3058,7 @@ impl App {
         }
         match &it.image {
             Some(p) => {
-                self.loader.request(it.id, p, true);
+                self.loader.request(it.id, p, Size::Preview);
                 Preview::Loading
             }
             None => Preview::Missing,
@@ -3287,18 +3308,21 @@ mod tests {
         assert_eq!(texts_together(items[1..2].iter()), (0, String::new(), 1));
     }
 
+    /// Minimized, or full screen for a picture, the window keeps the place
+    /// and size it had before.
     #[test]
     fn a_minimized_window_keeps_its_place_and_size() {
         let mut storage = Entries(HashMap::new());
         let mut kept = None;
         // What eframe saves before the app's `save`, then what the app leaves.
-        let mut save = |entry: &str, minimized: bool| {
+        let mut save = |entry: &str, is_temporary: bool| {
             storage.set_string(WINDOW_KEY, entry.to_string());
-            keep_window_state(&mut storage, minimized, &mut kept);
+            keep_window_state(&mut storage, is_temporary, &mut kept);
             storage.get_string(WINDOW_KEY).unwrap()
         };
         assert_eq!(save("1040 by 680 at 32,32", false), "1040 by 680 at 32,32");
         assert_eq!(save("0 by 0 at -32000", true), "1040 by 680 at 32,32");
         assert_eq!(save("1200 by 900 at 40,40", false), "1200 by 900 at 40,40");
+        assert_eq!(save("full screen", true), "1200 by 900 at 40,40");
     }
 }

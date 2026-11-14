@@ -14,6 +14,7 @@ enum Action {
     Details,
     OpenLink,
     ShowInFolder(PathBuf),
+    ViewFullScreen,
     SaveImage,
     CopyImageText,
     IgnoreApp(String),
@@ -135,6 +136,7 @@ impl Action {
             Action::Details => Icon::Open,
             Action::OpenLink => Icon::Browser,
             Action::ShowInFolder(_) => Icon::Folder,
+            Action::ViewFullScreen => Icon::FullScreen,
             Action::SaveImage => Icon::Save,
             Action::IgnoreApp(_) => Icon::EyeOff,
             Action::Delete | Action::DeleteGroup => Icon::Delete,
@@ -180,6 +182,11 @@ impl App {
             own.push(entry(t!("details-show-in-folder"), "", action));
         }
         if it.kind == Kind::Image {
+            // Full screen takes the full window, which the popup isn't.
+            if !in_popup {
+                let text = t!("item-view-full-screen");
+                own.push(entry(text, "F11", Action::ViewFullScreen));
+            }
             own.push(entry(t!("details-save-image"), "", Action::SaveImage));
             if it.ocr.as_deref().is_some_and(|t| !t.trim().is_empty()) {
                 own.push(entry(t!("item-copy-image-text"), "", Action::CopyImageText));
@@ -352,6 +359,7 @@ impl App {
             Action::Details => self.run(Command::Open(it.id)),
             Action::OpenLink => ctx.open_url(egui::OpenUrl::new_tab(it.text.trim())),
             Action::ShowInFolder(place) => self.show_in_folder(&place),
+            Action::ViewFullScreen => self.view_full_screen(it.id),
             Action::SaveImage => self.save_image_as(it),
             Action::CopyImageText => {
                 if let Some(text) = it.ocr.as_deref() {
