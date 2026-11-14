@@ -4,6 +4,14 @@ What changed in each version, for the people who use the app. Each release
 starts its notes with the section of the version it was built from, so add
 the notes here before a push that makes a release.
 
+## 0.9.1
+
+- On Windows, the app turns start at sign-in on and off itself. It
+  works as before, and an entry turned off in Task Manager's Startup
+  apps stays off.
+- The libraries the app is built with are up to date, among them the
+  ones for global shortcuts, file dialogs and the history's database.
+
 ## 0.9.0
 
 - A picture can fill the screen: the button beside Save in the details

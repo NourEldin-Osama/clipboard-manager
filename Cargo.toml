@@ -1,6 +1,6 @@
 [package]
 name = "clipboard-manager"
-version = "0.9.0"
+version = "0.9.1"
 edition = "2021"
 description = "Offline clipboard history that reads the text in images and searches by meaning with your own model servers."
 license = "MIT OR Apache-2.0"
@@ -9,7 +9,6 @@ readme = "README.md"
 [dependencies]
 anyhow = "1"
 arboard = "3.7"
-auto-launch = "0.6"
 base64 = "0.23"
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
 directories = "6"
@@ -59,11 +58,16 @@ clipboard-win = "5"
 # names and icons of the programs copies come from (app/programs.rs), and opening
 # a picture in Photos (app/photos.rs; ShellExecuteExW needs Win32_System_Registry).
 windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Graphics_Dwm", "Win32_Graphics_Gdi", "Win32_Security", "Win32_Security_Cryptography", "Win32_Storage_FileSystem", "Win32_System_DataExchange", "Win32_System_Registry", "Win32_System_Threading", "Win32_UI_HiDpi", "Win32_UI_Input_KeyboardAndMouse", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging"] }
-# Reads the sign-in entry without turning it on (autostart.rs); auto-launch uses it too.
+# Writes, reads and removes the entry for start at sign-in (autostart.rs).
 windows-registry = "0.100"
 # Windows' own text reader for images (ocr/windows_reader.rs). Other crates already
 # build this version.
 windows = { version = "0.62", features = ["Foundation_Collections", "Graphics_Imaging", "Media_Ocr", "Storage_Streams"] }
+
+# Start at sign-in on macOS and Linux (autostart.rs); on Windows the app writes
+# its entry itself.
+[target.'cfg(not(windows))'.dependencies]
+auto-launch = "0.6"
 
 # Everyday release builds: no LTO and many codegen units, so rebuilding after a
 # change takes a fraction of the time.
