@@ -174,6 +174,8 @@ impl eframe::App for App {
         self.finish_deletes();
         self.install_on_exit();
         crate::llama::stop_all();
+        #[cfg(windows)]
+        super::photos::delete_old_copies();
     }
 
     fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {

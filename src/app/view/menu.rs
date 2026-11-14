@@ -15,6 +15,8 @@ enum Action {
     OpenLink,
     ShowInFolder(PathBuf),
     ViewFullScreen,
+    #[cfg(windows)]
+    OpenInPhotos,
     SaveImage,
     CopyImageText,
     IgnoreApp(String),
@@ -137,6 +139,9 @@ impl Action {
             Action::OpenLink => Icon::Browser,
             Action::ShowInFolder(_) => Icon::Folder,
             Action::ViewFullScreen => Icon::FullScreen,
+            // The image icon for now: Photos' own is still to be chosen.
+            #[cfg(windows)]
+            Action::OpenInPhotos => Icon::Image,
             Action::SaveImage => Icon::Save,
             Action::IgnoreApp(_) => Icon::EyeOff,
             Action::Delete | Action::DeleteGroup => Icon::Delete,
@@ -187,6 +192,8 @@ impl App {
                 let text = t!("item-view-full-screen");
                 own.push(entry(text, "F11", Action::ViewFullScreen));
             }
+            #[cfg(windows)]
+            own.push(entry(t!("item-open-in-photos"), "", Action::OpenInPhotos));
             own.push(entry(t!("details-save-image"), "", Action::SaveImage));
             if it.ocr.as_deref().is_some_and(|t| !t.trim().is_empty()) {
                 own.push(entry(t!("item-copy-image-text"), "", Action::CopyImageText));
@@ -360,6 +367,8 @@ impl App {
             Action::OpenLink => ctx.open_url(egui::OpenUrl::new_tab(it.text.trim())),
             Action::ShowInFolder(place) => self.show_in_folder(&place),
             Action::ViewFullScreen => self.view_full_screen(it.id),
+            #[cfg(windows)]
+            Action::OpenInPhotos => self.open_in_photos(it),
             Action::SaveImage => self.save_image_as(it),
             Action::CopyImageText => {
                 if let Some(text) = it.ocr.as_deref() {

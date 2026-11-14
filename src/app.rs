@@ -1137,6 +1137,8 @@ impl App {
             let file = bidi::left_to_right(&file);
             app.set_error(t!("error-history-moved-aside", file = file));
         }
+        #[cfg(windows)]
+        photos::delete_old_copies();
         let win = app.win.clone();
         app.instance.on_show_request(move || win.show());
         Ok(app)
@@ -2308,6 +2310,15 @@ impl App {
             Done::TextCopied(Err(e)) => {
                 self.set_error(log_error!("error-copying", error = e.to_string()))
             }
+            #[cfg(windows)]
+            Done::CopiedForPhotos(copy) => {
+                // Started from the window's thread, which has COM set up, as
+                // ShellExecuteExW needs.
+                let shown = copy.and_then(|path| photos::show(&path).map_err(|e| e.to_string()));
+                if let Err(e) = shown {
+                    self.set_error(log_error!("error-opening-in-photos", error = e));
+                }
+            }
             Done::Imported(batch) => match self.library.add_imported(batch) {
                 Ok(added) => {
                     // Files added in bulk wait behind new copies.
@@ -3162,6 +3173,8 @@ fn write_clipboard(
 mod background;
 pub(crate) mod bidi;
 mod icons;
+#[cfg(windows)]
+mod photos;
 mod programs;
 mod settings;
 mod shortcut;

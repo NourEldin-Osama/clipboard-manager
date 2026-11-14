@@ -368,6 +368,8 @@ fn main_button(ui: &mut Ui, ways: &[CopyWay], reserved: f32) -> Option<Paste> {
 #[derive(Clone, Copy)]
 enum PictureAction {
     FullScreen,
+    #[cfg(windows)]
+    Photos,
 }
 
 /// How big the buttons on the details' picture are.
@@ -428,6 +430,20 @@ impl App {
             }
         }
         self.after_dialog();
+    }
+
+    /// Opens an image item in Windows' Photos app: a PNG copy is written in
+    /// the background, then Photos opens it.
+    #[cfg(windows)]
+    pub(super) fn open_in_photos(&mut self, it: &Item) {
+        let Some(stored) = it.image.clone() else {
+            return;
+        };
+        let (images, id) = (self.library.store().images.clone(), it.id);
+        self.background.run(move || {
+            let copy = crate::app::photos::write_copy(&images, id, &stored);
+            Done::CopiedForPhotos(copy.map_err(|e| format!("{e:#}")))
+        });
     }
 
     /// Shows a file or folder in the system's file manager.
@@ -912,13 +928,26 @@ impl App {
     }
 
     /// The buttons on the picture while the pointer is on it or on them:
-    /// full screen in its top corner at the reading end.
+    /// full screen in its top corner at the reading end, and on Windows
+    /// Open in Photos beside it.
     fn picture_buttons(&mut self, ui: &Ui, picture: Rect, it: &Item) {
-        let buttons = [(
+        let full_screen = (
             PictureAction::FullScreen,
             Icon::FullScreen,
             hint(&t!("details-view-full-screen"), "F11"),
-        )];
+        );
+        // The image icon for now: Photos' own is still to be chosen.
+        #[cfg(windows)]
+        let buttons = [
+            full_screen,
+            (
+                PictureAction::Photos,
+                Icon::Image,
+                t!("details-open-in-photos"),
+            ),
+        ];
+        #[cfg(not(windows))]
+        let buttons = [full_screen];
         let places = picture_button_places(picture, ui.max_rect(), buttons.len(), i18n::rtl());
         let row = places.iter().fold(picture, |all, place| all.union(*place));
         if !ui.rect_contains_pointer(row) {
@@ -931,6 +960,8 @@ impl App {
             }
             match action {
                 PictureAction::FullScreen => self.view_full_screen(it.id),
+                #[cfg(windows)]
+                PictureAction::Photos => self.open_in_photos(it),
             }
         }
     }
