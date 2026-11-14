@@ -364,49 +364,6 @@ fn main_button(ui: &mut Ui, ways: &[CopyWay], reserved: f32) -> Option<Paste> {
     chosen
 }
 
-/// What a button on the details' picture does.
-#[derive(Clone, Copy)]
-enum PictureAction {
-    FullScreen,
-    #[cfg(windows)]
-    Photos,
-}
-
-/// How big the buttons on the details' picture are.
-const PICTURE_BUTTON: f32 = 30.0;
-
-/// Where `count` buttons go on a picture at `picture`: in a row in its top
-/// corner at the reading end, the first one in the corner. A picture too
-/// small to hold them has them partly beside it, kept inside `bounds`.
-fn picture_button_places(picture: Rect, bounds: Rect, count: usize, rtl: bool) -> Vec<Rect> {
-    let step = PICTURE_BUTTON + space::TINY;
-    let width = count as f32 * step - space::TINY;
-    // Laid out left to right, then mirrored for Arabic.
-    let corner = Pos2::new(
-        picture.right() - space::SMALL - width,
-        picture.top() + space::SMALL,
-    );
-    let row = flip_if(
-        rtl,
-        picture,
-        Rect::from_min_size(corner, Vec2::new(width, PICTURE_BUTTON)),
-    );
-    let left = row
-        .left()
-        .clamp(bounds.left(), (bounds.right() - width).max(bounds.left()));
-    let row = row.translate(Vec2::new(left - row.left(), 0.0));
-    (0..count)
-        .map(|n| {
-            let right = row.right() - n as f32 * step;
-            let place = Rect::from_min_max(
-                Pos2::new(right - PICTURE_BUTTON, row.top()),
-                Pos2::new(right, row.bottom()),
-            );
-            flip_if(rtl, row, place)
-        })
-        .collect()
-}
-
 impl App {
     /// Opens the tag field of an item in the details pane.
     pub(super) fn start_tagging(&mut self, id: u64) {
@@ -758,10 +715,15 @@ impl App {
                 if pin.clicked() {
                     self.run(Command::Pin(it.id));
                 }
-                if it.kind == Kind::Image
-                    && icons::icon_button(ui, Icon::Save, &t!("details-save-image")).clicked()
-                {
-                    self.save_image_as(it);
+                if it.kind == Kind::Image {
+                    if icons::icon_button(ui, Icon::Save, &t!("details-save-image")).clicked() {
+                        self.save_image_as(it);
+                    }
+                    let full_screen = hint(&t!("details-view-full-screen"), "F11");
+                    if icons::icon_button(ui, Icon::FullScreen, &full_screen).clicked() {
+                        self.view_full_screen(it.id);
+                    }
+                    self.photos_button(ui, it);
                 }
                 if let Some(p) = place_of(it) {
                     if icons::icon_button(ui, Icon::Folder, &t!("details-show-in-folder")).clicked()
@@ -872,12 +834,11 @@ impl App {
                 let scale = (ui.available_width() / size.x).min(max_h / size.y).min(1.0);
                 // Large, so in full, in the dark theme too.
                 let tint = theme::picture_tint(ui.visuals().dark_mode, 1.0);
-                let picture = ui.add(
+                ui.add(
                     egui::Image::new((tex.id(), size * scale))
                         .tint(tint)
                         .corner_radius(8.0),
                 );
-                self.picture_buttons(ui, picture.rect, it);
             }
             Preview::Loading => {
                 ui.add_space(space::HUGE);
@@ -927,44 +888,23 @@ impl App {
         }
     }
 
-    /// The buttons on the picture while the pointer is on it or on them:
-    /// full screen in its top corner at the reading end, and on Windows
-    /// Open in Photos beside it.
-    fn picture_buttons(&mut self, ui: &Ui, picture: Rect, it: &Item) {
-        let full_screen = (
-            PictureAction::FullScreen,
-            Icon::FullScreen,
-            hint(&t!("details-view-full-screen"), "F11"),
-        );
-        // The image icon for now: Photos' own is still to be chosen.
-        #[cfg(windows)]
-        let buttons = [
-            full_screen,
-            (
-                PictureAction::Photos,
-                Icon::Image,
-                t!("details-open-in-photos"),
-            ),
-        ];
-        #[cfg(not(windows))]
-        let buttons = [full_screen];
-        let places = picture_button_places(picture, ui.max_rect(), buttons.len(), i18n::rtl());
-        let row = places.iter().fold(picture, |all, place| all.union(*place));
-        if !ui.rect_contains_pointer(row) {
-            return;
-        }
-        for (n, ((action, icon, name), place)) in buttons.into_iter().zip(places).enumerate() {
-            let id = egui::Id::unique(("picture-button", it.id, n));
-            if !super::viewer::button_on_picture(ui, place, id, icon, false, &name).clicked() {
-                continue;
-            }
-            match action {
-                PictureAction::FullScreen => self.view_full_screen(it.id),
-                #[cfg(windows)]
-                PictureAction::Photos => self.open_in_photos(it),
-            }
+    /// Open in Photos among the pane's actions, with the Photos app's own
+    /// icon when Windows has it.
+    #[cfg(windows)]
+    fn photos_button(&mut self, ui: &mut Ui, it: &Item) {
+        let tip = t!("details-open-in-photos");
+        let button = match crate::app::photos::logo(ui.ctx()) {
+            Some(logo) => icons::picture_button(ui, logo.id(), &tip),
+            None => icons::icon_button(ui, Icon::Image, &tip),
+        };
+        if button.clicked() {
+            self.open_in_photos(it);
         }
     }
+
+    /// Only Windows has the Photos app.
+    #[cfg(not(windows))]
+    fn photos_button(&mut self, _ui: &mut Ui, _it: &Item) {}
 
     pub(super) fn empty_details(&self, ui: &mut Ui) {
         ui.add_space(space::EMPTY_PAGE);
@@ -1374,32 +1314,6 @@ mod tests {
     fn the_actions_lead_the_pane_and_stay_in_arabic() {
         if crate::i18n::arabic_run() {
             check_the_actions_lead_and_stay();
-        }
-    }
-
-    /// The buttons on a picture sit in its top corner at the reading end,
-    /// the first one in the corner. A picture too small for them keeps
-    /// them inside the pane.
-    #[test]
-    fn the_picture_buttons_sit_in_the_corner_at_the_reading_end() {
-        let pane = Rect::from_min_size(Pos2::new(20.0, 0.0), Vec2::new(400.0, 600.0));
-        let picture = Rect::from_min_size(Pos2::new(20.0, 50.0), Vec2::new(300.0, 200.0));
-        let room = Vec2::splat(space::SMALL);
-        let ltr = picture_button_places(picture, pane, 2, false);
-        assert_eq!(
-            ltr[0].right_top(),
-            picture.right_top() + Vec2::new(-room.x, room.y)
-        );
-        assert!(ltr[1].right() < ltr[0].left(), "{ltr:?}");
-        let rtl = picture_button_places(picture, pane, 2, true);
-        assert_eq!(rtl[0].left_top(), picture.left_top() + room);
-        assert!(rtl[1].left() > rtl[0].right(), "{rtl:?}");
-        let small = Rect::from_min_size(pane.min + Vec2::new(0.0, 50.0), Vec2::splat(24.0));
-        for rtl in [false, true] {
-            for place in picture_button_places(small, pane, 2, rtl) {
-                let inside = place.left() >= pane.left() && place.right() <= pane.right();
-                assert!(inside, "{rtl}: {place:?} in {pane:?}");
-            }
         }
     }
 }

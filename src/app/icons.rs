@@ -407,6 +407,17 @@ pub(super) fn icon_button_at(
     view::tip(resp, tip)
 }
 
+/// A button showing `picture` in its own colors, such as another app's
+/// icon, lit under the pointer as the icon buttons are.
+pub(super) fn picture_button(ui: &mut Ui, picture: egui::TextureId, tip: &str) -> egui::Response {
+    let (rect, resp) = ui.allocate_exact_size(Vec2::splat(34.0), Sense::click());
+    resp.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, ui.is_enabled(), tip));
+    paint_button_back(ui, rect, &resp, None);
+    let place = Rect::from_center_size(rect.center(), Vec2::splat(18.0));
+    ui.painter().image(picture, place, UPRIGHT, Color32::WHITE);
+    view::tip(resp, tip)
+}
+
 fn paint_button(
     ui: &Ui,
     rect: Rect,
@@ -416,6 +427,24 @@ fn paint_button(
     fill: Option<Color32>,
     fg: Option<Color32>,
 ) {
+    paint_button_back(ui, rect, resp, fill);
+    let v = ui.visuals();
+    let color = fg.unwrap_or(if resp.hovered() {
+        v.strong_text_color()
+    } else {
+        v.text_color()
+    });
+    paint(
+        ui.painter(),
+        Rect::from_center_size(rect.center(), Vec2::splat(glyph)),
+        icon,
+        color,
+    );
+}
+
+/// A button's background: its `fill`, if any, lit under the pointer, or
+/// with none only under the pointer and while pressed.
+fn paint_button_back(ui: &Ui, rect: Rect, resp: &egui::Response, fill: Option<Color32>) {
     let v = ui.visuals();
     let p = ui.painter();
     let pressed = resp.is_pointer_button_down_on();
@@ -442,17 +471,6 @@ fn paint_button(
         }
         None => {}
     }
-    let color = fg.unwrap_or(if resp.hovered() {
-        v.strong_text_color()
-    } else {
-        v.text_color()
-    });
-    paint(
-        p,
-        Rect::from_center_size(rect.center(), Vec2::splat(glyph)),
-        icon,
-        color,
-    );
 }
 
 /// An icon and a label side by side, both centred on the row's midline.

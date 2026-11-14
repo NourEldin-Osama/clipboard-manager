@@ -113,7 +113,17 @@ fn menu_rows(ui: &mut Ui, groups: &[Vec<Entry>], focus_first: bool) -> Picked {
 /// why.
 fn entry_row(ui: &mut Ui, e: &Entry) -> egui::Response {
     let red = matches!(e.action, Action::Delete | Action::DeleteGroup).then_some(RED);
-    let icon = Some(e.action.icon());
+    // Open in Photos shows the Photos app's own icon when Windows has it.
+    #[cfg(windows)]
+    let logo = matches!(e.action, Action::OpenInPhotos)
+        .then(|| crate::app::photos::logo(ui.ctx()))
+        .flatten();
+    #[cfg(not(windows))]
+    let logo: Option<egui::TextureHandle> = None;
+    let icon = Some(match logo {
+        Some(logo) => MenuIcon::Picture(logo.id()),
+        None => MenuIcon::Glyph(e.action.icon()),
+    });
     let Some(why) = &e.unavailable else {
         return menu_entry(ui, &e.text, &e.keys, red, icon);
     };
@@ -139,7 +149,7 @@ impl Action {
             Action::OpenLink => Icon::Browser,
             Action::ShowInFolder(_) => Icon::Folder,
             Action::ViewFullScreen => Icon::FullScreen,
-            // The image icon for now: Photos' own is still to be chosen.
+            // Shown when the Photos app's own icon isn't found.
             #[cfg(windows)]
             Action::OpenInPhotos => Icon::Image,
             Action::SaveImage => Icon::Save,

@@ -149,9 +149,152 @@ fn shell_open(target: &OsStr, is_quiet: bool) -> std::io::Result<()> {
     Ok(())
 }
 
+/// The Photos app's family name, the same for every version of it.
+const PHOTOS_FAMILY: &str = "Microsoft.Windows.Photos_8wekyb3d8bbwe";
+
+/// The Photos app's own icon as a texture, read once from where Windows
+/// keeps the app; none when Photos isn't there. The app carries no copy of
+/// it: it is Microsoft's picture.
+pub(super) fn logo(ctx: &eframe::egui::Context) -> Option<eframe::egui::TextureHandle> {
+    use eframe::egui;
+    let id = egui::Id::unique("photos-logo");
+    if let Some(found) = ctx.data(|d| d.get_temp::<Option<egui::TextureHandle>>(id)) {
+        return found;
+    }
+    let found = logo_image()
+        .map(|image| ctx.load_texture("photos-logo", image, egui::TextureOptions::LINEAR));
+    if found.is_none() {
+        log::info!("the Photos app's icon wasn't found; its button shows the image icon");
+    }
+    ctx.data_mut(|d| d.insert_temp(id, found.clone()));
+    found
+}
+
+/// The Photos app's list icon, read from its package.
+fn logo_image() -> Option<eframe::egui::ColorImage> {
+    package_roots(PHOTOS_FAMILY).into_iter().find_map(|root| {
+        let manifest = std::fs::read_to_string(root.join("AppxManifest.xml")).ok()?;
+        let logo = manifest_value(&manifest, "Square44x44Logo")?;
+        let file = logo_files(&root.join(logo))
+            .into_iter()
+            .find(|file| file.is_file())?;
+        let image = image::open(&file).ok()?.into_rgba8();
+        let size = [image.width() as usize, image.height() as usize];
+        Some(eframe::egui::ColorImage::from_rgba_unmultiplied(
+            size,
+            image.as_raw(),
+        ))
+    })
+}
+
+/// The value of the first `name="..."` in an app's manifest.
+fn manifest_value<'a>(manifest: &'a str, name: &str) -> Option<&'a str> {
+    let start = manifest.find(&format!("{name}=\""))? + name.len() + 2;
+    let length = manifest[start..].find('"')?;
+    Some(&manifest[start..start + length])
+}
+
+/// The files Windows makes of an app's `logo`, best first: 48 pixels
+/// without the plate behind it, 48 pixels, the scaled ones, then the name
+/// itself.
+fn logo_files(logo: &Path) -> Vec<PathBuf> {
+    let stem = logo.with_extension("");
+    let stem = stem.to_string_lossy();
+    [
+        "targetsize-48_altform-unplated",
+        "targetsize-48",
+        "scale-200",
+        "scale-100",
+    ]
+    .iter()
+    .map(|kind| PathBuf::from(format!("{stem}.{kind}.png")))
+    .chain(std::iter::once(logo.to_path_buf()))
+    .collect()
+}
+
+/// Where Windows keeps the installed packages of the app family `family`.
+fn package_roots(family: &str) -> Vec<PathBuf> {
+    use windows_sys::Win32::Storage::Packaging::Appx::{
+        GetPackagePathByFullName, GetPackagesByPackageFamily,
+    };
+    let family: Vec<u16> = family.encode_utf16().chain(Some(0)).collect();
+    let (mut count, mut length) = (0u32, 0u32);
+    // SAFETY: asked first without buffers, for their sizes, then with
+    // buffers of those sizes; each name points into `buffer`, which lives
+    // until the paths are read.
+    unsafe {
+        GetPackagesByPackageFamily(
+            family.as_ptr(),
+            &mut count,
+            std::ptr::null_mut(),
+            &mut length,
+            std::ptr::null_mut(),
+        );
+        if count == 0 || length == 0 {
+            return Vec::new();
+        }
+        let mut names = vec![std::ptr::null_mut(); count as usize];
+        let mut buffer = vec![0u16; length as usize];
+        let found = GetPackagesByPackageFamily(
+            family.as_ptr(),
+            &mut count,
+            names.as_mut_ptr(),
+            &mut length,
+            buffer.as_mut_ptr(),
+        );
+        if found != 0 {
+            return Vec::new();
+        }
+        names
+            .iter()
+            .take(count as usize)
+            .filter_map(|&name| {
+                let mut size = 0u32;
+                GetPackagePathByFullName(name, &mut size, std::ptr::null_mut());
+                let mut path = vec![0u16; size as usize];
+                if size == 0 || GetPackagePathByFullName(name, &mut size, path.as_mut_ptr()) != 0 {
+                    return None;
+                }
+                let end = path.iter().position(|&c| c == 0).unwrap_or(path.len());
+                Some(PathBuf::from(String::from_utf16_lossy(&path[..end])))
+            })
+            .collect()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The logo's name comes from the manifest, and its 48-pixel file
+    /// without a plate is tried first.
+    #[test]
+    fn the_logo_is_found_by_its_manifest_name() {
+        let manifest = r#"<uap:VisualElements DisplayName="Photos" Square150x150Logo="Assets\Big.png" Square44x44Logo="Assets\Retail\PhotosAppList.png" />"#;
+        assert_eq!(
+            manifest_value(manifest, "Square44x44Logo"),
+            Some(r"Assets\Retail\PhotosAppList.png")
+        );
+        assert_eq!(manifest_value(manifest, "Missing"), None);
+        let files = logo_files(Path::new(r"C:\Photos\Assets\Retail\PhotosAppList.png"));
+        assert_eq!(
+            files[0],
+            Path::new(r"C:\Photos\Assets\Retail\PhotosAppList.targetsize-48_altform-unplated.png")
+        );
+        assert_eq!(
+            files.last().unwrap(),
+            Path::new(r"C:\Photos\Assets\Retail\PhotosAppList.png")
+        );
+    }
+
+    /// The Photos app's icon loads from its package on a PC that has
+    /// Photos: cargo test -- --ignored the_photos_icon_loads
+    #[test]
+    #[ignore = "needs Windows' Photos app installed"]
+    fn the_photos_icon_loads() {
+        let image = logo_image().expect("the Photos app's icon");
+        assert_eq!(image.size, [48, 48]);
+    }
 
     /// A new, empty folder for one test.
     fn empty_folder(name: &str) -> PathBuf {
