@@ -27,6 +27,9 @@ pub(super) enum Done {
     },
     /// Text read from an image put on the clipboard, or why it wasn't.
     TextCopied(Result<(), String>),
+    /// A picture written as a PNG for Photos: where, or why it wasn't.
+    #[cfg(windows)]
+    CopiedForPhotos(Result<PathBuf, String>),
     /// The texts of several items put on the clipboard together, or why
     /// they weren't.
     CopiedTogether {

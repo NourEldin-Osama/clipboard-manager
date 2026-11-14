@@ -1,5 +1,6 @@
-//! Decodes thumbnails and previews on background threads so scrolling and
-//! selection never wait for a large PNG or JPEG (or for decrypting one).
+//! Decodes thumbnails, previews and pictures shown full screen on background
+//! threads so scrolling and selection never wait for a large PNG or JPEG (or
+//! for decrypting one).
 
 use std::collections::HashSet;
 use std::panic::{catch_unwind, AssertUnwindSafe};
@@ -13,58 +14,92 @@ use crate::store::ImageFiles;
 /// Large enough for grid cards; list rows scale it down.
 pub const THUMB_PX: u32 = 280;
 pub const PREVIEW_PX: u32 = 1600;
+/// A picture full screen keeps its own size up to this, which graphics
+/// cards take as one texture.
+pub const FULL_PX: u32 = 8192;
+
+/// What a decode is for, which sets how big it is.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Size {
+    /// A list row or a grid card.
+    Thumb,
+    /// The details pane.
+    Preview,
+    /// The picture full screen.
+    Full,
+}
+
+impl Size {
+    /// The longest side it is decoded to.
+    fn most_px(self) -> u32 {
+        match self {
+            Size::Thumb => THUMB_PX,
+            Size::Preview => PREVIEW_PX,
+            Size::Full => FULL_PX,
+        }
+    }
+}
 
 pub struct Loaded {
     pub id: u64,
-    pub preview: bool,
+    pub size: Size,
     /// `None` when the file is missing or unreadable.
     pub image: Option<ColorImage>,
-    /// Not decoded because a newer preview request superseded it.
+    /// Not decoded because a newer request of its size superseded it.
     pub skipped: bool,
 }
 
 pub struct ImageLoader {
     thumbs: Sender<(u64, PathBuf)>,
     previews: Sender<(u64, PathBuf)>,
+    full: Sender<(u64, PathBuf)>,
     done: Receiver<Loaded>,
-    requested: HashSet<(u64, bool)>,
+    requested: HashSet<(u64, Size)>,
 }
 
 impl ImageLoader {
     pub fn new(files: ImageFiles, wake: impl Fn() + Send + Clone + 'static) -> Self {
         let (done_tx, done) = channel();
-        // Separate threads, so a long queue of thumbnails never delays the preview.
+        // Separate threads, so a long queue of thumbnails never delays the
+        // preview or the picture full screen.
         let thumbs = spawn(
             "thumbnails",
-            THUMB_PX,
-            false,
+            Size::Thumb,
             files.clone(),
             done_tx.clone(),
             wake.clone(),
         );
-        let previews = spawn("preview", PREVIEW_PX, true, files, done_tx, wake);
+        let previews = spawn(
+            "preview",
+            Size::Preview,
+            files.clone(),
+            done_tx.clone(),
+            wake.clone(),
+        );
+        let full = spawn("full picture", Size::Full, files, done_tx, wake);
         Self {
             thumbs,
             previews,
+            full,
             done,
             requested: HashSet::new(),
         }
     }
 
     /// Queues a decode unless one was already requested for this item.
-    pub fn request(&mut self, id: u64, path: &Path, preview: bool) {
-        if self.requested.insert((id, preview)) {
-            let tx = if preview {
-                &self.previews
-            } else {
-                &self.thumbs
+    pub fn request(&mut self, id: u64, path: &Path, size: Size) {
+        if self.requested.insert((id, size)) {
+            let tx = match size {
+                Size::Thumb => &self.thumbs,
+                Size::Preview => &self.previews,
+                Size::Full => &self.full,
             };
             let _ = tx.send((id, path.to_path_buf()));
         }
     }
 
-    pub fn forget(&mut self, id: u64, preview: bool) {
-        self.requested.remove(&(id, preview));
+    pub fn forget(&mut self, id: u64, size: Size) {
+        self.requested.remove(&(id, size));
     }
 
     pub fn finished(&self) -> impl Iterator<Item = Loaded> + '_ {
@@ -74,8 +109,7 @@ impl ImageLoader {
 
 fn spawn(
     name: &str,
-    max: u32,
-    preview: bool,
+    size: Size,
     files: ImageFiles,
     done: Sender<Loaded>,
     wake: impl Fn() + Send + 'static,
@@ -85,12 +119,12 @@ fn spawn(
         .name(name.into())
         .spawn(move || {
             while let Ok((mut id, mut path)) = rx.recv() {
-                if preview {
+                if size != Size::Thumb {
                     // Only the latest selection matters; skip ones the user moved past.
                     while let Ok((i, p)) = rx.try_recv() {
                         let _ = done.send(Loaded {
                             id,
-                            preview,
+                            size,
                             image: None,
                             skipped: true,
                         });
@@ -100,6 +134,7 @@ fn spawn(
                 }
                 // A file that crashes the decoder shows as missing; the
                 // thread goes on with the next one.
+                let max = size.most_px();
                 let image = catch_unwind(AssertUnwindSafe(|| decode(&files, id, &path, max)))
                     .unwrap_or_else(|_| {
                         log::warn!("decoding the image of item {id} crashed");
@@ -108,7 +143,7 @@ fn spawn(
                 if done
                     .send(Loaded {
                         id,
-                        preview,
+                        size,
                         image,
                         skipped: false,
                     })

@@ -389,6 +389,20 @@ impl App {
         self.after_dialog();
     }
 
+    /// Opens an image item in Windows' Photos app: a PNG copy is written in
+    /// the background, then Photos opens it.
+    #[cfg(windows)]
+    pub(super) fn open_in_photos(&mut self, it: &Item) {
+        let Some(stored) = it.image.clone() else {
+            return;
+        };
+        let (images, id) = (self.library.store().images.clone(), it.id);
+        self.background.run(move || {
+            let copy = crate::app::photos::write_copy(&images, id, &stored);
+            Done::CopiedForPhotos(copy.map_err(|e| format!("{e:#}")))
+        });
+    }
+
     /// Shows a file or folder in the system's file manager.
     pub(super) fn show_in_folder(&mut self, place: &std::path::Path) {
         if let Err(e) = reveal(place) {
@@ -701,10 +715,15 @@ impl App {
                 if pin.clicked() {
                     self.run(Command::Pin(it.id));
                 }
-                if it.kind == Kind::Image
-                    && icons::icon_button(ui, Icon::Save, &t!("details-save-image")).clicked()
-                {
-                    self.save_image_as(it);
+                if it.kind == Kind::Image {
+                    if icons::icon_button(ui, Icon::Save, &t!("details-save-image")).clicked() {
+                        self.save_image_as(it);
+                    }
+                    let full_screen = hint(&t!("details-view-full-screen"), "F11");
+                    if icons::icon_button(ui, Icon::FullScreen, &full_screen).clicked() {
+                        self.view_full_screen(it.id);
+                    }
+                    self.photos_button(ui, it);
                 }
                 if let Some(p) = place_of(it) {
                     if icons::icon_button(ui, Icon::Folder, &t!("details-show-in-folder")).clicked()
@@ -868,6 +887,24 @@ impl App {
             }
         }
     }
+
+    /// Open in Photos among the pane's actions, with the Photos app's own
+    /// icon.
+    #[cfg(windows)]
+    fn photos_button(&mut self, ui: &mut Ui, it: &Item) {
+        let tip = t!("details-open-in-photos");
+        let button = match crate::app::photos::logo(ui.ctx()) {
+            Some(logo) => icons::picture_button(ui, logo.id(), &tip),
+            None => icons::icon_button(ui, Icon::Image, &tip),
+        };
+        if button.clicked() {
+            self.open_in_photos(it);
+        }
+    }
+
+    /// Only Windows has the Photos app.
+    #[cfg(not(windows))]
+    fn photos_button(&mut self, _ui: &mut Ui, _it: &Item) {}
 
     pub(super) fn empty_details(&self, ui: &mut Ui) {
         ui.add_space(space::EMPTY_PAGE);

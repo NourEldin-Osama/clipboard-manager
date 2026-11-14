@@ -21,7 +21,7 @@ use crate::config::{
 use crate::download::Progress;
 use crate::embed::Embedding;
 use crate::i18n::{self, log_error, t};
-use crate::images::ImageLoader;
+use crate::images::{ImageLoader, Size};
 use crate::library::{Library, Removed};
 use crate::paste;
 use crate::search::{self, Filter, Hit, Searcher};
@@ -278,6 +278,9 @@ struct WindowCtl {
     /// Set by `show_popup`: the next frame places the popup at the mouse
     /// pointer and gives it the keyboard.
     popup_placing: Arc<AtomicBool>,
+    /// Set by `show_full` on any thread: the next frame shows the full
+    /// window from the app's own thread, as the tray's Show does.
+    show_wanted: Arc<AtomicBool>,
 }
 
 impl WindowCtl {
@@ -298,10 +301,19 @@ impl WindowCtl {
     fn show_full(&self) {
         self.popup.store(false, Ordering::SeqCst);
         self.hidden.store(false, Ordering::SeqCst);
+        // Shown by the next frame's `window_logic`, on the app's own thread:
+        // shown straight from another thread (a second start, a shortcut),
+        // the window sometimes stayed black until the tray's Show.
+        self.show_wanted.store(true, Ordering::SeqCst);
+        self.focus_search.store(true, Ordering::SeqCst);
+        self.ctx.request_repaint();
+    }
+
+    /// Shows the full window now; only on the app's own thread, in a frame.
+    fn show_now(&self) {
         self.main_window(egui::ViewportCommand::Visible(true));
         self.main_window(egui::ViewportCommand::Minimized(false));
         self.main_window(egui::ViewportCommand::Focus);
-        self.focus_search.store(true, Ordering::SeqCst);
         self.ctx.request_repaint();
     }
 
@@ -426,9 +438,12 @@ struct Toast {
 }
 
 impl Toast {
-    /// Its button brings back the items just deleted.
-    fn undoes(&self) -> bool {
-        matches!(self.action, Some((_, Command::UndoDelete)))
+    /// The number of the delete its button brings back, if it has one.
+    fn undoes(&self) -> Option<u64> {
+        match self.action {
+            Some((_, Command::UndoDelete(number))) => Some(number),
+            _ => None,
+        }
     }
 }
 
@@ -465,8 +480,12 @@ pub(super) enum Command {
     DeleteTag(String),
     Import(Vec<PathBuf>),
     ClearHistory,
-    /// Brings back the item just deleted.
-    UndoDelete,
+    /// Brings back the items of one delete, by its number in the undo
+    /// history: its message's Undo.
+    UndoDelete(u64),
+    /// Brings back the items of the newest delete that can still be undone:
+    /// Ctrl+Z.
+    UndoNewestDelete,
     /// Records a copy that the secret filter or a rule held back.
     SaveSkipped(Capture),
     /// Copies text read from an image; it is not recorded as a new copy.
@@ -547,13 +566,14 @@ enum ShortcutField {
     Details,
 }
 
-/// How long a deleted item can still be brought back.
-const UNDO_FOR: Duration = Duration::from_secs(8);
+/// How long the message after a delete shows. Its delete can be undone
+/// for longer (`undo::UNDO_WINDOW`).
+const DELETED_MESSAGE_FOR: Duration = Duration::from_secs(8);
 /// How long rows and cards glide after a delete, and the time each glide
 /// takes.
 const GLIDE_FOR: Duration = Duration::from_millis(400);
 const GLIDE_TIME: f32 = 0.2;
-/// The key that undoes a delete while its message shows.
+/// The key that undoes the newest delete, named on its message's Undo.
 const UNDO_KEYS: &str = "Ctrl+Z";
 /// How long a message that names a key stays.
 const KEY_HINT_FOR: Duration = Duration::from_secs(4);
@@ -586,14 +606,16 @@ pub const SMALLEST_WINDOW: [f32; 2] = [560.0, 380.0];
 /// eframe saves the window's place and size just before the app's own
 /// `save`, every 30 seconds and when the app quits. A minimized window has
 /// neither: Windows puts it at -32000 with no size, and the next start would
-/// open it tiny, in a corner of the screen. So while the window is minimized,
-/// the entry saved before goes back in; otherwise the new entry is kept.
+/// open it tiny, in a corner of the screen. A window showing a picture full
+/// screen would start full screen. So while the window's state is one of
+/// these temporary ones, the entry saved before goes back in; otherwise the
+/// new entry is kept.
 fn keep_window_state(
     storage: &mut dyn eframe::Storage,
-    minimized: bool,
+    is_temporary: bool,
     kept: &mut Option<String>,
 ) {
-    if !minimized {
+    if !is_temporary {
         *kept = storage.get_string(WINDOW_KEY);
     } else if let Some(entry) = kept {
         storage.set_string(WINDOW_KEY, entry.clone());
@@ -604,6 +626,10 @@ fn keep_window_state(
 const IMAGES_REFUSED_FOR: Duration = Duration::from_secs(15);
 /// How often deleting by age runs while it is on.
 const AGE_PRUNE_EVERY: Duration = Duration::from_secs(60 * 60);
+/// How long a shown window that hasn't drawn yet waits before it is shown
+/// again, and for how long after it was first shown.
+const SHOW_AGAIN_AFTER: Duration = Duration::from_millis(250);
+const SHOW_CHECK_FOR: Duration = Duration::from_secs(3);
 
 /// A search server that stopped answering is asked again after this long,
 /// then twice as long each time, up to `RETRY_AT_MOST`.
@@ -629,14 +655,6 @@ impl Retry {
         self.wait = (self.wait * 2).min(RETRY_AT_MOST);
         self.at = now + self.wait;
     }
-}
-
-/// The last deleted items, kept for "Undo" until its message is gone; only
-/// then are they removed from the database, with their vectors and images.
-struct PendingDelete {
-    /// Taken from the last to the first, so each comes back in its place
-    /// when they go back in the other order.
-    removed: Vec<Removed>,
 }
 
 /// Keeps the registrations alive; dropping the manager unregisters them.
@@ -704,7 +722,8 @@ pub struct App {
     /// Until when rows and cards glide to their new places: after a delete
     /// or its Undo, so the gap closes instead of jumping.
     glide_until: Option<Instant>,
-    pending_delete: Option<PendingDelete>,
+    /// The deletes that can still be undone, with their items.
+    undo_history: UndoHistory,
     /// When deleting by age runs next; `None` runs it at the next frame.
     next_age_prune: Option<Instant>,
     /// The search server stopped answering: when the app asks it again.
@@ -754,6 +773,8 @@ pub struct App {
     /// looked at (see `keyboard`).
     settings_typing: bool,
     preview: Option<(u64, Option<TextureHandle>)>,
+    /// The picture shown full screen, while it is.
+    viewer: Option<view::Viewer>,
     loader: ImageLoader,
     /// The names and icons of the programs copies came from.
     programs: programs::Programs,
@@ -825,6 +846,9 @@ pub struct App {
     was_minimized: bool,
     /// Frames left in which to hide a window started by sign-in.
     start_hidden: u8,
+    /// A shown window that hasn't drawn a frame yet: when it was first
+    /// shown, and when it was last asked to show.
+    show_check: Option<(Instant, Instant)>,
     /// The shortcut field listening for keys in Settings, and why the last try was refused.
     recording: Option<ShortcutField>,
     record_problem: Option<String>,
@@ -921,6 +945,7 @@ impl App {
             popup: Arc::new(AtomicBool::new(false)),
             popup_focused: Arc::new(AtomicBool::new(false)),
             popup_placing: Arc::new(AtomicBool::new(false)),
+            show_wanted: Arc::new(AtomicBool::new(false)),
         };
         let (tray_tx, tray_rx) = channel();
         let mut app = Self {
@@ -931,6 +956,7 @@ impl App {
             tray_rx,
             quitting: false,
             was_minimized: false,
+            show_check: None,
             start_hidden: if crate::autostart::launched_minimized() {
                 3
             } else {
@@ -962,7 +988,7 @@ impl App {
             app_icon: None,
             skip_next_armed: false,
             glide_until: None,
-            pending_delete: None,
+            undo_history: UndoHistory::default(),
             next_age_prune: None,
             search_retry: None,
             ocr_failed: HashSet::new(),
@@ -994,6 +1020,7 @@ impl App {
             settings_typing: false,
             top_actions_w: 300.0,
             preview: None,
+            viewer: None,
             loader: {
                 let c = ctx.clone();
                 ImageLoader::new(image_files, move || c.request_repaint())
@@ -1110,6 +1137,8 @@ impl App {
             let file = bidi::left_to_right(&file);
             app.set_error(t!("error-history-moved-aside", file = file));
         }
+        #[cfg(windows)]
+        photos::delete_old_copies();
         let win = app.win.clone();
         app.instance.on_show_request(move || win.show());
         Ok(app)
@@ -1254,6 +1283,29 @@ impl App {
         self.save_config();
     }
 
+    /// Shows the full window when asked, and asks again while it has drawn
+    /// nothing: a window shown but never drawn stays black.
+    fn show_logic(&mut self, ctx: &egui::Context) {
+        let now = Instant::now();
+        if self.win.show_wanted.swap(false, Ordering::SeqCst) {
+            self.win.show_now();
+            self.show_check = Some((now, now));
+        }
+        let Some((first, last)) = self.show_check else {
+            return;
+        };
+        if self.win.hidden.load(Ordering::SeqCst) || now - first > SHOW_CHECK_FOR {
+            self.show_check = None;
+            return;
+        }
+        if now - last >= SHOW_AGAIN_AFTER {
+            log::info!("the shown window hasn't drawn yet; showing it again");
+            self.win.show_now();
+            self.show_check = Some((first, now));
+        }
+        ctx.request_repaint_after(SHOW_AGAIN_AFTER);
+    }
+
     /// Hides to the tray on close or minimise, and handles tray commands.
     /// Runs every frame, including while the window is hidden.
     fn window_logic(&mut self, ctx: &egui::Context) {
@@ -1271,6 +1323,7 @@ impl App {
                 }
             }
         }
+        self.show_logic(ctx);
         while let Ok(cmd) = self.tray_rx.try_recv() {
             match cmd {
                 TrayCmd::Show => self.win.show(),
@@ -1318,6 +1371,7 @@ impl App {
             self.keys_sheet = None;
             self.clear_marks();
             self.whats_new_open = false;
+            self.close_viewer();
             // An error from while the window was hidden (such as after starting
             // at sign-in) gets its full time on screen.
             if let Some((_, at)) = &mut self.error {
@@ -1611,14 +1665,11 @@ impl App {
 
     /// Adds a message in front of the others, to be given a button or a
     /// second line. With three showing, the oldest goes, never the update's;
-    /// a delete it could undo becomes final.
+    /// a delete it could undo stays in the undo history for Ctrl+Z.
     fn toast_with(&mut self, s: impl Into<String>, how_long: Duration) -> &mut Toast {
         if self.toasts.len() >= MAX_TOASTS {
             if let Some(at) = self.toasts.iter().position(|t| t.update.is_none()) {
-                let oldest = self.toasts.remove(at);
-                if oldest.undoes() {
-                    self.finish_delete();
-                }
+                self.toasts.remove(at);
             }
         }
         self.toast_seq += 1;
@@ -1641,12 +1692,13 @@ impl App {
     }
 
     /// Runs the messages' time: only while a window shows them and the
-    /// pointer is not on them. A message whose time is up goes, and the
-    /// delete it could undo becomes final.
+    /// pointer is not on them. A message whose time is up goes. The time in
+    /// which a delete can be undone runs the same way, also after its
+    /// message is gone; when it is over, the delete becomes final.
     fn tick_toasts(&mut self, ctx: &egui::Context, shown: bool) {
         let now = Instant::now();
         let last = self.toasts_tick.replace(now);
-        if self.toasts.is_empty() {
+        if self.toasts.is_empty() && self.undo_history.is_empty() {
             return;
         }
         let step = last.map_or(Duration::ZERO, |last| now - last);
@@ -1662,14 +1714,12 @@ impl App {
                     toast.shown_for += step;
                 }
             }
+            if shown && !self.toasts_hovered {
+                self.undo_history.tick(step);
+            }
         }
-        let (over, left): (Vec<Toast>, Vec<Toast>) = std::mem::take(&mut self.toasts)
-            .into_iter()
-            .partition(|t| t.shown_for >= t.how_long);
-        self.toasts = left;
-        if over.iter().any(Toast::undoes) {
-            self.finish_delete();
-        }
+        self.toasts.retain(|t| t.shown_for < t.how_long);
+        self.finish_expired_deletes();
         if shown || self.toasts.iter().any(|t| t.on_screen) {
             ctx.request_repaint_after(Duration::from_millis(100));
         }
@@ -1756,7 +1806,12 @@ impl App {
             Command::DeleteTag(tag) => self.delete_tag(&tag),
             Command::Import(paths) => self.import(paths),
             Command::ClearHistory => self.clear_history(),
-            Command::UndoDelete => self.undo_delete(),
+            Command::UndoDelete(number) => self.undo_delete(number),
+            Command::UndoNewestDelete => {
+                if let Some(number) = self.undo_history.newest() {
+                    self.undo_delete(number);
+                }
+            }
             Command::RecordAppAgain(app) => {
                 let mut d = self.cfg.clone();
                 d.rules.retain(|r| !r.skips_app(&app));
@@ -2075,7 +2130,7 @@ impl App {
 
     /// Deletes what is over the history size and, when it is on, what is
     /// older than the chosen number of days. With `report`, it says so,
-    /// with Undo, and the items wait until the message is gone (D60). A new
+    /// with Undo, and the items wait for the undo history's time (D60). A new
     /// copy pushing the oldest item out of a full history is not reported.
     fn prune_now(&mut self, report: bool) {
         let days = i64::from(self.cfg.delete_after_days);
@@ -2107,21 +2162,18 @@ impl App {
         if ids.is_empty() {
             return;
         }
-        // One undo at a time: an earlier delete becomes final now.
-        self.finish_delete();
         let removed = self.take_items(&ids);
         self.drop_stale_tag_filter();
         self.drop_removed(&ids);
         let count = removed.len();
         log::info!("deleted {count} items by age or the history limit");
-        self.pending_delete = Some(PendingDelete { removed });
         let text = if count == over_limit {
             t!("toast-pruned-limit", count = count)
         } else {
             let age = t!("settings-age-days", count = days);
             t!("toast-pruned-age", count = count, age = age)
         };
-        self.undo_toast(text);
+        self.keep_for_undo(text, removed);
         self.dirty = true;
     }
 
@@ -2257,6 +2309,15 @@ impl App {
             }
             Done::TextCopied(Err(e)) => {
                 self.set_error(log_error!("error-copying", error = e.to_string()))
+            }
+            #[cfg(windows)]
+            Done::CopiedForPhotos(copy) => {
+                // Started from the window's thread, which has COM set up, as
+                // ShellExecuteExW needs.
+                let shown = copy.and_then(|path| photos::show(&path).map_err(|e| e.to_string()));
+                if let Err(e) = shown {
+                    self.set_error(log_error!("error-opening-in-photos", error = e));
+                }
             }
             Done::Imported(batch) => match self.library.add_imported(batch) {
                 Ok(added) => {
@@ -2407,13 +2468,15 @@ impl App {
             }
         }
         let loaded: Vec<_> = self.loader.finished().collect();
+        let max_side = ctx.input(|i| i.max_texture_side);
         for l in loaded {
             if l.skipped {
-                self.loader.forget(l.id, true);
+                self.loader.forget(l.id, l.size);
                 continue;
             }
-            // Mipmaps keep thumbnails smooth when shrunk into a list row.
-            let opts = if l.preview {
+            // Mipmaps keep thumbnails smooth when shrunk into a list row, and
+            // a picture full screen when shrunk to fit the screen.
+            let opts = if l.size == Size::Preview {
                 egui::TextureOptions::LINEAR
             } else {
                 egui::TextureOptions {
@@ -2421,21 +2484,34 @@ impl App {
                     ..egui::TextureOptions::LINEAR
                 }
             };
-            let tex = l.image.map(|ci| {
-                ctx.load_texture(
-                    format!("{}{}", if l.preview { "preview" } else { "thumb" }, l.id),
-                    ci,
-                    opts,
-                )
-            });
-            if l.preview {
-                // A preview for an item the user already moved past is dropped.
-                if self.selected == Some(l.id) {
-                    self.preview = Some((l.id, tex));
+            let name = match l.size {
+                Size::Thumb => "thumb",
+                Size::Preview => "preview",
+                Size::Full => "full",
+            };
+            // A picture bigger than the graphics card takes can't be a
+            // texture: full screen, its preview stands in.
+            let image = l
+                .image
+                .filter(|image| image.width().max(image.height()) <= max_side);
+            let tex = image.map(|ci| ctx.load_texture(format!("{name}{}", l.id), ci, opts));
+            match l.size {
+                Size::Thumb => {
+                    self.thumbs.insert(l.id, tex);
                 }
-                self.loader.forget(l.id, true);
-            } else {
-                self.thumbs.insert(l.id, tex);
+                Size::Preview => {
+                    // A preview for an item the user already moved past is dropped.
+                    if self.selected == Some(l.id) {
+                        self.preview = Some((l.id, tex));
+                    }
+                    self.loader.forget(l.id, Size::Preview);
+                }
+                Size::Full => {
+                    if let Some(viewer) = &mut self.viewer {
+                        viewer.picture_came(l.id, tex);
+                    }
+                    self.loader.forget(l.id, Size::Full);
+                }
             }
         }
     }
@@ -2645,15 +2721,13 @@ impl App {
     }
 
     /// Takes the item out of the list at once; the database follows when the
-    /// "Undo" toast ends (see `finish_delete`).
+    /// delete can no longer be undone (see `finish_expired_deletes`).
     fn delete(&mut self, id: u64) {
-        // One undo at a time: an earlier delete becomes final now.
-        self.finish_delete();
         let Some(removed) = self.library.take(id) else {
             return;
         };
         self.glide();
-        self.loader.forget(id, false);
+        self.loader.forget(id, Size::Thumb);
         self.drop_stale_tag_filter();
         // Keep the selection on a neighbour: the row that takes its place.
         let row = self.results.iter().position(|h| h.id == id);
@@ -2664,47 +2738,72 @@ impl App {
                 .get(i.min(self.results.len().saturating_sub(1)))
                 .map(|h| h.id);
         }
-        self.pending_delete = Some(PendingDelete {
-            removed: vec![removed],
-        });
         let keys = self.cfg.keys.delete.clone();
         let text = match self.key_to_teach(&keys) {
             Some(keys) => t!("toast-deleted-key", keys = keys),
             None => t!("toast-deleted"),
         };
-        self.undo_toast(text);
+        self.keep_for_undo(text, vec![removed]);
     }
 
-    /// The message after a delete, with Undo and its key.
-    fn undo_toast(&mut self, text: String) {
-        let toast = self.toast_with(text, UNDO_FOR);
+    /// Keeps the items of a delete in the undo history, and says `text` in
+    /// a message with Undo.
+    fn keep_for_undo(&mut self, text: String, removed: Vec<Removed>) {
+        let number = self.undo_history.add(removed);
+        let toast = self.toast_with(text, DELETED_MESSAGE_FOR);
         toast.icon = Some(icons::Icon::Delete);
-        toast.action = Some((t!("toast-undo"), Command::UndoDelete));
-        toast.keys = Some(UNDO_KEYS.to_string());
+        toast.action = Some((t!("toast-undo"), Command::UndoDelete(number)));
+        self.name_undo_keys();
     }
 
-    /// Makes the pending delete final: database row, vectors and image file.
-    pub(super) fn finish_delete(&mut self) {
-        // Its message can't undo it any more.
-        self.toasts.retain(|t| !t.undoes());
-        if let Some(pending) = self.pending_delete.take() {
-            if let Err(e) = self.library.forget_many(pending.removed) {
-                self.set_error(log_error!("error-deleting", error = e.to_string()));
+    /// Names Ctrl+Z only on the Undo of the delete it would undo: the
+    /// newest that can still be undone.
+    fn name_undo_keys(&mut self) {
+        let newest = self.undo_history.newest();
+        for toast in &mut self.toasts {
+            if let Some(number) = toast.undoes() {
+                toast.keys = (Some(number) == newest).then(|| UNDO_KEYS.to_string());
             }
         }
     }
 
-    fn undo_delete(&mut self) {
-        self.glide();
-        self.toasts.retain(|t| !t.undoes());
-        let Some(pending) = self.pending_delete.take() else {
+    /// Makes the deletes whose time to undo is over final, and takes their
+    /// messages away.
+    fn finish_expired_deletes(&mut self) {
+        let (numbers, removed) = self.undo_history.take_expired();
+        if numbers.is_empty() {
+            return;
+        }
+        self.toasts
+            .retain(|t| t.undoes().is_none_or(|number| !numbers.contains(&number)));
+        self.forget(removed);
+    }
+
+    /// Makes every delete final, as the app quits.
+    pub(super) fn finish_deletes(&mut self) {
+        let removed = self.undo_history.take_all();
+        self.forget(removed);
+    }
+
+    /// Deletes taken items from the disk: database rows, vectors and image
+    /// files.
+    fn forget(&mut self, removed: Vec<Removed>) {
+        if let Err(e) = self.library.forget_many(removed) {
+            self.set_error(log_error!("error-deleting", error = e.to_string()));
+        }
+    }
+
+    /// Brings back the items of the delete `number`, while it can still be
+    /// undone.
+    fn undo_delete(&mut self, number: u64) {
+        self.toasts.retain(|t| t.undoes() != Some(number));
+        let Some(ids) = self.undo_history.undo(number, &mut self.library) else {
             return;
         };
-        // The first in the list was taken last.
-        self.selected = pending.removed.last().map(|r| r.item.id);
-        for removed in pending.removed.into_iter().rev() {
-            self.library.put_back(removed);
-        }
+        self.glide();
+        // The first in the list was taken last, so it went back first.
+        self.selected = ids.first().copied();
+        self.name_undo_keys();
         self.dirty = true;
     }
 
@@ -2801,7 +2900,7 @@ impl App {
         let mut removed = Vec::with_capacity(ids.len());
         for id in ids {
             if let Some(r) = self.library.take(id) {
-                self.loader.forget(id, false);
+                self.loader.forget(id, Size::Thumb);
                 removed.push(r);
             }
         }
@@ -2809,8 +2908,6 @@ impl App {
     }
 
     fn delete_group(&mut self, ids: &[u64]) {
-        // One undo at a time: an earlier delete becomes final now.
-        self.finish_delete();
         let row = self.results.iter().position(|h| ids.contains(&h.id));
         let removed = self.take_items(ids);
         self.drop_stale_tag_filter();
@@ -2822,8 +2919,7 @@ impl App {
             self.selected = self.results.get(i.min(last)).map(|h| h.id);
         }
         let count = removed.len();
-        self.pending_delete = Some(PendingDelete { removed });
-        self.undo_toast(t!("toast-deleted-group", count = count));
+        self.keep_for_undo(t!("toast-deleted-group", count = count), removed);
         self.dirty = true;
     }
 
@@ -2973,7 +3069,7 @@ impl App {
         }
         match &it.image {
             Some(p) => {
-                self.loader.request(it.id, p, true);
+                self.loader.request(it.id, p, Size::Preview);
                 Preview::Loading
             }
             None => Preview::Missing,
@@ -3077,13 +3173,17 @@ fn write_clipboard(
 mod background;
 pub(crate) mod bidi;
 mod icons;
+#[cfg(windows)]
+mod photos;
 mod programs;
 mod settings;
 mod shortcut;
+mod undo;
 mod view;
 
 use background::{Background, Done};
 use settings::{PendingSend, ServerEditor, SettingsPage};
+use undo::UndoHistory;
 use view::{add_fonts, apply_theme, looks_like_code, set_accent, style};
 
 /// Whether the link between the strong and the weaker matches is open, so
@@ -3221,18 +3321,21 @@ mod tests {
         assert_eq!(texts_together(items[1..2].iter()), (0, String::new(), 1));
     }
 
+    /// Minimized, or full screen for a picture, the window keeps the place
+    /// and size it had before.
     #[test]
     fn a_minimized_window_keeps_its_place_and_size() {
         let mut storage = Entries(HashMap::new());
         let mut kept = None;
         // What eframe saves before the app's `save`, then what the app leaves.
-        let mut save = |entry: &str, minimized: bool| {
+        let mut save = |entry: &str, is_temporary: bool| {
             storage.set_string(WINDOW_KEY, entry.to_string());
-            keep_window_state(&mut storage, minimized, &mut kept);
+            keep_window_state(&mut storage, is_temporary, &mut kept);
             storage.get_string(WINDOW_KEY).unwrap()
         };
         assert_eq!(save("1040 by 680 at 32,32", false), "1040 by 680 at 32,32");
         assert_eq!(save("0 by 0 at -32000", true), "1040 by 680 at 32,32");
         assert_eq!(save("1200 by 900 at 40,40", false), "1200 by 900 at 40,40");
+        assert_eq!(save("full screen", true), "1200 by 900 at 40,40");
     }
 }

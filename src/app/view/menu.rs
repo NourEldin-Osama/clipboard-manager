@@ -14,6 +14,9 @@ enum Action {
     Details,
     OpenLink,
     ShowInFolder(PathBuf),
+    ViewFullScreen,
+    #[cfg(windows)]
+    OpenInPhotos,
     SaveImage,
     CopyImageText,
     IgnoreApp(String),
@@ -110,7 +113,17 @@ fn menu_rows(ui: &mut Ui, groups: &[Vec<Entry>], focus_first: bool) -> Picked {
 /// why.
 fn entry_row(ui: &mut Ui, e: &Entry) -> egui::Response {
     let red = matches!(e.action, Action::Delete | Action::DeleteGroup).then_some(RED);
-    let icon = Some(e.action.icon());
+    // Open in Photos shows the Photos app's own icon.
+    #[cfg(windows)]
+    let logo = matches!(e.action, Action::OpenInPhotos)
+        .then(|| crate::app::photos::logo(ui.ctx()))
+        .flatten();
+    #[cfg(not(windows))]
+    let logo: Option<egui::TextureHandle> = None;
+    let icon = Some(match logo {
+        Some(logo) => MenuIcon::Picture(logo.id()),
+        None => MenuIcon::Glyph(e.action.icon()),
+    });
     let Some(why) = &e.unavailable else {
         return menu_entry(ui, &e.text, &e.keys, red, icon);
     };
@@ -135,6 +148,10 @@ impl Action {
             Action::Details => Icon::Open,
             Action::OpenLink => Icon::Browser,
             Action::ShowInFolder(_) => Icon::Folder,
+            Action::ViewFullScreen => Icon::FullScreen,
+            // Shown only if the Photos app's icon can't be read.
+            #[cfg(windows)]
+            Action::OpenInPhotos => Icon::Image,
             Action::SaveImage => Icon::Save,
             Action::IgnoreApp(_) => Icon::EyeOff,
             Action::Delete | Action::DeleteGroup => Icon::Delete,
@@ -180,6 +197,13 @@ impl App {
             own.push(entry(t!("details-show-in-folder"), "", action));
         }
         if it.kind == Kind::Image {
+            // Full screen takes the full window, which the popup isn't.
+            if !in_popup {
+                let text = t!("item-view-full-screen");
+                own.push(entry(text, "F11", Action::ViewFullScreen));
+            }
+            #[cfg(windows)]
+            own.push(entry(t!("item-open-in-photos"), "", Action::OpenInPhotos));
             own.push(entry(t!("details-save-image"), "", Action::SaveImage));
             if it.ocr.as_deref().is_some_and(|t| !t.trim().is_empty()) {
                 own.push(entry(t!("item-copy-image-text"), "", Action::CopyImageText));
@@ -352,6 +376,9 @@ impl App {
             Action::Details => self.run(Command::Open(it.id)),
             Action::OpenLink => ctx.open_url(egui::OpenUrl::new_tab(it.text.trim())),
             Action::ShowInFolder(place) => self.show_in_folder(&place),
+            Action::ViewFullScreen => self.view_full_screen(it.id),
+            #[cfg(windows)]
+            Action::OpenInPhotos => self.open_in_photos(it),
             Action::SaveImage => self.save_image_as(it),
             Action::CopyImageText => {
                 if let Some(text) = it.ocr.as_deref() {

@@ -280,7 +280,7 @@ pub(super) fn thumb_for(
     match (it.kind, thumbs.get(&it.id), &it.image) {
         (Kind::Image, Some(t), _) => t.clone(),
         (Kind::Image, None, Some(p)) => {
-            loader.request(it.id, p, false);
+            loader.request(it.id, p, Size::Thumb);
             None
         }
         _ => None,

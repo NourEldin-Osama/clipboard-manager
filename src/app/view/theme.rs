@@ -241,6 +241,19 @@ pub(crate) fn picture_tint(dark: bool, lit: f32) -> Color32 {
     }
 }
 
+/// A button over a picture: a dark disc that shows on any picture, and on
+/// the black around a picture full screen.
+pub(crate) const PICTURE_BUTTON: Color32 = Color32::from_black_alpha(150);
+
+/// Laid over a button over a picture under the pointer: lighter, a little
+/// less while it is pressed.
+pub(crate) fn picture_button_lit(pressed: bool) -> Color32 {
+    Color32::from_white_alpha(if pressed { 24 } else { 40 })
+}
+
+/// Words on the black around a picture full screen.
+pub(crate) const ON_BLACK_TEXT: Color32 = Color32::from_gray(210);
+
 /// The strip of buttons at the foot of a card under the pointer.
 pub(crate) fn card_footer(dark: bool) -> Color32 {
     if dark {

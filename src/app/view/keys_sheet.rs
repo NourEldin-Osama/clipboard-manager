@@ -32,8 +32,12 @@ impl App {
         if !in_popup {
             list.push((t!("settings-shortcut-view"), k.view.clone()));
         }
+        list.push((t!("settings-shortcut-menu"), "Shift+F10".into()));
+        // Full screen takes the full window, which the popup isn't.
+        if !in_popup {
+            list.push((t!("settings-shortcut-full-screen"), "F11".into()));
+        }
         list.extend([
-            (t!("settings-shortcut-menu"), "Shift+F10".into()),
             (t!("settings-shortcut-escape"), "Escape".into()),
             (t!("settings-shortcut-keys"), "F1".into()),
         ]);

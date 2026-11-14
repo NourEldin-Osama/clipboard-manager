@@ -31,6 +31,7 @@ mod popup;
 mod theme;
 mod time_format;
 mod top_bar;
+mod viewer;
 mod whats_new;
 mod widgets;
 
@@ -53,10 +54,11 @@ pub(crate) use theme::{
     chosen_face, chosen_pill, key_cap, line_color, lit, note_fill, radius, semibold, set_accent,
     size, space, style, text_shade, warning_fill, ACCENTS, AMBER, GREEN, READING_WIDTH, RED,
 };
+pub(crate) use viewer::Viewer;
 pub(crate) use widgets::{
-    chip, cut_line, divider, far, far_layout, flip, lbl, paint_progress, paint_text, pill_job,
-    primary_button, row, row_layout, row_of, row_wrapped, section_title, set_choice_name, set_name,
-    slow_spinner, start_anchor, tip, title_lbl, txt, Reacts, PROGRESS_LINE,
+    chip, cut_line, divider, far, far_layout, flip, lbl, paint_progress, paint_text, part_corners,
+    pill_job, primary_button, row, row_layout, row_of, row_wrapped, section_title, set_choice_name,
+    set_name, slow_spinner, start_anchor, tip, title_lbl, txt, Reacts, PROGRESS_LINE,
 };
 
 impl App {
@@ -148,7 +150,7 @@ impl App {
             for id in thumbs_to_drop(&self.thumb_seen, self.thumbs.keys().copied(), THUMBS_KEPT) {
                 self.thumbs.remove(&id);
                 self.thumb_seen.remove(&id);
-                self.loader.forget(id, false);
+                self.loader.forget(id, Size::Thumb);
             }
         }
     }
@@ -164,13 +166,16 @@ impl eframe::App for App {
     }
 
     fn save(&mut self, storage: &mut dyn eframe::Storage) {
-        keep_window_state(storage, self.was_minimized, &mut self.window_state);
+        let is_temporary = self.was_minimized || self.viewer.is_some();
+        keep_window_state(storage, is_temporary, &mut self.window_state);
     }
 
     fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
-        self.finish_delete();
+        self.finish_deletes();
         self.install_on_exit();
         crate::llama::stop_all();
+        #[cfg(windows)]
+        super::photos::delete_old_copies();
     }
 
     fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
@@ -180,16 +185,13 @@ impl eframe::App for App {
         if self.hotkeys_paused && self.recording.is_none() {
             self.register_hotkeys(ctx);
         }
-        // The messages' time runs while a window shows them (D55). A delete
-        // becomes final when its message is gone, so its Undo waits while
-        // the window is hidden.
+        // The messages' time runs while a window shows them (D55), and so
+        // does a delete's time to undo, so its Undo waits while the window
+        // is hidden.
         let main_shown = !self.win.hidden.load(Ordering::SeqCst)
             && ctx.input(|i| i.viewport().minimized != Some(true));
         let shown = main_shown || self.win.popup.load(Ordering::SeqCst);
         self.tick_toasts(ctx, shown);
-        if self.pending_delete.is_some() && !self.toasts.iter().any(Toast::undoes) {
-            self.finish_delete();
-        }
         // A search server that stopped answering is asked again now and then,
         // also while hidden.
         if let Some(retry) = &mut self.search_retry {
@@ -252,8 +254,17 @@ impl eframe::App for App {
         {
             return;
         }
+        // The window draws, so a show has worked.
+        self.show_check = None;
+        // Settings and what is new need the window: a picture full screen
+        // gives it back.
+        if self.draft.is_some() || self.whats_new_open {
+            self.close_viewer();
+        }
         if self.draft.is_some() {
             self.settings_ui(ui);
+        } else if self.viewer.is_some() {
+            self.viewer_ui(ui);
         } else {
             self.top_bar(ui);
             self.status_bar(ui);

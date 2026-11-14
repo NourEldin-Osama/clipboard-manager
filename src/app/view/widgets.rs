@@ -391,6 +391,23 @@ pub(crate) fn flip_if(rtl: bool, within: Rect, r: Rect) -> Rect {
     }
 }
 
+/// The corners of `part`, a part of a `track` with corners `radius` that
+/// takes the track's whole height: the track's round corners on the sides
+/// where the part reaches the track's ends, square ones inside.
+pub(crate) fn part_corners(track: Rect, part: Rect, radius: u8) -> CornerRadius {
+    let round_if = |reaches: bool| if reaches { radius } else { 0 };
+    let (start, end) = (
+        round_if(part.left() <= track.left() + 0.5),
+        round_if(part.right() >= track.right() - 0.5),
+    );
+    CornerRadius {
+        nw: start,
+        sw: start,
+        ne: end,
+        se: end,
+    }
+}
+
 /// "Pin (Ctrl+P)", or just "Pin" when the shortcut is off.
 pub(super) fn hint(what: &str, keys: &str) -> String {
     if keys.trim().is_empty() {
@@ -520,12 +537,21 @@ pub(super) fn check_row(ui: &mut Ui, text: &str, checked: bool) -> egui::Respons
 /// A menu entry: its text at the reading start and its keys at the far end.
 /// `color` tints the text, as red does for Delete. In a disabled `ui` it is
 /// grayed out, and screen readers hear that it can't be used.
+/// What a menu row shows at its start: one of the app's icons, in the
+/// row's text color, or a picture in its own colors, such as another app's
+/// icon.
+#[derive(Clone, Copy)]
+pub(super) enum MenuIcon {
+    Glyph(Icon),
+    Picture(egui::TextureId),
+}
+
 pub(super) fn menu_entry(
     ui: &mut Ui,
     text: &str,
     keys: &str,
     color: Option<Color32>,
-    icon: Option<Icon>,
+    icon: Option<MenuIcon>,
 ) -> egui::Response {
     let (rect, resp) =
         ui.allocate_exact_size(Vec2::new(ui.available_width(), MENU_ROW), Sense::click());
@@ -562,7 +588,13 @@ pub(super) fn menu_entry(
                     Vec2::splat(16.0),
                 ),
             );
-            icons::paint(ui.painter(), place, icon, color);
+            match icon {
+                MenuIcon::Glyph(icon) => icons::paint(ui.painter(), place, icon, color),
+                MenuIcon::Picture(picture) => {
+                    let whole = Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0));
+                    ui.painter().image(picture, place, whole, Color32::WHITE);
+                }
+            }
             rect.left() + 34.0
         }
         None => rect.left() + 10.0,

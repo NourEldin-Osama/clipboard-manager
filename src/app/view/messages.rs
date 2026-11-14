@@ -1,9 +1,10 @@
 //! Messages at the bottom of the window, in the style of shadcn's Sonner
 //! (D55): a stack at the bottom right (bottom left in Arabic), above the
 //! status bar. The newest is in front and up to two older ones peek out
-//! above it; pointing at the stack opens it, and their time stops meanwhile.
-//! The update's message (D65) stays in the stack until the update is done
-//! or closed.
+//! above it, each a little narrower and fainter; pointing at the stack opens
+//! it, and their time stops meanwhile. The cards glide to their new places.
+//! Every message has a close button. The update's message (D65) stays in
+//! the stack until the update is done or closed.
 
 use std::sync::Arc;
 
@@ -20,6 +21,14 @@ const ABOVE: f32 = 44.0;
 /// the gap between them while the stack is open.
 const PEEK: f32 = 12.0;
 const GAP: f32 = 12.0;
+/// How many older messages peek out behind the newest, and how much
+/// narrower and fainter each is than the one in front of it.
+const BEHIND: usize = MAX_TOASTS - 1;
+const NARROWER: f32 = 0.05;
+const FAINTER: f32 = 0.2;
+/// How long the cards take to glide to their places: as the stack opens or
+/// closes, and as a message comes or goes.
+const STACK_TIME: f32 = 0.2;
 const PAD: f32 = 14.0;
 const ICON: f32 = 16.0;
 const BUTTON_H: f32 = 24.0;
@@ -31,8 +40,9 @@ const SLIDE_TIME: f32 = 0.2;
 const FADE_TIME: f32 = 0.15;
 /// Between the icon, the text and the buttons.
 const SPACE: f32 = 10.0;
-/// The update message's close button: its size, how far it sits from the
-/// card's top and end, and the room its text keeps free for it.
+/// A message's close button: its size, how far it sits from the card's top
+/// and end, and the room its text and the buttons beside it keep free for
+/// it.
 const CLOSE: f32 = 13.0;
 const CLOSE_AT: f32 = 10.0;
 const CLOSE_ROOM: f32 = 19.0;
@@ -135,6 +145,8 @@ pub(super) struct Asked {
     pub(super) action: Option<u64>,
     /// The id of the question whose Cancel was clicked.
     cancel: Option<u64>,
+    /// The id of the message whose close button was clicked.
+    close: Option<u64>,
     /// The id of the question whose button took the keyboard.
     focused: Option<u64>,
     /// The id of the message whose Show is held down.
@@ -271,7 +283,8 @@ impl App {
         }
         let content = ctx.content_rect();
         let width = WIDTH.min(content.width() - 2.0 * EDGE).max(120.0);
-        let (anchor, x) = if i18n::rtl() {
+        let rtl = i18n::rtl();
+        let (anchor, x) = if rtl {
             (Align2::LEFT_BOTTOM, EDGE)
         } else {
             (Align2::RIGHT_BOTTOM, -EDGE)
@@ -279,7 +292,9 @@ impl App {
         let open = self.toasts_hovered;
         let showing = self.toast_showing;
         let mut asked = Asked::default();
-        let area = egui::Area::new(egui::Id::unique("toasts"))
+        let mut stack = Rect::NOTHING;
+        let mut gliding = false;
+        egui::Area::new(egui::Id::unique("toasts"))
             .order(egui::Order::Foreground)
             .anchor(anchor, Vec2::new(x, -ABOVE))
             .show(ctx, |ui| {
@@ -287,63 +302,32 @@ impl App {
                     .iter()
                     .map(|t| lay_out(ui, t, width, showing == Some(t.id), None))
                     .collect();
-                if open {
-                    // All of them, the newest at the bottom.
-                    let total =
-                        laid.iter().map(|l| l.height).sum::<f32>() + GAP * (laid.len() - 1) as f32;
-                    let (rect, _) = ui.allocate_exact_size(Vec2::new(width, total), Sense::hover());
-                    let mut top = rect.top();
-                    for (toast, l) in shown.iter().zip(&laid) {
-                        let card = Rect::from_min_size(
-                            Pos2::new(rect.left(), top),
-                            Vec2::new(width, l.height),
-                        );
-                        let (shift, opacity) = motion(ui.ctx(), toast);
-                        let card = card.translate(Vec2::new(0.0, shift));
-                        ui.scope(|ui| {
-                            ui.multiply_opacity(opacity);
-                            paint_card(ui, card);
-                            paint_content(ui, card, toast, l, &mut asked, None);
-                        });
-                        top += l.height + GAP;
-                    }
-                } else {
-                    // The newest in front; up to two older ones peek out.
-                    let behind = (laid.len() - 1).min(2);
-                    let front = laid.last().expect("there is a message");
-                    let (rect, _) = ui.allocate_exact_size(
-                        Vec2::new(width, front.height + PEEK * behind as f32),
-                        Sense::hover(),
-                    );
-                    let card = Rect::from_min_size(
-                        Pos2::new(rect.left(), rect.bottom() - front.height),
-                        Vec2::new(width, front.height),
-                    );
-                    // The farthest first, so the nearer ones cover it.
-                    for step in (1..=behind).rev() {
-                        let narrower = width * (1.0 - 0.05 * step as f32);
-                        paint_card(
-                            ui,
-                            Rect::from_center_size(
-                                card.center() - Vec2::new(0.0, PEEK * step as f32),
-                                Vec2::new(narrower, front.height),
-                            ),
-                        );
-                    }
-                    let toast = shown.last().expect("there is a message");
+                let heights: Vec<f32> = laid.iter().map(|l| l.height).collect();
+                let places = stack_places(&heights, open);
+                let height = places.iter().map(|p| p.lift + p.height).fold(0.0, f32::max);
+                ui.allocate_exact_size(Vec2::new(width, height), Sense::hover());
+                // Placed from the stack's bottom edge, which stays put while
+                // the area takes a frame to follow a new size.
+                stack = stack_rect(content, width, height, rtl);
+                let ids: Vec<u64> = shown.iter().map(|t| t.id).collect();
+                let on_the_way = glide(ui.ctx(), popup, &ids, &places);
+                gliding = on_the_way != places;
+                // The oldest first, so the newer ones cover it.
+                for ((toast, l), place) in shown.iter().zip(&laid).zip(&on_the_way) {
                     let (shift, opacity) = motion(ui.ctx(), toast);
-                    let card = card.translate(Vec2::new(0.0, shift));
+                    let card = place.card(stack).translate(Vec2::new(0.0, shift));
                     ui.scope(|ui| {
-                        ui.multiply_opacity(opacity);
+                        ui.multiply_opacity(opacity * place.opacity);
                         paint_card(ui, card);
-                        paint_content(ui, card, toast, front, &mut asked, None);
+                        if place.content > 0.0 {
+                            ui.multiply_opacity(place.content);
+                            paint_content(ui, card, toast, l, &mut asked, None);
+                        }
                     });
                 }
             });
-        self.toasts_hovered = ctx
-            .pointer_hover_pos()
-            .is_some_and(|p| area.response.rect.contains(p));
-        let mut moving = false;
+        self.toasts_hovered = ctx.pointer_hover_pos().is_some_and(|p| stack.contains(p));
+        let mut moving = gliding;
         for toast in self.toasts.iter_mut().filter(|t| in_window(t)) {
             let (shift, opacity) = motion(ctx, toast);
             moving |= shift > 0.0 || opacity < 1.0;
@@ -377,6 +361,18 @@ impl App {
             self.toasts.retain(|t| t.id != id);
             self.focus_search.store(true, Ordering::SeqCst);
         }
+        // Only the message goes: a delete it could undo stays in the undo
+        // history, for Ctrl+Z.
+        if let Some(at) = asked
+            .close
+            .and_then(|id| self.toasts.iter().position(|t| t.id == id))
+        {
+            let toast = self.toasts.remove(at);
+            // A question closed so answers no, as Cancel does.
+            if toast.question.is_some() {
+                self.focus_search.store(true, Ordering::SeqCst);
+            }
+        }
         if let Some(action) = asked.update {
             self.update_action(action, ctx);
         }
@@ -403,6 +399,171 @@ fn motion(ctx: &egui::Context, toast: &Toast) -> (f32, f32) {
     (shift + (1.0 - fading) * SLIDE / 2.0, coming.min(fading))
 }
 
+/// Where a message's card sits in the stack, and how it shows there.
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct Place {
+    /// From the stack's bottom edge to the card's.
+    lift: f32,
+    height: f32,
+    /// Its width, as a part of the stack's.
+    scale: f32,
+    opacity: f32,
+    /// How much its text and buttons show: not at all on an older card
+    /// behind the newest while the stack is closed.
+    content: f32,
+}
+
+impl Place {
+    /// Its card in `stack`, in the middle of its width.
+    fn card(&self, stack: Rect) -> Rect {
+        let half = stack.width() * self.scale / 2.0;
+        let bottom = stack.bottom() - self.lift;
+        Rect::from_min_max(
+            Pos2::new(stack.center().x - half, bottom - self.height),
+            Pos2::new(stack.center().x + half, bottom),
+        )
+    }
+
+    /// The way from here to `to`, `done` of it gone.
+    fn toward(self, to: Place, done: f32) -> Place {
+        if done >= 1.0 {
+            return to;
+        }
+        let mix = |from: f32, to: f32| from + (to - from) * done;
+        Place {
+            lift: mix(self.lift, to.lift),
+            height: mix(self.height, to.height),
+            scale: mix(self.scale, to.scale),
+            opacity: mix(self.opacity, to.opacity),
+            content: mix(self.content, to.content),
+        }
+    }
+}
+
+/// The places of the cards of messages `heights` tall, the oldest first.
+/// Closed, the newest is in front and up to two older ones peek out above
+/// it, each a little narrower and fainter, as tall as the newest and
+/// blank. Open, all of them show whole, the newest at the bottom.
+fn stack_places(heights: &[f32], open: bool) -> Vec<Place> {
+    let Some(&front) = heights.last() else {
+        return Vec::new();
+    };
+    let mut lift = 0.0;
+    let mut places: Vec<Place> = heights
+        .iter()
+        .rev()
+        .enumerate()
+        .map(|(behind, &height)| {
+            if open {
+                let place = Place {
+                    lift,
+                    height,
+                    scale: 1.0,
+                    opacity: 1.0,
+                    content: 1.0,
+                };
+                lift += height + GAP;
+                return place;
+            }
+            let step = behind.min(BEHIND) as f32;
+            Place {
+                lift: PEEK * step,
+                height: front,
+                scale: 1.0 - NARROWER * step,
+                opacity: if behind > BEHIND {
+                    0.0
+                } else {
+                    1.0 - FAINTER * step
+                },
+                content: if behind == 0 { 1.0 } else { 0.0 },
+            }
+        })
+        .collect();
+    places.reverse();
+    places
+}
+
+/// Where a stack `width` wide and `height` tall goes in a window whose
+/// content is `content`: at the bottom right above the status bar, or the
+/// bottom left in Arabic, as the area that holds it is anchored.
+fn stack_rect(content: Rect, width: f32, height: f32, rtl: bool) -> Rect {
+    let left = if rtl {
+        content.left() + EDGE
+    } else {
+        content.right() - EDGE - width
+    };
+    let bottom = content.bottom() - ABOVE;
+    Rect::from_min_max(
+        Pos2::new(left, bottom - height),
+        Pos2::new(left + width, bottom),
+    )
+}
+
+/// A card on its way to its place, from where it was, since when.
+#[derive(Clone, Copy)]
+struct Glide {
+    from: Place,
+    to: Place,
+    since: f64,
+}
+
+/// Where the cards of the messages `ids` are in this frame: each glides to
+/// its place in `places` over `STACK_TIME`, or goes at once when animations
+/// are off. Each window keeps its own.
+fn glide(ctx: &egui::Context, popup: bool, ids: &[u64], places: &[Place]) -> Vec<Place> {
+    let time = if ctx.style_of(ctx.theme()).animation_time == 0.0 {
+        0.0
+    } else {
+        STACK_TIME
+    };
+    let now = ctx.input(|i| i.time);
+    ctx.data_mut(|data| {
+        let key = egui::Id::unique(("toast-glides", popup));
+        let glides = data.get_temp_mut_or_default::<HashMap<u64, Glide>>(key);
+        glide_at(glides, ids, places, now, time)
+    })
+}
+
+/// `glide` at the time `now`, each card taking `time` seconds, with the
+/// glides in `glides`, which forgets the cards no longer shown. A new card
+/// starts at its place.
+fn glide_at(
+    glides: &mut HashMap<u64, Glide>,
+    ids: &[u64],
+    places: &[Place],
+    now: f64,
+    time: f32,
+) -> Vec<Place> {
+    let done = |since: f64| {
+        if time > 0.0 {
+            ((now - since) as f32 / time).clamp(0.0, 1.0)
+        } else {
+            1.0
+        }
+    };
+    glides.retain(|id, _| ids.contains(id));
+    ids.iter()
+        .zip(places)
+        .map(|(&id, &to)| {
+            let glide = glides.entry(id).or_insert(Glide {
+                from: to,
+                to,
+                since: now,
+            });
+            if glide.to != to {
+                // From wherever it is on its way, to its new place.
+                let from = glide.from.toward(glide.to, done(glide.since));
+                *glide = Glide {
+                    from,
+                    to,
+                    since: now,
+                };
+            }
+            glide.from.toward(glide.to, done(glide.since))
+        })
+        .collect()
+}
+
 /// The card behind a message: its shadow, fill and edge.
 fn paint_card(ui: &Ui, rect: Rect) {
     let v = ui.visuals();
@@ -426,9 +587,10 @@ fn paint_card(ui: &Ui, rect: Rect) {
 /// Lays out a message at `width`: its text beside its icon and buttons, or,
 /// when there it would take more than two lines and fewer across the whole
 /// width, above a row with the buttons. The update's message always has its
-/// buttons under its text, and room for its close button. While `showing`,
-/// the second line is the copy's whole text. With `app_icon` it is the note
-/// on the screen: the app icon, and never Show.
+/// buttons under its text. Every message keeps room for its close button.
+/// While `showing`, the second line is the copy's whole text. With
+/// `app_icon` it is the note on the screen: the app icon, and never Show or
+/// a close button.
 pub(super) fn lay_out(
     ui: &Ui,
     toast: &Toast,
@@ -486,11 +648,7 @@ pub(super) fn lay_out(
     } else {
         0.0
     };
-    let close = if toast.update.is_some() {
-        CLOSE_ROOM
-    } else {
-        0.0
-    };
+    let close = if app_icon.is_none() { CLOSE_ROOM } else { 0.0 };
     let room = width - 2.0 * PAD - icon - close;
     let second = match (&toast.secret, showing) {
         (Some(secret), true) => Some(secret.as_str()),
@@ -573,8 +731,9 @@ fn text_height(
         + gap
 }
 
-/// Paints a message's icon (or `app_icon`), text and buttons in its card,
-/// mirrored in Arabic, and notes a click on its button or a press on Show.
+/// Paints a message's icon (or `app_icon`), text, buttons and close button
+/// in its card, mirrored in Arabic, and notes a click on a button or a press
+/// on Show. The note on the screen (`app_icon`) has no close button.
 pub(super) fn paint_content(
     ui: &mut Ui,
     card: Rect,
@@ -618,7 +777,8 @@ pub(super) fn paint_content(
         icons::paint(ui.painter(), icon_at, icon, color);
         left += ICON + SPACE;
     }
-    if parts.is_some() {
+    let closes = app_icon.is_none();
+    if closes {
         let at = m(Rect::from_min_size(
             Pos2::new(card.right() - CLOSE_AT - CLOSE, card.top() + CLOSE_AT),
             Vec2::splat(CLOSE),
@@ -629,7 +789,7 @@ pub(super) fn paint_content(
             egui::Id::unique(("toast-close", toast.id)),
             Sense::click(),
         );
-        let label = t!("update-close");
+        let label = t!("toast-close");
         r.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, &label));
         let color = if r.hovered() {
             v.strong_text_color()
@@ -638,10 +798,20 @@ pub(super) fn paint_content(
         };
         icons::paint(ui.painter(), at, Icon::Close, color);
         if tip(r, &label).clicked() {
-            asked.update = Some(UpdateAction::Close);
+            // The update's message hides until the update's next step.
+            if parts.is_some() {
+                asked.update = Some(UpdateAction::Close);
+            } else {
+                asked.close = Some(toast.id);
+            }
         }
     }
-    let mut right = inner.right();
+    // Buttons beside the text keep clear of the close button.
+    let mut right = if closes && !laid.below {
+        inner.right() - CLOSE_ROOM
+    } else {
+        inner.right()
+    };
     let labels = parts.iter().flat_map(|p| &p.buttons);
     for ((g, action, look), (label, ..)) in laid.update_buttons.iter().zip(labels) {
         let w = match look {
@@ -962,19 +1132,48 @@ mod tests {
         toast: &Toast,
         events: Vec<egui::Event>,
     ) -> (Asked, Vec<(String, Rect)>) {
+        let frame = card_frame(ctx, toast, events);
+        assert!(frame.below, "the buttons sit under the question");
+        (frame.asked, frame.buttons)
+    }
+
+    /// What one frame of a message's card showed.
+    struct Frame {
+        card: Rect,
+        /// What its buttons asked for.
+        asked: Asked,
+        /// The screen reader's buttons, with where they are.
+        buttons: Vec<(String, Rect)>,
+        /// Where its texts were drawn, also those in its buttons.
+        texts: Vec<Rect>,
+        /// Its buttons sit under its text.
+        below: bool,
+    }
+
+    /// One frame of `toast`'s card, with `events`.
+    fn card_frame(ctx: &egui::Context, toast: &Toast, events: Vec<egui::Event>) -> Frame {
         let input = egui::RawInput {
             events,
             focused: true,
             ..Default::default()
         };
         let mut asked = Asked::default();
+        let (mut card, mut below) = (Rect::NOTHING, false);
         let mut output = ctx.run_ui(input, |ui| {
             let laid = lay_out(ui, toast, WIDTH, false, None);
-            assert!(laid.below, "the buttons sit under the question");
-            let card = Rect::from_min_size(Pos2::new(20.0, 20.0), Vec2::new(WIDTH, laid.height));
+            below = laid.below;
+            card = Rect::from_min_size(Pos2::new(20.0, 20.0), Vec2::new(WIDTH, laid.height));
             paint_content(ui, card, toast, &laid, &mut asked, None);
         });
         output.textures_delta.clear();
+        let texts = output
+            .shapes
+            .iter()
+            .filter_map(|clipped| match &clipped.shape {
+                egui::Shape::Text(shape) => Some(shape.galley.rect.translate(shape.pos.to_vec2())),
+                _ => None,
+            })
+            .collect();
         // Only while a screen reader listens, or a test asks for it.
         let tree = output.platform_output.accesskit_update;
         let buttons = tree
@@ -990,12 +1189,18 @@ mod tests {
                 (node.label().unwrap_or("").to_string(), rect)
             })
             .collect();
-        (asked, buttons)
+        Frame {
+            card,
+            asked,
+            buttons,
+            texts,
+            below,
+        }
     }
 
     /// A click on the button named `name`, over three frames.
     fn click(ctx: &egui::Context, toast: &Toast, name: &str) -> Asked {
-        let (_, buttons) = question_frame(ctx, toast, Vec::new());
+        let buttons = card_frame(ctx, toast, Vec::new()).buttons;
         let at = buttons
             .iter()
             .find(|(n, _)| n == name)
@@ -1008,9 +1213,91 @@ mod tests {
             pressed,
             modifiers: egui::Modifiers::NONE,
         };
-        question_frame(ctx, toast, vec![egui::Event::PointerMoved(at)]);
-        question_frame(ctx, toast, vec![button(true)]);
-        question_frame(ctx, toast, vec![button(false)]).0
+        card_frame(ctx, toast, vec![egui::Event::PointerMoved(at)]);
+        card_frame(ctx, toast, vec![button(true)]);
+        card_frame(ctx, toast, vec![button(false)]).asked
+    }
+
+    /// Every message in the window has a close button at its top far
+    /// corner, the top left in Arabic, named for screen readers. Its texts
+    /// and other buttons keep clear of it, and a click on it closes only
+    /// that message, or hides the update's.
+    fn check_every_message_has_a_close_button() {
+        let ctx = egui::Context::default();
+        add_fonts(&ctx);
+        ctx.enable_accesskit();
+        // The fonts apply from the next frame.
+        ctx.run_ui(egui::RawInput::default(), |_| {})
+            .textures_delta
+            .clear();
+        let mut deleted = message(&t!("toast-deleted"), None, Some(&t!("toast-undo")));
+        (deleted.secret, deleted.keys) = (None, Some(UNDO_KEYS.to_string()));
+        let app = "Visual Studio Code";
+        let mut long = message(&t!("toast-app-ignored", app = app), None, None);
+        long.secret = None;
+        let skipped = message(
+            &t!("toast-skipped-password"),
+            Some("From Clipboard Manager · 28 characters"),
+            Some(&t!("toast-save-anyway")),
+        );
+        let release = Release::made_up("0.7.2", 29, 30 << 20);
+        let update = update_toast(&UpdateState::Available(release));
+        let close = t!("toast-close");
+        for toast in [deleted, long, skipped, question(false), update] {
+            let frame = card_frame(&ctx, &toast, Vec::new());
+            let (card, buttons) = (frame.card, &frame.buttons);
+            let at = buttons
+                .iter()
+                .find(|(name, _)| *name == close)
+                .unwrap_or_else(|| panic!("{close} in {buttons:?}"))
+                .1;
+            let from_end = if i18n::rtl() {
+                at.left() - card.left()
+            } else {
+                card.right() - at.right()
+            };
+            assert!(
+                (from_end - (CLOSE_AT - 4.0)).abs() < 0.5,
+                "{at:?} in {card:?}"
+            );
+            assert!((at.top() - card.top() - (CLOSE_AT - 4.0)).abs() < 0.5);
+            for (name, other) in buttons.iter().filter(|(name, _)| *name != close) {
+                assert!(
+                    !other.intersects(at),
+                    "{name} at {other:?}, {close} at {at:?}"
+                );
+            }
+            for text in &frame.texts {
+                assert!(
+                    !text.intersects(at),
+                    "a text at {text:?}, {close} at {at:?}"
+                );
+            }
+            let asked = click(&ctx, &toast, &close);
+            if toast.update.is_some() {
+                assert_eq!(asked.update, Some(UpdateAction::Close));
+            } else {
+                assert_eq!((asked.close, asked.action), (Some(toast.id), None));
+            }
+        }
+    }
+
+    #[test]
+    fn every_message_has_a_close_button() {
+        check_every_message_has_a_close_button();
+    }
+
+    #[test]
+    fn every_message_has_a_close_button_right_to_left() {
+        crate::i18n::passes_in_arabic(module_path!(), "every_message_has_a_close_button_in_arabic");
+    }
+
+    #[test]
+    #[ignore = "run in a process of its own by every_message_has_a_close_button_right_to_left"]
+    fn every_message_has_a_close_button_in_arabic() {
+        if crate::i18n::arabic_run() {
+            check_every_message_has_a_close_button();
+        }
     }
 
     /// Never record, filled, then Cancel at the far end; each answers.
@@ -1236,5 +1523,107 @@ mod tests {
         });
         // The font atlas upload no renderer takes here.
         output.textures_delta.clear();
+    }
+
+    /// A place's lift, height, width part, opacity and content, rounded to
+    /// hundredths.
+    fn parts(place: &Place) -> [f32; 5] {
+        [
+            place.lift,
+            place.height,
+            place.scale,
+            place.opacity,
+            place.content,
+        ]
+        .map(|value| (value * 100.0).round() / 100.0)
+    }
+
+    /// Closed, the newest is in front and the two before it peek out above
+    /// it, each narrower, fainter and blank, as tall as the newest; an
+    /// older fourth would hide behind them.
+    #[test]
+    fn the_closed_stack_shows_the_newest_with_two_older_ones_peeking_out() {
+        let places = stack_places(&[40.0, 70.0, 52.0, 60.0], false);
+        let parts: Vec<[f32; 5]> = places.iter().map(parts).collect();
+        assert_eq!(
+            parts,
+            [
+                [24.0, 60.0, 0.9, 0.0, 0.0],
+                [24.0, 60.0, 0.9, 0.6, 0.0],
+                [12.0, 60.0, 0.95, 0.8, 0.0],
+                [0.0, 60.0, 1.0, 1.0, 1.0],
+            ]
+        );
+        assert!(stack_places(&[], false).is_empty());
+    }
+
+    /// Open, every message shows whole, the newest at the bottom and each
+    /// older one above it.
+    #[test]
+    fn the_open_stack_shows_every_message_whole() {
+        let places = stack_places(&[70.0, 52.0, 60.0], true);
+        let parts: Vec<[f32; 5]> = places.iter().map(parts).collect();
+        let above_newest = 60.0 + GAP;
+        assert_eq!(
+            parts,
+            [
+                [above_newest + 52.0 + GAP, 70.0, 1.0, 1.0, 1.0],
+                [above_newest, 52.0, 1.0, 1.0, 1.0],
+                [0.0, 60.0, 1.0, 1.0, 1.0],
+            ]
+        );
+    }
+
+    /// The stack sits at the window's bottom right above the status bar, or
+    /// its bottom left in Arabic; the older cards are centered over the
+    /// newest, their tops apart by the part that peeks out.
+    #[test]
+    fn the_cards_sit_in_the_window_s_corner_in_both_directions() {
+        let content = Rect::from_min_size(Pos2::ZERO, Vec2::new(1000.0, 700.0));
+        let ltr = stack_rect(content, WIDTH, 76.0, false);
+        let rtl = stack_rect(content, WIDTH, 76.0, true);
+        assert_eq!((ltr.right(), ltr.bottom()), (1000.0 - EDGE, 700.0 - ABOVE));
+        assert_eq!((rtl.left(), rtl.bottom()), (EDGE, 700.0 - ABOVE));
+        assert_eq!(
+            (ltr.size(), rtl.size()),
+            (Vec2::new(WIDTH, 76.0), ltr.size())
+        );
+        let cards: Vec<Rect> = stack_places(&[52.0, 52.0, 52.0], false)
+            .iter()
+            .map(|place| place.card(ltr))
+            .collect();
+        assert_eq!(cards[2].width(), WIDTH);
+        assert_eq!(cards[2].bottom(), ltr.bottom());
+        for (older, newer) in cards.iter().zip(&cards[1..]) {
+            assert!((older.center().x - newer.center().x).abs() < 0.01);
+            assert!(older.width() < newer.width());
+            assert!((newer.top() - older.top() - PEEK).abs() < 0.01);
+        }
+        assert!(
+            (cards[0].top() - ltr.top()).abs() < 0.01,
+            "the stack holds them"
+        );
+    }
+
+    /// As a message comes, the one in front glides back over `STACK_TIME`
+    /// while the new one takes its place; a card that is gone is
+    /// forgotten; with animations off, the cards go to their places at once.
+    #[test]
+    fn the_cards_glide_to_their_new_places() {
+        let mut glides = HashMap::new();
+        let one = stack_places(&[52.0], false);
+        assert_eq!(glide_at(&mut glides, &[1], &one, 10.0, STACK_TIME), one);
+        let two = stack_places(&[52.0, 52.0], false);
+        let start = glide_at(&mut glides, &[1, 2], &two, 11.0, STACK_TIME);
+        assert_eq!(start, [one[0], two[1]], "each starts where it was");
+        let quarter = 11.0 + f64::from(STACK_TIME) / 4.0;
+        let on_the_way = glide_at(&mut glides, &[1, 2], &two, quarter, STACK_TIME);
+        assert_eq!(parts(&on_the_way[0]), [3.0, 52.0, 0.99, 0.95, 0.75]);
+        assert_eq!(glide_at(&mut glides, &[1, 2], &two, 12.0, STACK_TIME), two);
+        glide_at(&mut glides, &[2], &one, 12.5, STACK_TIME);
+        assert_eq!(glides.len(), 1, "the first is forgotten");
+        // The second message grew taller as it opened.
+        let open = stack_places(&[52.0, 70.0], true);
+        assert_eq!(glide_at(&mut glides, &[1, 2], &open, 12.5, 0.0), open);
     }
 }

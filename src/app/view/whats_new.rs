@@ -17,7 +17,11 @@ const WINDOW_ROOM: f32 = 48.0;
 const LIST_HEIGHT: f32 = 480.0;
 
 /// How tall the title's row and the Close button's row are.
-const BAR_HEIGHT: f32 = 32.0;
+const BAR_HEIGHT: f32 = 36.0;
+
+/// How big the close button beside the title is, and its cross.
+const CLOSE_BUTTON: f32 = 36.0;
+const CLOSE_CROSS: f32 = 18.0;
 
 /// How wide the place of a note's dot is.
 const DOT_PLACE: f32 = 12.0;
@@ -65,9 +69,9 @@ fn sheet(ctx: &egui::Context, notes: &[String]) -> egui::ModalResponse<(Rect, bo
                 ui.label(title_txt(&title, size::LARGE, None));
                 far(ui, |ui| {
                     let tip = hint(&t!("whats-new-close"), "Escape");
-                    let size = Vec2::splat(28.0);
-                    closed |=
-                        icon_button_ex(ui, Icon::Close, &tip, size, 13.0, None, None).clicked();
+                    let size = Vec2::splat(CLOSE_BUTTON);
+                    closed |= icon_button_ex(ui, Icon::Close, &tip, size, CLOSE_CROSS, None, None)
+                        .clicked();
                 });
             });
             ui.add_space(space::MEDIUM);

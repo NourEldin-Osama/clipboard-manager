@@ -58,6 +58,7 @@ pub(super) enum Icon {
     Server,
     /// A program that has no icon of its own.
     AppGeneric,
+    FullScreen,
     /// A plain filled circle (status light), not an icon.
     Dot,
 }
@@ -158,11 +159,12 @@ fn source(icon: Icon) -> Option<(&'static str, &'static [u8])> {
         Icon::Language => svg!("language"),
         Icon::Server => svg!("server"),
         Icon::AppGeneric => svg!("app_generic"),
+        Icon::FullScreen => svg!("full_screen"),
         Icon::Dot => return None,
     })
 }
 
-const ALL: [Icon; 43] = [
+const ALL: [Icon; 44] = [
     Icon::Refresh,
     Icon::Eye,
     Icon::EyeOff,
@@ -205,6 +207,7 @@ const ALL: [Icon; 43] = [
     Icon::Language,
     Icon::Server,
     Icon::AppGeneric,
+    Icon::FullScreen,
     Icon::Dot,
 ];
 
@@ -241,6 +244,17 @@ pub(super) fn paint(p: &Painter, rect: Rect, icon: Icon, color: Color32) {
         MIRRORED
     } else {
         UPRIGHT
+    };
+    paint_with(p, rect, icon, color, uv);
+}
+
+/// Paints `icon` as `paint` does, mirrored: Back then points the other way,
+/// to what comes next.
+pub(super) fn paint_mirrored(p: &Painter, rect: Rect, icon: Icon, color: Color32) {
+    let uv = if mirrored(icon) && i18n::rtl() {
+        UPRIGHT
+    } else {
+        MIRRORED
     };
     paint_with(p, rect, icon, color, uv);
 }
@@ -393,6 +407,17 @@ pub(super) fn icon_button_at(
     view::tip(resp, tip)
 }
 
+/// A button showing `picture` in its own colors, such as another app's
+/// icon, lit under the pointer as the icon buttons are.
+pub(super) fn picture_button(ui: &mut Ui, picture: egui::TextureId, tip: &str) -> egui::Response {
+    let (rect, resp) = ui.allocate_exact_size(Vec2::splat(34.0), Sense::click());
+    resp.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, ui.is_enabled(), tip));
+    paint_button_back(ui, rect, &resp, None);
+    let place = Rect::from_center_size(rect.center(), Vec2::splat(18.0));
+    ui.painter().image(picture, place, UPRIGHT, Color32::WHITE);
+    view::tip(resp, tip)
+}
+
 fn paint_button(
     ui: &Ui,
     rect: Rect,
@@ -402,6 +427,24 @@ fn paint_button(
     fill: Option<Color32>,
     fg: Option<Color32>,
 ) {
+    paint_button_back(ui, rect, resp, fill);
+    let v = ui.visuals();
+    let color = fg.unwrap_or(if resp.hovered() {
+        v.strong_text_color()
+    } else {
+        v.text_color()
+    });
+    paint(
+        ui.painter(),
+        Rect::from_center_size(rect.center(), Vec2::splat(glyph)),
+        icon,
+        color,
+    );
+}
+
+/// A button's background: its `fill`, if any, lit under the pointer, or
+/// with none only under the pointer and while pressed.
+fn paint_button_back(ui: &Ui, rect: Rect, resp: &egui::Response, fill: Option<Color32>) {
     let v = ui.visuals();
     let p = ui.painter();
     let pressed = resp.is_pointer_button_down_on();
@@ -428,17 +471,6 @@ fn paint_button(
         }
         None => {}
     }
-    let color = fg.unwrap_or(if resp.hovered() {
-        v.strong_text_color()
-    } else {
-        v.text_color()
-    });
-    paint(
-        p,
-        Rect::from_center_size(rect.center(), Vec2::splat(glyph)),
-        icon,
-        color,
-    );
 }
 
 /// An icon and a label side by side, both centred on the row's midline.
@@ -666,6 +698,20 @@ pub(super) fn menu_item(ui: &mut Ui, icon: Icon, text: &str) -> egui::Response {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Each icon draws something, all of it white, so tinting gives it the
+    /// tint's colour.
+    #[test]
+    fn every_icon_draws_in_white() {
+        for (uri, bytes) in ALL.into_iter().filter_map(source) {
+            let image = egui_extras::image::load_svg_bytes(bytes, &Default::default())
+                .unwrap_or_else(|e| panic!("{uri}: {e}"));
+            let drawn: Vec<&Color32> = image.pixels.iter().filter(|p| p.a() > 0).collect();
+            assert!(!drawn.is_empty(), "{uri} draws nothing");
+            let white = drawn.iter().all(|p| p.r() == p.g() && p.g() == p.b());
+            assert!(white, "{uri} is not white");
+        }
+    }
 
     #[test]
     fn every_logo_draws_and_only_those_in_colour_keep_colours() {
