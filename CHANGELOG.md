@@ -4,6 +4,33 @@ What changed in each version, for the people who use the app. Each release
 starts its notes with the section of the version it was built from, so add
 the notes here before a push that makes a release.
 
+## 0.9.0
+
+- A picture can fill the screen: the button beside Save in the details
+  pane, View full screen in its menu, or F11. The arrow keys and the
+  arrows on screen go to the previous and next picture, the mouse wheel
+  zooms, dragging moves a zoomed picture, and Esc puts the window back.
+  A small picture keeps its own size.
+- On Windows, Open in Photos shows a picture in the Photos app, and its
+  button has the Photos app's own icon. Photos gets a copy among the
+  temporary files, which the app deletes later.
+- Every delete has its own message with Undo, and Ctrl+Z undoes one
+  delete after another. A deleted item can come back for 20 seconds,
+  also after its message has closed. Older messages stack behind the
+  newest, fainter, and every message has a close button.
+- A window shown by a shortcut or a second start is shown again when it
+  has drawn nothing, so it doesn't stay black.
+- In Settings, the choices stay still under the pointer, and the chosen
+  one fills its part. The note that changes are saved ends where the
+  cards end, the first title lines up with the page list, and a note
+  under a changed setting has even room around it.
+- Dark panels shows only in the dark theme, and the answers in Where
+  your data goes start on one line, closer to their names.
+- What's new has even margins, a bigger close button and a Close button
+  at the end.
+- The lit Grid, List or Details pane button fills its part of the
+  switch.
+
 ## 0.8.0
 
 - Pause moved from the top bar to the far end of the status bar. While
