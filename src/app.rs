@@ -926,6 +926,8 @@ pub struct App {
     whats_new_pending: bool,
     /// What is new in this version is open over the full window.
     whats_new_open: bool,
+    /// The languages' licenses are open over the window (Settings, About).
+    licenses_open: bool,
     /// The command being run came from a key, so its message doesn't name it.
     by_key: bool,
     /// Keys a message has named in this run: each is named once.
@@ -1121,6 +1123,7 @@ impl App {
             keys_sheet: None,
             whats_new_pending: false,
             whats_new_open: false,
+            licenses_open: false,
             by_key: false,
             taught: HashSet::new(),
             copy_hint: None,

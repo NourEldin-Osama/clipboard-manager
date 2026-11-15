@@ -392,6 +392,50 @@ fn color(set: &SyntaxSet, theme: &Theme, text: &str) -> Option<Colored> {
     Some(Colored { text, pieces })
 }
 
+/// The languages' own licenses, which ask to be shown with the app: each
+/// language's name with its license's text.
+pub fn licenses() -> &'static [(String, String)] {
+    static LICENSES: std::sync::OnceLock<Vec<(String, String)>> = std::sync::OnceLock::new();
+    LICENSES.get_or_init(|| {
+        two_face::acknowledgement::listing()
+            .for_syntaxes()
+            .iter()
+            .map(|license| {
+                // Kept as "syntaxes/<group>/<language>/LICENSE".
+                let folder = license.rel_path.parent().and_then(|p| p.file_name());
+                let name = folder.map_or_else(
+                    || license.rel_path.display().to_string(),
+                    |f| f.to_string_lossy().into_owned(),
+                );
+                (name, one_line_paragraphs(&license.text))
+            })
+            .collect()
+    })
+}
+
+/// `text` with each paragraph on one line: licenses keep their files'
+/// short lines, which would break again where the sheet wraps them.
+fn one_line_paragraphs(text: &str) -> String {
+    let mut paragraphs: Vec<String> = Vec::new();
+    let mut paragraph = String::new();
+    for line in text.lines().map(str::trim) {
+        if line.is_empty() {
+            if !paragraph.is_empty() {
+                paragraphs.push(std::mem::take(&mut paragraph));
+            }
+            continue;
+        }
+        if !paragraph.is_empty() {
+            paragraph.push(' ');
+        }
+        paragraph.push_str(line);
+    }
+    if !paragraph.is_empty() {
+        paragraphs.push(paragraph);
+    }
+    paragraphs.join("\n\n")
+}
+
 /// Colors code on a thread of its own: loading the languages and coloring
 /// a long text take long enough to stall the window.
 struct Colorer {
@@ -559,6 +603,24 @@ mod tests {
             .iter()
             .any(|k| k.contains("name")));
         assert_eq!(roles(&json, Role::Number), ["3"]);
+    }
+
+    #[test]
+    fn the_languages_licenses_have_names_and_texts() {
+        let licenses = licenses();
+        assert!(licenses.len() > 10, "{}", licenses.len());
+        for (name, text) in licenses {
+            assert!(!name.is_empty() && !name.contains('/'), "{name}");
+            assert!(text.len() > 100, "{name}");
+            let joined = text.replace("\n\n", "");
+            assert!(!joined.contains('\n'), "{name}: a paragraph on one line");
+        }
+        assert_eq!(
+            one_line_paragraphs(
+                "Permission is granted\r\nto anyone.\r\n  \r\nTHE SOFTWARE\nIS AS IS.\n"
+            ),
+            "Permission is granted to anyone.\n\nTHE SOFTWARE IS AS IS."
+        );
     }
 
     #[test]

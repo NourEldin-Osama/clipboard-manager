@@ -24,6 +24,7 @@ mod items;
 mod key_hints;
 mod keyboard;
 mod keys_sheet;
+mod licenses;
 mod list;
 mod menu;
 mod messages;
@@ -345,6 +346,7 @@ impl eframe::App for App {
         self.toasts(&ctx, false);
         self.keys_sheet(&ctx, false);
         self.whats_new(&ctx);
+        self.licenses(&ctx);
         if ctx.input(|i| !i.raw.hovered_files.is_empty()) {
             let r = ctx.content_rect();
             let p = ctx.layer_painter(egui::LayerId::new(
