@@ -601,6 +601,36 @@ pub(crate) fn menu_search_words(
     (field, words)
 }
 
+/// A menu's list, which keeps the height it had when the menu `opened`
+/// while a search narrows it: a menu that shrank could jump from above its
+/// button to below it, away from the field being typed in. It grows with a
+/// longer list up to `max_height`, and scrolls past that.
+pub(crate) fn steady_list<R>(
+    ui: &mut Ui,
+    id: egui::Id,
+    opened: bool,
+    max_height: f32,
+    add_contents: impl FnOnce(&mut Ui) -> R,
+) -> R {
+    let kept = match opened {
+        true => None,
+        false => ui.data(|d| d.get_temp::<f32>(id)),
+    };
+    let area = egui::ScrollArea::vertical().max_height(kept.unwrap_or(max_height));
+    let area = match kept {
+        Some(_) => area.auto_shrink([false, false]),
+        None => area,
+    };
+    let out = area.show(ui, add_contents);
+    let natural = out.content_size.y.min(max_height);
+    let height = kept.map_or(natural, |kept| kept.max(natural));
+    if kept != Some(height) {
+        ui.data_mut(|d| d.insert_temp(id, height));
+        ui.ctx().request_repaint();
+    }
+    out.inner
+}
+
 /// What a menu's list shows when nothing in it has the words searched for.
 pub(crate) fn nothing_matches(ui: &mut Ui, width: f32, text: &str) {
     let (rect, resp) = ui.allocate_exact_size(Vec2::new(width, 56.0), Sense::hover());
@@ -1061,5 +1091,48 @@ pub(crate) fn react(ui: &Ui, r: &egui::Response) {
         let shade = super::theme::lit(r.is_pointer_button_down_on());
         ui.painter()
             .rect_filled(r.rect, CornerRadius::same(radius::MEDIUM), shade);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// How tall `steady_list` is in one frame, with `rows` rows of 20 points
+    /// and room for 100.
+    fn list_height(ctx: &egui::Context, opened: bool, rows: usize) -> f32 {
+        let mut height = 0.0;
+        let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+            let list = ui.scope(|ui| {
+                steady_list(ui, egui::Id::unique("list"), opened, 100.0, |ui| {
+                    for _ in 0..rows {
+                        ui.allocate_exact_size(Vec2::new(50.0, 20.0), Sense::hover());
+                    }
+                });
+            });
+            height = list.response.rect.height();
+        });
+        // The texture uploads no renderer takes here.
+        output.textures_delta.clear();
+        height
+    }
+
+    /// A search that narrows a menu's list leaves the list as tall as it
+    /// was when the menu opened, so the menu can't jump to the other side
+    /// of its button; a longer list makes it taller, up to its most.
+    #[test]
+    fn a_menu_list_keeps_its_height_while_a_search_narrows_it() {
+        let ctx = egui::Context::default();
+        let full = list_height(&ctx, true, 3);
+        assert!(full > 60.0 && full < 100.0, "as tall as its 3 rows: {full}");
+        assert_eq!(list_height(&ctx, false, 1), full, "one row found");
+        assert_eq!(list_height(&ctx, false, 0), full, "none found");
+        list_height(&ctx, false, 9);
+        assert_eq!(list_height(&ctx, false, 9), 100.0, "a longer list");
+        assert_eq!(list_height(&ctx, false, 2), 100.0, "narrowed again");
+        assert!(
+            list_height(&ctx, true, 1) < full,
+            "opened again with one row"
+        );
     }
 }

@@ -62,9 +62,9 @@ pub(crate) use viewer::Viewer;
 pub(crate) use widgets::search_words;
 pub(crate) use widgets::{
     chip, cut_line, divider, enter_in, far, far_layout, flip, lbl, matches, menu_search_words,
-    nothing_matches, paint_progress, paint_text, part_corners, pill_job, primary_button, row,
-    row_layout, row_of, row_wrapped, section_title, set_choice_name, set_name, slow_spinner,
-    start_anchor, tip, title_lbl, txt, Reacts, PROGRESS_LINE,
+    nothing_matches, paint_progress, paint_text, part_corners, pill_job, primary_button,
+    program_row, row, row_layout, row_of, row_wrapped, section_title, set_choice_name, set_name,
+    slow_spinner, start_anchor, steady_list, tip, title_lbl, txt, Reacts, PROGRESS_LINE,
 };
 
 /// Where a view `view` tall scrolls to so that an item `top` from the

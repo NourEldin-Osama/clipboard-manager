@@ -70,49 +70,75 @@ impl App {
             let name = crate::app::programs::shown_name(app, program);
             let icon = program.and_then(|p| p.icon.clone());
             found.push((app.to_string(), name, icon));
-            if found.len() == RULE_PROGRAMS {
-                break;
-            }
         }
         found
     }
 
     /// The rules for copies that aren't recorded: one row each, then "Add a
-    /// rule", which offers the programs in the history first.
+    /// rule", which offers the programs in the history first, with a search
+    /// that finds one by its own name or its file name.
     fn rules_section(&mut self, ui: &mut Ui, d: &mut Config) {
         let mut add = None;
         section(ui, &t!("settings-rules"), |ui| {
             note(ui, &t!("settings-rules-help"));
             rule_rows(ui, d);
-            let programs = self.history_programs(d);
             card_row(ui, false, |ui| {
                 row(ui, |ui| {
                     let button = ui.button(txt(&t!("settings-rule-add"), size::CONTROL, None));
-                    egui::Popup::menu(&button).show(|ui| {
-                        ui.set_width(RULE_MENU_WIDTH);
-                        let weak = ui.visuals().weak_text_color();
-                        if !programs.is_empty() {
-                            row(ui, |ui| {
-                                ui.add_space(space::SMALL);
-                                lbl(
+                    let opened = button.clicked();
+                    egui::Popup::menu(&button)
+                        .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
+                        .show(|ui| {
+                            ui.set_width(RULE_MENU_WIDTH);
+                            let weak = ui.visuals().weak_text_color();
+                            let programs = self.history_programs(d);
+                            if !programs.is_empty() {
+                                let (field, words) = menu_search_words(
                                     ui,
-                                    &t!("settings-rule-programs").to_uppercase(),
-                                    size::SMALL,
-                                    weak,
+                                    button.id.with("search"),
+                                    opened,
+                                    &t!("settings-rule-search"),
+                                    RULE_MENU_WIDTH,
                                 );
-                            });
-                            for (app, name, icon) in &programs {
-                                if program_entry(ui, name, app, icon.as_ref()).clicked() {
-                                    add = Some(app.clone());
+                                let shown: Vec<_> = programs
+                                    .iter()
+                                    .filter(|(app, name, _)| matches(&words, &[name, app]))
+                                    .collect();
+                                if enter_in(ui, &field) {
+                                    add = shown.first().map(|(app, _, _)| app.clone());
                                 }
+                                row(ui, |ui| {
+                                    ui.add_space(space::SMALL);
+                                    lbl(
+                                        ui,
+                                        &t!("settings-rule-programs").to_uppercase(),
+                                        size::SMALL,
+                                        weak,
+                                    );
+                                });
+                                let list = button.id.with("list");
+                                steady_list(ui, list, opened, RULE_LIST_HEIGHT, |ui| {
+                                    if shown.is_empty() {
+                                        let none = t!("settings-rule-none-match");
+                                        nothing_matches(ui, RULE_MENU_WIDTH, &none);
+                                    }
+                                    for (app, name, icon) in shown {
+                                        let entry = program_row(ui, name, icon.as_ref(), app, None);
+                                        if entry.clicked() {
+                                            add = Some(app.clone());
+                                        }
+                                    }
+                                });
+                                divider(ui);
                             }
-                            divider(ui);
-                        }
-                        let other = txt(&t!("settings-rule-add-other"), size::BODY, None);
-                        if ui.selectable_label(false, other).clicked() {
-                            add = Some(String::new());
-                        }
-                    });
+                            let other = txt(&t!("settings-rule-add-other"), size::BODY, None);
+                            if ui.selectable_label(false, other).clicked() {
+                                add = Some(String::new());
+                            }
+                            if add.is_some() {
+                                ui.close();
+                            }
+                        });
                 });
             });
         });
@@ -208,78 +234,11 @@ impl App {
 const RULE_PROGRAM_WIDTH: f32 = 120.0;
 const RULE_PATTERN_WIDTH: f32 = 160.0;
 
-/// How many programs from the history "Add a rule" offers.
-const RULE_PROGRAMS: usize = 8;
-
 /// How wide the menu of "Add a rule" is.
 const RULE_MENU_WIDTH: f32 = 340.0;
 
-/// One program in the menu of "Add a rule": its icon and its own name, and
-/// its file name at the far end, which the rule keeps.
-fn program_entry(
-    ui: &mut Ui,
-    name: &str,
-    file: &str,
-    icon: Option<&TextureHandle>,
-) -> egui::Response {
-    let (rect, r) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 30.0), Sense::click());
-    r.widget_info(|| egui::WidgetInfo::labeled(egui::Role::MenuItem, true, name));
-    let v = ui.visuals();
-    if r.hovered() || r.has_focus() {
-        ui.painter().rect_filled(
-            rect,
-            CornerRadius::same(radius::MEDIUM),
-            v.widgets.hovered.weak_bg_fill,
-        );
-    }
-    let at = flip(
-        rect,
-        Rect::from_center_size(
-            Pos2::new(rect.left() + 18.0, rect.center().y),
-            Vec2::splat(18.0),
-        ),
-    );
-    match icon {
-        Some(texture) => egui::Image::new((texture.id(), Vec2::splat(18.0))).paint_at(ui, at),
-        None => icons::paint(ui.painter(), at, Icon::File, v.weak_text_color()),
-    }
-    let start = flip(
-        rect,
-        Rect::from_min_size(Pos2::new(rect.left() + 36.0, rect.center().y), Vec2::ZERO),
-    )
-    .min;
-    let font = FontId::proportional(size::BODY);
-    paint_text(
-        ui,
-        ui.painter(),
-        start,
-        start_anchor(egui::Align::Center),
-        name,
-        font,
-        v.text_color(),
-    );
-    let end = flip(
-        rect,
-        Rect::from_min_size(Pos2::new(rect.right() - 8.0, rect.center().y), Vec2::ZERO),
-    )
-    .min;
-    let end_anchor = if i18n::rtl() {
-        egui::Align2::LEFT_CENTER
-    } else {
-        egui::Align2::RIGHT_CENTER
-    };
-    let small = FontId::proportional(size::SMALL);
-    paint_text(
-        ui,
-        ui.painter(),
-        end,
-        end_anchor,
-        file,
-        small,
-        v.weak_text_color(),
-    );
-    r
-}
+/// How tall its list of programs grows before it scrolls.
+const RULE_LIST_HEIGHT: f32 = 300.0;
 
 /// The rules for copies that aren't recorded, one row each.
 fn rule_rows(ui: &mut Ui, d: &mut Config) {
