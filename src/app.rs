@@ -764,8 +764,9 @@ pub struct App {
     query_vec: Option<(String, Arc<Embedding>)>,
     filter: Filter,
     results: Vec<Hit>,
-    /// While searching, how many results each filter and tag would show.
-    search_counts: Option<search::Counts>,
+    /// How many results each filter, tag and program would show if chosen;
+    /// none until the first search is back.
+    filter_counts: Option<search::Counts>,
     /// Weaker matches, folded under their link below the results.
     weaker: Vec<Hit>,
     /// The item the app selected by itself for the results: until another
@@ -1037,7 +1038,7 @@ impl App {
             query_vec: None,
             filter: Filter::All,
             results: Vec::new(),
-            search_counts: None,
+            filter_counts: None,
             weaker: Vec::new(),
             auto_selected: None,
             weaker_link: WeakerLink::default(),
@@ -2631,7 +2632,7 @@ impl App {
 
     fn show_results(&mut self, (hits, counts): search::Found) {
         self.searching = false;
-        self.search_counts = counts;
+        self.filter_counts = Some(counts);
         // Weaker matches wait under their link, unless it was opened for
         // this search text.
         (self.results, self.weaker) = self.weaker_link.fold(self.query.trim(), hits);

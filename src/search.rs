@@ -189,7 +189,9 @@ impl Scale {
 }
 
 /// How many results each kind filter, each tag and each program would show
-/// for a search, whatever filter, tag and programs it has (18.3).
+/// if it were chosen (D96): a kind counts with the tag and programs chosen,
+/// a tag with the kind and programs chosen, a program with the kind and tag
+/// chosen. Without search text, the results are the whole history.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Counts {
     /// One for each of `Filter::ALL`, in its order.
@@ -241,57 +243,97 @@ impl Counts {
         };
         programs.get(key).copied().unwrap_or(0)
     }
+
+    /// Counts `it` where choosing would show it: in each kind when it has
+    /// the chosen tag and comes from the chosen programs, in each of its tags
+    /// when it is of the chosen kind and from the chosen programs, and in its
+    /// program when it is of the chosen kind and has the chosen tag.
+    fn add(&mut self, it: &Item, chosen: Chosen, folded: bool) {
+        let (kinds, tags, programs) = if folded {
+            (
+                &mut self.kinds_folded,
+                &mut self.tags_folded,
+                &mut self.programs_folded,
+            )
+        } else {
+            (&mut self.kinds, &mut self.tags, &mut self.programs)
+        };
+        if chosen.tag && chosen.program {
+            for (n, f) in kinds.iter_mut().zip(Filter::ALL) {
+                if f.accepts(it) {
+                    *n += 1;
+                }
+            }
+        }
+        if chosen.kind && chosen.program {
+            for tag in &it.tags {
+                *tags.entry(tag.to_lowercase()).or_default() += 1;
+            }
+        }
+        if chosen.kind && chosen.tag {
+            *programs.entry(program_key(it)).or_default() += 1;
+        }
+    }
 }
 
-/// The counts behind the filters while searching: from the same search over
-/// every kind and tag. None without search text.
-pub fn counts(s: &Snapshot, q: &Query) -> Option<Counts> {
-    if q.text.trim().is_empty() {
-        return None;
+/// Which of the chosen kind, tag and programs an item matches.
+#[derive(Clone, Copy)]
+struct Chosen {
+    kind: bool,
+    tag: bool,
+    program: bool,
+}
+
+impl Chosen {
+    fn of(it: &Item, q: &Query) -> Self {
+        Chosen {
+            kind: q.filter.accepts(it),
+            tag: q.tag.as_ref().is_none_or(|t| it.has_tag(t)),
+            program: from_programs(&q.programs, it),
+        }
     }
+
+    /// It is in the list as the filters are chosen.
+    fn all(self) -> bool {
+        self.kind && self.tag && self.program
+    }
+}
+
+/// The counts behind the filters: from the same search over every kind,
+/// tag and program, each result counted where choosing would show it.
+pub fn counts(s: &Snapshot, q: &Query) -> Counts {
     let every = Query {
         filter: Filter::All,
         tag: None,
         programs: Vec::new(),
         ..q.clone()
     };
-    let mut counts = Counts::default();
     let ranked = rank(s, &every);
-    for r in &ranked {
-        let it = &s.items[r.idx];
-        for (n, f) in counts.kinds.iter_mut().zip(Filter::ALL) {
-            if f.accepts(it) {
-                *n += 1;
-            }
-        }
-        for tag in &it.tags {
-            *counts.tags.entry(tag.to_lowercase()).or_default() += 1;
-        }
-        *counts.programs.entry(program_key(it)).or_default() += 1;
+    let chosen: Vec<Chosen> = ranked
+        .iter()
+        .map(|r| Chosen::of(&s.items[r.idx], q))
+        .collect();
+    let mut counts = Counts::default();
+    for (r, c) in ranked.iter().zip(&chosen) {
+        counts.add(&s.items[r.idx], *c, false);
     }
     if q.sort != SortOrder::BestMatch {
         // Only the best-match order folds.
         counts.kinds_folded = counts.kinds;
         counts.tags_folded = counts.tags.clone();
         counts.programs_folded = counts.programs.clone();
-        return Some(counts);
+        return counts;
     }
     // While the weaker matches are folded, the filters and tags break down
-    // the strong ones on screen: what each would show of them.
-    let any_strong = ranked.iter().any(|r| r.strong);
-    for r in ranked.iter().filter(|r| r.strong || !any_strong) {
-        let it = &s.items[r.idx];
-        for (n, f) in counts.kinds_folded.iter_mut().zip(Filter::ALL) {
-            if f.accepts(it) {
-                *n += 1;
-            }
+    // the strong ones: what each would show of them. The list folds only
+    // when it has a strong match.
+    let any_strong = ranked.iter().zip(&chosen).any(|(r, c)| r.strong && c.all());
+    for (r, c) in ranked.iter().zip(&chosen) {
+        if r.strong || !any_strong {
+            counts.add(&s.items[r.idx], *c, true);
         }
-        for tag in &it.tags {
-            *counts.tags_folded.entry(tag.to_lowercase()).or_default() += 1;
-        }
-        *counts.programs_folded.entry(program_key(it)).or_default() += 1;
     }
-    Some(counts)
+    counts
 }
 
 /// The items matching `q`, in the order to show them.
@@ -499,7 +541,7 @@ pub struct Searcher {
 }
 
 /// A search's results, with the counts behind the filters.
-pub type Found = (Vec<Hit>, Option<Counts>);
+pub type Found = (Vec<Hit>, Counts);
 
 impl Searcher {
     pub fn spawn(wake: impl Fn() + Send + 'static) -> Self {
@@ -932,7 +974,7 @@ mod tests {
             programs: vec!["teams.exe".into()],
             ..query("invoice", None, SearchMode::Keyword)
         };
-        let counts = counts(&s, &q).expect("counts while searching");
+        let counts = counts(&s, &q);
         for folded in [false, true] {
             assert_eq!(counts.program("code.exe", folded), 2);
             assert_eq!(counts.program("teams.exe", folded), 1);
@@ -940,27 +982,109 @@ mod tests {
         }
     }
 
+    /// Three results of "total": a text tagged Work from Outlook, a link
+    /// from Chrome, and a text from Teams; and an Outlook text without it.
+    fn tagged_history() -> Snapshot {
+        let from = |id: u64, text: &str, app: &str, kind: Kind, tags: &[&str]| {
+            let mut it = item(id, text, id as i64);
+            it.app = Some(app.into());
+            it.kind = kind;
+            it.tags = tags.iter().map(|t| t.to_string()).collect();
+            it
+        };
+        snapshot(
+            vec![
+                from(1, "lunch menu", "OUTLOOK.EXE", Kind::Text, &[]),
+                from(
+                    2,
+                    "invoice total 1,240",
+                    "OUTLOOK.EXE",
+                    Kind::Text,
+                    &["Work"],
+                ),
+                from(
+                    3,
+                    "total on rust-lang.org/learn",
+                    "chrome.exe",
+                    Kind::Link,
+                    &[],
+                ),
+                from(4, "the total for the trip", "Teams.exe", Kind::Text, &[]),
+            ],
+            vec![],
+        )
+    }
+
+    /// Each filter counts what choosing it would show: the kinds with the
+    /// tag and programs chosen, the tags with the kind and programs chosen,
+    /// the programs with the kind and tag chosen; never with its own.
     #[test]
-    fn filters_count_the_results_they_would_show() {
-        let mut link = item(3, "total on rust-lang.org/learn", 3);
-        link.kind = Kind::Link;
-        let mut tagged = item(2, "invoice total 1,240", 2);
-        tagged.tags = vec!["Work".into()];
-        let s = snapshot(vec![item(1, "lunch menu", 1), tagged, link], vec![]);
-        let mut q = query("total", None, SearchMode::Keyword);
-        // The current filter and tag don't change what each would show.
-        q.filter = Filter::Images;
-        q.tag = Some("work".into());
-        let counts = counts(&s, &q).expect("counts while searching");
+    fn filters_count_what_choosing_them_would_show() {
+        let s = tagged_history();
+        let total = query("total", None, SearchMode::Keyword);
+        let with = |filter: Filter, tag: Option<&str>, programs: &[&str]| {
+            counts(
+                &s,
+                &Query {
+                    filter,
+                    tag: tag.map(String::from),
+                    programs: programs.iter().map(|p| p.to_string()).collect(),
+                    ..total.clone()
+                },
+            )
+        };
         for folded in [false, true] {
-            assert_eq!(counts.kind(Filter::All, folded), 2);
-            assert_eq!(counts.kind(Filter::Text, folded), 1);
-            assert_eq!(counts.kind(Filter::Links, folded), 1);
-            assert_eq!(counts.kind(Filter::Images, folded), 0);
-            assert_eq!(counts.tag("WORK", folded), 1);
-            assert_eq!(counts.tag("home", folded), 0);
+            let none = with(Filter::All, None, &[]);
+            assert_eq!(none.kind(Filter::All, folded), 3);
+            assert_eq!(none.kind(Filter::Links, folded), 1);
+            assert_eq!(none.tag("work", folded), 1);
+            assert_eq!(none.program("outlook.exe", folded), 1);
+            // The tag Work: the kinds count only what has it.
+            let work = with(Filter::Links, Some("WORK"), &[]);
+            assert_eq!(work.kind(Filter::All, folded), 1);
+            assert_eq!(work.kind(Filter::Text, folded), 1);
+            assert_eq!(work.kind(Filter::Links, folded), 0, "chosen, still 0");
+            // Links: the tag and the programs count only links.
+            assert_eq!(work.tag("work", folded), 0);
+            assert_eq!(work.program("chrome.exe", folded), 0, "not tagged");
+            let links = with(Filter::Links, None, &[]);
+            assert_eq!(links.program("chrome.exe", folded), 1);
+            assert_eq!(links.program("teams.exe", folded), 0);
+            assert_eq!(
+                links.kind(Filter::Text, folded),
+                2,
+                "a kind ignores the kind chosen"
+            );
+            // Teams: the kinds and the tags count only its copies.
+            let teams = with(Filter::All, None, &["teams.exe"]);
+            assert_eq!(teams.kind(Filter::All, folded), 1);
+            assert_eq!(teams.kind(Filter::Links, folded), 0);
+            assert_eq!(teams.tag("work", folded), 0);
+            assert_eq!(
+                teams.program("outlook.exe", folded),
+                1,
+                "a program ignores the programs chosen"
+            );
         }
-        assert!(super::counts(&s, &query("  ", None, SearchMode::Keyword)).is_none());
+    }
+
+    /// Without search text the counts are of the whole history, each with
+    /// the other filters chosen.
+    #[test]
+    fn filters_count_the_history_while_browsing() {
+        let s = tagged_history();
+        let outlook = Query {
+            programs: vec!["outlook.exe".into()],
+            sort: SortOrder::Recent,
+            ..query("", None, SearchMode::Keyword)
+        };
+        let counts = counts(&s, &outlook);
+        assert_eq!(counts.kind(Filter::All, false), 2);
+        assert_eq!(counts.kind(Filter::Text, false), 2);
+        assert_eq!(counts.kind(Filter::Links, false), 0);
+        assert_eq!(counts.program("chrome.exe", false), 1);
+        assert_eq!(counts.program("outlook.exe", false), 2);
+        assert_eq!(counts.kind(Filter::All, true), 2, "nothing folds");
     }
 
     #[test]
@@ -975,7 +1099,7 @@ mod tests {
         ];
         let s = snapshot(items, vec![]);
         let q = query("invoice total", None, SearchMode::Keyword);
-        let counts = counts(&s, &q).expect("counts while searching");
+        let counts = counts(&s, &q);
         // One item has both words; the others only one.
         assert_eq!(counts.kind(Filter::All, true), 1);
         assert_eq!(counts.kind(Filter::All, false), 4);
@@ -986,10 +1110,17 @@ mod tests {
         assert_eq!(counts.kind(Filter::Text, true), 1);
         let recent = Query {
             sort: SortOrder::Recent,
+            ..q.clone()
+        };
+        let counts = super::counts(&s, &recent);
+        assert_eq!(counts.kind(Filter::All, true), 4);
+        // A list with only weaker matches doesn't fold: the link alone.
+        let links = Query {
+            filter: Filter::Links,
             ..q
         };
-        let counts = super::counts(&s, &recent).expect("counts while searching");
-        assert_eq!(counts.kind(Filter::All, true), 4);
+        assert_eq!(super::counts(&s, &links).kind(Filter::Links, true), 1);
+        assert!(search(&s, &links).iter().all(|h| !h.weak));
     }
 
     #[test]
@@ -1002,7 +1133,7 @@ mod tests {
             .wait_for(2, Duration::from_secs(10))
             .expect("results within 10 s");
         assert_eq!(ids(&hits), vec![2]);
-        assert_eq!(counts.map(|c| c.kind(Filter::All, true)), Some(1));
+        assert_eq!(counts.kind(Filter::All, true), 1);
         assert!(
             searcher.results_for(1).is_none(),
             "older results never come back"
