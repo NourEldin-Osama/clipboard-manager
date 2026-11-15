@@ -225,14 +225,14 @@ impl App {
                 if total == 0 && f != Filter::All && !selected {
                     continue;
                 }
-                // While searching, a filter counts the results it would show,
-                // and one with none is dimmed (18.3).
+                // A filter counts what choosing it would show, with the tag
+                // and programs chosen, and one with none is dimmed (D96).
                 let folded = self.weaker_folded();
                 let n = self
-                    .search_counts
+                    .filter_counts
                     .as_ref()
                     .map_or(total, |c| c.kind(f, folded));
-                let dim = self.search_counts.is_some() && n == 0 && !selected;
+                let dim = n == 0 && !selected;
                 let (fg, weak) = if selected {
                     let shade = text_shade(accent(), ui.visuals().dark_mode);
                     (shade, shade)
@@ -362,7 +362,6 @@ impl App {
                     let none = t!("filter-programs-none-match");
                     nothing_matches(ui, PROGRAM_MENU_WIDTH, &none);
                 }
-                let searching = self.search_counts.is_some();
                 egui::ScrollArea::vertical()
                     .max_height(PROGRAM_LIST_HEIGHT)
                     .show(ui, |ui| {
@@ -370,9 +369,9 @@ impl App {
                             let picked = self.program_filter.contains(&p.key);
                             let row = ui
                                 .scope(|ui| {
-                                    // While searching, a program with no
-                                    // results is dimmed, as the chips are.
-                                    if searching && p.count == 0 && !picked {
+                                    // A program choosing would show
+                                    // nothing of is dimmed, as the chips are.
+                                    if p.count == 0 && !picked {
                                         ui.multiply_opacity(0.45);
                                     }
                                     let count = p.count.to_string();
@@ -400,9 +399,9 @@ impl App {
         }
     }
 
-    /// The programs the copies came from, for the menu of programs: the one
-    /// with the most copies first (or the most results, while searching),
-    /// and the copies with no program last.
+    /// The programs the copies came from, for the menu of programs, each
+    /// with what choosing it would show: the most first, and the copies with
+    /// no program last.
     fn program_choices(&mut self) -> Vec<ProgramChoice> {
         let folded = self.weaker_folded();
         let mut found: Vec<ProgramChoice> = Vec::new();
@@ -430,7 +429,7 @@ impl App {
                 count: 1,
             });
         }
-        if let Some(counts) = &self.search_counts {
+        if let Some(counts) = &self.filter_counts {
             for p in &mut found {
                 p.count = counts.program(&p.key, folded);
             }
@@ -486,13 +485,13 @@ impl App {
         }
         for (t, all) in &shown {
             let sel = is_active(t);
-            // While searching, the tag counts the results it would show.
+            // A tag counts what choosing it would show (D96).
             let folded = self.weaker_folded();
             let n = self
-                .search_counts
+                .filter_counts
                 .as_ref()
                 .map_or(*all, |c| c.tag(t, folded));
-            let dim = self.search_counts.is_some() && n == 0 && !sel;
+            let dim = n == 0 && !sel;
             let c = tag_color(t);
             let shade = tag_shade(c, ui.visuals().dark_mode);
             let job = pill_job(
@@ -550,13 +549,16 @@ impl App {
             .filter(|(t, _)| !is_active(t))
             .collect();
         if !rest.is_empty() {
+            let folded = self.weaker_folded();
+            let counts = self.filter_counts.as_ref();
             let more = mode_button(ui, &t!("tags-more", count = rest.len()), false);
             egui::Popup::menu(&more).show(|ui| {
                 ui.set_width(MENU_W);
                 egui::ScrollArea::vertical()
                     .max_height(320.0)
                     .show(ui, |ui| {
-                        for (t, n) in rest {
+                        for (t, all) in rest {
+                            let n = counts.map_or(*all, |c| c.tag(t, folded));
                             if icons::menu_item(ui, Icon::Tag, &format!("{t}   {n}")).clicked() {
                                 clicked = Some(t.clone());
                             }
