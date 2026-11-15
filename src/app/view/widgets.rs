@@ -418,8 +418,26 @@ pub(super) fn hint(what: &str, keys: &str) -> String {
     }
 }
 
+/// What sits before a menu button's text: a program's own icon, or one of
+/// the app's.
+pub(super) enum Lead<'a> {
+    Texture(&'a egui::TextureHandle),
+    Icon(Icon),
+}
+
 /// A quiet text button with a painted ▾, for menus.
 pub(super) fn mode_button(ui: &mut Ui, label: &str, emphasised: bool) -> egui::Response {
+    lead_mode_button(ui, None, label, emphasised)
+}
+
+/// `mode_button` with `lead` before its text.
+pub(super) fn lead_mode_button(
+    ui: &mut Ui,
+    lead: Option<Lead>,
+    label: &str,
+    emphasised: bool,
+) -> egui::Response {
+    const LEAD: f32 = 16.0;
     let v = ui.visuals();
     let color = if emphasised {
         text_shade(accent(), v.dark_mode)
@@ -428,8 +446,9 @@ pub(super) fn mode_button(ui: &mut Ui, label: &str, emphasised: bool) -> egui::R
     };
     let g = ui
         .fonts_mut(|f| f.layout_job(bidi::job(label, FontId::proportional(size::CONTROL), color)));
+    let lead_room = if lead.is_some() { LEAD + 6.0 } else { 0.0 };
     let (rect, resp) = ui.allocate_exact_size(
-        Vec2::new(g.size().x + 8.0 + 10.0 + 18.0, 28.0),
+        Vec2::new(lead_room + g.size().x + 8.0 + 10.0 + 18.0, 28.0),
         Sense::click(),
     );
     let v = ui.visuals();
@@ -451,10 +470,28 @@ pub(super) fn mode_button(ui: &mut Ui, label: &str, emphasised: bool) -> egui::R
     } else {
         color
     };
+    if let Some(lead) = lead {
+        let at = flip(
+            rect,
+            Rect::from_center_size(
+                Pos2::new(rect.left() + 9.0 + LEAD / 2.0, rect.center().y),
+                Vec2::splat(LEAD),
+            ),
+        );
+        match lead {
+            Lead::Texture(texture) => {
+                egui::Image::new((texture.id(), Vec2::splat(LEAD))).paint_at(ui, at)
+            }
+            Lead::Icon(icon) => icons::paint(ui.painter(), at, icon, color),
+        }
+    }
     let text_at = flip(
         rect,
         Rect::from_min_size(
-            Pos2::new(rect.left() + 9.0, rect.center().y - g.size().y / 2.0),
+            Pos2::new(
+                rect.left() + 9.0 + lead_room,
+                rect.center().y - g.size().y / 2.0,
+            ),
             g.size(),
         ),
     )
@@ -486,6 +523,237 @@ pub(crate) fn chip(ui: &mut Ui, text: impl Into<String>, color: Color32) -> egui
         .inner_margin(Margin::symmetric(8, 3))
         .show(ui, |ui| ui.label(txt(&text, size::SMALL, Some(shade))))
         .response
+}
+
+/// How tall the search field at the top of a menu is.
+const MENU_SEARCH_HEIGHT: f32 = 32.0;
+
+/// The search field at the top of a menu, `width` wide, the search icon at
+/// its start, as the window's own search looks: a thin edge, the accent's
+/// while it has the keyboard.
+pub(crate) fn menu_search(
+    ui: &mut Ui,
+    text: &mut String,
+    id: egui::Id,
+    hint: &str,
+    width: f32,
+) -> egui::Response {
+    let dark = ui.visuals().dark_mode;
+    let edge = if ui.memory(|m| m.has_focus(id)) {
+        Stroke::new(1.5, accent())
+    } else {
+        Stroke::new(1.0, line_color(dark))
+    };
+    let side: i8 = 10;
+    Frame::new()
+        .fill(search_fill(dark))
+        .corner_radius(CornerRadius::same(radius::MEDIUM))
+        .stroke(edge)
+        .inner_margin(Margin::symmetric(side, 0))
+        .show(ui, |ui| {
+            // The edge counts in the frame's size, so the field is as wide
+            // with the accent's thicker one.
+            ui.set_width(width - 2.0 * (f32::from(side) + edge.width));
+            ui.set_height(MENU_SEARCH_HEIGHT);
+            ui.with_layout(row_layout(), |ui| {
+                let weak = ui.visuals().weak_text_color();
+                icons::glyph(ui, Icon::Search, 14.0, weak);
+                let field = egui::TextEdit::singleline(text)
+                    .id(id)
+                    .frame(Frame::NONE)
+                    .hint_text(txt(hint, size::BODY, Some(weak)))
+                    .font(FontId::proportional(size::BODY))
+                    .align(if i18n::rtl() {
+                        egui::Align2::RIGHT_CENTER
+                    } else {
+                        egui::Align2::LEFT_CENTER
+                    })
+                    .desired_width(ui.available_width());
+                let resp = ui.add(field);
+                set_name(&resp, hint);
+                resp
+            })
+            .inner
+        })
+        .inner
+}
+
+/// The search at the top of a menu's list, `hint` in it while empty: kept
+/// while the list is open and empty each time it opens, with the keyboard
+/// in it then; and its words.
+pub(crate) fn menu_search_words(
+    ui: &mut Ui,
+    id: egui::Id,
+    opened: bool,
+    hint: &str,
+    width: f32,
+) -> (egui::Response, Vec<String>) {
+    let mut search = match opened {
+        true => String::new(),
+        false => ui.data(|d| d.get_temp::<String>(id)).unwrap_or_default(),
+    };
+    let field = menu_search(ui, &mut search, id.with("field"), hint, width);
+    if opened {
+        field.request_focus();
+    }
+    let words = search_words(&search);
+    ui.data_mut(|d| d.insert_temp(id, search));
+    (field, words)
+}
+
+/// A menu's list, which keeps the height it had when the menu `opened`
+/// while a search narrows it: a menu that shrank could jump from above its
+/// button to below it, away from the field being typed in. It grows with a
+/// longer list up to `max_height`, and scrolls past that.
+pub(crate) fn steady_list<R>(
+    ui: &mut Ui,
+    id: egui::Id,
+    opened: bool,
+    max_height: f32,
+    add_contents: impl FnOnce(&mut Ui) -> R,
+) -> R {
+    let kept = match opened {
+        true => None,
+        false => ui.data(|d| d.get_temp::<f32>(id)),
+    };
+    let area = egui::ScrollArea::vertical().max_height(kept.unwrap_or(max_height));
+    let area = match kept {
+        Some(_) => area.auto_shrink([false, false]),
+        None => area,
+    };
+    let out = area.show(ui, add_contents);
+    let natural = out.content_size.y.min(max_height);
+    let height = kept.map_or(natural, |kept| kept.max(natural));
+    if kept != Some(height) {
+        ui.data_mut(|d| d.insert_temp(id, height));
+        ui.ctx().request_repaint();
+    }
+    out.inner
+}
+
+/// What a menu's list shows when nothing in it has the words searched for.
+pub(crate) fn nothing_matches(ui: &mut Ui, width: f32, text: &str) {
+    let (rect, resp) = ui.allocate_exact_size(Vec2::new(width, 56.0), Sense::hover());
+    resp.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Label, true, text));
+    paint_text(
+        ui,
+        ui.painter(),
+        rect.center(),
+        egui::Align2::CENTER_CENTER,
+        text,
+        FontId::proportional(size::BODY),
+        ui.visuals().weak_text_color(),
+    );
+}
+
+/// Whether Enter was pressed in the search field `field`: the first entry
+/// found is then picked.
+pub(crate) fn enter_in(ui: &Ui, field: &egui::Response) -> bool {
+    field.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter))
+}
+
+/// The words of a search, in lower case, as they are looked for.
+pub(crate) fn search_words(search: &str) -> Vec<String> {
+    search.split_whitespace().map(str::to_lowercase).collect()
+}
+
+/// Whether each of the searched `words` is in one of `texts`.
+pub(crate) fn matches(words: &[String], texts: &[&str]) -> bool {
+    let texts: Vec<String> = texts.iter().map(|text| text.to_lowercase()).collect();
+    words
+        .iter()
+        .all(|word| texts.iter().any(|text| text.contains(word.as_str())))
+}
+
+/// One program in a menu: its own icon (the generic one while it has none)
+/// and its own name, and `end` at the far end: its file name, or how many
+/// copies it gave. With `checked` it can be picked with others, and shows a
+/// check mark at the far end while picked.
+pub(crate) fn program_row(
+    ui: &mut Ui,
+    name: &str,
+    icon: Option<&egui::TextureHandle>,
+    end: &str,
+    checked: Option<bool>,
+) -> egui::Response {
+    let (rect, r) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 30.0), Sense::click());
+    match checked {
+        Some(checked) => {
+            r.widget_info(|| egui::WidgetInfo::selected(egui::Role::CheckBox, true, checked, name))
+        }
+        None => r.widget_info(|| egui::WidgetInfo::labeled(egui::Role::MenuItem, true, name)),
+    }
+    let v = ui.visuals();
+    if r.hovered() || r.has_focus() {
+        ui.painter().rect_filled(
+            rect,
+            CornerRadius::same(radius::MEDIUM),
+            v.widgets.hovered.weak_bg_fill,
+        );
+    }
+    let at = flip(
+        rect,
+        Rect::from_center_size(
+            Pos2::new(rect.left() + 18.0, rect.center().y),
+            Vec2::splat(18.0),
+        ),
+    );
+    match icon {
+        Some(texture) => egui::Image::new((texture.id(), Vec2::splat(18.0))).paint_at(ui, at),
+        None => icons::paint(ui.painter(), at, Icon::AppGeneric, v.weak_text_color()),
+    }
+    let picked = checked == Some(true);
+    let color = if picked {
+        text_shade(accent(), v.dark_mode)
+    } else {
+        v.text_color()
+    };
+    let start = flip(
+        rect,
+        Rect::from_min_size(Pos2::new(rect.left() + 36.0, rect.center().y), Vec2::ZERO),
+    )
+    .min;
+    paint_text(
+        ui,
+        ui.painter(),
+        start,
+        start_anchor(egui::Align::Center),
+        name,
+        FontId::proportional(size::BODY),
+        color,
+    );
+    let mut end_x = rect.right() - 8.0;
+    if picked {
+        let mark = flip(
+            rect,
+            Rect::from_center_size(
+                Pos2::new(rect.right() - 16.0, rect.center().y),
+                Vec2::splat(14.0),
+            ),
+        );
+        icons::paint(ui.painter(), mark, Icon::Check, color);
+        end_x = rect.right() - 30.0;
+    }
+    let end_at = flip(
+        rect,
+        Rect::from_min_size(Pos2::new(end_x, rect.center().y), Vec2::ZERO),
+    )
+    .min;
+    let end_anchor = if i18n::rtl() {
+        egui::Align2::LEFT_CENTER
+    } else {
+        egui::Align2::RIGHT_CENTER
+    };
+    paint_text(
+        ui,
+        ui.painter(),
+        end_at,
+        end_anchor,
+        end,
+        FontId::proportional(size::SMALL),
+        v.weak_text_color(),
+    );
+    r
 }
 
 /// A menu row with a check mark at the far end when `checked`.
@@ -823,5 +1091,48 @@ pub(crate) fn react(ui: &Ui, r: &egui::Response) {
         let shade = super::theme::lit(r.is_pointer_button_down_on());
         ui.painter()
             .rect_filled(r.rect, CornerRadius::same(radius::MEDIUM), shade);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// How tall `steady_list` is in one frame, with `rows` rows of 20 points
+    /// and room for 100.
+    fn list_height(ctx: &egui::Context, opened: bool, rows: usize) -> f32 {
+        let mut height = 0.0;
+        let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+            let list = ui.scope(|ui| {
+                steady_list(ui, egui::Id::unique("list"), opened, 100.0, |ui| {
+                    for _ in 0..rows {
+                        ui.allocate_exact_size(Vec2::new(50.0, 20.0), Sense::hover());
+                    }
+                });
+            });
+            height = list.response.rect.height();
+        });
+        // The texture uploads no renderer takes here.
+        output.textures_delta.clear();
+        height
+    }
+
+    /// A search that narrows a menu's list leaves the list as tall as it
+    /// was when the menu opened, so the menu can't jump to the other side
+    /// of its button; a longer list makes it taller, up to its most.
+    #[test]
+    fn a_menu_list_keeps_its_height_while_a_search_narrows_it() {
+        let ctx = egui::Context::default();
+        let full = list_height(&ctx, true, 3);
+        assert!(full > 60.0 && full < 100.0, "as tall as its 3 rows: {full}");
+        assert_eq!(list_height(&ctx, false, 1), full, "one row found");
+        assert_eq!(list_height(&ctx, false, 0), full, "none found");
+        list_height(&ctx, false, 9);
+        assert_eq!(list_height(&ctx, false, 9), 100.0, "a longer list");
+        assert_eq!(list_height(&ctx, false, 2), 100.0, "narrowed again");
+        assert!(
+            list_height(&ctx, true, 1) < full,
+            "opened again with one row"
+        );
     }
 }

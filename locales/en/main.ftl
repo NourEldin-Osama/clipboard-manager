@@ -71,6 +71,17 @@ filter-links = Links
 filter-images = Images
 filter-files = Files
 filter-pinned = Pinned
+filter-programs = Programs
+filter-programs-all = All programs
+filter-programs-count =
+    { $count ->
+        [one] { $count } program
+       *[other] { $count } programs
+    }
+filter-programs-tip = Show only the copies from the programs you pick
+filter-programs-search = Search the programs
+filter-programs-none-match = No programs match
+filter-program-none = No program
 kind-text = Text
 kind-link = Link
 kind-image = Image
@@ -119,6 +130,7 @@ list-search-all-not-links = Search all items, not just links
 list-search-all-not-images = Search all items, not just images
 list-search-all-not-files = Search all items, not just files
 list-search-all-not-pinned = Search all items, not just pinned ones
+list-show-all-programs = Show the copies from every program
 list-none-yet = Nothing here yet
 list-none-yet-text = No text yet
 list-none-yet-links = No links yet
@@ -507,6 +519,8 @@ settings-rule-delete = Delete this rule
 settings-rule-add = Add a rule
 settings-rule-programs = Programs in your history
 settings-rule-add-other = A text pattern, or another program
+settings-rule-search = Search the programs
+settings-rule-none-match = No programs match
 settings-rule-needs = Give a program, a pattern, or both. Until then this rule does nothing.
 settings-rule-bad-pattern = This regular expression can't be used, so the rule does nothing: { $error }
 settings-storage = Storage

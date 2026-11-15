@@ -73,6 +73,20 @@ filter-links = الروابط
 filter-images = الصور
 filter-files = الملفات
 filter-pinned = المثبتة
+filter-programs = البرامج
+filter-programs-all = كل البرامج
+filter-programs-count =
+    { $count ->
+        [one] برنامج واحد
+        [two] برنامجان
+        [few] { $count } برامج
+        [many] { $count } برنامجًا
+       *[other] { $count } برنامج
+    }
+filter-programs-tip = اعرض النسخ من البرامج التي تختارها فقط
+filter-programs-search = ابحث في البرامج
+filter-programs-none-match = لا توجد برامج مطابقة
+filter-program-none = بدون برنامج
 kind-text = نص
 kind-link = رابط
 kind-image = صورة
@@ -130,6 +144,7 @@ list-search-all-not-links = ابحث في كل العناصر، لا في الر
 list-search-all-not-images = ابحث في كل العناصر، لا في الصور فقط
 list-search-all-not-files = ابحث في كل العناصر، لا في الملفات فقط
 list-search-all-not-pinned = ابحث في كل العناصر، لا في المثبتة فقط
+list-show-all-programs = اعرض النسخ من كل البرامج
 list-none-yet = لا شيء هنا بعد
 list-none-yet-text = لا يوجد نص بعد
 list-none-yet-links = لا توجد روابط بعد
@@ -558,6 +573,8 @@ settings-rule-regex-help = عند الإيقاف: * تعني أي نص و? تع�
 settings-rule-delete = حذف هذه القاعدة
 settings-rule-programs = البرامج في سجلك
 settings-rule-add-other = نمط نصي، أو برنامج آخر
+settings-rule-search = ابحث في البرامج
+settings-rule-none-match = لا توجد برامج مطابقة
 settings-rule-add = إضافة قاعدة
 settings-rule-needs = أدخل برنامجًا أو نمطًا أو كليهما. حتى ذلك الحين لا تفعل هذه القاعدة شيئًا.
 settings-rule-bad-pattern = لا يمكن استخدام هذا التعبير النمطي، لذا لا تفعل القاعدة شيئًا: { $error }

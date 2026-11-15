@@ -896,6 +896,9 @@ pub struct App {
     next_update_check: Instant,
     /// Only items carrying this tag are listed.
     tag_filter: Option<String>,
+    /// Only items copied from these programs are listed, by
+    /// `search::program_key`; all when empty.
+    program_filter: Vec<String>,
     /// The tag being typed in the details pane, for that item.
     tag_input: Option<(u64, String)>,
     /// The open menu of an item.
@@ -1100,6 +1103,7 @@ impl App {
             // A little after start, so launching stays quick.
             next_update_check: Instant::now() + Duration::from_secs(10),
             tag_filter: None,
+            program_filter: Vec::new(),
             tag_input: None,
             item_menu: None,
             marked: HashSet::new(),
@@ -2203,6 +2207,7 @@ impl App {
         }
         let removed = self.take_items(&ids);
         self.drop_stale_tag_filter();
+        self.drop_stale_program_filter();
         self.drop_removed(&ids);
         let count = removed.len();
         log::info!("deleted {count} items by age or the history limit");
@@ -2588,6 +2593,7 @@ impl App {
                 mode: self.cfg.search_mode,
                 filter: self.filter,
                 tag: self.tag_filter.clone(),
+                programs: self.program_filter.clone(),
                 min_similarity: self.cfg.min_similarity,
                 image_vectors: matches!(self.backend, BackendState::Ready { images: true, .. }),
                 sort: self.sort(),
@@ -2766,6 +2772,19 @@ impl App {
         }
     }
 
+    /// Leaves out of the program filter the programs no item came from any
+    /// more, after a delete: their entries left the menu, so they couldn't
+    /// be taken out there.
+    fn drop_stale_program_filter(&mut self) {
+        let before = self.program_filter.len();
+        let items = self.library.items();
+        self.program_filter
+            .retain(|key| items.iter().any(|it| search::program_key(it) == *key));
+        if self.program_filter.len() != before {
+            self.dirty = true;
+        }
+    }
+
     /// Takes the item out of the list at once; the database follows when the
     /// delete can no longer be undone (see `finish_expired_deletes`).
     fn delete(&mut self, id: u64) {
@@ -2775,6 +2794,7 @@ impl App {
         self.glide();
         self.loader.forget(id, Size::Thumb);
         self.drop_stale_tag_filter();
+        self.drop_stale_program_filter();
         // Keep the selection on a neighbour: the row that takes its place.
         let row = self.results.iter().position(|h| h.id == id);
         self.drop_removed(&[id]);
@@ -2957,6 +2977,7 @@ impl App {
         let row = self.results.iter().position(|h| ids.contains(&h.id));
         let removed = self.take_items(ids);
         self.drop_stale_tag_filter();
+        self.drop_stale_program_filter();
         self.drop_removed(ids);
         self.clear_marks();
         // Keep the selection on the row that takes the first one's place.

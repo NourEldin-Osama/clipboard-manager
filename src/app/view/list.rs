@@ -1520,10 +1520,24 @@ impl App {
                     self.filter = Filter::All;
                     self.dirty = true;
                 }
+                self.every_program_link(ui);
             } else {
                 ui.label(txt(&none_yet(self.filter), size::BODY, Some(weak)));
+                self.every_program_link(ui);
             }
         });
+    }
+
+    /// The link that leaves the program filter, under an empty list.
+    fn every_program_link(&mut self, ui: &mut Ui) {
+        if !self.program_filter.is_empty()
+            && ui
+                .link(txt(&t!("list-show-all-programs"), size::BODY, None))
+                .clicked()
+        {
+            self.program_filter.clear();
+            self.dirty = true;
+        }
     }
 }
 

@@ -65,6 +65,7 @@ impl App {
             self.query.clear();
             self.query_vec = None;
             self.filter = Filter::All;
+            self.program_filter.clear();
             self.dirty = true;
             self.popup_at = popup_corner(ctx);
             ctx.request_repaint();

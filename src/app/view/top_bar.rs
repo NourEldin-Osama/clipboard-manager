@@ -1,4 +1,4 @@
-//! The top bar: search field, search mode, filters, sort and tags.
+//! The top bar: search field, search mode, filters, programs, sort and tags.
 
 use super::*;
 
@@ -253,6 +253,7 @@ impl App {
                     self.dirty = true;
                 }
             }
+            self.program_menu(ui);
             self.tag_chips(ui);
             far(ui, |ui| {
                 ui.add_space(space::TINY);
@@ -290,6 +291,172 @@ impl App {
         if let Some(s) = pick {
             self.set_sort(s);
         }
+    }
+
+    /// The menu of the programs the copies came from, after the kind chips:
+    /// pick one or several to list only their copies. A search at its top
+    /// finds a program by its own name or its file name. Left out while no
+    /// copy has a program.
+    fn program_menu(&mut self, ui: &mut Ui) {
+        if !self.library.items().iter().any(|it| it.app.is_some()) {
+            return;
+        }
+        ui.add_space(space::SMALL);
+        let chosen_icon;
+        let (label, lead) = match self.program_filter.as_slice() {
+            [] => (t!("filter-programs-all"), Lead::Icon(Icon::AppGeneric)),
+            [key] => {
+                let key = key.clone();
+                let (name, icon) = self.program_name_and_icon(&key);
+                chosen_icon = icon;
+                let lead = match &chosen_icon {
+                    Some(texture) => Lead::Texture(texture),
+                    None => Lead::Icon(Icon::AppGeneric),
+                };
+                (name, lead)
+            }
+            keys => (
+                t!("filter-programs-count", count = keys.len()),
+                Lead::Icon(Icon::AppGeneric),
+            ),
+        };
+        let chosen = !self.program_filter.is_empty();
+        let button = lead_mode_button(ui, Some(lead), &label, chosen);
+        set_choice_name(&button, &t!("filter-programs"), &label);
+        let button = tip(button, &t!("filter-programs-tip"));
+        let opened = button.clicked();
+        let mut toggled = None;
+        let mut every = false;
+        egui::Popup::menu(&button)
+            .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
+            .show(|ui| {
+                ui.set_width(PROGRAM_MENU_WIDTH);
+                ui.spacing_mut().item_spacing.y = 2.0;
+                let (field, words) = menu_search_words(
+                    ui,
+                    button.id.with("search"),
+                    opened,
+                    &t!("filter-programs-search"),
+                    PROGRAM_MENU_WIDTH,
+                );
+                ui.add_space(space::TINY);
+                let choices = self.program_choices();
+                let shown: Vec<&ProgramChoice> = choices
+                    .iter()
+                    .filter(|p| matches(&words, &[&p.name, &p.file]))
+                    .collect();
+                if enter_in(ui, &field) {
+                    toggled = shown.first().map(|p| p.key.clone());
+                }
+                if words.is_empty()
+                    && check_row(
+                        ui,
+                        &t!("filter-programs-all"),
+                        self.program_filter.is_empty(),
+                    )
+                    .clicked()
+                {
+                    every = true;
+                }
+                if shown.is_empty() {
+                    let none = t!("filter-programs-none-match");
+                    nothing_matches(ui, PROGRAM_MENU_WIDTH, &none);
+                }
+                let searching = self.search_counts.is_some();
+                egui::ScrollArea::vertical()
+                    .max_height(PROGRAM_LIST_HEIGHT)
+                    .show(ui, |ui| {
+                        for p in shown {
+                            let picked = self.program_filter.contains(&p.key);
+                            let row = ui
+                                .scope(|ui| {
+                                    // While searching, a program with no
+                                    // results is dimmed, as the chips are.
+                                    if searching && p.count == 0 && !picked {
+                                        ui.multiply_opacity(0.45);
+                                    }
+                                    let count = p.count.to_string();
+                                    program_row(ui, &p.name, p.icon.as_ref(), &count, Some(picked))
+                                })
+                                .inner;
+                            if row.clicked() {
+                                toggled = Some(p.key.clone());
+                            }
+                        }
+                    });
+            });
+        if every {
+            self.program_filter.clear();
+            self.dirty = true;
+        }
+        if let Some(key) = toggled {
+            match self.program_filter.iter().position(|k| *k == key) {
+                Some(at) => {
+                    self.program_filter.remove(at);
+                }
+                None => self.program_filter.push(key),
+            }
+            self.dirty = true;
+        }
+    }
+
+    /// The programs the copies came from, for the menu of programs: the one
+    /// with the most copies first (or the most results, while searching),
+    /// and the copies with no program last.
+    fn program_choices(&mut self) -> Vec<ProgramChoice> {
+        let folded = self.weaker_folded();
+        let mut found: Vec<ProgramChoice> = Vec::new();
+        let mut at: std::collections::HashMap<String, usize> = Default::default();
+        for it in self.library.items() {
+            let key = crate::search::program_key(it);
+            if let Some(&index) = at.get(&key) {
+                found[index].count += 1;
+                continue;
+            }
+            let file = it.app.clone().unwrap_or_default();
+            let program = it.program.as_deref().and_then(|p| self.programs.get(p));
+            let name = if file.is_empty() {
+                t!("filter-program-none")
+            } else {
+                crate::app::programs::shown_name(&file, program)
+            };
+            let icon = program.and_then(|p| p.icon.clone());
+            at.insert(key.clone(), found.len());
+            found.push(ProgramChoice {
+                key,
+                file,
+                name,
+                icon,
+                count: 1,
+            });
+        }
+        if let Some(counts) = &self.search_counts {
+            for p in &mut found {
+                p.count = counts.program(&p.key, folded);
+            }
+        }
+        order_choices(&mut found);
+        found
+    }
+
+    /// The own name and icon of the program `key` (a `program_key`), for the
+    /// menu's button while it is the only one picked.
+    fn program_name_and_icon(&mut self, key: &str) -> (String, Option<TextureHandle>) {
+        let item = self
+            .library
+            .items()
+            .iter()
+            .find(|it| crate::search::program_key(it) == key)
+            .cloned();
+        let Some(app) = item.as_ref().and_then(|it| it.app.as_deref()) else {
+            return (t!("filter-program-none"), None);
+        };
+        let program = item
+            .as_ref()
+            .and_then(|it| it.program.as_deref())
+            .and_then(|p| self.programs.get(p));
+        let name = crate::app::programs::shown_name(app, program);
+        (name, program.and_then(|p| p.icon.clone()))
     }
 
     /// The most used tags as filters after the kind chips; the rest in a menu.
@@ -610,10 +777,81 @@ fn word_button(ui: &mut Ui, icon: Icon, word: &str) -> egui::Response {
     resp
 }
 
+/// How wide the menu of programs is.
+const PROGRAM_MENU_WIDTH: f32 = 300.0;
+
+/// How tall its list of programs grows before it scrolls.
+const PROGRAM_LIST_HEIGHT: f32 = 320.0;
+
+/// Puts the program with the most copies (or results) first, then by name,
+/// and the copies with no program last.
+fn order_choices(choices: &mut [ProgramChoice]) {
+    choices.sort_by_cached_key(|p| {
+        (
+            p.key.is_empty(),
+            std::cmp::Reverse(p.count),
+            p.name.to_lowercase(),
+        )
+    });
+}
+
+/// A program the copies came from, as the menu of programs shows it.
+struct ProgramChoice {
+    /// Its `program_key`, which the filter keeps.
+    key: String,
+    /// Its file name, as in `Code.exe`; empty for copies with no program.
+    file: String,
+    /// Its own name, as in "Visual Studio Code".
+    name: String,
+    icon: Option<TextureHandle>,
+    /// How many copies came from it, or how many results while searching.
+    count: usize,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use egui::accesskit::{Role, Toggled};
+
+    #[test]
+    fn the_programs_menu_puts_the_most_copies_first_and_finds_by_either_name() {
+        let choice = |key: &str, name: &str, count| ProgramChoice {
+            key: key.into(),
+            file: key.into(),
+            name: name.into(),
+            icon: None,
+            count,
+        };
+        let mut choices = vec![
+            choice("", "No program", 9),
+            choice("teams.exe", "Microsoft Teams", 2),
+            choice("code.exe", "Visual Studio Code", 5),
+            choice("chrome.exe", "Google Chrome", 2),
+        ];
+        order_choices(&mut choices);
+        let names: Vec<&str> = choices.iter().map(|p| p.name.as_str()).collect();
+        assert_eq!(
+            names,
+            [
+                "Visual Studio Code",
+                "Google Chrome",
+                "Microsoft Teams",
+                "No program"
+            ]
+        );
+        let found = |search: &str| {
+            let words = search_words(search);
+            choices
+                .iter()
+                .filter(|p| matches(&words, &[&p.name, &p.file]))
+                .map(|p| p.key.as_str())
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(found("studio"), ["code.exe"], "by its own name");
+        assert_eq!(found("CHROME.EXE"), ["chrome.exe"], "by its file name");
+        assert_eq!(found("microsoft teams"), ["teams.exe"], "every word");
+        assert!(found("zoom").is_empty());
+    }
 
     #[test]
     fn the_switch_lights_grid_or_list_and_the_button_the_pane() {
