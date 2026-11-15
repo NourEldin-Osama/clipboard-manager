@@ -7,6 +7,7 @@ history (the last full version of this file is in commit `c880dca`). Versions an
 ## Open
 
 - Code signing with SignPath Foundation, after the application is approved (D7).
+- Coloring the code in copies (D95).
 
 ## Decisions
 
@@ -94,3 +95,5 @@ history (the last full version of this file is in commit `c880dca`). Versions an
 | D91 | In the dark theme a resting card's edge, in the grid and in Settings alike, has the same contrast with its card in both Dark panels choices: gray 110 on the card's 30 (Lighter), gray 99 on 10 (Darker) |
 | D92 | Settings, Clipboard, Advanced: Trim spaces around text and Remove Markdown marks, both off by default, change the text when the app copies or pastes an item; the history keeps the item as it was copied |
 | D93 | A touchpad scrolls as in a browser: the list follows the fingers, evenly over the frames, and coasts on by itself after a quick swipe. Windows' own coasting, which comes late as one big step while the window draws, is left out |
+| D94 | Search filters by program: a Programs menu after the kind filters and before the tags lists the programs the copies came from, each with its own icon and how many copies it gave (the most first, copies with no program last), with a search by a program's name or file name; it takes several programs, and its button says All programs, the one program's icon and name, or how many are picked. The popup starts with every program. Privacy's Add a rule offers every program in the history with the same search. A menu's list keeps its height while its search narrows it, so the menu never jumps to the other side of its button |
+| D95 | Code in a copy is colored in the app's own colors, the same in both themes and not following the accent: indigo keywords, sky functions and keys, green strings, amber numbers, rose types, gray comments, each shaded until it reads at 4.5 to 1 on the code box. The languages are bat's, from two-face, run by syntect with Oniguruma (its own project ended in 2025; giallo, under EUPL-1.2, is the fallback) |
