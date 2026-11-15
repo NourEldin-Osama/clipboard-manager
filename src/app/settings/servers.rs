@@ -679,24 +679,23 @@ fn model_field(
                 if enter_in(ui, &field) {
                     picked = shown.first().map(|id| (*id).clone());
                 }
-                if shown.is_empty() {
-                    nothing_matches(ui, MODEL_LIST_WIDTH, &t!("settings-model-none-match"));
-                }
-                egui::ScrollArea::vertical()
-                    .max_height(model_list_height(ui.ctx()))
-                    .show(ui, |ui| {
-                        let width = ui.available_width();
-                        for id in shown {
-                            let chosen = *id == *model;
-                            let row = listed_option(ui, width, id, names, None, chosen, &words);
-                            if opened && chosen {
-                                row.scroll_to_me(Some(egui::Align::Center));
-                            }
-                            if row.clicked() {
-                                picked = Some(id.clone());
-                            }
+                let most = model_list_height(ui.ctx());
+                steady_list(ui, b.id.with("list"), opened, most, |ui| {
+                    if shown.is_empty() {
+                        nothing_matches(ui, MODEL_LIST_WIDTH, &t!("settings-model-none-match"));
+                    }
+                    let width = ui.available_width();
+                    for id in shown {
+                        let chosen = *id == *model;
+                        let row = listed_option(ui, width, id, names, None, chosen, &words);
+                        if opened && chosen {
+                            row.scroll_to_me(Some(egui::Align::Center));
                         }
-                    });
+                        if row.clicked() {
+                            picked = Some(id.clone());
+                        }
+                    }
+                });
                 if picked.is_some() {
                     ui.close();
                 }
@@ -1333,55 +1332,46 @@ impl App {
                             }
                         }
                     }
-                    if found.is_empty() {
-                        nothing_matches(ui, width, &t!("settings-model-none-match"));
-                    }
-                    egui::ScrollArea::vertical()
-                        .max_height(model_list_height(ui.ctx()))
-                        .show(ui, |ui| {
-                            let width = ui.available_width();
-                            for (index, (server, models, more, names)) in found.iter().enumerate() {
-                                if index > 0 {
-                                    ui.add_space(space::SMALL);
+                    let most = model_list_height(ui.ctx());
+                    steady_list(ui, menu_id.with("list"), opened, most, |ui| {
+                        if found.is_empty() {
+                            nothing_matches(ui, width, &t!("settings-model-none-match"));
+                        }
+                        let width = ui.available_width();
+                        for (index, (server, models, more, names)) in found.iter().enumerate() {
+                            if index > 0 {
+                                ui.add_space(space::SMALL);
+                            }
+                            server_heading(ui, width, server);
+                            for m in models {
+                                let at = ModelRef {
+                                    server: server.id,
+                                    model: m.id,
+                                };
+                                let label = model_label(m);
+                                let id = Some(m.model.trim())
+                                    .filter(|id| !id.is_empty() && *id != label);
+                                let is_chosen = chosen == Some(at);
+                                let row =
+                                    model_option(ui, width, &label, id, None, is_chosen, &words);
+                                if opened && is_chosen {
+                                    row.scroll_to_me(Some(egui::Align::Center));
                                 }
-                                server_heading(ui, width, server);
-                                for m in models {
-                                    let at = ModelRef {
-                                        server: server.id,
-                                        model: m.id,
-                                    };
-                                    let label = model_label(m);
-                                    let id = Some(m.model.trim())
-                                        .filter(|id| !id.is_empty() && *id != label);
-                                    let is_chosen = chosen == Some(at);
-                                    let row = model_option(
-                                        ui, width, &label, id, None, is_chosen, &words,
-                                    );
-                                    if opened && is_chosen {
-                                        row.scroll_to_me(Some(egui::Align::Center));
-                                    }
-                                    if row.clicked() {
-                                        picked = Some(at);
-                                    }
-                                }
-                                // The ones it lists that aren't added yet, marked so.
-                                let note = t!("settings-model-on-server-only");
-                                for id in more {
-                                    let row = listed_option(
-                                        ui,
-                                        width,
-                                        id,
-                                        names,
-                                        Some(&note),
-                                        false,
-                                        &words,
-                                    );
-                                    if row.clicked() {
-                                        added = Some((server.id, id.to_string()));
-                                    }
+                                if row.clicked() {
+                                    picked = Some(at);
                                 }
                             }
-                        });
+                            // The ones it lists that aren't added yet, marked so.
+                            let note = t!("settings-model-on-server-only");
+                            for id in more {
+                                let row =
+                                    listed_option(ui, width, id, names, Some(&note), false, &words);
+                                if row.clicked() {
+                                    added = Some((server.id, id.to_string()));
+                                }
+                            }
+                        }
+                    });
                     divider(ui);
                     let text = t!("settings-model-add-server");
                     let row = icons::menu_item(ui, Icon::Add, &text);
