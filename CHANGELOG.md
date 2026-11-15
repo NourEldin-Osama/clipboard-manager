@@ -4,6 +4,32 @@ What changed in each version, for the people who use the app. Each release
 starts its notes with the section of the version it was built from, so add
 the notes here before a push that makes a release.
 
+## 0.11.0
+
+- Search can show only the copies from the programs you pick: a Programs
+  menu after the kind filters lists the programs your copies came from,
+  each with its own icon and how many copies it gave, the most first.
+  Its search finds a program by its name or its file name, and you can
+  pick several. While you search, each program counts its results, and
+  one with none is dimmed. When the programs you picked hide every
+  result, a link shows the copies from every program again.
+- The number on each filter is what choosing it would show: with a
+  program or a tag picked, the kinds, tags and programs count only what
+  goes with it. A filter with nothing to show is dimmed.
+- Code shows in colors in the details pane and on the grid's cards:
+  keywords, functions, text in quotes, numbers, types and comments, the
+  same in both themes. The app tells about 20 languages apart from the
+  code itself and leaves code plain when it isn't sure. Settings,
+  Appearance, Code in colour turns the colors off, and Settings, About
+  lists the licenses of the languages that color the code.
+- Settings, Privacy, Add a rule lists every program in your history
+  instead of the last eight, with a search, and a program without an
+  icon of its own shows the generic one.
+- The model menus and the Add a rule menu stay where they are while you
+  type in their search.
+- The libraries the app is built with are up to date, among them the
+  history's database and the one for web requests.
+
 ## 0.10.0
 
 - Scrolling with a laptop's touchpad is smooth, as in a web browser: the
