@@ -644,6 +644,8 @@ pub struct Config {
     pub group_by_date: bool,
     /// Index into the accent palette.
     pub accent: usize,
+    /// Code in copies shows in its colors (D95).
+    pub code_colors: bool,
     pub view: ViewMode,
     /// Show a tray icon; closing or minimising the window hides it there.
     pub tray: bool,
@@ -718,6 +720,7 @@ impl Default for Config {
             card_height: CardHeight::Same,
             group_by_date: true,
             accent: 0,
+            code_colors: true,
             view: ViewMode::Grid,
             tray: false,
             start_at_login: true,

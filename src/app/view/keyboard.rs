@@ -348,6 +348,14 @@ impl App {
     /// The keys of the full window, or of the popup when `in_popup`: the same,
     /// less those for what the popup doesn't have (details, tags, views).
     pub(super) fn keyboard(&mut self, ctx: &egui::Context, in_popup: bool) {
+        // The licenses, opened from Settings, take the keys while they are
+        // open: Esc closes them, not Settings.
+        if self.licenses_open && !in_popup {
+            if ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, Key::Escape)) {
+                self.licenses_open = false;
+            }
+            return;
+        }
         if self.draft.is_some() && !in_popup {
             // Esc first closes what is open inside Settings: a shortcut field
             // listening (its "cancel"), a menu, or a text field being typed

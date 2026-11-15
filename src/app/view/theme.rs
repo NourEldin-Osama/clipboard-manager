@@ -331,6 +331,32 @@ pub(crate) fn text_shade(color: Color32, dark_mode: bool) -> Color32 {
     readable(color, Color32::from_gray(if dark_mode { 62 } else { 220 }))
 }
 
+/// The color of a piece of code with `role` (D95), none for plain code,
+/// which keeps the text's color. The app's indigo, sky, green, amber and
+/// rose and a gray, the same whatever the accent: in the dark theme moved
+/// toward white until they read at 4.6 to 1 on a card selected in any
+/// accent (the hardest place, so at more than 6 to 1 on the code box), in
+/// the light one toward black until they read at 4.8 to 1 on the code box.
+pub(crate) fn code_color(role: crate::code_colors::Role, dark_mode: bool) -> Option<Color32> {
+    use crate::code_colors::Role;
+    let (r, g, b) = match (role, dark_mode) {
+        (Role::Text, _) => return None,
+        (Role::Keyword, true) => (142, 151, 247),
+        (Role::Function, true) => (71, 168, 223),
+        (Role::String, true) => (76, 178, 122),
+        (Role::Number, true) => (216, 145, 29),
+        (Role::Type, true) => (231, 125, 165),
+        (Role::Comment, true) => (160, 160, 160),
+        (Role::Keyword, false) => (83, 95, 227),
+        (Role::Function, false) => (11, 115, 175),
+        (Role::String, false) => (27, 125, 70),
+        (Role::Number, false) => (150, 98, 14),
+        (Role::Type, false) => (194, 53, 106),
+        (Role::Comment, false) => (112, 112, 112),
+    };
+    Some(Color32::from_rgb(r, g, b))
+}
+
 /// A tag's text, in its color: the text shade, a step lighter in the dark
 /// theme.
 pub(crate) fn tag_shade(color: Color32, dark_mode: bool) -> Color32 {
@@ -1066,6 +1092,43 @@ mod tests {
     /// Coloured text in its text shade on every background it sits on, as the
     /// chips, pills, rows, menus and setting rows draw them; white text on the
     /// main and delete buttons; egui's selected text. For every accent.
+    #[test]
+    fn code_reads_on_the_code_box_and_on_cards() {
+        use crate::code_colors::Role;
+        let roles = [
+            Role::Keyword,
+            Role::Function,
+            Role::String,
+            Role::Number,
+            Role::Type,
+            Role::Comment,
+        ];
+        for (ctx, theme) in styled() {
+            let v = ctx.style_of(theme).visuals.clone();
+            let dark = v.dark_mode;
+            // The details' code box, a card, and a selected card in each accent.
+            let mut grounds = vec![
+                ("code box".to_string(), v.panel_fill),
+                ("card".to_string(), v.extreme_bg_color),
+            ];
+            for a in ACCENTS {
+                let tint = over(selected_card(a, dark), v.extreme_bg_color);
+                grounds.push((format!("card selected in {a:?}"), tint));
+            }
+            for role in roles {
+                let color = code_color(role, dark).expect("a color");
+                for (place, ground) in &grounds {
+                    let ratio = contrast(color, *ground);
+                    assert!(
+                        ratio >= 4.5,
+                        "{role:?} on the {place} in {theme:?}: {ratio:.2}"
+                    );
+                }
+            }
+            assert_eq!(code_color(Role::Text, dark), None);
+        }
+    }
+
     #[test]
     fn colored_text_is_readable_on_every_background() {
         for (ctx, theme) in styled() {

@@ -9,7 +9,29 @@ impl App {
     pub(super) fn about_page(&mut self, ui: &mut Ui, d: &mut Config) {
         self.updates_section(ui, d);
         self.storage_section(ui);
+        self.licenses_section(ui);
         self.reset_section(ui, d);
+    }
+
+    /// The licenses of the languages that color code, which ask to be shown
+    /// with the app.
+    fn licenses_section(&mut self, ui: &mut Ui) {
+        section(ui, &t!("settings-licenses"), |ui| {
+            plain_setting(
+                ui,
+                &t!("settings-code-licenses"),
+                &t!("settings-code-licenses-hint"),
+                "",
+                |ui| {
+                    if ui
+                        .button(txt(&t!("settings-show"), size::BODY, None))
+                        .clicked()
+                    {
+                        self.licenses_open = true;
+                    }
+                },
+            );
+        });
     }
 
     fn updates_section(&mut self, ui: &mut Ui, d: &mut Config) {

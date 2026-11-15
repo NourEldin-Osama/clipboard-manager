@@ -17,12 +17,14 @@ use crate::config::{CardHeight, Density};
 
 mod checklist;
 mod chrome;
+mod code;
 mod details;
 mod grid;
 mod items;
 mod key_hints;
 mod keyboard;
 mod keys_sheet;
+mod licenses;
 mod list;
 mod menu;
 mod messages;
@@ -36,6 +38,7 @@ mod whats_new;
 mod widgets;
 
 // The helpers of every part, for this file and its parts.
+use code::*;
 use items::*;
 use key_hints::*;
 use keyboard::*;
@@ -343,6 +346,7 @@ impl eframe::App for App {
         self.toasts(&ctx, false);
         self.keys_sheet(&ctx, false);
         self.whats_new(&ctx);
+        self.licenses(&ctx);
         if ctx.input(|i| !i.raw.hovered_files.is_empty()) {
             let r = ctx.content_rect();
             let p = ctx.layer_painter(egui::LayerId::new(

@@ -67,6 +67,15 @@ pub(super) fn appearance_page(ui: &mut Ui, d: &mut Config) {
                 }
             },
         );
+        setting_for(
+            ui,
+            &t!("settings-code-colors"),
+            &t!("settings-code-colors-hint"),
+            "",
+            &mut d.code_colors,
+            def.code_colors,
+            toggle,
+        );
     });
     section(ui, &t!("settings-list"), |ui| {
         setting_for(

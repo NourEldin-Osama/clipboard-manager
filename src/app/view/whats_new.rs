@@ -32,7 +32,7 @@ impl App {
         if !self.whats_new_open {
             return;
         }
-        let response = sheet(ctx, &update::notes(update::VERSION));
+        let response = notes_sheet(ctx, &update::notes(update::VERSION));
         let (_, clicked) = response.inner;
         if clicked || response.should_close() {
             self.whats_new_open = false;
@@ -40,11 +40,31 @@ impl App {
     }
 }
 
-/// The sheet of `notes` over the window: the title with the close button,
-/// the notes in a list that scrolls, and a Close button, with the same room
-/// inside the edge on every side. Its content holds where the title, notes
-/// and Close button are together, and whether a close button was clicked.
-fn sheet(ctx: &egui::Context, notes: &[String]) -> egui::ModalResponse<(Rect, bool)> {
+/// The sheet of `notes`.
+fn notes_sheet(ctx: &egui::Context, notes: &[String]) -> egui::ModalResponse<(Rect, bool)> {
+    let title = t!("whats-new-title", version = update::VERSION);
+    sheet(ctx, "whats-new", &title, &t!("whats-new-close"), |ui| {
+        // The notes are in English: they read left to right in either
+        // language.
+        ui.with_layout(Layout::top_down(Align::Min), |ui| {
+            for note in notes {
+                note_row(ui, note);
+            }
+        });
+    })
+}
+
+/// A sheet over the window: the `title` with the close button, `content`
+/// in a list that scrolls, and a `close` button, with the same room inside
+/// the edge on every side. Its content holds where the title, list and
+/// Close button are together, and whether a close button was clicked.
+pub(super) fn sheet(
+    ctx: &egui::Context,
+    id: &str,
+    title: &str,
+    close: &str,
+    content: impl FnOnce(&mut Ui),
+) -> egui::ModalResponse<(Rect, bool)> {
     let frame = egui::Frame::popup(&ctx.global_style())
         .inner_margin(egui::Margin::same(SHEET_MARGIN as i8));
     // The room around the sheet, its edge and its margin, on each side.
@@ -55,7 +75,7 @@ fn sheet(ctx: &egui::Context, notes: &[String]) -> egui::ModalResponse<(Rect, bo
     // beside them.
     let around = 2.0 * (side + BAR_HEIGHT + space::MEDIUM);
     let list_height = (room.y - around).clamp(120.0, LIST_HEIGHT);
-    egui::Modal::new(egui::Id::unique("whats-new"))
+    egui::Modal::new(egui::Id::unique(id))
         .frame(frame)
         .show(ctx, |ui| {
             let mut closed = false;
@@ -65,10 +85,9 @@ fn sheet(ctx: &egui::Context, notes: &[String]) -> egui::ModalResponse<(Rect, bo
             let note_gap = ui.spacing().item_spacing.y;
             ui.spacing_mut().item_spacing.y = 0.0;
             row_of(ui, BAR_HEIGHT, |ui| {
-                let title = t!("whats-new-title", version = update::VERSION);
-                ui.label(title_txt(&title, size::LARGE, None));
+                ui.label(title_txt(title, size::LARGE, None));
                 far(ui, |ui| {
-                    let tip = hint(&t!("whats-new-close"), "Escape");
+                    let tip = hint(close, "Escape");
                     let size = Vec2::splat(CLOSE_BUTTON);
                     closed |= icon_button_ex(ui, Icon::Close, &tip, size, CLOSE_CROSS, None, None)
                         .clicked();
@@ -83,20 +102,14 @@ fn sheet(ctx: &egui::Context, notes: &[String]) -> egui::ModalResponse<(Rect, bo
                 .min_scrolled_height(list_height)
                 .show(ui, |ui| {
                     ui.spacing_mut().item_spacing.y = note_gap;
-                    // The notes keep clear of the scroll bar's handle.
+                    // The content keeps clear of the scroll bar's handle.
                     ui.set_max_width(ui.available_width() - super::list::handle_room(ui));
-                    // The notes are in English: they read left to right in
-                    // either language.
-                    ui.with_layout(Layout::top_down(Align::Min), |ui| {
-                        for note in notes {
-                            note_row(ui, note);
-                        }
-                    });
+                    content(ui);
                 });
             ui.add_space(space::MEDIUM);
             row_of(ui, BAR_HEIGHT, |ui| {
                 far(ui, |ui| {
-                    closed |= primary_button(ui, &t!("whats-new-close")).clicked();
+                    closed |= primary_button(ui, close).clicked();
                 });
             });
             (ui.min_rect(), closed)
@@ -145,7 +158,7 @@ mod tests {
                 screen_rect: Some(Rect::from_min_size(Pos2::ZERO, size)),
                 ..Default::default()
             };
-            let mut output = ctx.run_ui(input, |ui| last = Some(sheet(ui.ctx(), &notes)));
+            let mut output = ctx.run_ui(input, |ui| last = Some(notes_sheet(ui.ctx(), &notes)));
             output.textures_delta.clear();
         }
         last.expect("a frame ran")

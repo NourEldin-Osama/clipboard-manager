@@ -15,6 +15,7 @@ use global_hotkey::hotkey::HotKey;
 use global_hotkey::{GlobalHotKeyEvent, GlobalHotKeyManager, HotKeyState};
 
 use crate::clipboard::{self, Capture, Captured, Flags, SkipReason};
+use crate::code_colors::CodeColors;
 use crate::config::{
     Config, EmbedBackend, LaunchConfig, Paths, SearchEngine, SearchMode, SortOrder, Theme, ViewMode,
 };
@@ -778,6 +779,8 @@ pub struct App {
     /// The history or the query changed: search again.
     dirty: bool,
     searcher: Searcher,
+    /// The colors of the code in copies, colored on a thread of its own.
+    code_colors: CodeColors,
     /// The newest search sent, and whether its results are still to come.
     search_seq: u64,
     searching: bool,
@@ -923,6 +926,8 @@ pub struct App {
     whats_new_pending: bool,
     /// What is new in this version is open over the full window.
     whats_new_open: bool,
+    /// The languages' licenses are open over the window (Settings, About).
+    licenses_open: bool,
     /// The command being run came from a key, so its message doesn't name it.
     by_key: bool,
     /// Keys a message has named in this run: each is named once.
@@ -1047,6 +1052,10 @@ impl App {
                 let c = ctx.clone();
                 Searcher::spawn(move || c.request_repaint())
             },
+            code_colors: {
+                let c = ctx.clone();
+                CodeColors::spawn(move || c.request_repaint())
+            },
             search_seq: 0,
             searching: false,
             selected: None,
@@ -1114,6 +1123,7 @@ impl App {
             keys_sheet: None,
             whats_new_pending: false,
             whats_new_open: false,
+            licenses_open: false,
             by_key: false,
             taught: HashSet::new(),
             copy_hint: None,
@@ -2666,6 +2676,7 @@ impl App {
             return;
         }
         let gone: HashSet<u64> = ids.iter().copied().collect();
+        self.code_colors.forget(ids);
         self.results.retain(|h| !gone.contains(&h.id));
         self.weaker.retain(|h| !gone.contains(&h.id));
         // With every strong match gone, the weaker ones are all there is.
