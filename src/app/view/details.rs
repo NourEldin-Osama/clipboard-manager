@@ -662,6 +662,10 @@ impl App {
                     });
                     ui.add_space(space::SMALL);
                 }
+                // Code in its colors once they are ready (D95), plain
+                // meanwhile.
+                let code = self.detail_text(it).monospace && self.cfg.code_colors;
+                let colored = if code { self.code_colors.of(it) } else { None };
                 let d = self.detail_text(it);
                 if d.monospace {
                     let code_bg = ui.visuals().panel_fill;
@@ -671,14 +675,18 @@ impl App {
                         .inner_margin(Margin::same(12))
                         .show(ui, |ui| {
                             ui.set_width(ui.available_width());
-                            ui.add(
-                                egui::Label::new(
-                                    RichText::new(d.shown.as_str())
-                                        .monospace()
-                                        .size(size::CONTROL),
-                                )
-                                .selectable(true),
-                            );
+                            let text: egui::WidgetText = match &colored {
+                                Some(colored) => {
+                                    let v = ui.visuals();
+                                    let font = FontId::monospace(size::CONTROL);
+                                    code_job(colored, font, v.text_color(), v.dark_mode).into()
+                                }
+                                None => RichText::new(d.shown.as_str())
+                                    .monospace()
+                                    .size(size::CONTROL)
+                                    .into(),
+                            };
+                            ui.add(egui::Label::new(text).selectable(true));
                         });
                 } else {
                     // The text itself, the pane's main content, lined up with

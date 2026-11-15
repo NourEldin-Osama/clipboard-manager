@@ -8,6 +8,7 @@ mod app;
 mod autostart;
 mod catalog;
 mod clipboard;
+mod code_colors;
 mod config;
 mod download;
 mod embed;

@@ -17,6 +17,7 @@ use crate::config::{CardHeight, Density};
 
 mod checklist;
 mod chrome;
+mod code;
 mod details;
 mod grid;
 mod items;
@@ -36,6 +37,7 @@ mod whats_new;
 mod widgets;
 
 // The helpers of every part, for this file and its parts.
+use code::*;
 use items::*;
 use key_hints::*;
 use keyboard::*;

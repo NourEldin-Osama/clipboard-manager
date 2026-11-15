@@ -2,6 +2,7 @@
 
 use super::*;
 use crate::app::programs::Program;
+use crate::code_colors::Colored;
 
 /// Between cards, across and down.
 pub(crate) const GRID_GAP: f32 = 14.0;
@@ -39,7 +40,7 @@ fn fitted_height(ui: &Ui, it: &Item, card_w: f32, same: f32) -> f32 {
             + LINE_GAP
             + line_height(ui, &FontId::proportional(size::SMALL))
     } else {
-        let (lines, _) = card_text(ui, it, &[], most.size());
+        let (lines, _) = card_text(ui, it, &[], most.size(), None);
         lines.iter().map(|(g, _)| g.size().y).sum()
     };
     around + body.min(most.height())
@@ -112,6 +113,7 @@ fn card_text(
     it: &Item,
     terms: &[String],
     size: Vec2,
+    colored: Option<&Colored>,
 ) -> (Vec<(Arc<egui::Galley>, bool)>, Color32) {
     let v = ui.visuals();
     let code = is_code(it);
@@ -175,7 +177,7 @@ fn card_text(
             None,
         )
     } else {
-        let job = highlighted(
+        let mut job = highlighted(
             text.trim_end(),
             terms,
             font,
@@ -184,6 +186,10 @@ fn card_text(
             size.x,
             rows,
         );
+        // Code in its colors once they are ready (D95).
+        if let Some(colored) = colored.filter(|_| code) {
+            color_job(&mut job, colored, v.dark_mode);
+        }
         vec![(ui.fonts_mut(|f| f.layout_job(job)), false)]
     };
     (lines, color)
@@ -230,6 +236,7 @@ pub(super) fn paint_card(
     relevance: Option<usize>,
     selected: bool,
     terms: &[String],
+    colored: Option<&Colored>,
 ) {
     let v = ui.visuals();
     let a = accent();
@@ -389,7 +396,7 @@ pub(super) fn paint_card(
             paint_lines(ui, &bp, body, below, &lines, rtl);
         }
         _ => {
-            let (lines, color) = card_text(ui, it, terms, body.size());
+            let (lines, color) = card_text(ui, it, terms, body.size(), colored);
             // Arabic letters and their marks reach above and below their
             // lines, and a card as tall as its text ends at its last line:
             // the room around the text keeps them whole.
@@ -967,6 +974,7 @@ impl App {
             &mut self.programs,
             &self.marked,
         );
+        let (code_colors, color_code) = (&mut self.code_colors, self.cfg.code_colors);
         let out = sa.show_viewport(ui, |ui, viewport| {
             ui.set_height(total);
             let origin = ui.max_rect().min;
@@ -1007,7 +1015,14 @@ impl App {
                 });
                 let hot = !menu_open && ui.rect_contains_pointer(rect);
                 let relevance = relevance_level(hit);
-                paint_card(ui, rect, hot, it, thumb, program, relevance, lit, &terms);
+                // Code in its colors once they are ready (D95).
+                let colored = (color_code && is_code(it))
+                    .then(|| code_colors.of(it))
+                    .flatten();
+                let colored = colored.as_deref();
+                paint_card(
+                    ui, rect, hot, it, thumb, program, relevance, lit, &terms, colored,
+                );
                 if resp.clicked() {
                     // Ctrl and Shift select several.
                     let keys = ui.input(|i| i.modifiers);
@@ -1180,11 +1195,12 @@ mod tests {
                     let card = Rect::from_min_size(Pos2::ZERO, Vec2::new(width, height));
                     let body = card_body(card, tagged);
                     // As the card draws it, all of it, and at the cap.
-                    let (shown, _) = card_text(ui, it, &[], body.size());
+                    let (shown, _) = card_text(ui, it, &[], body.size(), None);
                     let every = Vec2::new(body.width(), f32::INFINITY);
-                    let (all, _) = card_text(ui, it, &[], every);
+                    let (all, _) = card_text(ui, it, &[], every, None);
                     let tallest = Rect::from_min_size(Pos2::ZERO, Vec2::new(width, same * 1.6));
-                    let (capped, _) = card_text(ui, it, &[], card_body(tallest, tagged).size());
+                    let (capped, _) =
+                        card_text(ui, it, &[], card_body(tallest, tagged).size(), None);
                     assert_eq!(rows(&shown), rows(&capped), "{case}");
                     if *it.text == *long {
                         assert!(rows(&shown) < rows(&all), "{case}: the long text is cut");
@@ -1227,7 +1243,18 @@ mod tests {
             let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
                 let rect = Rect::from_min_size(Pos2::new(0.0, 100.0), Vec2::new(240.0, 210.0));
                 let relevance = relevance_level(&hit);
-                paint_card(ui, rect, false, &it, None, None, relevance, false, &[]);
+                paint_card(
+                    ui,
+                    rect,
+                    false,
+                    &it,
+                    None,
+                    None,
+                    relevance,
+                    false,
+                    &[],
+                    None,
+                );
             });
             output.textures_delta.clear();
             let mut bars = 0;
@@ -1281,7 +1308,7 @@ mod tests {
                         210.0
                     };
                     card = Rect::from_min_size(Pos2::new(0.0, 100.0), Vec2::new(300.0, height));
-                    paint_card(ui, card, false, &it, None, None, None, false, &[]);
+                    paint_card(ui, card, false, &it, None, None, None, false, &[], None);
                 });
                 output.textures_delta.clear();
                 let body = card_body(card, false);
@@ -1375,7 +1402,7 @@ mod tests {
                 let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
                     let rect = Rect::from_min_size(Pos2::new(0.0, 100.0), Vec2::new(300.0, 210.0));
                     let picture = Some(thumb.clone());
-                    paint_card(ui, rect, hot, &it, picture, None, None, selected, &[]);
+                    paint_card(ui, rect, hot, &it, picture, None, None, selected, &[], None);
                 });
                 output.textures_delta.clear();
                 let tints: Vec<Color32> = output
@@ -1439,7 +1466,7 @@ mod tests {
                     let mut fill = Color32::PLACEHOLDER;
                     let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
                         fill = ui.visuals().extreme_bg_color;
-                        paint_card(ui, card, hot, &it, None, None, None, selected, &[]);
+                        paint_card(ui, card, hot, &it, None, None, None, selected, &[], None);
                     });
                     output.textures_delta.clear();
                     let (mut fills, mut words) = (Vec::new(), Vec::new());
@@ -1498,7 +1525,7 @@ mod tests {
             style(&ctx, panels);
             ctx.set_theme(theme);
             let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
-                paint_card(ui, card, false, &it, None, None, None, false, &[]);
+                paint_card(ui, card, false, &it, None, None, None, false, &[], None);
             });
             output.textures_delta.clear();
             // The card's surface: the rect as big as the card, under its

@@ -15,6 +15,7 @@ use global_hotkey::hotkey::HotKey;
 use global_hotkey::{GlobalHotKeyEvent, GlobalHotKeyManager, HotKeyState};
 
 use crate::clipboard::{self, Capture, Captured, Flags, SkipReason};
+use crate::code_colors::CodeColors;
 use crate::config::{
     Config, EmbedBackend, LaunchConfig, Paths, SearchEngine, SearchMode, SortOrder, Theme, ViewMode,
 };
@@ -778,6 +779,8 @@ pub struct App {
     /// The history or the query changed: search again.
     dirty: bool,
     searcher: Searcher,
+    /// The colors of the code in copies, colored on a thread of its own.
+    code_colors: CodeColors,
     /// The newest search sent, and whether its results are still to come.
     search_seq: u64,
     searching: bool,
@@ -1046,6 +1049,10 @@ impl App {
             searcher: {
                 let c = ctx.clone();
                 Searcher::spawn(move || c.request_repaint())
+            },
+            code_colors: {
+                let c = ctx.clone();
+                CodeColors::spawn(move || c.request_repaint())
             },
             search_seq: 0,
             searching: false,
@@ -2666,6 +2673,7 @@ impl App {
             return;
         }
         let gone: HashSet<u64> = ids.iter().copied().collect();
+        self.code_colors.forget(ids);
         self.results.retain(|h| !gone.contains(&h.id));
         self.weaker.retain(|h| !gone.contains(&h.id));
         // With every strong match gone, the weaker ones are all there is.
