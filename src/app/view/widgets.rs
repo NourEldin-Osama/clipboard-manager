@@ -488,6 +488,116 @@ pub(crate) fn chip(ui: &mut Ui, text: impl Into<String>, color: Color32) -> egui
         .response
 }
 
+/// How tall the search field at the top of a menu is.
+const MENU_SEARCH_HEIGHT: f32 = 32.0;
+
+/// The search field at the top of a menu, `width` wide, the search icon at
+/// its start, as the window's own search looks: a thin edge, the accent's
+/// while it has the keyboard.
+pub(crate) fn menu_search(
+    ui: &mut Ui,
+    text: &mut String,
+    id: egui::Id,
+    hint: &str,
+    width: f32,
+) -> egui::Response {
+    let dark = ui.visuals().dark_mode;
+    let edge = if ui.memory(|m| m.has_focus(id)) {
+        Stroke::new(1.5, accent())
+    } else {
+        Stroke::new(1.0, line_color(dark))
+    };
+    let side: i8 = 10;
+    Frame::new()
+        .fill(search_fill(dark))
+        .corner_radius(CornerRadius::same(radius::MEDIUM))
+        .stroke(edge)
+        .inner_margin(Margin::symmetric(side, 0))
+        .show(ui, |ui| {
+            // The edge counts in the frame's size, so the field is as wide
+            // with the accent's thicker one.
+            ui.set_width(width - 2.0 * (f32::from(side) + edge.width));
+            ui.set_height(MENU_SEARCH_HEIGHT);
+            ui.with_layout(row_layout(), |ui| {
+                let weak = ui.visuals().weak_text_color();
+                icons::glyph(ui, Icon::Search, 14.0, weak);
+                let field = egui::TextEdit::singleline(text)
+                    .id(id)
+                    .frame(Frame::NONE)
+                    .hint_text(txt(hint, size::BODY, Some(weak)))
+                    .font(FontId::proportional(size::BODY))
+                    .align(if i18n::rtl() {
+                        egui::Align2::RIGHT_CENTER
+                    } else {
+                        egui::Align2::LEFT_CENTER
+                    })
+                    .desired_width(ui.available_width());
+                let resp = ui.add(field);
+                set_name(&resp, hint);
+                resp
+            })
+            .inner
+        })
+        .inner
+}
+
+/// The search at the top of a menu's list, `hint` in it while empty: kept
+/// while the list is open and empty each time it opens, with the keyboard
+/// in it then; and its words.
+pub(crate) fn menu_search_words(
+    ui: &mut Ui,
+    id: egui::Id,
+    opened: bool,
+    hint: &str,
+    width: f32,
+) -> (egui::Response, Vec<String>) {
+    let mut search = match opened {
+        true => String::new(),
+        false => ui.data(|d| d.get_temp::<String>(id)).unwrap_or_default(),
+    };
+    let field = menu_search(ui, &mut search, id.with("field"), hint, width);
+    if opened {
+        field.request_focus();
+    }
+    let words = search_words(&search);
+    ui.data_mut(|d| d.insert_temp(id, search));
+    (field, words)
+}
+
+/// What a menu's list shows when nothing in it has the words searched for.
+pub(crate) fn nothing_matches(ui: &mut Ui, width: f32, text: &str) {
+    let (rect, resp) = ui.allocate_exact_size(Vec2::new(width, 56.0), Sense::hover());
+    resp.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Label, true, text));
+    paint_text(
+        ui,
+        ui.painter(),
+        rect.center(),
+        egui::Align2::CENTER_CENTER,
+        text,
+        FontId::proportional(size::BODY),
+        ui.visuals().weak_text_color(),
+    );
+}
+
+/// Whether Enter was pressed in the search field `field`: the first entry
+/// found is then picked.
+pub(crate) fn enter_in(ui: &Ui, field: &egui::Response) -> bool {
+    field.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter))
+}
+
+/// The words of a search, in lower case, as they are looked for.
+pub(crate) fn search_words(search: &str) -> Vec<String> {
+    search.split_whitespace().map(str::to_lowercase).collect()
+}
+
+/// Whether each of the searched `words` is in one of `texts`.
+pub(crate) fn matches(words: &[String], texts: &[&str]) -> bool {
+    let texts: Vec<String> = texts.iter().map(|text| text.to_lowercase()).collect();
+    words
+        .iter()
+        .all(|word| texts.iter().any(|text| text.contains(word.as_str())))
+}
+
 /// A menu row with a check mark at the far end when `checked`.
 pub(super) fn check_row(ui: &mut Ui, text: &str, checked: bool) -> egui::Response {
     let (rect, resp) =

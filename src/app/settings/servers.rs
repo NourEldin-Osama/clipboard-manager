@@ -354,19 +354,6 @@ fn kind_tile(
     resp
 }
 
-/// The words of a search, in lower case, as they are looked for.
-fn search_words(search: &str) -> Vec<String> {
-    search.split_whitespace().map(str::to_lowercase).collect()
-}
-
-/// Whether each of the searched `words` is in one of `texts`.
-fn matches(words: &[String], texts: &[&str]) -> bool {
-    let texts: Vec<String> = texts.iter().map(|text| text.to_lowercase()).collect();
-    words
-        .iter()
-        .all(|word| texts.iter().any(|text| text.contains(word.as_str())))
-}
-
 /// The listed models with each of the searched `words` in their id or in
 /// the server's name for them.
 fn models_matching<'a>(
@@ -606,56 +593,6 @@ fn server_heading(ui: &mut Ui, width: f32, server: &Server) {
     );
 }
 
-/// What a list of models shows when no model has the words searched for.
-fn no_models_match(ui: &mut Ui, width: f32) {
-    let text = t!("settings-model-none-match");
-    let (rect, resp) = ui.allocate_exact_size(Vec2::new(width, 56.0), Sense::hover());
-    resp.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Label, true, &text));
-    paint_text(
-        ui,
-        ui.painter(),
-        rect.center(),
-        egui::Align2::CENTER_CENTER,
-        &text,
-        FontId::proportional(size::BODY),
-        ui.visuals().weak_text_color(),
-    );
-}
-
-/// The search at the top of a list of models, kept while the list is open
-/// and empty each time it opens, with the keyboard in it then; and its
-/// words.
-fn model_search(
-    ui: &mut Ui,
-    id: egui::Id,
-    opened: bool,
-    width: f32,
-) -> (egui::Response, Vec<String>) {
-    let mut search = match opened {
-        true => String::new(),
-        false => ui.data(|d| d.get_temp::<String>(id)).unwrap_or_default(),
-    };
-    let field = menu_search(
-        ui,
-        &mut search,
-        id.with("field"),
-        &t!("settings-model-search"),
-        width,
-    );
-    if opened {
-        field.request_focus();
-    }
-    let words = search_words(&search);
-    ui.data_mut(|d| d.insert_temp(id, search));
-    (field, words)
-}
-
-/// Whether Enter was pressed in the search field `field`: the first model
-/// found is then picked.
-fn enter_in(ui: &Ui, field: &egui::Response) -> bool {
-    field.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter))
-}
-
 /// Puts the model picked from the server's list in `model`, and the
 /// server's name for it in `menu_name`, unless that holds a name of the
 /// user's own: one other than the old model's id or the server's name for
@@ -729,8 +666,13 @@ fn model_field(
             .show(|ui| {
                 ui.set_width(MODEL_LIST_WIDTH);
                 ui.spacing_mut().item_spacing.y = 2.0;
-                let (field, words) =
-                    model_search(ui, b.id.with("search"), opened, MODEL_LIST_WIDTH);
+                let (field, words) = menu_search_words(
+                    ui,
+                    b.id.with("search"),
+                    opened,
+                    &t!("settings-model-search"),
+                    MODEL_LIST_WIDTH,
+                );
                 ui.add_space(space::TINY);
                 let shown: Vec<&String> =
                     models_matching(listed, names, &words).take(300).collect();
@@ -738,7 +680,7 @@ fn model_field(
                     picked = shown.first().map(|id| (*id).clone());
                 }
                 if shown.is_empty() {
-                    no_models_match(ui, MODEL_LIST_WIDTH);
+                    nothing_matches(ui, MODEL_LIST_WIDTH, &t!("settings-model-none-match"));
                 }
                 egui::ScrollArea::vertical()
                     .max_height(model_list_height(ui.ctx()))
@@ -1368,7 +1310,13 @@ impl App {
                     let width = ui.available_width().max(MODEL_LIST_WIDTH);
                     ui.set_width(width);
                     ui.spacing_mut().item_spacing.y = 2.0;
-                    let (field, words) = model_search(ui, menu_id.with("search"), opened, width);
+                    let (field, words) = menu_search_words(
+                        ui,
+                        menu_id.with("search"),
+                        opened,
+                        &t!("settings-model-search"),
+                        width,
+                    );
                     ui.add_space(space::TINY);
                     let found = models_found(&d.servers, &others, search, &words);
                     // Enter takes the first model found.
@@ -1386,7 +1334,7 @@ impl App {
                         }
                     }
                     if found.is_empty() {
-                        no_models_match(ui, width);
+                        nothing_matches(ui, width, &t!("settings-model-none-match"));
                     }
                     egui::ScrollArea::vertical()
                         .max_height(model_list_height(ui.ctx()))
@@ -2411,6 +2359,7 @@ fn launch_settings(ui: &mut Ui, server: &mut Server) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::app::view::search_words;
 
     #[test]
     fn a_new_type_keeps_an_address_the_user_typed() {
