@@ -56,6 +56,22 @@ impl Filter {
     }
 }
 
+/// The name the program filter knows an item's program by: its file name in
+/// lower case, as in `code.exe`, or an empty name when it has none (an
+/// imported file, or a copy whose program wasn't found).
+pub fn program_key(it: &Item) -> String {
+    it.app.as_deref().unwrap_or_default().to_lowercase()
+}
+
+/// Whether `it` came from one of `programs` (by `program_key`). Every item
+/// does when `programs` is empty.
+pub fn from_programs(programs: &[String], it: &Item) -> bool {
+    programs.is_empty() || {
+        let key = program_key(it);
+        programs.contains(&key)
+    }
+}
+
 /// One search result. By id, not by position: the history can change while
 /// the search runs.
 #[derive(Clone, Debug)]
@@ -100,6 +116,9 @@ pub struct Query {
     /// Only items with this tag. Applied before results are cut to the best
     /// matches, so tagged items further down are not lost.
     pub tag: Option<String>,
+    /// Only items copied from these programs, by `program_key`. Empty: from
+    /// every program. Applied before results are cut, as the tag is.
+    pub programs: Vec<String>,
     pub min_similarity: f32,
     /// Image items carry image vectors (not OCR-text vectors).
     pub image_vectors: bool,
@@ -169,18 +188,21 @@ impl Scale {
     }
 }
 
-/// How many results each kind filter and each tag would show for a search,
-/// whatever filter and tag it has (18.3).
+/// How many results each kind filter, each tag and each program would show
+/// for a search, whatever filter, tag and programs it has (18.3).
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Counts {
     /// One for each of `Filter::ALL`, in its order.
     pub kinds: [usize; 6],
     /// By tag, lower-cased.
     pub tags: HashMap<String, usize>,
+    /// By `program_key`.
+    pub programs: HashMap<String, usize>,
     /// The same among the matches shown while the weaker ones are folded
     /// away: a breakdown of the results on screen.
     pub kinds_folded: [usize; 6],
     pub tags_folded: HashMap<String, usize>,
+    pub programs_folded: HashMap<String, usize>,
 }
 
 impl Counts {
@@ -208,6 +230,17 @@ impl Counts {
         };
         tags.get(&tag.to_lowercase()).copied().unwrap_or(0)
     }
+
+    /// The results from the program `key` (a `program_key`): without its
+    /// weaker matches while they are `folded`.
+    pub fn program(&self, key: &str, folded: bool) -> usize {
+        let programs = if folded {
+            &self.programs_folded
+        } else {
+            &self.programs
+        };
+        programs.get(key).copied().unwrap_or(0)
+    }
 }
 
 /// The counts behind the filters while searching: from the same search over
@@ -219,6 +252,7 @@ pub fn counts(s: &Snapshot, q: &Query) -> Option<Counts> {
     let every = Query {
         filter: Filter::All,
         tag: None,
+        programs: Vec::new(),
         ..q.clone()
     };
     let mut counts = Counts::default();
@@ -233,11 +267,13 @@ pub fn counts(s: &Snapshot, q: &Query) -> Option<Counts> {
         for tag in &it.tags {
             *counts.tags.entry(tag.to_lowercase()).or_default() += 1;
         }
+        *counts.programs.entry(program_key(it)).or_default() += 1;
     }
     if q.sort != SortOrder::BestMatch {
         // Only the best-match order folds.
         counts.kinds_folded = counts.kinds;
         counts.tags_folded = counts.tags.clone();
+        counts.programs_folded = counts.programs.clone();
         return Some(counts);
     }
     // While the weaker matches are folded, the filters and tags break down
@@ -253,6 +289,7 @@ pub fn counts(s: &Snapshot, q: &Query) -> Option<Counts> {
         for tag in &it.tags {
             *counts.tags_folded.entry(tag.to_lowercase()).or_default() += 1;
         }
+        *counts.programs_folded.entry(program_key(it)).or_default() += 1;
     }
     Some(counts)
 }
@@ -278,7 +315,9 @@ fn rank(s: &Snapshot, q: &Query) -> Vec<Ranked> {
     let query_lower = q.text.trim().to_lowercase();
     let candidates: Vec<usize> = (0..items.len())
         .filter(|&i| {
-            q.filter.accepts(&items[i]) && q.tag.as_ref().is_none_or(|t| items[i].has_tag(t))
+            q.filter.accepts(&items[i])
+                && q.tag.as_ref().is_none_or(|t| items[i].has_tag(t))
+                && from_programs(&q.programs, &items[i])
         })
         .collect();
 
@@ -568,6 +607,7 @@ mod tests {
             mode,
             filter: Filter::All,
             tag: None,
+            programs: Vec::new(),
             min_similarity: 0.0,
             image_vectors: false,
             sort: SortOrder::BestMatch,
@@ -853,6 +893,51 @@ mod tests {
             )
         };
         assert_eq!(ids(&search(&s, &q)), vec![250]);
+    }
+
+    #[test]
+    fn the_program_filter_keeps_the_chosen_programs() {
+        let from = |id: u64, app: Option<&str>| {
+            let mut it = item(id, "invoice total", id as i64);
+            it.app = app.map(String::from);
+            it
+        };
+        let s = snapshot(
+            vec![
+                from(1, Some("Code.exe")),
+                from(2, Some("Teams.exe")),
+                from(3, None),
+                from(4, Some("CODE.EXE")),
+            ],
+            vec![],
+        );
+        let chosen = |programs: &[&str]| {
+            let q = Query {
+                programs: programs.iter().map(|p| p.to_string()).collect(),
+                ..query("", None, SearchMode::Keyword)
+            };
+            let mut found = ids(&search(&s, &q));
+            found.sort();
+            found
+        };
+        assert_eq!(chosen(&[]), vec![1, 2, 3, 4]);
+        assert_eq!(chosen(&["code.exe"]), vec![1, 4], "in any case");
+        assert_eq!(
+            chosen(&["code.exe", ""]),
+            vec![1, 3, 4],
+            "empty is no program"
+        );
+        // While searching, each program counts its results, whichever are chosen.
+        let q = Query {
+            programs: vec!["teams.exe".into()],
+            ..query("invoice", None, SearchMode::Keyword)
+        };
+        let counts = counts(&s, &q).expect("counts while searching");
+        for folded in [false, true] {
+            assert_eq!(counts.program("code.exe", folded), 2);
+            assert_eq!(counts.program("teams.exe", folded), 1);
+            assert_eq!(counts.program("", folded), 1);
+        }
     }
 
     #[test]

@@ -418,8 +418,26 @@ pub(super) fn hint(what: &str, keys: &str) -> String {
     }
 }
 
+/// What sits before a menu button's text: a program's own icon, or one of
+/// the app's.
+pub(super) enum Lead<'a> {
+    Texture(&'a egui::TextureHandle),
+    Icon(Icon),
+}
+
 /// A quiet text button with a painted ▾, for menus.
 pub(super) fn mode_button(ui: &mut Ui, label: &str, emphasised: bool) -> egui::Response {
+    lead_mode_button(ui, None, label, emphasised)
+}
+
+/// `mode_button` with `lead` before its text.
+pub(super) fn lead_mode_button(
+    ui: &mut Ui,
+    lead: Option<Lead>,
+    label: &str,
+    emphasised: bool,
+) -> egui::Response {
+    const LEAD: f32 = 16.0;
     let v = ui.visuals();
     let color = if emphasised {
         text_shade(accent(), v.dark_mode)
@@ -428,8 +446,9 @@ pub(super) fn mode_button(ui: &mut Ui, label: &str, emphasised: bool) -> egui::R
     };
     let g = ui
         .fonts_mut(|f| f.layout_job(bidi::job(label, FontId::proportional(size::CONTROL), color)));
+    let lead_room = if lead.is_some() { LEAD + 6.0 } else { 0.0 };
     let (rect, resp) = ui.allocate_exact_size(
-        Vec2::new(g.size().x + 8.0 + 10.0 + 18.0, 28.0),
+        Vec2::new(lead_room + g.size().x + 8.0 + 10.0 + 18.0, 28.0),
         Sense::click(),
     );
     let v = ui.visuals();
@@ -451,10 +470,28 @@ pub(super) fn mode_button(ui: &mut Ui, label: &str, emphasised: bool) -> egui::R
     } else {
         color
     };
+    if let Some(lead) = lead {
+        let at = flip(
+            rect,
+            Rect::from_center_size(
+                Pos2::new(rect.left() + 9.0 + LEAD / 2.0, rect.center().y),
+                Vec2::splat(LEAD),
+            ),
+        );
+        match lead {
+            Lead::Texture(texture) => {
+                egui::Image::new((texture.id(), Vec2::splat(LEAD))).paint_at(ui, at)
+            }
+            Lead::Icon(icon) => icons::paint(ui.painter(), at, icon, color),
+        }
+    }
     let text_at = flip(
         rect,
         Rect::from_min_size(
-            Pos2::new(rect.left() + 9.0, rect.center().y - g.size().y / 2.0),
+            Pos2::new(
+                rect.left() + 9.0 + lead_room,
+                rect.center().y - g.size().y / 2.0,
+            ),
             g.size(),
         ),
     )
@@ -596,6 +633,97 @@ pub(crate) fn matches(words: &[String], texts: &[&str]) -> bool {
     words
         .iter()
         .all(|word| texts.iter().any(|text| text.contains(word.as_str())))
+}
+
+/// One program in a menu: its own icon (the generic one while it has none)
+/// and its own name, and `end` at the far end: its file name, or how many
+/// copies it gave. With `checked` it can be picked with others, and shows a
+/// check mark at the far end while picked.
+pub(crate) fn program_row(
+    ui: &mut Ui,
+    name: &str,
+    icon: Option<&egui::TextureHandle>,
+    end: &str,
+    checked: Option<bool>,
+) -> egui::Response {
+    let (rect, r) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 30.0), Sense::click());
+    match checked {
+        Some(checked) => {
+            r.widget_info(|| egui::WidgetInfo::selected(egui::Role::CheckBox, true, checked, name))
+        }
+        None => r.widget_info(|| egui::WidgetInfo::labeled(egui::Role::MenuItem, true, name)),
+    }
+    let v = ui.visuals();
+    if r.hovered() || r.has_focus() {
+        ui.painter().rect_filled(
+            rect,
+            CornerRadius::same(radius::MEDIUM),
+            v.widgets.hovered.weak_bg_fill,
+        );
+    }
+    let at = flip(
+        rect,
+        Rect::from_center_size(
+            Pos2::new(rect.left() + 18.0, rect.center().y),
+            Vec2::splat(18.0),
+        ),
+    );
+    match icon {
+        Some(texture) => egui::Image::new((texture.id(), Vec2::splat(18.0))).paint_at(ui, at),
+        None => icons::paint(ui.painter(), at, Icon::AppGeneric, v.weak_text_color()),
+    }
+    let picked = checked == Some(true);
+    let color = if picked {
+        text_shade(accent(), v.dark_mode)
+    } else {
+        v.text_color()
+    };
+    let start = flip(
+        rect,
+        Rect::from_min_size(Pos2::new(rect.left() + 36.0, rect.center().y), Vec2::ZERO),
+    )
+    .min;
+    paint_text(
+        ui,
+        ui.painter(),
+        start,
+        start_anchor(egui::Align::Center),
+        name,
+        FontId::proportional(size::BODY),
+        color,
+    );
+    let mut end_x = rect.right() - 8.0;
+    if picked {
+        let mark = flip(
+            rect,
+            Rect::from_center_size(
+                Pos2::new(rect.right() - 16.0, rect.center().y),
+                Vec2::splat(14.0),
+            ),
+        );
+        icons::paint(ui.painter(), mark, Icon::Check, color);
+        end_x = rect.right() - 30.0;
+    }
+    let end_at = flip(
+        rect,
+        Rect::from_min_size(Pos2::new(end_x, rect.center().y), Vec2::ZERO),
+    )
+    .min;
+    let end_anchor = if i18n::rtl() {
+        egui::Align2::LEFT_CENTER
+    } else {
+        egui::Align2::RIGHT_CENTER
+    };
+    paint_text(
+        ui,
+        ui.painter(),
+        end_at,
+        end_anchor,
+        end,
+        FontId::proportional(size::SMALL),
+        v.weak_text_color(),
+    );
+    r
 }
 
 /// A menu row with a check mark at the far end when `checked`.
