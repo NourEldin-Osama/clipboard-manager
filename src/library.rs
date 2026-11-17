@@ -135,13 +135,21 @@ impl Library {
     }
 
     /// A repeated copy: the clipboard item with the same content counts as
-    /// new again (it moves to the top). Returns whether there was one.
-    pub fn touch_duplicate(&mut self, hash: u64) -> Result<bool> {
-        let Some(p) = self
-            .items
-            .iter()
-            .position(|i| i.hash == hash && i.origin == Origin::Clipboard)
-        else {
+    /// new again; it moves to the top and stays as it is otherwise. With
+    /// `trimmed`, the text of a text copy without the spaces, tabs and line
+    /// breaks at its ends, a clipboard text or link item whose text is the
+    /// same once trimmed counts too, when no item has the very same
+    /// content. Returns whether there was one.
+    pub fn touch_duplicate(&mut self, hash: u64, trimmed: Option<&str>) -> Result<bool> {
+        let copied = |i: &Item| i.origin == Origin::Clipboard;
+        let same = self.items.iter().position(|i| copied(i) && i.hash == hash);
+        let same_trimmed = || {
+            let trimmed = trimmed?;
+            self.items.iter().position(|i| {
+                copied(i) && matches!(i.kind, Kind::Text | Kind::Link) && i.text.trim() == trimmed
+            })
+        };
+        let Some(p) = same.or_else(same_trimmed) else {
             return Ok(false);
         };
         let it = Arc::make_mut(&mut self.items[p]);
@@ -621,10 +629,63 @@ mod tests {
         let (dir, mut lib) = open("duplicate");
         let a = add(&mut lib, "same", 1);
         let hash = lib.get(a).unwrap().hash;
-        assert!(lib.touch_duplicate(hash).unwrap());
+        assert!(lib.touch_duplicate(hash, None).unwrap());
         assert!(lib.get(a).unwrap().created > 1);
         assert!(lib.store.get(a).unwrap().unwrap().created > 1);
-        assert!(!lib.touch_duplicate(hash ^ 1).unwrap());
+        assert!(!lib.touch_duplicate(hash ^ 1, None).unwrap());
+        drop(lib);
+        std::fs::remove_dir_all(dir).ok();
+    }
+
+    /// A copy that differs only in the spaces, tabs and line breaks around
+    /// its text merges with the clipboard text or link item when asked: the
+    /// item keeps its own text and moves to the top. An item with the very
+    /// same text comes first, and files and imported items don't count.
+    #[test]
+    fn a_copy_with_other_spaces_around_it_merges_when_asked() {
+        let (dir, mut lib) = open("trimmed-duplicate");
+        let hash = |text: &str| crate::store::fnv1a(text.as_bytes());
+        let created = |lib: &Library, id: u64| lib.get(id).unwrap().created;
+        let text = add(&mut lib, "  Meeting at 10\n", 1);
+        let copy = " \tMeeting at 10\r\n\n";
+        assert!(!lib.touch_duplicate(hash(copy), None).unwrap(), "off");
+        assert_eq!(created(&lib, text), 1);
+        assert!(lib.touch_duplicate(hash(copy), Some(copy.trim())).unwrap());
+        assert!(created(&lib, text) > 1, "moved to the top");
+        let stored = lib.store.get(text).unwrap().unwrap();
+        assert!(stored.created > 1, "on the disk too");
+        assert_eq!(&*lib.get(text).unwrap().text, "  Meeting at 10\n");
+        assert!(!lib
+            .touch_duplicate(hash("Meeting at 11"), Some("Meeting at 11"))
+            .unwrap());
+
+        let mut add_as = |kind: Kind, origin: Origin, text: &str| {
+            let mut item = Item::new(lib.new_id(), kind, origin, text.into());
+            item.created = 1;
+            let id = item.id;
+            lib.add(item).unwrap();
+            id
+        };
+        let link = add_as(Kind::Link, Origin::Clipboard, "https://example.com\n");
+        // An item with the very same text comes before an earlier one with
+        // other spaces around it.
+        let spaced = add_as(Kind::Text, Origin::Clipboard, "  Notes\n");
+        let exact = add_as(Kind::Text, Origin::Clipboard, "Notes");
+        // Files and imported items don't count.
+        add_as(Kind::Files, Origin::Clipboard, "C:\\notes.txt");
+        add_as(Kind::Text, Origin::Imported, "C:\\notes.txt");
+        let link_copy = " https://example.com";
+        assert!(lib
+            .touch_duplicate(hash(link_copy), Some(link_copy.trim()))
+            .unwrap());
+        assert!(created(&lib, link) > 1, "a link");
+        assert!(lib.touch_duplicate(hash("Notes"), Some("Notes")).unwrap());
+        assert!(created(&lib, exact) > 1);
+        assert_eq!(created(&lib, spaced), 1, "the very same text first");
+        let path_copy = "C:\\notes.txt\n";
+        assert!(!lib
+            .touch_duplicate(hash(path_copy), Some(path_copy.trim()))
+            .unwrap());
         drop(lib);
         std::fs::remove_dir_all(dir).ok();
     }

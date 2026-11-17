@@ -33,10 +33,7 @@ pub(super) fn toggle(ui: &mut Ui, on: &mut bool) -> egui::Response {
     let p = ui.painter();
     p.rect_filled(rect, CornerRadius::same(radius::ROUND), bg);
     // An outline while off, so the track stands out from the page.
-    let edge = ui
-        .visuals()
-        .weak_text_color()
-        .gamma_multiply(0.75 * (1.0 - t));
+    let edge = switch_edge(ui.visuals()).gamma_multiply(1.0 - t);
     p.rect_stroke(
         rect,
         CornerRadius::same(radius::ROUND),
@@ -210,12 +207,6 @@ const TEXT_GAP: f32 = space::HUGE;
 /// the control goes under the text. A reset beside the control doesn't
 /// count: it takes its room from the text, so it never moves the control.
 const TEXT_LEAST_WIDTH: f32 = 260.0;
-
-/// How wide a control can be and still sit beside its setting's text, in a
-/// row `width` wide.
-pub(super) fn widest_beside(width: f32) -> f32 {
-    (width - TEXT_GAP - TEXT_LEAST_WIDTH).max(0.0)
-}
 
 /// The room between a setting's text and its control under it.
 const STACKED_GAP: f32 = space::SMALL;
@@ -429,28 +420,32 @@ pub(super) fn nested<R>(ui: &mut Ui, add: impl FnOnce(&mut Ui) -> R) -> R {
     inner
 }
 
-/// How big the arrow of the Advanced row is.
-const ADVANCED_ARROW: f32 = 16.0;
+/// How big the arrow of a fold row is.
+const FOLD_ARROW: f32 = 16.0;
 
-/// The Advanced row, closed until it is clicked, and the rows `add` draws
-/// under it in the same card while it is open. The row is its name in the
-/// rows' name style and, at the far end, the menus' arrow: pointing down
-/// while open, to the reading end while closed. A click, or Enter or Space
-/// while it has the keyboard focus, opens or closes it, and screen readers
-/// hear a button that says whether it is open. It starts closed when the
-/// app starts and stays as it was left while the app runs; the settings
-/// don't keep it. `id_salt` tells one Advanced row from another.
+/// The Advanced row: a fold row named Advanced (`fold`).
 pub(super) fn advanced(ui: &mut Ui, id_salt: &str, add: impl FnOnce(&mut Ui)) {
-    let id = egui::Id::unique(("settings-advanced", id_salt));
+    fold(ui, id_salt, &t!("settings-advanced"), add);
+}
+
+/// A row named `name`, closed until it is clicked, and the rows `add`
+/// draws under it in the same card while it is open. The row is its name
+/// in the rows' name style and, at the far end, the menus' arrow: pointing
+/// down while open, to the reading end while closed. A click, or Enter or
+/// Space while it has the keyboard focus, opens or closes it, and screen
+/// readers hear a button that says whether it is open. It starts closed
+/// when the app starts and stays as it was left while the app runs; the
+/// settings don't keep it. `id_salt` tells one fold row from another.
+pub(super) fn fold(ui: &mut Ui, id_salt: &str, name: &str, add: impl FnOnce(&mut Ui)) {
+    let id = egui::Id::unique(("settings-fold", id_salt));
     let open_id = id.with("open");
     let mut open = ui
         .ctx()
         .data(|d| d.get_temp::<bool>(open_id))
         .unwrap_or(false);
-    let name = t!("settings-advanced");
     card_row(ui, false, |ui| {
         let strong = ui.visuals().strong_text_color();
-        let galley = txt(&name, size::BODY, Some(strong)).into_galley(
+        let galley = txt(name, size::BODY, Some(strong)).into_galley(
             ui,
             Some(egui::TextWrapMode::Extend),
             f32::INFINITY,
@@ -466,7 +461,7 @@ pub(super) fn advanced(ui: &mut Ui, id_salt: &str, add: impl FnOnce(&mut Ui)) {
         if resp.clicked() {
             open = !open;
         }
-        resp.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, ui.is_enabled(), &name));
+        resp.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, ui.is_enabled(), name));
         ui.ctx()
             .accesskit_node_builder(resp.id, |node| node.set_expanded(open));
         let v = ui.visuals();
@@ -482,8 +477,8 @@ pub(super) fn advanced(ui: &mut Ui, id_salt: &str, add: impl FnOnce(&mut Ui)) {
         let arrow = flip(
             content,
             Rect::from_center_size(
-                Pos2::new(content.right() - ADVANCED_ARROW / 2.0, content.center().y),
-                Vec2::splat(ADVANCED_ARROW),
+                Pos2::new(content.right() - FOLD_ARROW / 2.0, content.center().y),
+                Vec2::splat(FOLD_ARROW),
             ),
         );
         let color = if resp.hovered() {
@@ -502,6 +497,89 @@ pub(super) fn advanced(ui: &mut Ui, id_salt: &str, add: impl FnOnce(&mut Ui)) {
     if open {
         add(ui);
     }
+}
+
+/// How big a checkbox's box is.
+const CHECKBOX_SIZE: f32 = 16.0;
+
+/// How big the check in a checked box is.
+const CHECK_SIZE: f32 = 12.0;
+
+/// A checkbox: a rounded box at the reading start, its `label` after it,
+/// and `after` in gray after that, such as the marks a kind of mark has.
+/// Checked, the box is the accent with a white check; unchecked, the
+/// card's color with a thin outline, as a switch has while off. A click on
+/// the box or its words, or Space or Enter while it has the keyboard
+/// focus, checks or unchecks it, and screen readers hear a checkbox named
+/// `label` that says whether it is checked.
+pub(super) fn checkbox(
+    ui: &mut Ui,
+    checked: &mut bool,
+    label: &str,
+    after: &str,
+) -> egui::Response {
+    let (text_color, weak) = (ui.visuals().text_color(), ui.visuals().weak_text_color());
+    let laid_out = |text: egui::WidgetText| {
+        text.into_galley(
+            ui,
+            Some(egui::TextWrapMode::Extend),
+            f32::INFINITY,
+            egui::FontSelection::Default,
+        )
+    };
+    let words = laid_out(txt(label, size::BODY, Some(text_color)));
+    // Symbols, in the code's font so each one stands out.
+    let gray = (!after.is_empty()).then(|| {
+        let symbols = egui::RichText::new(after).font(FontId::monospace(size::CONTROL));
+        laid_out(symbols.color(weak).into())
+    });
+    let gray_room = gray
+        .as_ref()
+        .map_or(0.0, |gray| space::MEDIUM + gray.size().x);
+    let width = CHECKBOX_SIZE + space::SMALL + words.size().x + gray_room;
+    let height = gray
+        .as_ref()
+        .map_or(words.size().y, |gray| gray.size().y.max(words.size().y))
+        .max(CHECKBOX_SIZE);
+    let (rect, mut resp) = ui.allocate_exact_size(Vec2::new(width, height), Sense::click());
+    if resp.clicked() {
+        *checked = !*checked;
+        resp.mark_changed();
+    }
+    let now_checked = *checked;
+    resp.widget_info(|| {
+        egui::WidgetInfo::selected(egui::Role::CheckBox, ui.is_enabled(), now_checked, label)
+    });
+    // Laid out from the left, then mirrored for Arabic.
+    let at_middle = |x: f32, size: Vec2| {
+        let place = Rect::from_min_size(Pos2::new(x, rect.center().y - size.y / 2.0), size);
+        flip(rect, place)
+    };
+    let v = ui.visuals();
+    let p = ui.painter();
+    let square = at_middle(rect.left(), Vec2::splat(CHECKBOX_SIZE));
+    let corners = CornerRadius::same(radius::SMALL);
+    if now_checked {
+        p.rect_filled(square, corners, accent());
+        let check = Rect::from_center_size(square.center(), Vec2::splat(CHECK_SIZE));
+        icons::paint(p, check, Icon::Check, Color32::WHITE);
+    } else {
+        let edge = Stroke::new(1.0, switch_edge(v));
+        p.rect(
+            square,
+            corners,
+            v.extreme_bg_color,
+            edge,
+            egui::StrokeKind::Inside,
+        );
+    }
+    let words_x = rect.left() + CHECKBOX_SIZE + space::SMALL;
+    let gray_x = words_x + words.size().x + space::MEDIUM;
+    p.galley(at_middle(words_x, words.size()).min, words, text_color);
+    if let Some(gray) = gray {
+        p.galley(at_middle(gray_x, gray.size()).min, gray, weak);
+    }
+    resp.on_hover_cursor(egui::CursorIcon::PointingHand)
 }
 
 /// One setting as a row of its card: its name, a short gray line under it
@@ -2529,7 +2607,7 @@ mod tests {
                     lines.push(points[0].y);
                 }
                 egui::Shape::Mesh(mesh)
-                    if (mesh.calc_bounds().width() - ADVANCED_ARROW).abs() < 0.01 =>
+                    if (mesh.calc_bounds().width() - FOLD_ARROW).abs() < 0.01 =>
                 {
                     arrows.push(mesh.clone());
                 }
@@ -2657,6 +2735,210 @@ mod tests {
     fn the_advanced_row_opens_and_closes_in_arabic() {
         if arabic_run() {
             check_advanced_row();
+        }
+    }
+
+    /// The row's reading-start edge: where its text starts.
+    fn start_edge(rect: Rect) -> f32 {
+        if i18n::rtl() {
+            rect.right()
+        } else {
+            rect.left()
+        }
+    }
+
+    /// How far `b` starts after `a` ends, in reading order.
+    fn gap_after(a: Rect, b: Rect) -> f32 {
+        if i18n::rtl() {
+            a.left() - b.right()
+        } else {
+            b.left() - a.right()
+        }
+    }
+
+    /// What a frame of a card with the checkbox of headings shows: the
+    /// room in its row, its box with the box's fill and outline, its
+    /// check's place and color while checked, its words, its gray marks,
+    /// and what screen readers hear: its name, whether it is checked, and
+    /// whether it has the keyboard focus.
+    struct CheckboxFrame {
+        room: Rect,
+        square: Rect,
+        fill: Color32,
+        edge: Stroke,
+        check: Option<(Rect, Color32)>,
+        words: Rect,
+        marks: Rect,
+        name: Option<String>,
+        toggled: Option<egui::accesskit::Toggled>,
+        focused: bool,
+    }
+
+    fn checkbox_frame(
+        ctx: &egui::Context,
+        checked: &mut bool,
+        events: Vec<egui::Event>,
+    ) -> CheckboxFrame {
+        let input = egui::RawInput {
+            events,
+            ..Default::default()
+        };
+        let mut room = Rect::NOTHING;
+        let label = t!("settings-mark-headings");
+        let output = frame(ctx, input, |ui| {
+            card(ui, |ui| {
+                card_row(ui, false, |ui| {
+                    room = ui.max_rect();
+                    row(ui, |ui| {
+                        checkbox(ui, checked, &label, "#");
+                    });
+                });
+            });
+        });
+        let update = output
+            .platform_output
+            .accesskit_update
+            .as_ref()
+            .expect("a tree");
+        let (id, node) = update
+            .nodes
+            .iter()
+            .find(|(_, node)| node.role() == egui::accesskit::Role::CheckBox)
+            .expect("a checkbox");
+        let (name, toggled) = (node.label().map(str::to_string), node.toggled());
+        let focused = update.focus == *id;
+        let mut left: Vec<egui::Shape> = output.shapes.into_iter().map(|c| c.shape).collect();
+        let (mut square, mut check, mut words, mut marks) = (None, None, None, None);
+        while let Some(shape) = left.pop() {
+            match shape {
+                egui::Shape::Vec(inside) => left.extend(inside),
+                egui::Shape::Rect(rect)
+                    if rect.corner_radius == CornerRadius::same(radius::SMALL) =>
+                {
+                    square = Some(rect);
+                }
+                egui::Shape::Mesh(mesh) => {
+                    let color = mesh.vertices.first().map(|vertex| vertex.color);
+                    check = Some((mesh.calc_bounds(), color.unwrap_or_default()));
+                }
+                egui::Shape::Text(text) => {
+                    let at = text.galley.rect.translate(text.pos.to_vec2());
+                    let family = &text.galley.job.sections[0].format.font_id.family;
+                    if *family == egui::FontFamily::Monospace {
+                        marks = Some(at);
+                    } else {
+                        words = Some(at);
+                    }
+                }
+                _ => {}
+            }
+        }
+        let square = square.expect("a box");
+        CheckboxFrame {
+            room,
+            square: square.rect,
+            fill: square.fill,
+            edge: square.stroke,
+            check,
+            words: words.expect("its words"),
+            marks: marks.expect("its marks"),
+            name,
+            toggled,
+            focused,
+        }
+    }
+
+    /// A checkbox: its 16-point box at its row's reading start, centred on
+    /// its words, which follow the box a small gap after it, and its gray
+    /// marks a medium gap after them. Checked, the box is the accent with a
+    /// white check in its middle; unchecked, the card's white with a
+    /// switch's outline. Screen readers hear a checkbox named by its words
+    /// that says whether it is checked. A click on its words unchecks it,
+    /// and with the keyboard, Tab reaches it, then Space and Enter check
+    /// and uncheck it.
+    fn check_checkbox() {
+        let ctx = window();
+        crate::app::icons::register(&ctx);
+        let mut checked = true;
+        // The check's texture loads in the first frames.
+        for _ in 0..3 {
+            checkbox_frame(&ctx, &mut checked, Vec::new());
+        }
+        let on = checkbox_frame(&ctx, &mut checked, Vec::new());
+        assert_eq!(on.square.size(), Vec2::splat(CHECKBOX_SIZE));
+        let off_start = start_edge(on.square) - start_edge(on.room);
+        assert!(off_start.abs() <= 0.5, "{:?} in {:?}", on.square, on.room);
+        for (part, gap, want) in [
+            ("words", gap_after(on.square, on.words), space::SMALL),
+            ("marks", gap_after(on.words, on.marks), space::MEDIUM),
+        ] {
+            assert!((gap - want).abs() <= 0.5, "{part}: {gap}");
+        }
+        for part in [on.words, on.marks] {
+            let off = part.center().y - on.square.center().y;
+            assert!(off.abs() <= 0.5, "{part:?} beside {:?}", on.square);
+        }
+        assert_eq!((on.fill, on.edge.width), (accent(), 0.0));
+        let (check, color) = on.check.expect("a check");
+        assert_eq!(color, Color32::WHITE);
+        assert!((check.size() - Vec2::splat(CHECK_SIZE)).length() < 0.01);
+        assert!((check.center() - on.square.center()).length() < 0.01);
+        assert_eq!(on.name, Some(t!("settings-mark-headings")));
+        assert_eq!(on.toggled, Some(egui::accesskit::Toggled::True));
+
+        let at = on.words.center();
+        let press = |pressed| egui::Event::PointerButton {
+            pos: at,
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: egui::Modifiers::NONE,
+        };
+        checkbox_frame(
+            &ctx,
+            &mut checked,
+            vec![egui::Event::PointerMoved(at), press(true)],
+        );
+        checkbox_frame(&ctx, &mut checked, vec![press(false)]);
+        assert!(!checked, "a click on its words");
+        let off = checkbox_frame(&ctx, &mut checked, vec![egui::Event::PointerGone]);
+        assert_eq!(off.toggled, Some(egui::accesskit::Toggled::False));
+        assert!(off.check.is_none(), "no check");
+        let card = ctx.style_of(egui::Theme::Light).visuals.clone();
+        assert_eq!(off.fill, card.extreme_bg_color);
+        assert_eq!(off.edge, Stroke::new(1.0, switch_edge(&card)));
+        assert_eq!(off.square, on.square, "the box stays");
+
+        let key = |key| egui::Event::Key {
+            key,
+            physical_key: None,
+            pressed: true,
+            repeat: false,
+            modifiers: egui::Modifiers::NONE,
+        };
+        let ctx = window();
+        let reached = checkbox_frame(&ctx, &mut checked, vec![key(egui::Key::Tab)]);
+        assert!(reached.focused, "Tab reaches it");
+        checkbox_frame(&ctx, &mut checked, vec![key(egui::Key::Space)]);
+        assert!(checked, "Space checks it");
+        checkbox_frame(&ctx, &mut checked, vec![key(egui::Key::Enter)]);
+        assert!(!checked, "Enter unchecks it");
+    }
+
+    #[test]
+    fn a_checkbox_reads_from_its_box_and_answers_the_keyboard() {
+        check_checkbox();
+    }
+
+    #[test]
+    fn a_checkbox_reads_from_its_box_and_answers_the_keyboard_right_to_left() {
+        passes_in_arabic("a_checkbox_reads_from_its_box_and_answers_the_keyboard_in_arabic");
+    }
+
+    #[test]
+    #[ignore = "run in a process of its own by a_checkbox_reads_from_its_box_and_answers_the_keyboard_right_to_left"]
+    fn a_checkbox_reads_from_its_box_and_answers_the_keyboard_in_arabic() {
+        if arabic_run() {
+            check_checkbox();
         }
     }
 

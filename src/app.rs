@@ -594,7 +594,7 @@ const KEY_HINT_FOR: Duration = Duration::from_secs(4);
 fn copied_text(cfg: &Config, it: &Item) -> Option<String> {
     let mut text = std::borrow::Cow::Borrowed(&*it.text);
     if cfg.remove_copied_markdown && it.kind == Kind::Text {
-        text = std::borrow::Cow::Owned(crate::markdown::plain(&text));
+        text = std::borrow::Cow::Owned(crate::markdown::plain(&text, &cfg.markdown_marks));
     }
     if cfg.trim_copied_text && matches!(it.kind, Kind::Text | Kind::Link) {
         let trimmed = text.trim();
@@ -2139,7 +2139,11 @@ impl App {
         } = capture;
         let hash = c.hash();
         if self.cfg.dedupe {
-            let found = match self.library.touch_duplicate(hash) {
+            let trimmed = match &c {
+                Captured::Text(text) if self.cfg.dedupe_trimmed => Some(text.trim()),
+                _ => None,
+            };
+            let found = match self.library.touch_duplicate(hash, trimmed) {
                 Ok(found) => found,
                 // Only saving the time of the item found can fail.
                 Err(e) => {

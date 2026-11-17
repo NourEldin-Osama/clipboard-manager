@@ -146,6 +146,14 @@ pub(crate) fn choice_track(dark: bool) -> (Color32, Color32) {
     }
 }
 
+/// The outline of a switch while it is off, so its track stands out from
+/// the card, and of an unchecked checkbox: the rows' gray, faded until it
+/// is about 3 to 1 on a light card (#949494 on white), the least for a
+/// control's edge. The dark theme's lighter gray stays above that.
+pub(crate) fn switch_edge(v: &egui::Visuals) -> Color32 {
+    v.weak_text_color().gamma_multiply(0.69)
+}
+
 /// The tint of a chosen chip, such as a filter: stronger in dark, where a
 /// faint tint is lost on the dark panel.
 pub(crate) fn chosen_pill(color: Color32, dark: bool) -> Color32 {
@@ -916,6 +924,31 @@ mod tests {
             (darker - lighter).abs() <= 0.05,
             "Darker's edge is {darker:.3} to 1, Lighter's {lighter:.3} to 1"
         );
+    }
+
+    /// A switch's outline while off reads at 3 to 1 or more on its card in
+    /// both themes, with both Dark panels choices: painted on the card at
+    /// its edge, and over the switch's track inside it. In the light theme
+    /// it is no stronger than that needs: #949494 on white.
+    #[test]
+    fn a_switch_outline_reads_on_its_card() {
+        for (ctx, theme) in styled() {
+            let v = ctx.style_of(theme).visuals.clone();
+            let card = v.extreme_bg_color;
+            let track = v.widgets.inactive.bg_fill;
+            assert_eq!(track.a(), 255, "{theme:?}: an opaque track");
+            for (place, under) in [("card", card), ("track", track)] {
+                let edge = over(switch_edge(&v), under);
+                let ratio = contrast(edge, card);
+                assert!(
+                    ratio >= 3.0,
+                    "{theme:?}: on the {place}, {edge:?} is {ratio:.2} to 1 on {card:?}"
+                );
+            }
+            if theme == egui::Theme::Light {
+                assert_eq!(over(switch_edge(&v), card), Color32::from_gray(0x94));
+            }
+        }
     }
 
     /// A context styled with each dark-panels choice, in each theme.

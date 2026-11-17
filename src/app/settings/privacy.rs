@@ -194,36 +194,55 @@ impl App {
             (t!("settings-data-reader"), reader),
             (t!("settings-data-updates"), (updates, weak)),
         ];
-        // The answers start on one line, as close to the names as a row lets
-        // a control be: a column that ends on the card's far edge, at least
-        // as wide as the longest answer.
-        let longest = rows
-            .iter()
-            .map(|(_, (value, color))| {
-                txt(value, size::BODY, Some(*color))
-                    .into_galley(
-                        ui,
-                        Some(egui::TextWrapMode::Extend),
-                        f32::INFINITY,
-                        egui::FontSelection::Default,
-                    )
-                    .size()
-                    .x
-            })
-            .fold(0.0, f32::max)
-            .ceil();
-        section(ui, &t!("settings-data-goes"), |ui| {
-            for (label, (value, color)) in rows {
-                plain_setting(ui, &label, "", "", |ui| {
-                    // A point short of the most, so a rounding never puts
-                    // the answer under its name.
-                    let column = (widest_beside(ui.available_width()) - 1.0).max(longest);
-                    let size = Vec2::new(column, ui.spacing().interact_size.y);
-                    ui.allocate_ui_with_layout(size, row_layout(), |ui| {
-                        ui.set_min_width(column);
-                        lbl(ui, &value, size::BODY, color);
-                    });
+        section(ui, &t!("settings-data-goes"), |ui| data_rows(ui, &rows));
+    }
+}
+
+/// The room between the longest name of "Where your data goes" and the
+/// answers.
+const DATA_ANSWER_GAP: f32 = 2.0 * space::LARGE;
+
+/// One row for each name and its answer in its color: the names at the
+/// reading start, and the answers on their lines, all starting
+/// `DATA_ANSWER_GAP` after the longest name. Where the longest answer
+/// doesn't fit there, each answer goes under its name.
+fn data_rows(ui: &mut Ui, rows: &[(String, (String, Color32))]) {
+    let strong = ui.visuals().strong_text_color();
+    let width = |ui: &Ui, text: &str, color: Color32| {
+        txt(text, size::BODY, Some(color))
+            .into_galley(
+                ui,
+                Some(egui::TextWrapMode::Extend),
+                f32::INFINITY,
+                egui::FontSelection::Default,
+            )
+            .size()
+            .x
+    };
+    let longest_name = rows
+        .iter()
+        .map(|(name, _)| width(ui, name, strong))
+        .fold(0.0, f32::max)
+        .ceil();
+    let longest_answer = rows
+        .iter()
+        .map(|(_, (answer, color))| width(ui, answer, *color))
+        .fold(0.0, f32::max)
+        .ceil();
+    let answers_at = longest_name + DATA_ANSWER_GAP;
+    for (name, (answer, color)) in rows {
+        card_row(ui, false, |ui| {
+            if answers_at + longest_answer <= ui.available_width() {
+                row(ui, |ui| {
+                    ui.spacing_mut().item_spacing.x = 0.0;
+                    let shown = lbl(ui, name, size::BODY, strong);
+                    ui.add_space(answers_at - shown.rect.width());
+                    lbl(ui, answer, size::BODY, *color);
                 });
+            } else {
+                row(ui, |ui| lbl(ui, name, size::BODY, strong));
+                let font = FontId::proportional(size::BODY);
+                super::bidi::paragraph(ui, answer, font, *color);
             }
         });
     }
@@ -289,5 +308,195 @@ fn rule_rows(ui: &mut Ui, d: &mut Config) {
     }
     if let Some(index) = remove {
         d.rules.remove(index);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::i18n::arabic_run;
+
+    /// The reading-start edge of `rect`.
+    fn start_edge(rect: Rect) -> f32 {
+        if i18n::rtl() {
+            rect.right()
+        } else {
+            rect.left()
+        }
+    }
+
+    /// The far edge of `rect`, where its text ends.
+    fn far_edge(rect: Rect) -> f32 {
+        if i18n::rtl() {
+            rect.left()
+        } else {
+            rect.right()
+        }
+    }
+
+    /// How far `x` is from `from` in reading order.
+    fn along(from: f32, x: f32) -> f32 {
+        if i18n::rtl() {
+            from - x
+        } else {
+            x - from
+        }
+    }
+
+    /// A line of text: the place it was laid out in, and where its letters
+    /// are drawn. egui's place for a line of Arabic set against its right
+    /// edge leaves out the room before its first letter, so the letters
+    /// reach past it.
+    #[derive(Debug)]
+    struct Line {
+        place: Rect,
+        letters: Rect,
+    }
+
+    /// One frame of "Where your data goes" with its longest answers, in a
+    /// card in a column `width` wide in a window with the app's fonts and
+    /// style: where the card's rows start, and the names' and the answers'
+    /// lines, from the top.
+    fn data_frame(ctx: &egui::Context, width: f32) -> (f32, Vec<Line>, Vec<Line>) {
+        let v = ctx.style_of(egui::Theme::Light).visuals.clone();
+        let (strong, weak) = (v.strong_text_color(), v.weak_text_color());
+        let host = super::super::bidi::left_to_right("models.example.com");
+        let rows = [
+            (
+                t!("settings-data-history"),
+                (t!("settings-data-history-encrypted"), weak),
+            ),
+            (
+                t!("settings-data-search"),
+                (
+                    t!("settings-data-sent", host = host),
+                    text_shade(AMBER, false),
+                ),
+            ),
+            (
+                t!("settings-data-reader"),
+                (t!("settings-data-windows"), weak),
+            ),
+            (
+                t!("settings-data-updates"),
+                (t!("settings-data-updates-on"), weak),
+            ),
+        ];
+        let mut inside = Rect::NOTHING;
+        let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+            // As in the settings' column, where the pages set their gaps.
+            ui.spacing_mut().item_spacing.y = 0.0;
+            let column = Rect::from_min_size(Pos2::new(20.0, 20.0), Vec2::new(width, 600.0));
+            ui.scope_builder(egui::UiBuilder::new().max_rect(column), |ui| {
+                card(ui, |ui| {
+                    data_rows(ui, &rows);
+                    inside = ui.min_rect();
+                });
+            });
+        });
+        output.textures_delta.clear();
+        let (mut names, mut answers) = (Vec::new(), Vec::new());
+        for clipped in &output.shapes {
+            if let egui::Shape::Text(text) = &clipped.shape {
+                let line = Line {
+                    place: text.galley.rect.translate(text.pos.to_vec2()),
+                    letters: text.galley.mesh_bounds.translate(text.pos.to_vec2()),
+                };
+                if text.galley.job.sections[0].format.color == strong {
+                    names.push(line);
+                } else {
+                    answers.push(line);
+                }
+            }
+        }
+        for lines in [&mut names, &mut answers] {
+            lines.sort_by(|a, b| a.place.top().total_cmp(&b.place.top()));
+        }
+        // The rows' room at their sides.
+        let rows_start = start_edge(inside.shrink2(Vec2::new(space::LARGE, 0.0)));
+        (rows_start, names, answers)
+    }
+
+    /// A window with the app's fonts and style in the light theme.
+    fn window() -> egui::Context {
+        let ctx = egui::Context::default();
+        crate::app::view::add_fonts(&ctx);
+        crate::app::view::style(&ctx, DarkPanels::Lighter);
+        ctx.set_theme(egui::Theme::Light);
+        // The fonts take effect from the next frame; the font atlas uploads
+        // no renderer takes here are dropped.
+        ctx.run_ui(egui::RawInput::default(), |_| {})
+            .textures_delta
+            .clear();
+        ctx
+    }
+
+    /// In the widest column each name starts at its row's reading start,
+    /// and each answer on its name's line, all of them at one place: two
+    /// large gaps after the letters of the longest name, give or take the
+    /// room beside a letter and the longest name's width rounded up to a
+    /// whole point. In a narrow column each answer goes under its name,
+    /// from the row's reading start.
+    fn check_answers_after_the_longest_name() {
+        let ctx = window();
+        let (start, names, answers) = data_frame(&ctx, super::super::COLUMN_WIDTH);
+        assert_eq!((names.len(), answers.len()), (4, 4), "{answers:?}");
+        let longest = names
+            .iter()
+            .map(|name| along(start, far_edge(name.letters)))
+            .fold(0.0, f32::max);
+        let first_answer = along(start, start_edge(answers[0].place));
+        for (name, answer) in names.iter().zip(&answers) {
+            let name_off = along(start, start_edge(name.place));
+            assert!(name_off.abs() <= 0.5, "{name:?} from {start}");
+            let answer_off = along(start, start_edge(answer.place)) - first_answer;
+            assert!(answer_off.abs() <= 0.5, "{answer:?} with the others");
+            let gap = along(start, start_edge(answer.letters)) - longest;
+            assert!(
+                (DATA_ANSWER_GAP - 0.5..=DATA_ANSWER_GAP + 2.5).contains(&gap),
+                "{answer:?}: {gap} after the longest name"
+            );
+            let off = answer.place.center().y - name.place.center().y;
+            assert!(off.abs() <= 0.5, "{answer:?} on the line of {name:?}");
+        }
+
+        let (start, names, answers) = data_frame(&ctx, 300.0);
+        assert_eq!(names.len(), 4);
+        let mut answer_lines = answers.iter();
+        for (index, name) in names.iter().enumerate() {
+            let first = answer_lines
+                .find(|line| line.place.top() >= name.place.bottom())
+                .expect("an answer under the name");
+            let next_name = names
+                .get(index + 1)
+                .map_or(f32::INFINITY, |next| next.place.top());
+            assert!(
+                first.place.bottom() <= next_name,
+                "{first:?} under {name:?}"
+            );
+            let off = along(start, start_edge(first.place));
+            assert!(off.abs() <= 0.5, "{first:?} from {start}");
+        }
+    }
+
+    #[test]
+    fn the_answers_start_after_the_longest_name() {
+        check_answers_after_the_longest_name();
+    }
+
+    #[test]
+    fn the_answers_start_after_the_longest_name_right_to_left() {
+        crate::i18n::passes_in_arabic(
+            module_path!(),
+            "the_answers_start_after_the_longest_name_in_arabic",
+        );
+    }
+
+    #[test]
+    #[ignore = "run in a process of its own by the_answers_start_after_the_longest_name_right_to_left"]
+    fn the_answers_start_after_the_longest_name_in_arabic() {
+        if arabic_run() {
+            check_answers_after_the_longest_name();
+        }
     }
 }
