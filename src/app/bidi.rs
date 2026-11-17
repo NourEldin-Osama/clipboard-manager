@@ -67,7 +67,7 @@ pub(super) fn read_in_reading_order(ctx: &egui::Context) {
     }
 }
 
-fn is_rtl_char(c: char) -> bool {
+pub(super) fn is_rtl_char(c: char) -> bool {
     matches!(c as u32, 0x0590..=0x08FF | 0xFB1D..=0xFDFF | 0xFE70..=0xFEFF | 0x10800..=0x10FFF | 0x1E800..=0x1EFFF)
 }
 
@@ -157,34 +157,10 @@ fn append_line(
             job.append(&line[start..run.end], 0.0, fmt(start).clone());
             continue;
         }
-        // Right-to-left run: words (letters plus combining marks) stay whole and
-        // are shaped right to left by egui; everything else is one char at a time,
-        // mirrored. The pieces go in reverse. A word is highlighted whole when a
-        // mark covers any of it: egui shapes each piece alone, so the letters of
-        // a word in two pieces would come apart.
-        let mut pieces: Vec<(Range<usize>, String)> = Vec::new();
-        let mut word = String::new();
-        let mut word_at = run.start;
-        for (i, c) in line[run.clone()]
-            .char_indices()
-            .map(|(i, c)| (i + run.start, c))
-        {
-            let joins = is_rtl_char(c) || unicode_bidi::bidi_class(c) == BidiClass::NSM;
-            if joins {
-                if word.is_empty() {
-                    word_at = i;
-                }
-                word.push(c);
-            } else {
-                if !word.is_empty() {
-                    pieces.push((word_at..i, std::mem::take(&mut word)));
-                }
-                pieces.push((i..i + c.len_utf8(), mirror(c).to_string()));
-            }
-        }
-        if !word.is_empty() {
-            pieces.push((word_at..run.end, word));
-        }
+        // Right-to-left run: the pieces go in reverse. A word is highlighted
+        // whole when a mark covers any of it: egui shapes each piece alone, so
+        // the letters of a word in two pieces would come apart.
+        let pieces = rtl_pieces(line, run.clone());
         let covered =
             |piece: &Range<usize>| marks.iter().any(|&(a, b)| a < piece.end && piece.start < b);
         for (piece, s) in pieces.into_iter().rev() {
@@ -192,6 +168,37 @@ fn append_line(
             job.append(&s, 0.0, format.clone());
         }
     }
+}
+
+/// The pieces of the right-to-left run `run` of `line`, in reading order,
+/// each with its byte range in `line`: words (letters plus combining marks)
+/// stay whole and are shaped right to left by egui; everything else is one
+/// char at a time, mirrored. They are shown in reverse.
+pub(super) fn rtl_pieces(line: &str, run: Range<usize>) -> Vec<(Range<usize>, String)> {
+    let mut pieces: Vec<(Range<usize>, String)> = Vec::new();
+    let mut word = String::new();
+    let mut word_at = run.start;
+    for (i, c) in line[run.clone()]
+        .char_indices()
+        .map(|(i, c)| (i + run.start, c))
+    {
+        let joins = is_rtl_char(c) || unicode_bidi::bidi_class(c) == BidiClass::NSM;
+        if joins {
+            if word.is_empty() {
+                word_at = i;
+            }
+            word.push(c);
+        } else {
+            if !word.is_empty() {
+                pieces.push((word_at..i, std::mem::take(&mut word)));
+            }
+            pieces.push((i..i + c.len_utf8(), mirror(c).to_string()));
+        }
+    }
+    if !word.is_empty() {
+        pieces.push((word_at..run.end, word));
+    }
+    pieces
 }
 
 /// Greedy word wrap of one paragraph into lines that fit `width`.
