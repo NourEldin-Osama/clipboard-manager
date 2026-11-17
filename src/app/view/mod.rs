@@ -60,14 +60,12 @@ pub(crate) use theme::{
     READING_WIDTH, RED,
 };
 pub(crate) use viewer::Viewer;
-/// For the tests of the menus in Settings, which search as the menus do.
-#[cfg(test)]
-pub(crate) use widgets::search_words;
 pub(crate) use widgets::{
     chip, cut_line, divider, enter_in, far, far_layout, flip, lbl, matches, menu_search_words,
     nothing_matches, paint_progress, paint_text, part_corners, pill_job, primary_button,
-    program_row, row, row_layout, row_of, row_wrapped, section_title, set_choice_name, set_name,
-    slow_spinner, start_anchor, steady_list, tip, title_lbl, txt, Reacts, PROGRESS_LINE,
+    program_row, row, row_layout, row_of, row_wrapped, search_words, section_title,
+    set_choice_name, set_name, slow_spinner, start_anchor, steady_list, tip, title_lbl, txt,
+    Reacts, PROGRESS_LINE,
 };
 
 /// Where a view `view` tall scrolls to so that an item `top` from the

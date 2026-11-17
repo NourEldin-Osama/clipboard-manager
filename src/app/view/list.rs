@@ -1121,15 +1121,7 @@ impl App {
         } else {
             self.list_view
         };
-        let terms: Vec<String> = if searching {
-            self.query
-                .to_lowercase()
-                .split_whitespace()
-                .map(String::from)
-                .collect()
-        } else {
-            vec![]
-        };
+        let terms = search_words(&self.query);
         // Until the list has been drawn once, its height is unknown and every
         // row would seem to be below it: the scroll waits for that frame.
         let scrolling = self.scroll_to_selected && view_h > 0.0;

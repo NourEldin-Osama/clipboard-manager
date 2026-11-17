@@ -490,7 +490,7 @@ impl App {
                     r.request_focus();
                 }
                 // Existing tags that start with what's typed, one click to add.
-                let typed = text.trim().trim_start_matches('#').to_lowercase();
+                let typed = crate::search::normalize(text.trim().trim_start_matches('#'));
                 if enter {
                     // Enter adds and keeps the field open for the next tag.
                     add = Some(std::mem::take(text));
@@ -502,7 +502,8 @@ impl App {
                 let mut suggestions = known
                     .iter()
                     .filter(|(k, _)| {
-                        !it.has_tag(k) && (typed.is_empty() || k.to_lowercase().starts_with(&typed))
+                        !it.has_tag(k)
+                            && (typed.is_empty() || crate::search::normalize(k).starts_with(&typed))
                     })
                     .take(5)
                     .peekable();

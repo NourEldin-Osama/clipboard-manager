@@ -72,24 +72,8 @@ pub(super) fn highlighted(
         background: hit.1,
         ..Default::default()
     };
-    let lower = text.to_lowercase();
-    // Lower-casing can change byte offsets outside ASCII; skip highlighting then.
-    let mut marks: Vec<(usize, usize)> = Vec::new();
-    if lower.len() == text.len() {
-        for t in terms.iter().filter(|t| !t.is_empty()) {
-            let mut from = 0;
-            while let Some(i) = lower[from..].find(t.as_str()) {
-                marks.push((from + i, from + i + t.len()));
-                from += i + t.len();
-            }
-        }
-    }
-    marks.sort();
     let mut pos = 0;
-    for (a, b) in marks {
-        if a < pos || !text.is_char_boundary(a) || !text.is_char_boundary(b) {
-            continue;
-        }
+    for (a, b) in crate::search::find_words(text, terms) {
         job.append(&text[pos..a], 0.0, plain.clone());
         job.append(&text[a..b], 0.0, hl.clone());
         pos = b;
@@ -342,6 +326,33 @@ pub(super) fn row_title(it: &Item) -> String {
 mod tests {
     use super::*;
     use crate::store::Origin;
+
+    /// The parts of `text` that `highlighted` marks for `search`.
+    fn marked(text: &str, search: &str) -> Vec<String> {
+        let hit = (Color32::BLACK, Color32::YELLOW);
+        let words = search_words(search);
+        let font = FontId::proportional(14.0);
+        let job = highlighted(text, &words, font, Color32::GRAY, hit, 500.0, 3);
+        job.sections
+            .iter()
+            .filter(|s| s.format.background == hit.1)
+            .map(|s| job.text[s.byte_range.start.0..s.byte_range.end.0].to_string())
+            .collect()
+    }
+
+    /// Search words are highlighted where they are, in any case, and a
+    /// part of a word only as far as it matches. A text whose lower case
+    /// takes more bytes, as with İ, is highlighted too.
+    #[test]
+    fn search_words_are_highlighted_where_they_are() {
+        assert_eq!(
+            marked("Invoice for March", "march INVOICE"),
+            ["Invoice", "March"]
+        );
+        assert_eq!(marked("Report.pdf", "port"), ["port"]);
+        assert_eq!(marked("İstanbul trip", "TRIP"), ["trip"]);
+        assert!(marked("Invoice", "").is_empty());
+    }
 
     #[test]
     fn sql_reads_as_code_and_a_sentence_does_not() {

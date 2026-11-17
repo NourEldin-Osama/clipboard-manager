@@ -11,6 +11,7 @@
 //! Text without RTL characters takes egui's normal path.
 
 use std::cell::RefCell;
+use std::ops::Range;
 use std::sync::Arc;
 
 use eframe::egui::text::{LayoutJob, TextFormat, TextWrapping};
@@ -158,8 +159,10 @@ fn append_line(
         }
         // Right-to-left run: words (letters plus combining marks) stay whole and
         // are shaped right to left by egui; everything else is one char at a time,
-        // mirrored. The pieces go in reverse.
-        let mut pieces: Vec<(usize, String)> = Vec::new();
+        // mirrored. The pieces go in reverse. A word is highlighted whole when a
+        // mark covers any of it: egui shapes each piece alone, so the letters of
+        // a word in two pieces would come apart.
+        let mut pieces: Vec<(Range<usize>, String)> = Vec::new();
         let mut word = String::new();
         let mut word_at = run.start;
         for (i, c) in line[run.clone()]
@@ -174,16 +177,19 @@ fn append_line(
                 word.push(c);
             } else {
                 if !word.is_empty() {
-                    pieces.push((word_at, std::mem::take(&mut word)));
+                    pieces.push((word_at..i, std::mem::take(&mut word)));
                 }
-                pieces.push((i, mirror(c).to_string()));
+                pieces.push((i..i + c.len_utf8(), mirror(c).to_string()));
             }
         }
         if !word.is_empty() {
-            pieces.push((word_at, word));
+            pieces.push((word_at..run.end, word));
         }
-        for (at, s) in pieces.into_iter().rev() {
-            job.append(&s, 0.0, fmt(at).clone());
+        let covered =
+            |piece: &Range<usize>| marks.iter().any(|&(a, b)| a < piece.end && piece.start < b);
+        for (piece, s) in pieces.into_iter().rev() {
+            let format = if covered(&piece) { hl } else { plain };
+            job.append(&s, 0.0, format.clone());
         }
     }
 }
@@ -281,17 +287,7 @@ pub(super) fn lines(
     }
     out.into_iter()
         .map(|(l, rtl)| {
-            let lower = l.to_lowercase();
-            let mut marks = Vec::new();
-            if lower.len() == l.len() {
-                for t in terms.iter().filter(|t| !t.is_empty()) {
-                    let mut from = 0;
-                    while let Some(i) = lower[from..].find(t.as_str()) {
-                        marks.push((from + i, from + i + t.len()));
-                        from += i + t.len();
-                    }
-                }
-            }
+            let marks = crate::search::find_words(&l, terms);
             let mut job = LayoutJob::default();
             append_line(&mut job, &l, rtl, &plain, &hl, &marks);
             job.wrap = TextWrapping {
@@ -706,6 +702,56 @@ mod tests {
         if crate::i18n::arabic_run() {
             check_balanced_lines();
         }
+    }
+
+    /// The parts of `text` that `lines` highlights for `search`, on one
+    /// line wide enough for all of it.
+    fn highlighted_parts(ctx: &egui::Context, text: &str, search: &str) -> Vec<String> {
+        let highlight = Color32::YELLOW;
+        let words = crate::app::view::search_words(search);
+        let mut parts = Vec::new();
+        let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+            let font = FontId::proportional(size::BODY);
+            let laid_out = lines(
+                ui,
+                text,
+                &words,
+                font,
+                Color32::WHITE,
+                highlight,
+                2000.0,
+                1,
+                None,
+            );
+            for (galley, _) in laid_out {
+                let job = &galley.job;
+                for section in job.sections.iter() {
+                    if section.format.background == highlight {
+                        let range = section.byte_range.start.0..section.byte_range.end.0;
+                        parts.push(job.text[range].to_string());
+                    }
+                }
+            }
+        });
+        // The font atlas upload no renderer takes here.
+        output.textures_delta.clear();
+        parts
+    }
+
+    /// A search word in an Arabic word, however its letters were typed,
+    /// highlights the whole word: egui shapes each piece of a line alone,
+    /// so a word in two pieces would come apart. A Latin word in the same
+    /// line is highlighted only where it matches, as before.
+    #[test]
+    fn a_found_arabic_word_is_highlighted_whole() {
+        let ctx = window();
+        let lit = |text: &str, search: &str| highlighted_parts(&ctx, text, search);
+        assert_eq!(lit("موعد الاجتماع غدا", "إجتماع"), ["الاجتماع"]);
+        assert_eq!(lit("محضر الإجتماع", "اجتماع"), ["الإجتماع"]);
+        assert_eq!(lit("كتاب عربي", "عربى"), ["عربي"]);
+        assert_eq!(lit("مُحَمَّد علي", "محمد"), ["مُحَمَّد"]);
+        assert_eq!(lit("ملف report.pdf", "port"), ["port"]);
+        assert!(lit("موعد الاجتماع غدا", "").is_empty());
     }
 
     #[test]

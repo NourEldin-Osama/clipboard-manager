@@ -101,8 +101,8 @@ struct Ranked {
 #[derive(Clone, Default)]
 pub struct Snapshot {
     pub items: Vec<Arc<Item>>,
-    /// Each item's lower-cased searchable text; items missing here are
-    /// lower-cased on the fly.
+    /// Each item's searchable text, normalized (`normalize`); items missing
+    /// here are normalized on the fly.
     pub lower: HashMap<u64, Arc<str>>,
     pub embeddings: HashMap<u64, Arc<Embedding>>,
 }
@@ -127,8 +127,81 @@ pub struct Query {
     pub pinned_first: bool,
 }
 
-/// Fraction of query terms present (case-insensitive), plus a bonus for the
-/// exact phrase. 0 means no match.
+/// Text as keyword search compares it, the searched text and the query
+/// alike: in lower case, the Arabic letters people type in more than one
+/// way in one form (أ إ آ ٱ as ا, ى and ئ as ي, ة as ه, ؤ as و), and without
+/// the Arabic diacritics and the tatweel.
+pub fn normalize(text: &str) -> String {
+    // Most text is plain English, which this does quicker.
+    if text.is_ascii() {
+        return text.to_ascii_lowercase();
+    }
+    let mut normalized = String::with_capacity(text.len());
+    for c in text.chars() {
+        push_normalized(c, &mut normalized);
+    }
+    normalized
+}
+
+/// Adds `c` to `out` as `normalize` writes it: nothing for a mark it
+/// leaves out.
+fn push_normalized(c: char, out: &mut String) {
+    match c {
+        'أ' | 'إ' | 'آ' | 'ٱ' => out.push('ا'),
+        'ى' | 'ئ' => out.push('ي'),
+        'ة' => out.push('ه'),
+        'ؤ' => out.push('و'),
+        // The tatweel, the diacritics, and the hamza and madda written as
+        // marks after a letter, as in a decomposed أ.
+        '\u{0640}' | '\u{064B}'..='\u{0655}' | '\u{0670}' => {}
+        // Lower-casing a whole text writes a Greek capital sigma at a
+        // word's end as the final form, but one letter at a time it can't
+        // tell: both forms count as the same letter.
+        'ς' => out.push('σ'),
+        c => out.extend(c.to_lowercase()),
+    }
+}
+
+/// Where the searched `words` are in `text`, to highlight them: byte
+/// ranges of `text`, in order, joined where they meet. `words` are
+/// normalized (`normalize`) and split at spaces, as the query is. A range
+/// covers whole characters of `text`, so a diacritic inside a found word
+/// is in it.
+pub fn find_words(text: &str, words: &[String]) -> Vec<(usize, usize)> {
+    if words.is_empty() {
+        return Vec::new();
+    }
+    // `text` normalized, and for each of its bytes where the character of
+    // `text` it came from starts and ends: a dropped mark makes it shorter.
+    let mut normalized = String::with_capacity(text.len());
+    let mut came_from: Vec<(usize, usize)> = Vec::with_capacity(text.len());
+    for (start, c) in text.char_indices() {
+        push_normalized(c, &mut normalized);
+        came_from.resize(normalized.len(), (start, start + c.len_utf8()));
+    }
+    let mut found: Vec<(usize, usize)> = Vec::new();
+    for word in words.iter().filter(|word| !word.is_empty()) {
+        let mut from = 0;
+        while let Some(at) = normalized[from..].find(word.as_str()) {
+            let first = from + at;
+            let last = first + word.len() - 1;
+            found.push((came_from[first].0, came_from[last].1));
+            from = last + 1;
+        }
+    }
+    found.sort_unstable();
+    let mut joined: Vec<(usize, usize)> = Vec::with_capacity(found.len());
+    for (start, end) in found {
+        match joined.last_mut() {
+            Some(last) if start <= last.1 => last.1 = last.1.max(end),
+            _ => joined.push((start, end)),
+        }
+    }
+    joined
+}
+
+/// Fraction of query terms present, plus a bonus for the exact phrase. Both
+/// texts are normalized (`normalize`). 0 means no match.
 pub fn keyword_score(haystack_lower: &str, query_lower: &str, terms: &[&str]) -> f32 {
     if terms.is_empty() {
         return 0.0;
@@ -354,7 +427,8 @@ pub fn search(s: &Snapshot, q: &Query) -> Vec<Hit> {
 
 fn rank(s: &Snapshot, q: &Query) -> Vec<Ranked> {
     let (items, lower, embeddings) = (&s.items, &s.lower, &s.embeddings);
-    let query_lower = q.text.trim().to_lowercase();
+    let query = normalize(&q.text);
+    let query_lower = query.trim();
     let candidates: Vec<usize> = (0..items.len())
         .filter(|&i| {
             q.filter.accepts(&items[i])
@@ -389,12 +463,8 @@ fn rank(s: &Snapshot, q: &Query) -> Vec<Ranked> {
     if q.mode != SearchMode::Semantic {
         for &i in &candidates {
             let s = match lower.get(&items[i].id) {
-                Some(l) => keyword_score(l, &query_lower, &terms),
-                None => keyword_score(
-                    &items[i].searchable_text().to_lowercase(),
-                    &query_lower,
-                    &terms,
-                ),
+                Some(l) => keyword_score(l, query_lower, &terms),
+                None => keyword_score(&normalize(&items[i].searchable_text()), query_lower, &terms),
             };
             if s > 0.0 {
                 kw.push((i, s));
@@ -688,6 +758,78 @@ mod tests {
         let h = search(&s, &q(SearchMode::Hybrid));
         assert_eq!(h[0].id, 1);
         assert_eq!(h.len(), 3);
+    }
+
+    /// The Arabic letters people type in more than one way count as one,
+    /// and the diacritics and the tatweel don't count. Other text is only
+    /// lower-cased, as before.
+    #[test]
+    fn normalize_writes_arabic_one_way() {
+        assert_eq!(normalize("أ إ آ ٱ ى ئ ة ؤ"), "ا ا ا ا ي ي ه و");
+        assert_eq!(normalize("مُحَمَّدٌ"), "محمد");
+        assert_eq!(normalize("اجتمـــاع"), "اجتماع");
+        assert_eq!(normalize("\u{0627}\u{0654}"), "ا", "أ as alef and a mark");
+        for text in ["Invoice for MARCH", "Café RÉSUMÉ, Straße", "#Work 4821"] {
+            assert_eq!(normalize(text), text.to_lowercase());
+        }
+        assert_eq!(normalize("ΟΔΟΣ"), normalize("οδος"), "a final sigma");
+    }
+
+    /// Arabic is found however its letters were typed: with or without a
+    /// hamza, ى for ي, with or without diacritics or a tatweel.
+    #[test]
+    fn arabic_is_found_however_it_is_typed() {
+        let s = snapshot(
+            vec![
+                item(1, "موعد الاجتماع غدا", 1),
+                item(2, "محضر الإجتماع", 2),
+                item(3, "كتاب عربي", 3),
+                item(4, "مُحَمَّد علي", 4),
+                item(5, "محمد", 5),
+                item(6, "Meeting notes", 6),
+            ],
+            vec![],
+        );
+        let found = |text: &str| {
+            let mut found = ids(&search(&s, &query(text, None, SearchMode::Keyword)));
+            found.sort();
+            found
+        };
+        assert_eq!(found("إجتماع"), [1, 2]);
+        assert_eq!(found("اجتماع"), [1, 2]);
+        assert_eq!(found("اجتمـــاع"), [1, 2]);
+        assert_eq!(found("عربى"), [3]);
+        assert_eq!(found("محمد"), [4, 5]);
+        assert_eq!(found("مُحَمَّد"), [4, 5]);
+        assert_eq!(found("MEETING"), [6]);
+        assert_eq!(found("meeting notes"), [6]);
+    }
+
+    /// The words found are where they are in the text as shown, also
+    /// where the text as compared is shorter (diacritics left out) or
+    /// longer (İ in lower case takes more bytes).
+    #[test]
+    fn found_words_are_placed_in_the_text_as_shown() {
+        let found = |text: &str, search: &str| -> Vec<String> {
+            let words: Vec<String> = normalize(search)
+                .split_whitespace()
+                .map(String::from)
+                .collect();
+            find_words(text, &words)
+                .into_iter()
+                .map(|(start, end)| text[start..end].to_string())
+                .collect()
+        };
+        assert_eq!(
+            found("Invoice for March", "MARCH invoice"),
+            ["Invoice", "March"]
+        );
+        assert_eq!(found("İstanbul trip", "trip"), ["trip"]);
+        assert_eq!(found("الاجتماع", "إجتماع"), ["اجتماع"]);
+        assert_eq!(found("مُحَمَّد علي", "علي"), ["علي"]);
+        assert_eq!(found("مُحَمَّد علي", "محمد"), ["مُحَمَّد"]);
+        assert_eq!(found("abcdef", "abc cde"), ["abcde"], "overlapping");
+        assert!(found("Invoice", " ").is_empty());
     }
 
     #[test]
