@@ -157,7 +157,10 @@ impl App {
                             Align2::LEFT_CENTER
                         })
                         .layouter(&mut layouter)
-                        .desired_width((ui.available_width() - 130.0).max(80.0));
+                        .desired_width(
+                            (ui.available_width() - search_buttons_width(ui, self.cfg.search_mode))
+                                .max(80.0),
+                        );
                     let resp = ui.add(te);
                     set_name(&resp, hint.trim_end_matches('…'));
                     // While the popup is open, its search field takes the
@@ -197,7 +200,7 @@ impl App {
                                 ui,
                                 Icon::Close,
                                 &t!("search-clear"),
-                                Vec2::splat(26.0),
+                                Vec2::splat(CLEAR_BUTTON),
                                 11.0,
                                 None,
                                 None,
@@ -576,6 +579,25 @@ impl App {
     }
 }
 
+/// How big the search field's clear button is.
+const CLEAR_BUTTON: f32 = 26.0;
+
+/// The room the search field leaves after its text for its buttons, in any
+/// language: the gap, the button of search mode `mode` and the clear
+/// button with the gap between them. The clear button's room stays while
+/// there is no text, so the field doesn't change width as typing starts.
+fn search_buttons_width(ui: &Ui, mode: SearchMode) -> f32 {
+    let label = ui.fonts_mut(|f| {
+        f.layout_job(bidi::job(
+            &mode_label(mode),
+            FontId::proportional(size::CONTROL),
+            Color32::PLACEHOLDER,
+        ))
+    });
+    let gap = ui.spacing().item_spacing.x;
+    gap + mode_button_width(label.size().x, false) + gap + CLEAR_BUTTON
+}
+
 /// What was clicked in the layout controls.
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum LayoutClick {
@@ -814,6 +836,61 @@ struct ProgramChoice {
 mod tests {
     use super::*;
     use egui::accesskit::{Role, Toggled};
+
+    /// The search field's buttons, laid out as the field lays them out, fit
+    /// in the room it leaves them, whatever the search mode.
+    fn check_search_buttons_fit() {
+        let ctx = egui::Context::default();
+        add_fonts(&ctx);
+        // The fonts apply from the next frame.
+        ctx.run_ui(egui::RawInput::default(), |_| {})
+            .textures_delta
+            .clear();
+        ctx.run_ui(egui::RawInput::default(), |ui| {
+            let gap = ui.spacing().item_spacing.x;
+            for mode in MODES {
+                let room = search_buttons_width(ui, mode);
+                let used = ui
+                    .allocate_ui_with_layout(
+                        Vec2::new(600.0, 40.0),
+                        Layout::right_to_left(Align::Center),
+                        |ui| {
+                            mode_button(ui, &mode_label(mode), false);
+                            let size = Vec2::splat(CLEAR_BUTTON);
+                            icon_button_ex(ui, Icon::Close, "x", size, 11.0, None, None);
+                            ui.min_rect().width()
+                        },
+                    )
+                    .inner;
+                assert!(
+                    gap + used <= room + 0.5,
+                    "{}: the buttons take {} and have {room}",
+                    mode_label(mode),
+                    gap + used
+                );
+            }
+        })
+        .textures_delta
+        .clear();
+    }
+
+    #[test]
+    fn the_search_buttons_fit() {
+        check_search_buttons_fit();
+    }
+
+    #[test]
+    fn the_search_buttons_fit_in_arabic_too() {
+        crate::i18n::passes_in_arabic(module_path!(), "the_search_buttons_fit_in_arabic");
+    }
+
+    #[test]
+    #[ignore = "run in a process of its own by the_search_buttons_fit_in_arabic_too"]
+    fn the_search_buttons_fit_in_arabic() {
+        if crate::i18n::arabic_run() {
+            check_search_buttons_fit();
+        }
+    }
 
     #[test]
     fn the_programs_menu_puts_the_most_copies_first_and_finds_by_either_name() {

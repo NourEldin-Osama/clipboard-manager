@@ -430,6 +430,23 @@ pub(super) fn mode_button(ui: &mut Ui, label: &str, emphasised: bool) -> egui::R
     lead_mode_button(ui, None, label, emphasised)
 }
 
+/// How big the lead before a mode button's text is.
+const MODE_LEAD: f32 = 16.0;
+
+/// The room a mode button's lead takes before its text, the gap included.
+fn mode_lead_room(lead: bool) -> f32 {
+    if lead {
+        MODE_LEAD + 6.0
+    } else {
+        0.0
+    }
+}
+
+/// How wide a mode button is with text `text_width` wide, with a lead or not.
+pub(super) fn mode_button_width(text_width: f32, lead: bool) -> f32 {
+    mode_lead_room(lead) + text_width + 8.0 + 10.0 + 18.0
+}
+
 /// `mode_button` with `lead` before its text.
 pub(super) fn lead_mode_button(
     ui: &mut Ui,
@@ -437,7 +454,6 @@ pub(super) fn lead_mode_button(
     label: &str,
     emphasised: bool,
 ) -> egui::Response {
-    const LEAD: f32 = 16.0;
     let v = ui.visuals();
     let color = if emphasised {
         text_shade(accent(), v.dark_mode)
@@ -446,9 +462,9 @@ pub(super) fn lead_mode_button(
     };
     let g = ui
         .fonts_mut(|f| f.layout_job(bidi::job(label, FontId::proportional(size::CONTROL), color)));
-    let lead_room = if lead.is_some() { LEAD + 6.0 } else { 0.0 };
+    let lead_room = mode_lead_room(lead.is_some());
     let (rect, resp) = ui.allocate_exact_size(
-        Vec2::new(lead_room + g.size().x + 8.0 + 10.0 + 18.0, 28.0),
+        Vec2::new(mode_button_width(g.size().x, lead.is_some()), 28.0),
         Sense::click(),
     );
     let v = ui.visuals();
@@ -474,13 +490,13 @@ pub(super) fn lead_mode_button(
         let at = flip(
             rect,
             Rect::from_center_size(
-                Pos2::new(rect.left() + 9.0 + LEAD / 2.0, rect.center().y),
-                Vec2::splat(LEAD),
+                Pos2::new(rect.left() + 9.0 + MODE_LEAD / 2.0, rect.center().y),
+                Vec2::splat(MODE_LEAD),
             ),
         );
         match lead {
             Lead::Texture(texture) => {
-                egui::Image::new((texture.id(), Vec2::splat(LEAD))).paint_at(ui, at)
+                egui::Image::new((texture.id(), Vec2::splat(MODE_LEAD))).paint_at(ui, at)
             }
             Lead::Icon(icon) => icons::paint(ui.painter(), at, icon, color),
         }
