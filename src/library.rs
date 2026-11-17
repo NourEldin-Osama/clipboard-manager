@@ -21,7 +21,8 @@ pub struct Library {
     items: Vec<Arc<Item>>,
     /// Where each item is in `items`, by id.
     positions: HashMap<u64, usize>,
-    /// Each item's searchable text, lower-cased, for keyword search.
+    /// Each item's searchable text as keyword search compares it
+    /// (`search::normalize`).
     lower: HashMap<u64, Arc<str>>,
     /// The current model's vector for each item that has one.
     embeddings: HashMap<u64, Arc<Embedding>>,
@@ -432,9 +433,9 @@ fn count_tags(items: &[Arc<Item>]) -> Arc<[(String, usize)]> {
     tags.into()
 }
 
-/// What keyword search looks in: the searchable text, lower-cased once.
+/// What keyword search looks in: the searchable text, normalized once.
 fn lowered(item: &Item) -> Arc<str> {
-    item.searchable_text().to_lowercase().into()
+    crate::search::normalize(&item.searchable_text()).into()
 }
 
 /// What the history limit and Clear history may delete: copied items the
@@ -662,6 +663,20 @@ mod tests {
         lib.set_ocr(id, "Total Due");
         assert!(lib.lower[&id].contains("total due"));
         assert_eq!(lib.images_without_ocr().count(), 0);
+        drop(lib);
+        std::fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn arabic_is_kept_as_search_compares_it() {
+        let (dir, mut lib) = open("arabic");
+        let id = add(&mut lib, "محضر الإجتماع", 1);
+        assert!(lib.lower[&id].contains("الاجتماع"));
+        assert_eq!(
+            &*lib.get(id).unwrap().text,
+            "محضر الإجتماع",
+            "shown as copied"
+        );
         drop(lib);
         std::fs::remove_dir_all(dir).ok();
     }

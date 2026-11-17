@@ -1040,16 +1040,7 @@ impl App {
             }
         }
 
-        let searching = !self.query.trim().is_empty();
-        let terms: Vec<String> = if searching {
-            self.query
-                .to_lowercase()
-                .split_whitespace()
-                .map(String::from)
-                .collect()
-        } else {
-            vec![]
-        };
+        let terms = search_words(&self.query);
         let mut actions = Vec::new();
         // A right-click, or Shift+F10 on the selected card, opens a menu.
         let mut open_menu = None;
