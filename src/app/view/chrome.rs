@@ -319,7 +319,7 @@ impl App {
                     ui.memory(|m| m.has_focus(id)) && ui.input(|i| i.key_pressed(Key::Enter));
                 let hint_text = t!("details-tag-hint");
                 let r = ui.add(
-                    egui::TextEdit::singleline(text)
+                    Field::singleline(text)
                         .id(id)
                         .hint_text(txt(&hint_text, size::SMALL, None))
                         .desired_width(150.0)

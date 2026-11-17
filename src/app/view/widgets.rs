@@ -574,7 +574,7 @@ pub(crate) fn menu_search(
             ui.with_layout(row_layout(), |ui| {
                 let weak = ui.visuals().weak_text_color();
                 icons::glyph(ui, Icon::Search, 14.0, weak);
-                let field = egui::TextEdit::singleline(text)
+                let field = Field::singleline(text)
                     .id(id)
                     .frame(Frame::NONE)
                     .hint_text(txt(hint, size::BODY, Some(weak)))

@@ -12,8 +12,8 @@ use super::view::{
     note_fill, nothing_matches, paint_progress, paint_text, part_corners, primary_button,
     program_row, radius, reveal, row, row_layout, row_of, search_hit, set_choice_name, set_name,
     size, slow_spinner, space, start_anchor, steady_list, switch_edge, text_shade, tip, title_lbl,
-    txt, warning_fill, Reacts, ACCENTS, AMBER, CARD_CHIP_PADDING, CHIP_SIDE, GREEN, PROGRESS_LINE,
-    RED,
+    txt, warning_fill, Field, Reacts, ACCENTS, AMBER, CARD_CHIP_PADDING, CHIP_SIDE, GREEN,
+    PROGRESS_LINE, RED,
 };
 use super::*;
 use crate::config::{

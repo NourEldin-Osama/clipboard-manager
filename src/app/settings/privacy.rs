@@ -332,13 +332,13 @@ fn rule_rows(ui: &mut Ui, d: &mut Config) {
             card_row(ui, false, |ui| {
                 row(ui, |ui| {
                     let program = ui.add(
-                        egui::TextEdit::singleline(&mut rule.app)
+                        Field::singleline(&mut rule.app)
                             .hint_text(txt(&t!("settings-rule-program"), size::BODY, None))
                             .desired_width(RULE_PROGRAM_WIDTH),
                     );
                     set_name(&program, &t!("settings-rule-program"));
                     let pattern = ui.add(
-                        egui::TextEdit::singleline(&mut rule.pattern)
+                        Field::singleline(&mut rule.pattern)
                             .hint_text(txt(&t!("settings-rule-pattern"), size::BODY, None))
                             .desired_width(RULE_PATTERN_WIDTH),
                     );

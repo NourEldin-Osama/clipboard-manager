@@ -128,21 +128,9 @@ impl App {
                     } else {
                         hint.clone()
                     };
-                    // Arabic is shown in reading order (the cursor still follows typing order).
-                    let mut layouter = |ui: &Ui, text: &dyn egui::TextBuffer, _wrap: f32| {
-                        let color = ui.visuals().text_color();
-                        let job = if bidi::has_rtl(text.as_str()) {
-                            bidi::job(text.as_str(), FontId::proportional(size::LARGE), color)
-                        } else {
-                            LayoutJob::simple_singleline(
-                                text.as_str().to_string(),
-                                FontId::proportional(size::LARGE),
-                                color,
-                            )
-                        };
-                        ui.fonts_mut(|f| f.layout_job(job))
-                    };
-                    let te = egui::TextEdit::singleline(&mut self.query)
+                    // Arabic shows in reading order, with the cursor where
+                    // typing goes (`Field`).
+                    let te = Field::singleline(&mut self.query)
                         .id(search_id())
                         .frame(Frame::NONE)
                         .hint_text(txt(
@@ -156,7 +144,7 @@ impl App {
                         } else {
                             Align2::LEFT_CENTER
                         })
-                        .layouter(&mut layouter)
+                        .text_color(ui.visuals().text_color())
                         .desired_width(
                             (ui.available_width() - search_buttons_width(ui, self.cfg.search_mode))
                                 .max(80.0),
