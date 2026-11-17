@@ -937,6 +937,8 @@ toast-copied-text = تم نسخ النص
 toast-saved = تم الحفظ
 toast-deleted = تم الحذف
 toast-updated = تم التحديث إلى الإصدار { $version }
+toast-update-rolled-back = لم يعمل التحديث إلى الإصدار { $version }، فعاد الإصدار السابق.
+toast-update-rolled-back-detail = لن يثبّت التطبيق الإصدار { $version } مرة أخرى من تلقاء نفسه.
 toast-pinned-group =
     { $count ->
         [one] تم تثبيت عنصر واحد
