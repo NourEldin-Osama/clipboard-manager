@@ -70,6 +70,8 @@ Type: files; Name: "{app}\clipboard-manager.new"
 Type: files; Name: "{app}\clipboard-manager.new.json"
 Type: files; Name: "{app}\clipboard-manager.part"
 Type: files; Name: "{app}\clipboard-manager.old"
+Type: files; Name: "{app}\clipboard-manager.update-pending"
+Type: files; Name: "{app}\clipboard-manager.failed"
 
 [Code]
 const

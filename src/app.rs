@@ -898,6 +898,10 @@ pub struct App {
     /// step.
     update_hidden: bool,
     next_update_check: Instant,
+    /// When this version, just installed by an update, counts as working:
+    /// `update::WORKING_AFTER` after its window was made. A frame then (the
+    /// first one has drawn by then) removes the previous version.
+    update_works_at: Option<Instant>,
     /// Only items carrying this tag are listed.
     tag_filter: Option<String>,
     /// Only items copied from these programs are listed, by
@@ -945,10 +949,13 @@ pub struct App {
 }
 
 impl App {
+    /// `is_update_pending`: this version was just installed by an update and
+    /// hasn't counted as working yet (`update::check_pending`).
     pub fn new(
         cc: &eframe::CreationContext<'_>,
         paths: Paths,
         instance: crate::single_instance::Guard,
+        is_update_pending: bool,
     ) -> anyhow::Result<Self> {
         let ctx = cc.egui_ctx.clone();
         // No settings yet means a new install, which has nothing new to hear.
@@ -1112,6 +1119,7 @@ impl App {
             update_hidden: false,
             // A little after start, so launching stays quick.
             next_update_check: Instant::now() + Duration::from_secs(10),
+            update_works_at: is_update_pending.then(|| Instant::now() + update::WORKING_AFTER),
             tag_filter: None,
             program_filter: Vec::new(),
             tag_input: None,
@@ -1364,6 +1372,7 @@ impl App {
     /// Runs every frame, including while the window is hidden.
     fn window_logic(&mut self, ctx: &egui::Context) {
         self.update_logic(ctx);
+        self.pending_update_logic(ctx);
         self.sync_update_message();
         // Versions before 0.6 saved a minimized window with no size, and
         // Windows then makes it tiny at start: it gets the first size back.
@@ -1601,13 +1610,29 @@ impl App {
         }
     }
 
+    /// A version just installed by an update counts as working once its
+    /// window has drawn and stayed open for `update::WORKING_AFTER`. Then
+    /// the previous version goes (`update::mark_working`).
+    fn pending_update_logic(&mut self, ctx: &egui::Context) {
+        let Some(works_at) = self.update_works_at else {
+            return;
+        };
+        let now = Instant::now();
+        if now < works_at {
+            ctx.request_repaint_after(works_at - now);
+            return;
+        }
+        update::mark_working();
+        self.update_works_at = None;
+    }
+
     /// Swaps in the downloaded version and starts it.
     fn restart_to_update(&mut self, ctx: &egui::Context) {
         let UpdateState::Ready(r, path) = &self.update else {
             return;
         };
         let r = r.clone();
-        let result = update::install(path).and_then(|exe| match update::relaunch(&exe) {
+        let result = update::install(&r, path).and_then(|exe| match update::relaunch(&exe) {
             Ok(()) => Ok(()),
             // The new version wouldn't start: keep this one.
             Err(e) => match update::roll_back() {
@@ -1690,8 +1715,8 @@ impl App {
 
     /// A downloaded update not yet installed goes in on quit, for the next start.
     pub(super) fn install_on_exit(&mut self) {
-        if let UpdateState::Ready(_, path) = &self.update {
-            if let Err(e) = update::install(path) {
+        if let UpdateState::Ready(release, path) = &self.update {
+            if let Err(e) = update::install(release, path) {
                 log::warn!("installing update on exit: {e:#}");
             }
         }

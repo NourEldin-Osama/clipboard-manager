@@ -10,7 +10,11 @@
 //!
 //! Installing: Windows won't overwrite a running exe but will rename it, so the
 //! running exe becomes `clipboard-manager.old`, the new one takes its name, and
-//! the app restarts. The `.old` file is removed on the next start.
+//! the app restarts. The new version keeps `.old` until it counts as working:
+//! its window has drawn and stayed open for `WORKING_AFTER`. Until then a
+//! marker next to the exe (`.update-pending`) counts its starts. When two of
+//! them never got there, the third puts `.old` back, skips the failed version
+//! in the settings and starts the previous version.
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -35,8 +39,17 @@ const SIGNED_FORMAT: &str = "clipboard-manager-release-v1";
 /// The exe is about 30 MB; a release that claims more than this is refused.
 const MAX_DOWNLOAD_BYTES: u64 = 200 * 1024 * 1024;
 
-/// Passed to the new exe after an update, so it waits for this one to exit.
+/// Passed to the exe started after an update, or after putting the previous
+/// version back, so it waits for this one to exit.
 pub const AFTER_UPDATE_ARG: &str = "--after-update";
+
+/// A new version counts as working once its window has drawn and stayed open
+/// this long. Then the previous version is removed.
+pub const WORKING_AFTER: Duration = Duration::from_secs(10);
+
+/// The starts a new version gets to count as working. The start after them
+/// puts the previous version back.
+const STARTS_TO_WORK: u32 = 2;
 
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -86,7 +99,7 @@ impl Release {
 
     /// Remembered by "Skip this version".
     pub fn key(&self) -> String {
-        format!("{}+{}", self.version, self.build)
+        key_of(&self.version, self.build)
     }
 
     /// Newer than the running build.
@@ -117,6 +130,16 @@ impl Release {
             },
         }
     }
+}
+
+/// "1.4.0+52": how "Skip this version" and the update marker name a release.
+fn key_of(version: &str, build: u32) -> String {
+    format!("{version}+{build}")
+}
+
+/// The running build's key. Local builds have none.
+fn running_key() -> Option<String> {
+    build().map(|build| key_of(VERSION, build))
 }
 
 /// Whether the running version is newer than `earlier`, such as "0.5.1".
@@ -329,7 +352,7 @@ fn install_staged_at(
         return Ok(false);
     }
     verify(&std::fs::read(&staged)?, &release)?;
-    install_at(exe, &staged)?;
+    install_at(exe, &staged, &release.key())?;
     Ok(true)
 }
 
@@ -354,29 +377,47 @@ fn verify(bytes: &[u8], r: &Release) -> Result<()> {
     Ok(())
 }
 
-/// Puts the verified exe in place of the running one. Returns the exe path.
-pub fn install(staged: &Path) -> Result<PathBuf> {
+/// Puts the verified exe of `release` in place of the running one. Returns
+/// the exe path.
+pub fn install(release: &Release, staged: &Path) -> Result<PathBuf> {
     let exe = std::env::current_exe()?;
-    install_at(&exe, staged)?;
+    install_at(&exe, staged, &release.key())?;
     Ok(exe)
 }
 
-/// Puts `staged` in place of `exe`, which is kept as `.old`.
-fn install_at(exe: &Path, staged: &Path) -> Result<()> {
+/// Puts `staged`, the release with `key`, in place of `exe`, which is kept
+/// as `.old` until the new version counts as working.
+fn install_at(exe: &Path, staged: &Path, key: &str) -> Result<()> {
     let old = exe.with_extension("old");
     // Same permissions as the running exe (on Linux and macOS: executable).
     std::fs::set_permissions(staged, std::fs::metadata(exe)?.permissions())?;
+    // Written first, so the new version never starts without it.
+    let marker = Pending {
+        key: key.to_string(),
+        starts: 0,
+    };
+    write_pending(exe, &marker).context("marking the new version as not yet working")?;
     let _ = std::fs::remove_file(&old);
-    std::fs::rename(exe, &old).with_context(|| format!("moving {} aside", exe.display()))?;
-    if let Err(e) = std::fs::rename(staged, exe) {
-        // Put the running version back rather than leave no exe at all.
-        if let Err(back) = std::fs::rename(&old, exe) {
+    let swapped = swap_in(exe, staged, &old, "putting the new version in place");
+    if swapped.is_err() {
+        remove_logged(&pending_path(exe));
+    }
+    swapped
+}
+
+/// Puts `replacement` in place of `exe`, which moves to `aside`. When the
+/// second move fails, `exe` goes back rather than leave no exe at all.
+/// `step` names the swap in the error.
+fn swap_in(exe: &Path, replacement: &Path, aside: &Path, step: &str) -> Result<()> {
+    std::fs::rename(exe, aside).with_context(|| format!("moving {} aside", exe.display()))?;
+    if let Err(e) = std::fs::rename(replacement, exe) {
+        if let Err(back) = std::fs::rename(aside, exe) {
             return Err(e).context(format!(
-                "putting the new version in place (putting {} back failed too: {back})",
+                "{step} (putting {} back failed too: {back})",
                 exe.display()
             ));
         }
-        return Err(e).context("putting the new version in place");
+        return Err(e).context(step.to_string());
     }
     Ok(())
 }
@@ -388,6 +429,7 @@ pub fn roll_back() -> Result<()> {
 
 fn roll_back_at(exe: &Path) -> Result<()> {
     std::fs::rename(exe.with_extension("old"), exe).context("restoring the previous version")?;
+    remove_logged(&pending_path(exe));
     Ok(())
 }
 
@@ -401,7 +443,8 @@ pub fn relaunch(exe: &Path) -> Result<()> {
 }
 
 /// Removes what a finished or abandoned update leaves behind. A partial
-/// download stays, for the next download to continue.
+/// download stays, for the next download to continue, and so does the
+/// previous version while the marker says the running one hasn't worked yet.
 pub fn clean_up() {
     if let Ok(exe) = std::env::current_exe() {
         clean_up_at(&exe);
@@ -409,8 +452,241 @@ pub fn clean_up() {
 }
 
 fn clean_up_at(exe: &Path) {
-    for ext in ["old", "new", "new.json"] {
-        let _ = std::fs::remove_file(exe.with_extension(ext));
+    let mut left = vec![
+        staged_path(exe),
+        staged_manifest_path(exe),
+        failed_path(exe),
+    ];
+    if !pending_path(exe).exists() {
+        left.push(exe.with_extension("old"));
+    }
+    for file in left {
+        let _ = std::fs::remove_file(file);
+    }
+}
+
+/// Next to the exe from an install until the new version counts as working.
+fn pending_path(exe: &Path) -> PathBuf {
+    exe.with_extension("update-pending")
+}
+
+/// Where a new version that never worked goes when the previous one comes
+/// back. The next start removes it.
+fn failed_path(exe: &Path) -> PathBuf {
+    exe.with_extension("failed")
+}
+
+/// What the update marker keeps.
+#[derive(Debug, Deserialize, Serialize)]
+struct Pending {
+    /// The installed version's `Release::key`.
+    key: String,
+    /// Its starts so far. None of them counted as working, because that
+    /// removes the marker.
+    starts: u32,
+}
+
+/// The update marker next to `exe`, or `None` when there is none.
+fn read_pending(exe: &Path) -> Result<Option<Pending>> {
+    let bytes = match std::fs::read(pending_path(exe)) {
+        Ok(bytes) => bytes,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(e) => return Err(e).context("reading the update marker"),
+    };
+    let pending = serde_json::from_slice(&bytes).context("reading the update marker")?;
+    Ok(Some(pending))
+}
+
+fn write_pending(exe: &Path, pending: &Pending) -> Result<()> {
+    std::fs::write(pending_path(exe), serde_json::to_vec(pending)?)?;
+    Ok(())
+}
+
+/// What a start found about the last update.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Start {
+    /// The running version needs no watching.
+    Normal,
+    /// The running version was just installed. The previous one stays until
+    /// it counts as working (`mark_working`).
+    Pending,
+    /// The running version never worked: the previous one is back in its
+    /// place and started, and this start ends.
+    RolledBack,
+}
+
+/// Checked at every start, before anything else that could fail. Counts the
+/// starts of a version just installed. When two of them never counted as
+/// working, puts the previous version back, skips the failed one in the
+/// settings at `config` (so the previous version doesn't install it again
+/// by itself) and starts the previous version. A step that fails is logged,
+/// and the running version goes on.
+pub fn check_pending(config: &Path) -> Start {
+    let after_update = std::env::args().any(|argument| argument == AFTER_UPDATE_ARG);
+    match std::env::current_exe() {
+        Ok(exe) => check_pending_at(
+            &exe,
+            running_key().as_deref(),
+            after_update,
+            config,
+            start_previous,
+        ),
+        Err(e) => {
+            log::warn!("finding the running exe: {e}");
+            Start::Normal
+        }
+    }
+}
+
+/// `check_pending` for `exe`, the version named `key` (none for a local
+/// build), started `after_update` or not. `start` starts the previous
+/// version.
+fn check_pending_at(
+    exe: &Path,
+    key: Option<&str>,
+    after_update: bool,
+    config: &Path,
+    start: impl FnOnce(&Path) -> Result<()>,
+) -> Start {
+    let pending = match read_pending(exe) {
+        Ok(Some(pending)) => pending,
+        Ok(None) => return first_start_without_marker(exe, key, after_update),
+        Err(e) => {
+            log::warn!("{e:#}");
+            remove_logged(&pending_path(exe));
+            return Start::Normal;
+        }
+    };
+    if key != Some(pending.key.as_str()) {
+        // Another version runs: put back, or installed by hand.
+        remove_logged(&pending_path(exe));
+        return Start::Normal;
+    }
+    if pending.starts >= STARTS_TO_WORK {
+        log::warn!(
+            "version {} never worked in {} starts: putting the previous version back",
+            pending.key,
+            pending.starts
+        );
+        return match put_previous_back(exe, &pending.key, config, start) {
+            Ok(()) => Start::RolledBack,
+            Err(e) => {
+                log::error!("putting the previous version back: {e:#}");
+                Start::Pending
+            }
+        };
+    }
+    let counted = Pending {
+        starts: pending.starts + 1,
+        ..pending
+    };
+    log::info!(
+        "version {} was just installed; this is its start {}",
+        counted.key,
+        counted.starts
+    );
+    if let Err(e) = write_pending(exe, &counted) {
+        log::warn!("counting a start of the new version: {e:#}");
+    }
+    Start::Pending
+}
+
+/// A start with no marker. A version before 0.12.0 installs an update
+/// without one, so the version it installed, started after the update with
+/// the previous one still there, writes its own and counts this start. That
+/// one can't catch a crash before this point, as the installer's marker can.
+fn first_start_without_marker(exe: &Path, key: Option<&str>, after_update: bool) -> Start {
+    let previous_there = exe.with_extension("old").is_file();
+    let (Some(key), true, true) = (key, after_update, previous_there) else {
+        return Start::Normal;
+    };
+    let first = Pending {
+        key: key.to_string(),
+        starts: 1,
+    };
+    match write_pending(exe, &first) {
+        Ok(()) => {
+            log::info!("version {key} was just installed by an older version; this is its start 1");
+            Start::Pending
+        }
+        Err(e) => {
+            log::warn!("marking the new version as not yet working: {e:#}");
+            Start::Normal
+        }
+    }
+}
+
+/// Puts `.old` back in place of `exe`, the version named `key`, which never
+/// worked. That one waits as `.failed` for the next start to remove it.
+/// Then skips `key` in the settings at `config`, removes the marker and
+/// starts the previous version with `start`. Once the previous version is in
+/// place, a step that fails is logged and the next steps still run.
+fn put_previous_back(
+    exe: &Path,
+    key: &str,
+    config: &Path,
+    start: impl FnOnce(&Path) -> Result<()>,
+) -> Result<()> {
+    let old = exe.with_extension("old");
+    if !old.is_file() {
+        bail!("the previous version isn't there any more");
+    }
+    let failed = failed_path(exe);
+    let _ = std::fs::remove_file(&failed);
+    swap_in(exe, &old, &failed, "putting the previous version in place")?;
+    if let Err(e) = skip_in_settings(config, key) {
+        log::warn!("skipping version {key} in the settings: {e:#}");
+    }
+    remove_logged(&pending_path(exe));
+    start(exe)
+}
+
+/// Saves `key` as the skipped update in the settings at `config`. Settings
+/// that can't be read are left as they are.
+fn skip_in_settings(config: &Path, key: &str) -> Result<()> {
+    let (mut settings, problem) = crate::config::Config::load(config);
+    if let Some(problem) = problem {
+        bail!("the settings can't be read: {}", problem.error);
+    }
+    settings.skipped_update = key.to_string();
+    settings.save(config)
+}
+
+/// Starts the exe at `exe` the way this copy started (hidden at sign-in,
+/// say), once this copy has quit.
+fn start_previous(exe: &Path) -> Result<()> {
+    let arguments = std::env::args_os()
+        .skip(1)
+        .filter(|argument| *argument != *AFTER_UPDATE_ARG);
+    std::process::Command::new(exe)
+        .args(arguments)
+        .arg(AFTER_UPDATE_ARG)
+        .spawn()
+        .context("starting the previous version")?;
+    Ok(())
+}
+
+/// The running version counts as working: the marker and the previous
+/// version go.
+pub fn mark_working() {
+    match std::env::current_exe() {
+        Ok(exe) => mark_working_at(&exe),
+        Err(e) => log::warn!("finding the running exe: {e}"),
+    }
+}
+
+fn mark_working_at(exe: &Path) {
+    log::info!("this version works: removing the previous one");
+    remove_logged(&pending_path(exe));
+    remove_logged(&exe.with_extension("old"));
+}
+
+/// Removes `file`. A failure, other than finding no file, is logged.
+fn remove_logged(file: &Path) {
+    match std::fs::remove_file(file) {
+        Ok(()) => {}
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+        Err(e) => log::warn!("removing {}: {e}", crate::system::without_user(file)),
     }
 }
 
@@ -635,13 +911,14 @@ mod tests {
         let exe = running_exe("install");
         let staged = staged_path(&exe);
         std::fs::write(&staged, "new version").unwrap();
-        install_at(&exe, &staged).unwrap();
+        install_at(&exe, &staged, &new_key()).unwrap();
         assert_eq!(read(&exe), "new version");
         assert_eq!(read(&exe.with_extension("old")), "running version");
         assert!(!staged.exists());
         roll_back_at(&exe).unwrap();
         assert_eq!(read(&exe), "running version");
         assert!(!exe.with_extension("old").exists());
+        assert!(!pending_path(&exe).exists(), "the marker goes too");
         std::fs::remove_dir_all(exe.parent().unwrap()).unwrap();
     }
 
@@ -659,7 +936,7 @@ mod tests {
             .share_mode(0)
             .open(&staged)
             .unwrap();
-        let error = install_at(&exe, &staged).unwrap_err();
+        let error = install_at(&exe, &staged, &new_key()).unwrap_err();
         drop(held);
         assert!(
             format!("{error:#}").contains("putting the new version in place"),
@@ -667,13 +944,14 @@ mod tests {
         );
         assert_eq!(read(&exe), "running version");
         assert!(!exe.with_extension("old").exists());
+        assert!(!pending_path(&exe).exists());
         std::fs::remove_dir_all(exe.parent().unwrap()).unwrap();
     }
 
     #[test]
     fn cleaning_up_removes_what_an_update_leaves_but_a_partial_download() {
         let exe = running_exe("clean");
-        let left = ["old", "new", "new.json"].map(|ext| exe.with_extension(ext));
+        let left = ["old", "new", "new.json", "failed"].map(|ext| exe.with_extension(ext));
         let partial = ["part", "part-tag"].map(|ext| exe.with_extension(ext));
         for file in left.iter().chain(&partial) {
             std::fs::write(file, "left over").unwrap();
@@ -735,6 +1013,235 @@ mod tests {
         assert!(install_staged_at(&exe, &key, |_| true).unwrap());
         assert_eq!(read(&exe), "new version");
         assert_eq!(read(&exe.with_extension("old")), "running version");
+        let marker = read_pending(&exe).unwrap().expect("a marker");
+        assert_eq!((marker.key.as_str(), marker.starts), ("9.0.0+42", 0));
+        std::fs::remove_dir_all(exe.parent().unwrap()).unwrap();
+    }
+
+    /// The key of the new version the tests install.
+    fn new_key() -> String {
+        Release::made_up("9.0.0", 42, 11).key()
+    }
+
+    /// The settings next to the test's exe.
+    fn settings(exe: &Path) -> PathBuf {
+        exe.with_file_name("config.json")
+    }
+
+    /// The running exe, with the new version installed in its place.
+    fn installed(name: &str) -> PathBuf {
+        let exe = running_exe(name);
+        let staged = staged_path(&exe);
+        std::fs::write(&staged, "new version").unwrap();
+        install_at(&exe, &staged, &new_key()).unwrap();
+        exe
+    }
+
+    /// For a start that must not start the previous version.
+    fn no_start(_: &Path) -> Result<()> {
+        panic!("only a roll back starts the previous version");
+    }
+
+    /// A start of the new version that doesn't roll back, as `main` makes it.
+    fn start_new(exe: &Path) -> Start {
+        check_pending_at(
+            exe,
+            Some(new_key().as_str()),
+            false,
+            &settings(exe),
+            no_start,
+        )
+    }
+
+    /// A start of the new version that rolls back. Returns the exe it started.
+    fn start_rolling_back(exe: &Path) -> Option<PathBuf> {
+        let mut started = None;
+        let key = new_key();
+        let start = check_pending_at(exe, Some(key.as_str()), false, &settings(exe), |previous| {
+            started = Some(previous.to_path_buf());
+            Ok(())
+        });
+        assert_eq!(start, Start::RolledBack);
+        started
+    }
+
+    fn starts(exe: &Path) -> u32 {
+        read_pending(exe).unwrap().expect("a marker").starts
+    }
+
+    #[test]
+    fn the_previous_version_stays_until_the_new_one_works() {
+        let exe = installed("pending");
+        assert_eq!(starts(&exe), 0);
+        // Each start counts, and none removes the previous version.
+        for counted in 1..=STARTS_TO_WORK {
+            assert_eq!(start_new(&exe), Start::Pending);
+            clean_up_at(&exe);
+            assert_eq!(starts(&exe), counted);
+            assert_eq!(read(&exe), "new version");
+            assert_eq!(read(&exe.with_extension("old")), "running version");
+        }
+        std::fs::remove_dir_all(exe.parent().unwrap()).unwrap();
+    }
+
+    #[test]
+    fn a_working_start_removes_the_previous_version_and_the_marker() {
+        let exe = installed("working");
+        assert_eq!(start_new(&exe), Start::Pending);
+        mark_working_at(&exe);
+        assert!(!exe.with_extension("old").exists());
+        assert!(!pending_path(&exe).exists());
+        // Later starts are normal ones, of the new version.
+        assert_eq!(start_new(&exe), Start::Normal);
+        clean_up_at(&exe);
+        assert_eq!(read(&exe), "new version");
+        std::fs::remove_dir_all(exe.parent().unwrap()).unwrap();
+    }
+
+    #[test]
+    fn two_failed_starts_roll_back() {
+        let exe = installed("roll-back");
+        // Both crashed before they counted as working.
+        for _ in 0..STARTS_TO_WORK {
+            assert_eq!(start_new(&exe), Start::Pending);
+        }
+        assert_eq!(start_rolling_back(&exe).as_deref(), Some(exe.as_path()));
+        assert_eq!(read(&exe), "running version");
+        assert_eq!(read(&failed_path(&exe)), "new version");
+        assert!(!exe.with_extension("old").exists());
+        assert!(!pending_path(&exe).exists());
+        // The previous version starts as usual and removes the failed one.
+        // It starts after the roll back, with the failed version aside.
+        let previous = check_pending_at(&exe, Some("8.0.0+41"), true, &settings(&exe), no_start);
+        assert_eq!(previous, Start::Normal);
+        clean_up_at(&exe);
+        assert!(!failed_path(&exe).exists());
+        assert_eq!(read(&exe), "running version");
+        std::fs::remove_dir_all(exe.parent().unwrap()).unwrap();
+    }
+
+    #[test]
+    fn a_roll_back_skips_the_failed_version_in_the_settings() {
+        let exe = installed("skip");
+        let saved = crate::config::Config {
+            max_items: 123,
+            ..Default::default()
+        };
+        saved.save(&settings(&exe)).unwrap();
+        for _ in 0..STARTS_TO_WORK {
+            start_new(&exe);
+        }
+        start_rolling_back(&exe);
+        let (loaded, problem) = crate::config::Config::load(&settings(&exe));
+        assert_eq!(problem, None);
+        // What "Skip this version" keeps, so the update check passes it by.
+        assert_eq!(loaded.skipped_update, new_key());
+        assert_eq!(loaded.max_items, 123, "the other settings stay");
+        std::fs::remove_dir_all(exe.parent().unwrap()).unwrap();
+    }
+
+    #[test]
+    fn a_roll_back_leaves_unreadable_settings_as_they_are() {
+        let exe = installed("unreadable");
+        std::fs::write(settings(&exe), "{ not settings").unwrap();
+        for _ in 0..STARTS_TO_WORK {
+            start_new(&exe);
+        }
+        start_rolling_back(&exe);
+        assert_eq!(read(&settings(&exe)), "{ not settings");
+        assert_eq!(read(&exe), "running version");
+        std::fs::remove_dir_all(exe.parent().unwrap()).unwrap();
+    }
+
+    #[test]
+    fn without_the_previous_version_the_new_one_goes_on() {
+        let exe = installed("no-previous");
+        for _ in 0..STARTS_TO_WORK {
+            start_new(&exe);
+        }
+        std::fs::remove_file(exe.with_extension("old")).unwrap();
+        assert_eq!(start_new(&exe), Start::Pending);
+        assert_eq!(read(&exe), "new version");
+        assert!(!failed_path(&exe).exists());
+        assert!(pending_path(&exe).exists(), "the next start tries again");
+        std::fs::remove_dir_all(exe.parent().unwrap()).unwrap();
+    }
+
+    /// As in `a_failed_install_puts_the_running_version_back`: another
+    /// program holds the previous version, so it can't take the exe's name.
+    #[cfg(windows)]
+    #[test]
+    fn a_roll_back_that_fails_halfway_puts_the_new_version_back() {
+        use std::os::windows::fs::OpenOptionsExt;
+        let exe = installed("roll-back-fails");
+        for _ in 0..STARTS_TO_WORK {
+            start_new(&exe);
+        }
+        let held = std::fs::OpenOptions::new()
+            .read(true)
+            .share_mode(0)
+            .open(exe.with_extension("old"))
+            .unwrap();
+        let start = start_new(&exe);
+        drop(held);
+        assert_eq!(start, Start::Pending);
+        assert_eq!(read(&exe), "new version");
+        assert_eq!(read(&exe.with_extension("old")), "running version");
+        assert!(!failed_path(&exe).exists());
+        assert!(pending_path(&exe).exists(), "the next start tries again");
+        std::fs::remove_dir_all(exe.parent().unwrap()).unwrap();
+    }
+
+    /// A version installed by 0.11.0, which writes no marker, counts its
+    /// own starts from its first one, and rolls back like any other.
+    #[test]
+    fn a_version_an_older_one_installed_watches_itself() {
+        let exe = running_exe("no-marker");
+        std::fs::rename(&exe, exe.with_extension("old")).unwrap();
+        std::fs::write(&exe, "new version").unwrap();
+        let key = new_key();
+        let start = |after_update| {
+            check_pending_at(
+                &exe,
+                Some(key.as_str()),
+                after_update,
+                &settings(&exe),
+                no_start,
+            )
+        };
+        // Not after an update: nothing to watch.
+        assert_eq!(start(false), Start::Normal);
+        assert!(!pending_path(&exe).exists());
+        // Its first start after the update writes the marker and counts.
+        assert_eq!(start(true), Start::Pending);
+        assert_eq!(starts(&exe), 1);
+        clean_up_at(&exe);
+        assert_eq!(read(&exe.with_extension("old")), "running version");
+        // Then it goes on as an update with a marker: a second failed start,
+        // and the third puts the previous version back.
+        assert_eq!(start(false), Start::Pending);
+        assert_eq!(start_rolling_back(&exe).as_deref(), Some(exe.as_path()));
+        assert_eq!(read(&exe), "running version");
+        std::fs::remove_dir_all(exe.parent().unwrap()).unwrap();
+    }
+
+    #[test]
+    fn a_left_over_marker_is_removed() {
+        let exe = installed("left-over");
+        // Another version runs (put back by hand, say), or a local build,
+        // or the marker can't be read.
+        for (key, marker) in [
+            (Some("8.0.0+41"), r#"{"key":"9.0.0+42","starts":1}"#),
+            (None, r#"{"key":"9.0.0+42","starts":1}"#),
+            (Some("9.0.0+42"), "{"),
+        ] {
+            std::fs::write(pending_path(&exe), marker).unwrap();
+            let start = check_pending_at(&exe, key, false, &settings(&exe), no_start);
+            assert_eq!(start, Start::Normal, "{key:?} {marker}");
+            assert!(!pending_path(&exe).exists(), "{key:?} {marker}");
+        }
+        clean_up_at(&exe);
+        assert!(!exe.with_extension("old").exists());
         std::fs::remove_dir_all(exe.parent().unwrap()).unwrap();
     }
 }
