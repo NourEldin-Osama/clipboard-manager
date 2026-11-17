@@ -122,8 +122,11 @@ and the prompts well-known models need, for Fill in details), `import.rs` (files
   line (version, build, size, SHA-256, links) with the Ed25519 `UPDATE_SIGNING_KEY` secret, and publishes release `v<Cargo version>-build.<run>` with the exe,
   `updater.json`, a Scoop manifest and winget manifests (schema 1.12.0). Docs-only pushes don't release.
 - Self-update (`update.rs`) reads `releases/latest/download/updater.json`, verifies SHA-256 and the signature against
-  `PUBLIC_KEY`, swaps the exe (running one renamed `.old`) and relaunches with `--after-update`. Local builds have no
-  `BUILD_NUMBER` and never update. `CLIPBOARD_MANAGER_UPDATE_URL` points the check at a test server.
+  `PUBLIC_KEY`, swaps the exe (running one renamed `.old`) and relaunches with `--after-update`. The new version keeps
+  `.old` until its window has drawn and stayed open 10 seconds; a `.update-pending` marker counts its starts until
+  then, and when two never got there the third puts `.old` back and skips the failed version (`update::check_pending`,
+  right after the one-copy check in `main`). Local builds have no `BUILD_NUMBER` and never update.
+  `CLIPBOARD_MANAGER_UPDATE_URL` points the check at a test server.
 - Bump the version in `Cargo.toml` for a release worth noticing (patch for fixes, minor for features).
 - Release notes come from `CHANGELOG.md`: the release job puts the section for the `Cargo.toml` version at the top.
   Add the notes there before a push that makes a release.
