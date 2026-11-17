@@ -733,7 +733,6 @@ mod tests {
                         .any(|rest| rest.starts_with(|c: char| c.is_ascii_digit()))
                 };
                 let raw = number_in("CornerRadius::same(")
-                    || number_in(".corner_radius(")
                     || number_in("add_space(")
                     || (line.contains("Color32::from_") && !line.contains("// copied color"));
                 if raw {
@@ -746,6 +745,9 @@ mod tests {
                 for n in raw_second_arguments(code, call) {
                     found.push(format!("{}:{}: {}", path.display(), n, lines[n - 1].trim()));
                 }
+            }
+            for n in raw_numbers_in_arguments(code, ".corner_radius(") {
+                found.push(format!("{}:{}: {}", path.display(), n, lines[n - 1].trim()));
             }
         }
         assert!(
@@ -785,6 +787,40 @@ mod tests {
         found
     }
 
+    /// The lines (counted from 1) of the calls to `call` in `code` with a
+    /// plain number anywhere in their arguments, as in
+    /// `corner_radius(if compact { 4.0 } else { 6.0 })`. Digits inside a
+    /// name, as in `f32`, or after a dot, as in `pair.0`, don't count.
+    fn raw_numbers_in_arguments(code: &str, call: &str) -> Vec<usize> {
+        let mut found = Vec::new();
+        for (at, _) in code.match_indices(call) {
+            let rest = &code[at + call.len()..];
+            let mut depth = 0;
+            let mut end = rest.len();
+            for (i, c) in rest.char_indices() {
+                match c {
+                    '(' | '[' | '{' => depth += 1,
+                    ')' | ']' | '}' if depth == 0 => {
+                        end = i;
+                        break;
+                    }
+                    ')' | ']' | '}' => depth -= 1,
+                    _ => {}
+                }
+            }
+            let mut previous = ' ';
+            let has_number = rest[..end].chars().any(|c| {
+                let in_name = previous.is_alphanumeric() || previous == '_' || previous == '.';
+                previous = c;
+                c.is_ascii_digit() && !in_name
+            });
+            if has_number {
+                found.push(code[..at].matches('\n').count() + 1);
+            }
+        }
+        found
+    }
+
     #[test]
     fn a_raw_corner_size_is_found_over_several_lines() {
         let code = "p.rect_filled(r, CornerRadius::same(radius::SMALL), c);\n\
@@ -792,6 +828,11 @@ mod tests {
                     p.rect_stroke(r, 0.0, s, k);";
         assert_eq!(raw_second_arguments(code, "rect_filled("), [2]);
         assert_eq!(raw_second_arguments(code, "rect_stroke("), [7]);
+        let code = "i.corner_radius(radius::SMALL);\n\
+                    i.corner_radius(f32::from(radius::SMALL) * pair.0);\n\
+                    i.corner_radius(if compact {\n    radius::SMALL\n} else {\n    6.0\n});\n\
+                    i.corner_radius(8);";
+        assert_eq!(raw_numbers_in_arguments(code, ".corner_radius("), [3, 8]);
     }
 
     /// `lay_out` in a frame of a window with the fonts `fonts`, at `scale`
