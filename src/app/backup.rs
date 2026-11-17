@@ -11,7 +11,7 @@ use super::background::{BackupProgress, RestoreRequest};
 use super::icons::{self, Icon};
 use super::view::{
     far, lbl, primary_button, radius, row, row_layout, row_of, set_name, size, slow_spinner, space,
-    text_shade, title_lbl, txt, warning_fill, AMBER, RED,
+    text_shade, title_lbl, txt, warning_fill, Field, AMBER, RED,
 };
 use super::*;
 use crate::backup::{Problem, Restored};
@@ -430,7 +430,7 @@ impl BackupDialog {
             let width = ui.available_width() - ICON_BUTTON - ui.spacing().item_spacing.x;
             let field = ui.add_enabled(
                 !self.checking,
-                egui::TextEdit::singleline(&mut self.password)
+                Field::singleline(&mut self.password)
                     .id(password_field(false))
                     .password(!self.shown)
                     .desired_width(width),
@@ -459,7 +459,7 @@ impl BackupDialog {
             let again = row(ui, |ui| {
                 let width = ui.available_width() - ICON_BUTTON - ui.spacing().item_spacing.x;
                 let again = ui.add(
-                    egui::TextEdit::singleline(&mut self.again)
+                    Field::singleline(&mut self.again)
                         .id(password_field(true))
                         .password(!self.shown)
                         .desired_width(width),

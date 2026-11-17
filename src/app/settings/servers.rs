@@ -712,7 +712,7 @@ fn model_field(
         _ => t!("settings-server-default"),
     };
     let field = ui.add(
-        egui::TextEdit::singleline(model)
+        Field::singleline(model)
             .hint_text(txt(&hint, size::BODY, None))
             .desired_width(width),
     );
@@ -1519,7 +1519,7 @@ impl App {
                 "",
                 |ui| {
                     let field = ui.add(
-                        egui::TextEdit::singleline(&mut server.name)
+                        Field::singleline(&mut server.name)
                             .hint_text(crate::net::host(&server.base_url))
                             .desired_width(280.0),
                     );
@@ -1559,7 +1559,7 @@ impl App {
                         };
                         let field = ui.add_enabled(
                             !launching,
-                            egui::TextEdit::singleline(&mut server.base_url)
+                            Field::singleline(&mut server.base_url)
                                 .hint_text(usual)
                                 .desired_width(280.0),
                         );
@@ -1662,7 +1662,7 @@ impl App {
                         t!("settings-server-optional")
                     };
                     let field = ui.add(
-                        egui::TextEdit::singleline(&mut server.api_key)
+                        Field::singleline(&mut server.api_key)
                             .password(!*show_key)
                             .hint_text(txt(&hint, size::BODY, None))
                             .desired_width(280.0),
@@ -2069,7 +2069,7 @@ fn model_settings(
                 name => name.to_string(),
             };
             let field = ui.add(
-                egui::TextEdit::singleline(&mut model.name)
+                Field::singleline(&mut model.name)
                     .hint_text(txt(&hint, size::BODY, None))
                     .desired_width(280.0),
             );
@@ -2136,7 +2136,7 @@ fn search_settings(ui: &mut Ui, s: &mut SearchSettings, model: &str) {
         String::new(),
         |ui, prefix| {
             let field = ui.add(
-                egui::TextEdit::singleline(prefix)
+                Field::singleline(prefix)
                     .hint_text(txt(&t!("settings-server-none"), size::BODY, None))
                     .desired_width(280.0),
             );
@@ -2152,7 +2152,7 @@ fn search_settings(ui: &mut Ui, s: &mut SearchSettings, model: &str) {
         String::new(),
         |ui, prefix| {
             let field = ui.add(
-                egui::TextEdit::singleline(prefix)
+                Field::singleline(prefix)
                     .hint_text(txt(&t!("settings-server-none"), size::BODY, None))
                     .desired_width(280.0),
             );
@@ -2230,7 +2230,7 @@ fn read_settings(ui: &mut Ui, r: &mut ReadSettings) {
         &t!("settings-reader-prompt-help"),
         |ui| {
             let field = ui.add(
-                egui::TextEdit::multiline(&mut r.prompt)
+                Field::multiline(&mut r.prompt)
                     .desired_rows(2)
                     .desired_width(280.0),
             );
@@ -2309,7 +2309,7 @@ fn launch_settings(ui: &mut Ui, server: &mut Server) {
         "",
         |ui| {
             let field = ui.add(
-                egui::TextEdit::singleline(&mut l.hf)
+                Field::singleline(&mut l.hf)
                     .hint_text("ggml-org/GLM-OCR-GGUF")
                     .desired_width(280.0),
             );
@@ -2340,7 +2340,7 @@ fn launch_settings(ui: &mut Ui, server: &mut Server) {
         &t!("settings-server-extra-args-hint"),
         &t!("settings-server-extra-args-help"),
         |ui| {
-            let field = ui.add(egui::TextEdit::singleline(&mut l.extra_args).desired_width(280.0));
+            let field = ui.add(Field::singleline(&mut l.extra_args).desired_width(280.0));
             set_name(&field, &row_title(ui));
         },
     );

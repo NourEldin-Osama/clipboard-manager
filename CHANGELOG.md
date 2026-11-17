@@ -24,6 +24,10 @@ the notes here before a push that makes a release.
   without a hamza, with or without diacritics or the tatweel, and with
   the other common ways to write the same letter. A word that matches is
   highlighted whole, so its letters stay joined.
+- Typing Arabic in the search box, a tag or a setting puts the cursor
+  where the next letter goes. Home, End and Backspace work on Arabic
+  text, the Left arrow moves the cursor to the left in an Arabic line,
+  and a click puts it where you click.
 - On Windows, the data that search by meaning uses is now encrypted
   with your history's key, like your items and pictures. The first start
   encrypts it in a moment, and the history's file gets smaller.

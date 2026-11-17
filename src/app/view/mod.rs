@@ -19,6 +19,7 @@ mod checklist;
 mod chrome;
 mod code;
 mod details;
+mod field;
 mod grid;
 mod items;
 mod key_hints;
@@ -49,6 +50,7 @@ use widgets::*;
 
 // The ones the rest of the app uses.
 pub(crate) use details::reveal;
+pub(crate) use field::Field;
 pub(crate) use grid::{CardHeights, CARD_CHIP_PADDING, CHIP_SIDE, GRID_GAP};
 pub(crate) use items::looks_like_code;
 pub(crate) use keyboard::Touchpad;

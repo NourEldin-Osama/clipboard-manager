@@ -1124,7 +1124,7 @@ pub(super) fn path_field(ui: &mut Ui, p: &mut PathBuf, ext: &[&str]) {
         }
     }
     let mut s = p.to_string_lossy().into_owned();
-    let field = ui.add(egui::TextEdit::singleline(&mut s).desired_width(280.0));
+    let field = ui.add(Field::singleline(&mut s).desired_width(280.0));
     set_name(&field, &row_title(ui));
     if field.changed() {
         *p = PathBuf::from(&s);
@@ -2238,7 +2238,7 @@ mod tests {
                     nested(ui, |ui| {
                         row = card_row(ui, changed, |ui| {
                             let _ = setting_content(ui, name, line, "", changed, changed, |ui| {
-                                let edit = egui::TextEdit::singleline(&mut prompt);
+                                let edit = Field::singleline(&mut prompt);
                                 field = ui.add(edit.desired_width(width)).rect;
                             });
                             ui.min_rect()

@@ -100,6 +100,8 @@ and the prompts well-known models need, for Fill in details), `import.rs` (files
 - **Right-to-left:** egui shapes Arabic but lays runs out left to right, so text goes through `src/app/bidi.rs`. In
   UI code use the helpers in `view/widgets.rs` — `txt`, `lbl`, `tip`, `row`, `far`, `row_wrapped`, `paint_text`, `flip`,
   `start_anchor` — instead of `ui.label`/`ui.horizontal`/`painter.text`, and mirror hand-placed rects with `flip`.
+  Text boxes are `Field` (`view/field.rs`), never `egui::TextEdit`: egui puts the cursor in the wrong place in
+  Arabic, so `Field` draws such text, its cursor and its selection itself (D106).
 - **Icons** are SVGs in `assets/icons` (Fluent UI System Icons and Material Symbols, chosen by the maintainer), white,
   tinted at runtime via `icons::paint`. Never hand-draw an icon or use emoji/font glyphs; show options from popular
   icon sets and let the maintainer pick. The app icon, chosen by the maintainer, is drawn in `assets/app-icon/app.svg`
