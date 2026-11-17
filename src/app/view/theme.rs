@@ -146,6 +146,14 @@ pub(crate) fn choice_track(dark: bool) -> (Color32, Color32) {
     }
 }
 
+/// The outline of a switch while it is off, so its track stands out from
+/// the card, and of an unchecked checkbox: the rows' gray, faded until it
+/// is about 3 to 1 on a light card (#949494 on white), the least for a
+/// control's edge. The dark theme's lighter gray stays above that.
+pub(crate) fn switch_edge(v: &egui::Visuals) -> Color32 {
+    v.weak_text_color().gamma_multiply(0.69)
+}
+
 /// The tint of a chosen chip, such as a filter: stronger in dark, where a
 /// faint tint is lost on the dark panel.
 pub(crate) fn chosen_pill(color: Color32, dark: bool) -> Color32 {
@@ -619,13 +627,13 @@ pub(crate) fn style(ctx: &egui::Context, panels: crate::config::DarkPanels) {
             &mut s.visuals.widgets.active,
             &mut s.visuals.widgets.open,
         ] {
-            w.corner_radius = CornerRadius::same(8);
+            w.corner_radius = CornerRadius::same(radius::MEDIUM);
         }
         // Flat controls: no outline until hovered.
         s.visuals.widgets.inactive.bg_stroke = Stroke::NONE;
         s.visuals.widgets.noninteractive.bg_stroke = Stroke::NONE;
-        s.visuals.window_corner_radius = CornerRadius::same(12);
-        s.visuals.menu_corner_radius = CornerRadius::same(10);
+        s.visuals.window_corner_radius = CornerRadius::same(radius::LARGE);
+        s.visuals.menu_corner_radius = CornerRadius::same(radius::LARGE);
     });
     // Input fields need a visible fill: the content panes are already the
     // lightest (or darkest) tone, so a default field would vanish into them.
@@ -711,9 +719,14 @@ mod tests {
                 continue;
             }
             let text = std::fs::read_to_string(&path).unwrap();
-            // Tests may use any value.
-            let code = text.split("#[cfg(test)]").next().unwrap_or("");
-            for (n, line) in code.lines().enumerate() {
+            // Tests may use any value: the code ends where its test module
+            // starts, not at a `#[cfg(test)]` on a single `use` above it.
+            let code = text
+                .match_indices("#[cfg(test)]")
+                .find(|(at, m)| text[at + m.len()..].trim_start().starts_with("mod "))
+                .map_or(text.as_str(), |(at, _)| &text[..at]);
+            let lines: Vec<&str> = code.lines().collect();
+            for (n, line) in lines.iter().enumerate() {
                 let number_in = |call: &str| {
                     line.split(call)
                         .skip(1)
@@ -726,12 +739,100 @@ mod tests {
                     found.push(format!("{}:{}: {}", path.display(), n + 1, line.trim()));
                 }
             }
+            // A painted rectangle's corners are its second argument, often on
+            // a line of its own.
+            for call in ["rect_filled(", "rect_stroke("] {
+                for n in raw_second_arguments(code, call) {
+                    found.push(format!("{}:{}: {}", path.display(), n, lines[n - 1].trim()));
+                }
+            }
+            for n in raw_numbers_in_arguments(code, ".corner_radius(") {
+                found.push(format!("{}:{}: {}", path.display(), n, lines[n - 1].trim()));
+            }
         }
         assert!(
             found.is_empty(),
             "raw sizes or colors:\n{}",
             found.join("\n")
         );
+    }
+
+    /// The lines (counted from 1) of the calls to `call` in `code` whose
+    /// second argument is a plain number, as in `rect_filled(r, 4.0, color)`.
+    /// The arguments may run over several lines.
+    fn raw_second_arguments(code: &str, call: &str) -> Vec<usize> {
+        let mut found = Vec::new();
+        for (at, _) in code.match_indices(call) {
+            let rest = &code[at + call.len()..];
+            let mut depth = 0;
+            let mut second = None;
+            for (i, c) in rest.char_indices() {
+                match c {
+                    '(' | '[' | '{' => depth += 1,
+                    ')' | ']' | '}' if depth == 0 => break,
+                    ')' | ']' | '}' => depth -= 1,
+                    ',' if depth == 0 => {
+                        second = Some(&rest[i + 1..]);
+                        break;
+                    }
+                    _ => {}
+                }
+            }
+            let is_number =
+                second.is_some_and(|s| s.trim_start().starts_with(|c: char| c.is_ascii_digit()));
+            if is_number {
+                found.push(code[..at].matches('\n').count() + 1);
+            }
+        }
+        found
+    }
+
+    /// The lines (counted from 1) of the calls to `call` in `code` with a
+    /// plain number anywhere in their arguments, as in
+    /// `corner_radius(if compact { 4.0 } else { 6.0 })`. Digits inside a
+    /// name, as in `f32`, or after a dot, as in `pair.0`, don't count.
+    fn raw_numbers_in_arguments(code: &str, call: &str) -> Vec<usize> {
+        let mut found = Vec::new();
+        for (at, _) in code.match_indices(call) {
+            let rest = &code[at + call.len()..];
+            let mut depth = 0;
+            let mut end = rest.len();
+            for (i, c) in rest.char_indices() {
+                match c {
+                    '(' | '[' | '{' => depth += 1,
+                    ')' | ']' | '}' if depth == 0 => {
+                        end = i;
+                        break;
+                    }
+                    ')' | ']' | '}' => depth -= 1,
+                    _ => {}
+                }
+            }
+            let mut previous = ' ';
+            let has_number = rest[..end].chars().any(|c| {
+                let in_name = previous.is_alphanumeric() || previous == '_' || previous == '.';
+                previous = c;
+                c.is_ascii_digit() && !in_name
+            });
+            if has_number {
+                found.push(code[..at].matches('\n').count() + 1);
+            }
+        }
+        found
+    }
+
+    #[test]
+    fn a_raw_corner_size_is_found_over_several_lines() {
+        let code = "p.rect_filled(r, CornerRadius::same(radius::SMALL), c);\n\
+                    p.rect_filled(\n    Rect::from_min_size(a, b),\n    2.0,\n    c,\n);\n\
+                    p.rect_stroke(r, 0.0, s, k);";
+        assert_eq!(raw_second_arguments(code, "rect_filled("), [2]);
+        assert_eq!(raw_second_arguments(code, "rect_stroke("), [7]);
+        let code = "i.corner_radius(radius::SMALL);\n\
+                    i.corner_radius(f32::from(radius::SMALL) * pair.0);\n\
+                    i.corner_radius(if compact {\n    radius::SMALL\n} else {\n    6.0\n});\n\
+                    i.corner_radius(8);";
+        assert_eq!(raw_numbers_in_arguments(code, ".corner_radius("), [3, 8]);
     }
 
     /// `lay_out` in a frame of a window with the fonts `fonts`, at `scale`
@@ -864,6 +965,31 @@ mod tests {
             (darker - lighter).abs() <= 0.05,
             "Darker's edge is {darker:.3} to 1, Lighter's {lighter:.3} to 1"
         );
+    }
+
+    /// A switch's outline while off reads at 3 to 1 or more on its card in
+    /// both themes, with both Dark panels choices: painted on the card at
+    /// its edge, and over the switch's track inside it. In the light theme
+    /// it is no stronger than that needs: #949494 on white.
+    #[test]
+    fn a_switch_outline_reads_on_its_card() {
+        for (ctx, theme) in styled() {
+            let v = ctx.style_of(theme).visuals.clone();
+            let card = v.extreme_bg_color;
+            let track = v.widgets.inactive.bg_fill;
+            assert_eq!(track.a(), 255, "{theme:?}: an opaque track");
+            for (place, under) in [("card", card), ("track", track)] {
+                let edge = over(switch_edge(&v), under);
+                let ratio = contrast(edge, card);
+                assert!(
+                    ratio >= 3.0,
+                    "{theme:?}: on the {place}, {edge:?} is {ratio:.2} to 1 on {card:?}"
+                );
+            }
+            if theme == egui::Theme::Light {
+                assert_eq!(over(switch_edge(&v), card), Color32::from_gray(0x94));
+            }
+        }
     }
 
     /// A context styled with each dark-panels choice, in each theme.

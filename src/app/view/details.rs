@@ -349,7 +349,7 @@ fn main_button(ui: &mut Ui, ways: &[CopyWay], reserved: f32) -> Option<Paste> {
                 Pos2::new(edge, rect.center().y),
                 Vec2::new(1.0, height - 14.0),
             ),
-            0.0,
+            CornerRadius::ZERO,
             theme::on_button(70),
         );
         icons::paint(
@@ -490,7 +490,7 @@ impl App {
                     r.request_focus();
                 }
                 // Existing tags that start with what's typed, one click to add.
-                let typed = text.trim().trim_start_matches('#').to_lowercase();
+                let typed = crate::search::normalize(text.trim().trim_start_matches('#'));
                 if enter {
                     // Enter adds and keeps the field open for the next tag.
                     add = Some(std::mem::take(text));
@@ -502,7 +502,8 @@ impl App {
                 let mut suggestions = known
                     .iter()
                     .filter(|(k, _)| {
-                        !it.has_tag(k) && (typed.is_empty() || k.to_lowercase().starts_with(&typed))
+                        !it.has_tag(k)
+                            && (typed.is_empty() || crate::search::normalize(k).starts_with(&typed))
                     })
                     .take(5)
                     .peekable();
@@ -856,7 +857,7 @@ impl App {
                 ui.add(
                     egui::Image::new((tex.id(), size * scale))
                         .tint(tint)
-                        .corner_radius(8.0),
+                        .corner_radius(CornerRadius::same(radius::MEDIUM)),
                 );
             }
             Preview::Loading => {

@@ -193,6 +193,9 @@ status-model-none = Words only · add a search model
 status-model-tip-named = Search model: { $model } on { $server }. Click to change.
 status-indexing = Indexing · { $done } of { $total }
 status-adding-files = Adding files · { $count } added
+status-backup-saving = Saving the backup · { $done } of { $total }
+status-backup-checking = Checking the backup…
+status-backup-restoring = Restoring the backup · { $done } of { $total }
 status-pause-recording = Pause recording
 status-resume-recording = Resume recording
 status-pause = Pause
@@ -213,6 +216,8 @@ item-files-count =
     }
 item-empty = (empty)
 item-color = Color · { $value }
+item-by-meaning = By meaning
+item-by-meaning-tip = Similar in meaning to your search
 item-delete = Delete
 item-pin = Pin
 item-unpin = Unpin
@@ -476,15 +481,34 @@ settings-data-on-pc = Stays on this PC
 settings-data-sent = Sent to { $host }
 settings-data-windows = Read by Windows on this PC
 settings-data-updates-on = Downloads only the version file, from GitHub
+settings-backup = Backup
+settings-backup-file = Your history in one file
+settings-backup-file-hint = Every item with its tags, pins and pictures, locked with a password. Settings and API keys are left out.
+settings-backup-export = Export a backup…
+settings-backup-import = Import a backup…
+settings-backup-saving = Saving the backup · { $done } of { $total }
+settings-backup-checking = Checking the backup…
+settings-backup-restoring = Restoring the backup · { $done } of { $total }
 settings-pasting = Pasting
 settings-reset-section = Reset
 settings-merge-duplicates = Merge duplicate copies
 settings-merge-duplicates-hint = Copying something you already have moves it to the top instead of adding it again
+settings-merge-trimmed = Merge copies that differ only in spaces around text
+settings-merge-trimmed-hint = For example, the same text with an extra space or blank line before or after it
 settings-trim-copied = Trim spaces around text
 settings-trim-copied-hint = When the app copies or pastes an item, the spaces and blank lines before and after its text are left out
 settings-remove-markdown = Remove Markdown marks
 settings-remove-markdown-hint = When the app copies or pastes a text, headings, bold, links and other Markdown marks become plain text
-settings-remove-markdown-help = The history keeps every item as you copied it. Code keeps its marks, and tables stay as they are.
+settings-remove-markdown-help = The history keeps every item as you copied it. Marks inside code stay, and tables stay as they are.
+settings-marks-to-remove = Marks to remove
+settings-mark-headings = Headings
+settings-mark-bold-and-italic = Bold and italic
+settings-mark-crossed-out = Crossed-out text
+settings-mark-code = Code
+settings-mark-links-and-images = Links and images
+settings-mark-list-bullets = List bullets
+settings-mark-quotes = Quotes
+settings-mark-divider-lines = Divider lines
 settings-reader-kind = Model type
 settings-reader-kind-hint = Sets the prompt and the settings that suit the model
 settings-reader-kind-help = The server runs the model; the README tells how to start it.
@@ -767,6 +791,30 @@ settings-shortcut-escape = Close details, clear the search, or hide
 settings-shortcut-built-in = Built in; can't be changed
 settings-shortcuts-note = Click a shortcut, then press the new keys. Backspace turns it off, Esc cancels.
 
+## The window that asks for a backup's password, and the backup's file
+
+backup-export-title = Lock the backup with a password
+backup-restore-title = Restore the backup
+backup-password = Password
+backup-password-again = Password again
+backup-show-password = Show the password
+backup-hide-password = Hide the password
+backup-password-short =
+    { $count ->
+        [one] Use at least 1 character.
+       *[other] Use at least { $count } characters.
+    }
+backup-passwords-differ = The two passwords are not the same.
+backup-forget-warning = If you forget this password, nobody can open this backup.
+backup-export-next = Save the backup…
+backup-restore-start = Restore
+backup-checking = Checking the password…
+backup-refused = The password is wrong, or the file was changed or damaged.
+# The name a new backup's file gets; the date is like 2026-11-17.
+backup-file-name = Clipboard history { $date }
+backup-file-type = Clipboard Manager backup
+backup-all-files = All files
+
 ## Errors, statuses, messages and the tray icon
 
 error-saving-item = Could not save the item: { $error }
@@ -813,6 +861,8 @@ toast-copied-text = Copied text
 toast-saved = Saved
 toast-deleted = Deleted
 toast-updated = Updated to { $version }
+toast-update-rolled-back = The update to version { $version } didn't work, so the previous version is back.
+toast-update-rolled-back-detail = The app won't install version { $version } again by itself.
 toast-pinned-group =
     { $count ->
         [one] Pinned 1 item
@@ -856,6 +906,31 @@ toast-imported =
         [one] Imported 1 file
        *[other] Imported { $count } files
     }
+toast-backup-saved =
+    { $count ->
+        [one] Saved 1 item in the backup
+       *[other] Saved { $count } items in the backup
+    }
+toast-backup-restored =
+    { $count ->
+        [0] Nothing new to add from the backup
+        [one] Added 1 item from the backup
+       *[other] Added { $count } items from the backup
+    }
+toast-backup-skipped =
+    { $count ->
+        [0] None were in your history already
+        [one] 1 item was in your history already, so it was skipped
+       *[other] { $count } items were in your history already, so they were skipped
+    }
+toast-backup-not-saved = Could not save the backup
+toast-backup-not-restored = Could not restore the backup
+toast-backup-refused = This backup can't be opened: the password is wrong, or the file was changed or damaged.
+toast-backup-not-a-backup = This file isn't a Clipboard Manager backup.
+toast-backup-newer = A newer version of the app made this backup. Update the app to restore it.
+toast-history-moved-aside = Your history couldn't be opened, so a new, empty one started.
+toast-history-kept-as = The old one was kept in the data folder as { $file }
+toast-restore-backup = Restore from a backup…
 toast-pruned-age =
     { $count ->
         [one] Deleted 1 item older than { $age }

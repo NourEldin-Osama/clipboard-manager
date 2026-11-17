@@ -209,6 +209,9 @@ status-model-none = بالكلمات فقط · أضف نموذجًا للبحث
 status-model-tip-named = نموذج البحث: { $model } على { $server }. انقر للتغيير.
 status-indexing = جارٍ الفهرسة · { $done } من { $total }
 status-adding-files = جارٍ إضافة الملفات · أُضيف { $count }
+status-backup-saving = جارٍ حفظ النسخة الاحتياطية · { $done } من { $total }
+status-backup-checking = جارٍ فحص النسخة الاحتياطية…
+status-backup-restoring = جارٍ استعادة النسخة الاحتياطية · { $done } من { $total }
 status-pause-recording = إيقاف التسجيل مؤقتًا
 status-resume-recording = استئناف التسجيل
 status-pause = إيقاف مؤقت
@@ -232,6 +235,8 @@ item-files-count =
     }
 item-empty = (فارغ)
 item-color = لون · { $value }
+item-by-meaning = بالمعنى
+item-by-meaning-tip = معناه مشابه لما تبحث عنه
 item-delete = حذف
 item-pin = تثبيت
 item-unpin = إلغاء التثبيت
@@ -528,15 +533,34 @@ settings-data-on-pc = يبقى على هذا الجهاز
 settings-data-sent = يُرسَل إلى { $host }
 settings-data-windows = يقرؤه Windows على هذا الجهاز
 settings-data-updates-on = ينزّل ملف الإصدار فقط، من GitHub
+settings-backup = النسخ الاحتياطي
+settings-backup-file = سجلك في ملف واحد
+settings-backup-file-hint = كل عنصر مع وسومه وتثبيته وصوره، مقفلًا بكلمة مرور. لا تدخل فيه الإعدادات ولا مفاتيح API.
+settings-backup-export = تصدير نسخة احتياطية…
+settings-backup-import = استيراد نسخة احتياطية…
+settings-backup-saving = جارٍ حفظ النسخة الاحتياطية · { $done } من { $total }
+settings-backup-checking = جارٍ فحص النسخة الاحتياطية…
+settings-backup-restoring = جارٍ استعادة النسخة الاحتياطية · { $done } من { $total }
 settings-pasting = اللصق
 settings-reset-section = إعادة الضبط
 settings-merge-duplicates = دمج النسخ المكررة
 settings-merge-duplicates-hint = نسخ شيء موجود لديك ينقله إلى الأعلى بدلًا من إضافته مجددًا
+settings-merge-trimmed = دمج النسخ التي لا تختلف إلا في المسافات حول النص
+settings-merge-trimmed-hint = مثلًا: النص نفسه مع مسافة زائدة أو سطر فارغ قبله أو بعده
 settings-trim-copied = إزالة المسافات حول النص
 settings-trim-copied-hint = عندما ينسخ التطبيق عنصرًا أو يلصقه، تُحذف المسافات والأسطر الفارغة قبل نصه وبعده
 settings-remove-markdown = إزالة علامات Markdown
 settings-remove-markdown-hint = عندما ينسخ التطبيق نصًا أو يلصقه، تصبح العناوين والخط العريض والروابط وغيرها من علامات Markdown نصًا عاديًا
-settings-remove-markdown-help = يحتفظ السجل بكل عنصر كما نسخته. تحتفظ الشيفرة بعلاماتها، وتبقى الجداول كما هي.
+settings-remove-markdown-help = يحتفظ السجل بكل عنصر كما نسخته. تبقى العلامات داخل الكود، وتبقى الجداول كما هي.
+settings-marks-to-remove = العلامات التي تُزال
+settings-mark-headings = العناوين
+settings-mark-bold-and-italic = الخط العريض والمائل
+settings-mark-crossed-out = النص المشطوب
+settings-mark-code = الكود
+settings-mark-links-and-images = الروابط والصور
+settings-mark-list-bullets = علامات القوائم
+settings-mark-quotes = الاقتباسات
+settings-mark-divider-lines = الخطوط الفاصلة
 settings-reader-kind = نوع النموذج
 settings-reader-kind-hint = يضبط التعليمات والإعدادات التي تناسب النموذج
 settings-reader-kind-help = الخادم هو من يشغّل النموذج، ويشرح ملف README طريقة تشغيله.
@@ -840,6 +864,33 @@ settings-shortcut-escape = إغلاق التفاصيل أو مسح البحث أ
 settings-shortcut-built-in = مدمج، لا يمكن تغييره
 settings-shortcuts-note = انقر اختصارًا ثم اضغط المفاتيح الجديدة. Backspace للتعطيل، وEsc للإلغاء.
 
+## The window that asks for a backup's password, and the backup's file
+
+backup-export-title = قفل النسخة الاحتياطية بكلمة مرور
+backup-restore-title = استعادة النسخة الاحتياطية
+backup-password = كلمة المرور
+backup-password-again = كلمة المرور مرة أخرى
+backup-show-password = إظهار كلمة المرور
+backup-hide-password = إخفاء كلمة المرور
+backup-password-short =
+    { $count ->
+        [one] استخدم حرفًا واحدًا على الأقل.
+        [two] استخدم حرفين على الأقل.
+        [few] استخدم { $count } أحرف على الأقل.
+        [many] استخدم { $count } حرفًا على الأقل.
+       *[other] استخدم { $count } حرف على الأقل.
+    }
+backup-passwords-differ = كلمتا المرور غير متطابقتين.
+backup-forget-warning = إذا نسيت كلمة المرور، فلن يستطيع أحد فتح هذه النسخة الاحتياطية.
+backup-export-next = حفظ النسخة الاحتياطية…
+backup-restore-start = استعادة
+backup-checking = جارٍ التحقق من كلمة المرور…
+backup-refused = كلمة المرور خاطئة، أو تغيّر الملف أو تلف.
+# The name a new backup's file gets; the date is like 2026-11-17.
+backup-file-name = سجل الحافظة { $date }
+backup-file-type = نسخة احتياطية من مدير الحافظة
+backup-all-files = كل الملفات
+
 ## Errors, statuses, messages and the tray icon
 
 error-saving-item = تعذّر حفظ العنصر: { $error }
@@ -886,6 +937,8 @@ toast-copied-text = تم نسخ النص
 toast-saved = تم الحفظ
 toast-deleted = تم الحذف
 toast-updated = تم التحديث إلى الإصدار { $version }
+toast-update-rolled-back = لم يعمل التحديث إلى الإصدار { $version }، فعاد الإصدار السابق.
+toast-update-rolled-back-detail = لن يثبّت التطبيق الإصدار { $version } مرة أخرى من تلقاء نفسه.
 toast-pinned-group =
     { $count ->
         [one] تم تثبيت عنصر واحد
@@ -953,6 +1006,40 @@ toast-imported =
         [many] تم استيراد { $count } ملفًا
        *[other] تم استيراد { $count } ملف
     }
+toast-backup-saved =
+    { $count ->
+        [one] تم حفظ عنصر واحد في النسخة الاحتياطية
+        [two] تم حفظ عنصرين في النسخة الاحتياطية
+        [few] تم حفظ { $count } عناصر في النسخة الاحتياطية
+        [many] تم حفظ { $count } عنصرًا في النسخة الاحتياطية
+       *[other] تم حفظ { $count } عنصر في النسخة الاحتياطية
+    }
+toast-backup-restored =
+    { $count ->
+        [0] لا جديد لإضافته من النسخة الاحتياطية
+        [one] تمت إضافة عنصر واحد من النسخة الاحتياطية
+        [two] تمت إضافة عنصرين من النسخة الاحتياطية
+        [few] تمت إضافة { $count } عناصر من النسخة الاحتياطية
+        [many] تمت إضافة { $count } عنصرًا من النسخة الاحتياطية
+       *[other] تمت إضافة { $count } عنصر من النسخة الاحتياطية
+    }
+toast-backup-skipped =
+    { $count ->
+        [0] لم يكن أي منها في سجلك من قبل
+        [one] كان عنصر واحد في سجلك من قبل، فتم تخطيه
+        [two] كان عنصران في سجلك من قبل، فتم تخطيهما
+        [few] كانت { $count } عناصر في سجلك من قبل، فتم تخطيها
+        [many] كان { $count } عنصرًا في سجلك من قبل، فتم تخطيها
+       *[other] كان { $count } عنصر في سجلك من قبل، فتم تخطيها
+    }
+toast-backup-not-saved = تعذّر حفظ النسخة الاحتياطية
+toast-backup-not-restored = تعذّرت استعادة النسخة الاحتياطية
+toast-backup-refused = تعذّر فتح هذه النسخة الاحتياطية: كلمة المرور خاطئة، أو تغيّر الملف أو تلف.
+toast-backup-not-a-backup = هذا الملف ليس نسخة احتياطية من مدير الحافظة.
+toast-backup-newer = أنشأ هذه النسخة الاحتياطية إصدارٌ أحدث من التطبيق. حدّث التطبيق لتستعيدها.
+toast-history-moved-aside = تعذّر فتح سجلك، فبدأ سجل جديد فارغ.
+toast-history-kept-as = حُفظ السجل القديم في مجلد البيانات باسم { $file }
+toast-restore-backup = استعادة من نسخة احتياطية…
 toast-pruned-age =
     { $count ->
         [one] حُذف عنصر واحد أقدم من { $age }

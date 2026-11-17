@@ -3,7 +3,8 @@
 //! through here; there is no UI code, so the rules can be tested on their own.
 
 use std::collections::{HashMap, HashSet};
-use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, OnceLock};
 
 use anyhow::Result;
 
@@ -14,6 +15,17 @@ use crate::store::{now, Item, Kind, Origin, Store};
 /// Longest tag kept, in characters.
 const MAX_TAG_CHARS: usize = 40;
 
+/// Gives out item ids on any thread: the window takes them for new copies,
+/// and a restore for the items it adds.
+#[derive(Clone)]
+pub struct Ids(Arc<AtomicU64>);
+
+impl Ids {
+    pub fn next(&self) -> u64 {
+        self.0.fetch_add(1, Ordering::Relaxed)
+    }
+}
+
 pub struct Library {
     store: Arc<Store>,
     /// Every item, in the order it was added. A running search may share them
@@ -21,11 +33,15 @@ pub struct Library {
     items: Vec<Arc<Item>>,
     /// Where each item is in `items`, by id.
     positions: HashMap<u64, usize>,
-    /// Each item's searchable text, lower-cased, for keyword search.
+    /// Each item's searchable text as keyword search compares it
+    /// (`search::normalize`).
     lower: HashMap<u64, Arc<str>>,
     /// The current model's vector for each item that has one.
     embeddings: HashMap<u64, Arc<Embedding>>,
-    next_id: u64,
+    ids: Ids,
+    /// Every tag in use with its count, worked out again only after the
+    /// history changes: the top bar shows them in every frame.
+    tags: OnceLock<Arc<[(String, usize)]>>,
 }
 
 /// An item taken out of the history but not yet deleted from the disk, so it
@@ -42,12 +58,13 @@ impl Library {
         let items: Vec<Arc<Item>> = store.all_items()?.into_iter().map(Arc::new).collect();
         let lower = items.iter().map(|i| (i.id, lowered(i))).collect();
         let mut library = Self {
-            next_id: store.next_id()?,
+            ids: Ids(Arc::new(AtomicU64::new(store.next_id()?))),
             store,
             items,
             positions: HashMap::new(),
             lower,
             embeddings: HashMap::new(),
+            tags: OnceLock::new(),
         };
         library.reindex_from(0);
         Ok(library)
@@ -77,9 +94,35 @@ impl Library {
 
     /// An id no item has used in this session.
     pub fn new_id(&mut self) -> u64 {
-        let id = self.next_id;
-        self.next_id += 1;
-        id
+        self.ids.next()
+    }
+
+    /// Where `new_id` takes its ids from, for a thread that adds items.
+    pub fn ids(&self) -> Ids {
+        self.ids.clone()
+    }
+
+    /// The kind and content of every item: what a restore leaves out.
+    pub fn contents(&self) -> HashSet<(Kind, u64)> {
+        self.items.iter().map(|i| (i.kind, i.hash)).collect()
+    }
+
+    /// Saves items a restore made, with the ids it gave them and their
+    /// formatting and pictures already saved, and adds them. Returns their
+    /// ids and kinds.
+    pub fn add_restored(&mut self, items: Vec<Item>) -> Result<Vec<(u64, Kind)>> {
+        if let Err(e) = self.store.put_many(&items) {
+            // Takes their formatting and pictures off the disk again.
+            if let Err(cleanup) = self.store.delete_many(&items) {
+                log::warn!("removing what a failed restore saved: {cleanup:#}");
+            }
+            return Err(e);
+        }
+        let added = items.iter().map(|i| (i.id, i.kind)).collect();
+        for item in items {
+            self.push(item);
+        }
+        Ok(added)
     }
 
     /// Saves a new item and adds it to the history.
@@ -118,22 +161,33 @@ impl Library {
         self.lower.insert(item.id, lowered(&item));
         self.positions.insert(item.id, self.items.len());
         self.items.push(Arc::new(item));
+        self.tags.take();
     }
 
     /// The item to change; copied first if a search still reads it.
     fn get_mut(&mut self, id: u64) -> Option<&mut Item> {
         let p = *self.positions.get(&id)?;
+        // Its tags may change.
+        self.tags.take();
         Some(Arc::make_mut(&mut self.items[p]))
     }
 
     /// A repeated copy: the clipboard item with the same content counts as
-    /// new again (it moves to the top). Returns whether there was one.
-    pub fn touch_duplicate(&mut self, hash: u64) -> Result<bool> {
-        let Some(p) = self
-            .items
-            .iter()
-            .position(|i| i.hash == hash && i.origin == Origin::Clipboard)
-        else {
+    /// new again; it moves to the top and stays as it is otherwise. With
+    /// `trimmed`, the text of a text copy without the spaces, tabs and line
+    /// breaks at its ends, a clipboard text or link item whose text is the
+    /// same once trimmed counts too, when no item has the very same
+    /// content. Returns whether there was one.
+    pub fn touch_duplicate(&mut self, hash: u64, trimmed: Option<&str>) -> Result<bool> {
+        let copied = |i: &Item| i.origin == Origin::Clipboard;
+        let same = self.items.iter().position(|i| copied(i) && i.hash == hash);
+        let same_trimmed = || {
+            let trimmed = trimmed?;
+            self.items.iter().position(|i| {
+                copied(i) && matches!(i.kind, Kind::Text | Kind::Link) && i.text.trim() == trimmed
+            })
+        };
+        let Some(p) = same.or_else(same_trimmed) else {
             return Ok(false);
         };
         let it = Arc::make_mut(&mut self.items[p]);
@@ -191,20 +245,8 @@ impl Library {
     // ----- tags --------------------------------------------------------------
 
     /// Every tag in use with its item count, most used first.
-    pub fn all_tags(&self) -> Vec<(String, usize)> {
-        let mut counts: HashMap<String, (String, usize)> = HashMap::new();
-        for t in self.items.iter().flat_map(|i| &i.tags) {
-            counts
-                .entry(t.to_lowercase())
-                .or_insert_with(|| (t.clone(), 0))
-                .1 += 1;
-        }
-        let mut tags: Vec<(String, usize)> = counts.into_values().collect();
-        tags.sort_by(|a, b| {
-            b.1.cmp(&a.1)
-                .then_with(|| a.0.to_lowercase().cmp(&b.0.to_lowercase()))
-        });
-        tags
+    pub fn all_tags(&self) -> Arc<[(String, usize)]> {
+        self.tags.get_or_init(|| count_tags(&self.items)).clone()
     }
 
     pub fn any_has_tag(&self, tag: &str) -> bool {
@@ -414,12 +456,32 @@ impl Library {
         for (p, item) in self.items.iter().enumerate().skip(start) {
             self.positions.insert(item.id, p);
         }
+        // Items came or went.
+        self.tags.take();
     }
 }
 
-/// What keyword search looks in: the searchable text, lower-cased once.
+/// Every tag `items` use with its item count, most used first; a tag's
+/// spellings count together.
+fn count_tags(items: &[Arc<Item>]) -> Arc<[(String, usize)]> {
+    let mut counts: HashMap<String, (String, usize)> = HashMap::new();
+    for t in items.iter().flat_map(|i| &i.tags) {
+        counts
+            .entry(t.to_lowercase())
+            .or_insert_with(|| (t.clone(), 0))
+            .1 += 1;
+    }
+    let mut tags: Vec<(String, usize)> = counts.into_values().collect();
+    tags.sort_by(|a, b| {
+        b.1.cmp(&a.1)
+            .then_with(|| a.0.to_lowercase().cmp(&b.0.to_lowercase()))
+    });
+    tags.into()
+}
+
+/// What keyword search looks in: the searchable text, normalized once.
 fn lowered(item: &Item) -> Arc<str> {
-    item.searchable_text().to_lowercase().into()
+    crate::search::normalize(&item.searchable_text()).into()
 }
 
 /// What the history limit and Clear history may delete: copied items the
@@ -474,9 +536,39 @@ mod tests {
         lib.add_tags(a, "Work").unwrap();
         lib.add_tags(b, "work, work").unwrap();
         assert_eq!(lib.get(b).unwrap().tags, ["Work"]);
-        assert_eq!(lib.all_tags(), [("Work".to_string(), 2)]);
+        assert_eq!(*lib.all_tags(), [("Work".to_string(), 2)]);
         assert_eq!(lib.delete_tag("WORK").unwrap(), 2);
         assert!(!lib.any_has_tag("work"));
+        drop(lib);
+        std::fs::remove_dir_all(dir).ok();
+    }
+
+    /// The tag list is worked out once and kept, so it must follow every
+    /// change: tags added and removed, items taken, put back and cleared.
+    #[test]
+    fn the_tag_list_follows_every_change() {
+        let (dir, mut lib) = open("tag-list");
+        let a = add(&mut lib, "a", 1);
+        let b = add(&mut lib, "b", 2);
+        let counts = |lib: &Library| lib.all_tags().to_vec();
+        assert!(counts(&lib).is_empty());
+        lib.add_tags(a, "Work, Home").unwrap();
+        lib.add_tags(b, "Work").unwrap();
+        assert_eq!(
+            counts(&lib),
+            [("Work".to_string(), 2), ("Home".to_string(), 1)]
+        );
+        lib.remove_tag(a, "home").unwrap();
+        assert_eq!(counts(&lib), [("Work".to_string(), 2)]);
+        let taken = lib.take(b).unwrap();
+        assert_eq!(counts(&lib), [("Work".to_string(), 1)]);
+        lib.put_back(taken);
+        assert_eq!(counts(&lib), [("Work".to_string(), 2)]);
+        let c = add(&mut lib, "c", 3);
+        lib.add_tags(c, "Later").unwrap();
+        assert_eq!(counts(&lib).len(), 2);
+        lib.delete_tag("work").unwrap();
+        assert_eq!(counts(&lib), [("Later".to_string(), 1)]);
         drop(lib);
         std::fs::remove_dir_all(dir).ok();
     }
@@ -575,10 +667,63 @@ mod tests {
         let (dir, mut lib) = open("duplicate");
         let a = add(&mut lib, "same", 1);
         let hash = lib.get(a).unwrap().hash;
-        assert!(lib.touch_duplicate(hash).unwrap());
+        assert!(lib.touch_duplicate(hash, None).unwrap());
         assert!(lib.get(a).unwrap().created > 1);
         assert!(lib.store.get(a).unwrap().unwrap().created > 1);
-        assert!(!lib.touch_duplicate(hash ^ 1).unwrap());
+        assert!(!lib.touch_duplicate(hash ^ 1, None).unwrap());
+        drop(lib);
+        std::fs::remove_dir_all(dir).ok();
+    }
+
+    /// A copy that differs only in the spaces, tabs and line breaks around
+    /// its text merges with the clipboard text or link item when asked: the
+    /// item keeps its own text and moves to the top. An item with the very
+    /// same text comes first, and files and imported items don't count.
+    #[test]
+    fn a_copy_with_other_spaces_around_it_merges_when_asked() {
+        let (dir, mut lib) = open("trimmed-duplicate");
+        let hash = |text: &str| crate::store::fnv1a(text.as_bytes());
+        let created = |lib: &Library, id: u64| lib.get(id).unwrap().created;
+        let text = add(&mut lib, "  Meeting at 10\n", 1);
+        let copy = " \tMeeting at 10\r\n\n";
+        assert!(!lib.touch_duplicate(hash(copy), None).unwrap(), "off");
+        assert_eq!(created(&lib, text), 1);
+        assert!(lib.touch_duplicate(hash(copy), Some(copy.trim())).unwrap());
+        assert!(created(&lib, text) > 1, "moved to the top");
+        let stored = lib.store.get(text).unwrap().unwrap();
+        assert!(stored.created > 1, "on the disk too");
+        assert_eq!(&*lib.get(text).unwrap().text, "  Meeting at 10\n");
+        assert!(!lib
+            .touch_duplicate(hash("Meeting at 11"), Some("Meeting at 11"))
+            .unwrap());
+
+        let mut add_as = |kind: Kind, origin: Origin, text: &str| {
+            let mut item = Item::new(lib.new_id(), kind, origin, text.into());
+            item.created = 1;
+            let id = item.id;
+            lib.add(item).unwrap();
+            id
+        };
+        let link = add_as(Kind::Link, Origin::Clipboard, "https://example.com\n");
+        // An item with the very same text comes before an earlier one with
+        // other spaces around it.
+        let spaced = add_as(Kind::Text, Origin::Clipboard, "  Notes\n");
+        let exact = add_as(Kind::Text, Origin::Clipboard, "Notes");
+        // Files and imported items don't count.
+        add_as(Kind::Files, Origin::Clipboard, "C:\\notes.txt");
+        add_as(Kind::Text, Origin::Imported, "C:\\notes.txt");
+        let link_copy = " https://example.com";
+        assert!(lib
+            .touch_duplicate(hash(link_copy), Some(link_copy.trim()))
+            .unwrap());
+        assert!(created(&lib, link) > 1, "a link");
+        assert!(lib.touch_duplicate(hash("Notes"), Some("Notes")).unwrap());
+        assert!(created(&lib, exact) > 1);
+        assert_eq!(created(&lib, spaced), 1, "the very same text first");
+        let path_copy = "C:\\notes.txt\n";
+        assert!(!lib
+            .touch_duplicate(hash(path_copy), Some(path_copy.trim()))
+            .unwrap());
         drop(lib);
         std::fs::remove_dir_all(dir).ok();
     }
@@ -617,6 +762,20 @@ mod tests {
         lib.set_ocr(id, "Total Due");
         assert!(lib.lower[&id].contains("total due"));
         assert_eq!(lib.images_without_ocr().count(), 0);
+        drop(lib);
+        std::fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn arabic_is_kept_as_search_compares_it() {
+        let (dir, mut lib) = open("arabic");
+        let id = add(&mut lib, "محضر الإجتماع", 1);
+        assert!(lib.lower[&id].contains("الاجتماع"));
+        assert_eq!(
+            &*lib.get(id).unwrap().text,
+            "محضر الإجتماع",
+            "shown as copied"
+        );
         drop(lib);
         std::fs::remove_dir_all(dir).ok();
     }

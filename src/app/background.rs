@@ -1,16 +1,46 @@
 //! Slow work the window must not wait for. Saving a copied image as PNG and
 //! putting an item back on the clipboard run in order on one thread; each
-//! import reads its files on a thread of its own, so a long import never holds
-//! up a copy. Results come back to `App` as `Done` messages.
+//! import, and each backup written or restored, runs on a thread of its own,
+//! so a long one never holds up a copy. Results come back to `App` as `Done`
+//! messages.
 
+use std::collections::HashSet;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc::{channel, Receiver, Sender};
+use std::sync::Arc;
+use std::time::Duration;
 
 use eframe::egui;
 
 use super::Paste;
-use crate::store::Item;
+use crate::backup::{Problem, Restored, Step};
+use crate::i18n::log_error;
+use crate::library::Ids;
+use crate::store::{Item, Kind, Store};
+
+/// How often a backup's progress redraws the window at most.
+const PROGRESS_EVERY: Duration = Duration::from_millis(100);
+
+/// How far a backup's thread is, read by the window as it draws.
+#[derive(Default)]
+pub(super) struct BackupProgress {
+    /// Items written, or restored and skipped, so far.
+    pub(super) done: AtomicUsize,
+    /// How many items there are; none yet while a restore checks the file.
+    pub(super) total: AtomicUsize,
+}
+
+/// What a restore needs from the window.
+pub(super) struct RestoreRequest {
+    pub(super) file: PathBuf,
+    pub(super) password: String,
+    pub(super) store: Arc<Store>,
+    /// The kind and content of every item in the history.
+    pub(super) known: HashSet<(Kind, u64)>,
+    pub(super) ids: Ids,
+}
 
 /// A finished piece of background work.
 pub(super) enum Done {
@@ -44,6 +74,16 @@ pub(super) enum Done {
     Imported(Vec<Item>),
     /// An import has read all its files.
     ImportFinished,
+    /// A backup was written: how many items it holds, and where; or why it
+    /// wasn't.
+    BackupSaved(Result<(usize, PathBuf), String>),
+    /// The password opened the backup being restored.
+    BackupOpened,
+    /// Items of a backup, with their formatting and pictures saved, to add
+    /// to the history.
+    Restored(Vec<Item>),
+    /// A restore is over: what it added and skipped, or why it stopped.
+    RestoreFinished(Result<Restored, Problem>),
     /// A task crashed; the ones after it still run.
     Crashed,
 }
@@ -113,6 +153,89 @@ impl Background {
         if let Err(e) = started {
             log::error!("could not start the import: {e}");
             self.reply.send(Done::ImportFinished);
+        }
+    }
+
+    /// Writes a backup of `items` to `file`, locked with `password`, on a
+    /// thread of its own. Always ends with `BackupSaved`.
+    pub(super) fn export_backup(
+        &self,
+        store: Arc<Store>,
+        items: Vec<Arc<Item>>,
+        file: PathBuf,
+        password: String,
+        progress: Arc<BackupProgress>,
+    ) {
+        let reply = self.reply.clone();
+        let started = std::thread::Builder::new()
+            .name("backup".into())
+            .spawn(move || {
+                let wake = reply.ctx.clone();
+                let written = catch_unwind(AssertUnwindSafe(|| {
+                    crate::backup::export(&store, &items, &file, &password, |done| {
+                        progress.done.store(done, Ordering::Relaxed);
+                        wake.request_repaint_after(PROGRESS_EVERY);
+                    })
+                }));
+                let saved = match written {
+                    Ok(Ok(count)) => Ok((count, file)),
+                    Ok(Err(e)) => Err(format!("{e:#}")),
+                    Err(_) => Err(log_error!("error-background-crash")),
+                };
+                reply.send(Done::BackupSaved(saved));
+            });
+        if let Err(e) = started {
+            self.reply.send(Done::BackupSaved(Err(e.to_string())));
+        }
+    }
+
+    /// Restores a backup on a thread of its own: `BackupOpened` once the
+    /// password opens it, its items in batches of `Restored`, and always
+    /// `RestoreFinished` at the end.
+    pub(super) fn restore_backup(&self, request: RestoreRequest, progress: Arc<BackupProgress>) {
+        let reply = self.reply.clone();
+        let started = std::thread::Builder::new()
+            .name("restore".into())
+            .spawn(move || {
+                let RestoreRequest {
+                    file,
+                    password,
+                    store,
+                    known,
+                    ids,
+                } = request;
+                let wake = reply.ctx.clone();
+                let on_step = |step| match step {
+                    Step::Opened => reply.send(Done::BackupOpened),
+                    Step::Checked(total) => {
+                        progress.total.store(total, Ordering::Relaxed);
+                        wake.request_repaint();
+                    }
+                    Step::Done(done) => {
+                        progress.done.store(done, Ordering::Relaxed);
+                        wake.request_repaint_after(PROGRESS_EVERY);
+                    }
+                };
+                let restored = catch_unwind(AssertUnwindSafe(|| {
+                    crate::backup::restore(
+                        &file,
+                        &password,
+                        &store,
+                        &known,
+                        || ids.next(),
+                        on_step,
+                        |batch| reply.send(Done::Restored(batch)),
+                    )
+                }));
+                let finished = restored.unwrap_or_else(|_| {
+                    let crashed = log_error!("error-background-crash");
+                    Err(Problem::Failed(anyhow::anyhow!(crashed)))
+                });
+                reply.send(Done::RestoreFinished(finished));
+            });
+        if let Err(e) = started {
+            let e = Problem::Failed(e.into());
+            self.reply.send(Done::RestoreFinished(Err(e)));
         }
     }
 }

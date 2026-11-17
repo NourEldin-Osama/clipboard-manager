@@ -567,6 +567,7 @@ mod tests {
                 id,
                 closeness: None,
                 weak: false,
+                by_meaning: false,
             })
             .collect()
     }

@@ -53,7 +53,7 @@ pub(super) fn focus_outline(ctx: &egui::Context) {
     ))
     .rect_stroke(
         focused.interact_rect.expand(2.0),
-        6.0,
+        CornerRadius::same(radius::MEDIUM),
         Stroke::new(2.0, accent()),
         egui::StrokeKind::Outside,
     );
@@ -430,6 +430,23 @@ pub(super) fn mode_button(ui: &mut Ui, label: &str, emphasised: bool) -> egui::R
     lead_mode_button(ui, None, label, emphasised)
 }
 
+/// How big the lead before a mode button's text is.
+const MODE_LEAD: f32 = 16.0;
+
+/// The room a mode button's lead takes before its text, the gap included.
+fn mode_lead_room(lead: bool) -> f32 {
+    if lead {
+        MODE_LEAD + 6.0
+    } else {
+        0.0
+    }
+}
+
+/// How wide a mode button is with text `text_width` wide, with a lead or not.
+pub(super) fn mode_button_width(text_width: f32, lead: bool) -> f32 {
+    mode_lead_room(lead) + text_width + 8.0 + 10.0 + 18.0
+}
+
 /// `mode_button` with `lead` before its text.
 pub(super) fn lead_mode_button(
     ui: &mut Ui,
@@ -437,7 +454,6 @@ pub(super) fn lead_mode_button(
     label: &str,
     emphasised: bool,
 ) -> egui::Response {
-    const LEAD: f32 = 16.0;
     let v = ui.visuals();
     let color = if emphasised {
         text_shade(accent(), v.dark_mode)
@@ -446,9 +462,9 @@ pub(super) fn lead_mode_button(
     };
     let g = ui
         .fonts_mut(|f| f.layout_job(bidi::job(label, FontId::proportional(size::CONTROL), color)));
-    let lead_room = if lead.is_some() { LEAD + 6.0 } else { 0.0 };
+    let lead_room = mode_lead_room(lead.is_some());
     let (rect, resp) = ui.allocate_exact_size(
-        Vec2::new(lead_room + g.size().x + 8.0 + 10.0 + 18.0, 28.0),
+        Vec2::new(mode_button_width(g.size().x, lead.is_some()), 28.0),
         Sense::click(),
     );
     let v = ui.visuals();
@@ -474,13 +490,13 @@ pub(super) fn lead_mode_button(
         let at = flip(
             rect,
             Rect::from_center_size(
-                Pos2::new(rect.left() + 9.0 + LEAD / 2.0, rect.center().y),
-                Vec2::splat(LEAD),
+                Pos2::new(rect.left() + 9.0 + MODE_LEAD / 2.0, rect.center().y),
+                Vec2::splat(MODE_LEAD),
             ),
         );
         match lead {
             Lead::Texture(texture) => {
-                egui::Image::new((texture.id(), Vec2::splat(LEAD))).paint_at(ui, at)
+                egui::Image::new((texture.id(), Vec2::splat(MODE_LEAD))).paint_at(ui, at)
             }
             Lead::Icon(icon) => icons::paint(ui.painter(), at, icon, color),
         }
@@ -652,14 +668,22 @@ pub(crate) fn enter_in(ui: &Ui, field: &egui::Response) -> bool {
     field.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter))
 }
 
-/// The words of a search, in lower case, as they are looked for.
+/// The words of a search as they are looked for: normalized as keyword
+/// search compares text (`search::normalize`), so case and the ways of
+/// typing an Arabic letter don't count.
 pub(crate) fn search_words(search: &str) -> Vec<String> {
-    search.split_whitespace().map(str::to_lowercase).collect()
+    crate::search::normalize(search)
+        .split_whitespace()
+        .map(String::from)
+        .collect()
 }
 
 /// Whether each of the searched `words` is in one of `texts`.
 pub(crate) fn matches(words: &[String], texts: &[&str]) -> bool {
-    let texts: Vec<String> = texts.iter().map(|text| text.to_lowercase()).collect();
+    let texts: Vec<String> = texts
+        .iter()
+        .map(|text| crate::search::normalize(text))
+        .collect();
     words
         .iter()
         .all(|word| texts.iter().any(|text| text.contains(word.as_str())))
@@ -1115,6 +1139,17 @@ mod tests {
         // The texture uploads no renderer takes here.
         output.textures_delta.clear();
         height
+    }
+
+    /// A menu's search finds a name however its Arabic letters were typed,
+    /// and English in any case, as the history's search does.
+    #[test]
+    fn a_menu_search_matches_as_the_history_search_does() {
+        let found = |search: &str, name: &str| matches(&search_words(search), &[name]);
+        assert!(found("إجتماع", "الاجتماعات"));
+        assert!(found("عربى", "برنامج عربي"));
+        assert!(found("STUDIO code", "Visual Studio Code"));
+        assert!(!found("studio teams", "Visual Studio Code"));
     }
 
     /// A search that narrows a menu's list leaves the list as tall as it

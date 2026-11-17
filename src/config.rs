@@ -607,12 +607,18 @@ pub struct Config {
     /// Items older than this many days are deleted; 0 is off.
     pub delete_after_days: u32,
     pub dedupe: bool,
+    /// With `dedupe`, a text copy also merges with a clipboard text or link
+    /// item whose text is the same once the spaces, tabs and line breaks at
+    /// both ends are left out.
+    pub dedupe_trimmed: bool,
     /// When the app copies or pastes an item, the spaces and blank lines
     /// around its text are left out; the history keeps the text whole.
     pub trim_copied_text: bool,
     /// When the app copies or pastes a text item, its Markdown marks are
     /// left out (see `markdown::plain`); the history keeps the text whole.
     pub remove_copied_markdown: bool,
+    /// The kinds of Markdown marks `remove_copied_markdown` leaves out.
+    pub markdown_marks: crate::markdown::Marks,
     /// What reads the text in images.
     pub read_engine: ReadEngine,
     /// The server model that reads text; kept while another reader is
@@ -666,6 +672,9 @@ pub struct Config {
     pub update_download: bool,
     /// The release "Skip this version" was used on (`version+build`).
     pub skipped_update: String,
+    /// An update that never worked and was put back (`version+build`), until
+    /// the version back in its place says so at its start.
+    pub rolled_back_update: String,
     /// The saved servers, each with the models used on it.
     pub servers: Vec<Server>,
     /// Servers outside this PC that the user agreed to send the history to,
@@ -700,8 +709,10 @@ impl Default for Config {
             history_warned: false,
             delete_after_days: 0,
             dedupe: true,
+            dedupe_trimmed: false,
             trim_copied_text: false,
             remove_copied_markdown: false,
+            markdown_marks: crate::markdown::Marks::default(),
             read_engine: ReadEngine::default(),
             read_model: None,
             search_mode: SearchMode::Hybrid,
@@ -733,6 +744,7 @@ impl Default for Config {
             update_check: true,
             update_download: true,
             skipped_update: String::new(),
+            rolled_back_update: String::new(),
             servers: Vec::new(),
             allowed_servers: Vec::new(),
             rules: Vec::new(),

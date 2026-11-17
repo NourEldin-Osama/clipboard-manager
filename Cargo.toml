@@ -1,7 +1,9 @@
 [package]
 name = "clipboard-manager"
-version = "0.11.0"
+version = "0.12.0"
 edition = "2021"
+# egui 0.37 needs it; an older Rust stops here with a clear message.
+rust-version = "1.95"
 description = "Offline clipboard history that reads the text in images and searches by meaning with your own model servers."
 license = "MIT OR Apache-2.0"
 readme = "README.md"

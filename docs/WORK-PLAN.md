@@ -7,6 +7,9 @@ history (the last full version of this file is in commit `c880dca`). Versions an
 ## Open
 
 - Code signing with SignPath Foundation, after the application is approved (D7).
+- Checks on Linux and macOS in CI: later, not with 0.12.0.
+- Remove the migration that seals the plain search vectors of a history from 0.11.0, in the version after 0.12.0 (D16,
+  D33).
 
 ## Decisions
 
@@ -24,7 +27,7 @@ history (the last full version of this file is in commit `c880dca`). Versions an
 | D12 | The full window uses the popup's keys: Enter pastes, Shift+Enter pastes plain text, Ctrl+C only copies; Alt+Shift+V opens it |
 | D13 | Delete by age is off by default; pinned and tagged items are never deleted by it |
 | D14 | Rules per app: ignore an app, and ignore text that matches a pattern (for one app or all); a copy a rule skipped can be kept with Save anyway |
-| D16 | Encryption covers items and images; search vectors stay unencrypted |
+| D16 | Encryption covers items, images and search vectors (the vectors were plain up to 0.11.0) |
 | D17 | If the history key can't be opened (another PC or account), the old history is set aside and the app starts empty, with a message |
 | D18 | Portable copies are encrypted too; a portable history opens only on the PC and account that made it |
 | D19 | Applying a search server that is not on this PC shows a warning and asks once |
@@ -97,3 +100,12 @@ history (the last full version of this file is in commit `c880dca`). Versions an
 | D94 | Search filters by program: a Programs menu after the kind filters and before the tags lists the programs the copies came from, each with its own icon and how many copies it gave (the most first, copies with no program last), with a search by a program's name or file name; it takes several programs, and its button says All programs, the one program's icon and name, or how many are picked. The popup starts with every program. Privacy's Add a rule offers every program in the history with the same search. A menu's list keeps its height while its search narrows it, so the menu never jumps to the other side of its button |
 | D95 | Code in a copy is colored in the app's own colors, the same in both themes and not following the accent: indigo keywords, sky functions and keys, green strings, amber numbers, rose types, gray comments. In the dark theme they read at 4.6 to 1 on a card selected in any accent, in the light one at 4.8 to 1 on the code box. The details and the grid's cards show the colors; one-line rows don't. The language is guessed from the text, and code stays plain when it is unsure, or longer than 2000 lines, 100,000 bytes or a 5,000-character line. A background thread colors it, the code showing plain until then. Appearance has a switch, on by default, and About shows the languages' licenses. The languages are bat's, from two-face, run by syntect with Oniguruma (its own project ended in 2025; giallo, under EUPL-1.2, is the fallback) |
 | D96 | Each filter's number is what choosing it would show, while browsing and while searching: a kind counts with the tag and programs chosen, a tag with the kind and programs chosen, a program with the kind and tag chosen, never with its own. One with nothing to show is dimmed, not hidden, so the row doesn't move. While the weaker matches are folded, the numbers count the strong ones, and a list with no strong match doesn't fold |
+| D97 | In Smart search, a result that contains none of the typed words shows a By meaning chip with Fluent's sparkle; its tip says Similar in meaning to your search. On a card it has a row of its own above the tags, on a list row it comes after the program's name; one-line rows, as in the popup, have none. Meaning and Exact words don't show it |
+| D98 | Search, its highlight and the menus' search fields count أ إ آ ٱ as ا, ى and ئ as ي, ة as ه and ؤ as و, and leave out the diacritics and the tatweel, in the text and in the search. An Arabic word that matches in part is highlighted whole, so its letters stay joined |
+| D99 | A new version keeps the previous one as `.old` until its window has stayed open 10 seconds. A marker next to the exe counts its starts until then; when two never got there, the next start puts the previous version back, skips the failed one so it isn't installed again by itself, and starts the previous version, which says so in a message that stays until closed. A version that 0.11.0 installed writes its own marker at its first start after the update |
+| D100 | Settings, Privacy, Backup: Export a backup writes every item with its tags, pins and pictures to one file, each item sealed with a key made from a password (PBKDF2-HMAC-SHA256, 600,000 rounds, AES-256-GCM). Settings and API keys are left out, and a forgotten password can't be recovered. Import a backup checks the whole file before it adds anything, and skips items already in the history |
+| D101 | A copy merges only with an exact copy by default. A switch under Merge duplicate copies, off by default, also merges a text or link copy whose text is the same once the spaces, tabs and line breaks at both ends are left out; it is grayed out while copies don't merge |
+| D102 | Under Remove Markdown marks, a closed Marks to remove row lists each kind of mark with a checkbox, all checked; an unchecked kind stays when the app copies or pastes. Marks inside code always stay |
+| D103 | A switch's outline while it is off is #949494, 3.03 to 1 on a white card: lighter, still above the 3 to 1 a control needs |
+| D104 | In Where your data goes, each answer starts 32 points after the longest name, in both reading directions, and goes under its name when the window is too narrow |
+| D105 | No preview on the Space key and no copy counter on items |

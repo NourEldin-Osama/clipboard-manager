@@ -489,6 +489,8 @@ pub(super) enum Command {
     /// Removes a tag from every item that has it.
     DeleteTag(String),
     Import(Vec<PathBuf>),
+    /// Asks for a backup's file and password, and restores it.
+    ImportBackup,
     ClearHistory,
     /// Brings back the items of one delete, by its number in the undo
     /// history: its message's Undo.
@@ -594,7 +596,7 @@ const KEY_HINT_FOR: Duration = Duration::from_secs(4);
 fn copied_text(cfg: &Config, it: &Item) -> Option<String> {
     let mut text = std::borrow::Cow::Borrowed(&*it.text);
     if cfg.remove_copied_markdown && it.kind == Kind::Text {
-        text = std::borrow::Cow::Owned(crate::markdown::plain(&text));
+        text = std::borrow::Cow::Owned(crate::markdown::plain(&text, &cfg.markdown_marks));
     }
     if cfg.trim_copied_text && matches!(it.kind, Kind::Text | Kind::Link) {
         let trimmed = text.trim();
@@ -898,6 +900,10 @@ pub struct App {
     /// step.
     update_hidden: bool,
     next_update_check: Instant,
+    /// When this version, just installed by an update, counts as working:
+    /// `update::WORKING_AFTER` after its window was made. A frame then (the
+    /// first one has drawn by then) removes the previous version.
+    update_works_at: Option<Instant>,
     /// Only items carrying this tag are listed.
     tag_filter: Option<String>,
     /// Only items copied from these programs are listed, by
@@ -942,13 +948,20 @@ pub struct App {
     /// Imports still reading files, and the files they added so far.
     imports_running: usize,
     imported: usize,
+    /// The backup being written or restored, while it runs.
+    backup_job: Option<BackupJob>,
+    /// The window that asks for a backup's password, while it is open.
+    backup_dialog: Option<BackupDialog>,
 }
 
 impl App {
+    /// `is_update_pending`: this version was just installed by an update and
+    /// hasn't counted as working yet (`update::check_pending`).
     pub fn new(
         cc: &eframe::CreationContext<'_>,
         paths: Paths,
         instance: crate::single_instance::Guard,
+        is_update_pending: bool,
     ) -> anyhow::Result<Self> {
         let ctx = cc.egui_ctx.clone();
         // No settings yet means a new install, which has nothing new to hear.
@@ -1112,6 +1125,7 @@ impl App {
             update_hidden: false,
             // A little after start, so launching stays quick.
             next_update_check: Instant::now() + Duration::from_secs(10),
+            update_works_at: is_update_pending.then(|| Instant::now() + update::WORKING_AFTER),
             tag_filter: None,
             program_filter: Vec::new(),
             tag_input: None,
@@ -1131,6 +1145,8 @@ impl App {
             background: Background::spawn(ctx.clone()),
             imports_running: 0,
             imported: 0,
+            backup_job: None,
+            backup_dialog: None,
             recording: None,
             record_problem: None,
             cfg,
@@ -1184,12 +1200,23 @@ impl App {
             app.save_config();
         }
         if let Some(aside) = app.library.store().moved_aside.clone() {
-            let file = aside.display().to_string();
-            // The log gets the path as it is; the window sets it apart, so
-            // it reads left to right inside an Arabic sentence too.
-            log_error!("error-history-moved-aside", file = file.as_str());
-            let file = bidi::left_to_right(&file);
-            app.set_error(t!("error-history-moved-aside", file = file));
+            // The log gets the whole path.
+            log_error!(
+                "error-history-moved-aside",
+                file = aside.display().to_string()
+            );
+            let toast = app.toast_with(String::new(), Duration::MAX);
+            backup::history_moved_aside(toast, &aside);
+        }
+        // An update that never worked was put back: the version back in its
+        // place says so, once.
+        if !app.cfg.rolled_back_update.is_empty() {
+            let rolled_back = std::mem::take(&mut app.cfg.rolled_back_update);
+            app.save_config();
+            if let Some(version) = update::rolled_back_version(&rolled_back) {
+                let toast = app.toast_with(String::new(), Duration::MAX);
+                update_rolled_back(toast, version);
+            }
         }
         #[cfg(windows)]
         photos::delete_old_copies();
@@ -1364,6 +1391,7 @@ impl App {
     /// Runs every frame, including while the window is hidden.
     fn window_logic(&mut self, ctx: &egui::Context) {
         self.update_logic(ctx);
+        self.pending_update_logic(ctx);
         self.sync_update_message();
         // Versions before 0.6 saved a minimized window with no size, and
         // Windows then makes it tiny at start: it gets the first size back.
@@ -1601,13 +1629,29 @@ impl App {
         }
     }
 
+    /// A version just installed by an update counts as working once its
+    /// window has drawn and stayed open for `update::WORKING_AFTER`. Then
+    /// the previous version goes (`update::mark_working`).
+    fn pending_update_logic(&mut self, ctx: &egui::Context) {
+        let Some(works_at) = self.update_works_at else {
+            return;
+        };
+        let now = Instant::now();
+        if now < works_at {
+            ctx.request_repaint_after(works_at - now);
+            return;
+        }
+        update::mark_working();
+        self.update_works_at = None;
+    }
+
     /// Swaps in the downloaded version and starts it.
     fn restart_to_update(&mut self, ctx: &egui::Context) {
         let UpdateState::Ready(r, path) = &self.update else {
             return;
         };
         let r = r.clone();
-        let result = update::install(path).and_then(|exe| match update::relaunch(&exe) {
+        let result = update::install(&r, path).and_then(|exe| match update::relaunch(&exe) {
             Ok(()) => Ok(()),
             // The new version wouldn't start: keep this one.
             Err(e) => match update::roll_back() {
@@ -1690,8 +1734,8 @@ impl App {
 
     /// A downloaded update not yet installed goes in on quit, for the next start.
     pub(super) fn install_on_exit(&mut self) {
-        if let UpdateState::Ready(_, path) = &self.update {
-            if let Err(e) = update::install(path) {
+        if let UpdateState::Ready(release, path) = &self.update {
+            if let Err(e) = update::install(release, path) {
                 log::warn!("installing update on exit: {e:#}");
             }
         }
@@ -1859,6 +1903,7 @@ impl App {
             Command::RemoveTag(id, tag) => self.remove_tag(id, &tag),
             Command::DeleteTag(tag) => self.delete_tag(&tag),
             Command::Import(paths) => self.import(paths),
+            Command::ImportBackup => self.ask_backup_file(),
             Command::ClearHistory => self.clear_history(),
             Command::UndoDelete(number) => self.undo_delete(number),
             Command::UndoNewestDelete => {
@@ -2114,7 +2159,11 @@ impl App {
         } = capture;
         let hash = c.hash();
         if self.cfg.dedupe {
-            let found = match self.library.touch_duplicate(hash) {
+            let trimmed = match &c {
+                Captured::Text(text) if self.cfg.dedupe_trimmed => Some(text.trim()),
+                _ => None,
+            };
+            let found = match self.library.touch_duplicate(hash, trimmed) {
                 Ok(found) => found,
                 // Only saving the time of the item found can fail.
                 Err(e) => {
@@ -2394,6 +2443,10 @@ impl App {
                     self.toast(t!("toast-imported", count = n));
                 }
             }
+            Done::BackupSaved(saved) => self.backup_saved(saved),
+            Done::BackupOpened => self.backup_opened(),
+            Done::Restored(items) => self.add_restored(items),
+            Done::RestoreFinished(finished) => self.restore_finished(finished),
             Done::Crashed => self.set_error(log_error!("error-background-crash")),
         }
     }
@@ -3260,7 +3313,17 @@ fn write_clipboard(
     result.map_err(|e| format!("{e:#}"))
 }
 
+/// The message of the previous version, back in place of an update to
+/// `version` that never worked. It stays until closed.
+fn update_rolled_back(toast: &mut Toast, version: &str) {
+    toast.text = t!("toast-update-rolled-back", version = version);
+    toast.detail = Some(t!("toast-update-rolled-back-detail", version = version));
+    toast.icon = Some(icons::Icon::Warning);
+    toast.how_long = Duration::MAX;
+}
+
 mod background;
+mod backup;
 pub(crate) mod bidi;
 mod icons;
 #[cfg(windows)]
@@ -3272,6 +3335,7 @@ mod undo;
 mod view;
 
 use background::{Background, Done};
+use backup::{BackupDialog, BackupJob, BackupStage};
 use settings::{PendingSend, ServerEditor, SettingsPage};
 use undo::UndoHistory;
 use view::{add_fonts, apply_theme, looks_like_code, set_accent, style};
@@ -3320,6 +3384,7 @@ mod tests {
                 id: i as u64,
                 closeness: None,
                 weak: i >= strong,
+                by_meaning: false,
             })
             .collect()
     }

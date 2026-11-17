@@ -331,6 +331,7 @@ pub(super) fn thumbs_to_drop(
 /// the list. A one-line row gives its title `title_lines` lines: one, or
 /// two on the popup's selected row when one line cuts its title; the row
 /// is then that much taller, and everything else stays on its first line.
+/// Returns where the meaning chip is on the second line, for its tip.
 #[allow(clippy::too_many_arguments)]
 pub(super) fn paint_row(
     ui: &Ui,
@@ -349,7 +350,7 @@ pub(super) fn paint_row(
     under_pinned: bool,
     time_column: f32,
     title_lines: usize,
-) {
+) -> Option<Rect> {
     let show_pin = it.pinned && !under_pinned;
     let v = ui.visuals();
     // The row's first line: all of it, or all but the title's second line.
@@ -478,9 +479,9 @@ pub(super) fn paint_row(
                 .uv(uv)
                 .tint(small_picture_tint(ui, id, hot || selected))
                 .corner_radius(if compact {
-                    f32::from(radius::SMALL)
+                    radius::SMALL
                 } else {
-                    6.0
+                    radius::MEDIUM
                 })
                 .paint_at(ui, picture);
             if compact {
@@ -527,7 +528,7 @@ pub(super) fn paint_row(
     let second = if compact {
         None
     } else {
-        SecondLine::of(it, program)
+        SecondLine::of(it, program, hit.by_meaning)
     };
     let time = row_time(it.created, dated);
     // The text column, mirrored with the rest; lines start at its reading edge.
@@ -567,12 +568,12 @@ pub(super) fn paint_row(
         y += line.size().y;
         p.galley(at, line, title_color);
     }
-    if let Some(second) = &second {
-        second.paint(ui, &p, column, rect.top() + 32.0, terms, fill.is_some());
-    }
+    let chip = second
+        .as_ref()
+        .and_then(|second| second.paint(ui, &p, column, rect.top() + 32.0, terms, fill.is_some()));
 
     if hot {
-        return;
+        return chip;
     }
     // Far edge, on the first line: the time, then the pin and the
     // relevance bars before it.
@@ -618,6 +619,7 @@ pub(super) fn paint_row(
     if let Some(level) = relevance_level(hit) {
         paint_relevance(&p, rect, ix, iy + 6.0, level, a, weak);
     }
+    chip
 }
 
 /// `rect` moved onto whole pixels at its size, so that a symbol or a
@@ -795,11 +797,13 @@ const ROW_REST_TINT: f32 = 0.12;
 const LEAST_FACT: f32 = 24.0;
 
 /// A two-line row's second line: the program the item came from with its
-/// icon, one fact about the item, and its tags.
+/// icon, one fact about the item, the meaning chip and its tags.
 struct SecondLine<'a> {
     /// The program's name, and its own icon when it has one.
     program: Option<(String, Option<&'a TextureHandle>)>,
     fact: Option<String>,
+    /// Smart search found it by its meaning alone.
+    by_meaning: bool,
     tags: &'a [String],
 }
 
@@ -807,27 +811,33 @@ impl<'a> SecondLine<'a> {
     /// What the second line of `it`'s row shows, `program` being the
     /// program it came from once that has been read. None when there is
     /// nothing to show: the row then has one line.
-    fn of(it: &'a Item, program: Option<&'a Program>) -> Option<Self> {
+    fn of(it: &'a Item, program: Option<&'a Program>, by_meaning: bool) -> Option<Self> {
         let line = Self {
             program: it.app.as_deref().map(|app| {
                 let icon = program.and_then(|p| p.icon.as_ref());
                 (crate::app::programs::shown_name(app, program), icon)
             }),
             fact: row_fact(it),
+            by_meaning,
             tags: &it.tags,
         };
-        let shows = line.program.is_some() || line.fact.is_some() || !line.tags.is_empty();
+        let shows = line.program.is_some()
+            || line.fact.is_some()
+            || line.by_meaning
+            || !line.tags.is_empty();
         shows.then_some(line)
     }
 
     /// Paints the line in the text `column` from `top`, in the row's small
     /// gray. From the reading start: the program's icon, its plain icon
     /// when it has none of its own, and its name; a dot and the fact, its
-    /// found words marked; then the tags as chips. Laid out left to right,
-    /// then mirrored with the row, the name and the fact each in their own
-    /// direction. Text that doesn't fit is cut with "…", and the tags keep
-    /// room for their first chip or "+N tags". `on_tint` while the row is
-    /// tinted: selected, or under the pointer.
+    /// found words marked; the meaning chip; then the tags as chips. Laid
+    /// out left to right, then mirrored with the row, the name and the fact
+    /// each in their own direction. Text that doesn't fit is cut with "…",
+    /// and the meaning chip and the tags keep room for themselves (the tags
+    /// for their first chip or "+N tags"). `on_tint` while the row is
+    /// tinted: selected, or under the pointer. Returns where the meaning
+    /// chip is.
     fn paint(
         &self,
         ui: &Ui,
@@ -836,7 +846,7 @@ impl<'a> SecondLine<'a> {
         top: f32,
         terms: &[String],
         on_tint: bool,
-    ) {
+    ) -> Option<Rect> {
         let weak = ui.visuals().weak_text_color();
         let font = FontId::proportional(size::SMALL);
         let line_height = ui
@@ -860,7 +870,11 @@ impl<'a> SecondLine<'a> {
             let least = space::SMALL + grid::tags_least_width(ui, self.tags);
             least.min(column.width() / 2.0)
         };
-        let text_end = column.right() - tags_room;
+        let chip = self.by_meaning.then(|| grid::MeaningChip::new(ui));
+        let chip_room = chip
+            .as_ref()
+            .map_or(0.0, |chip| space::SMALL + chip.size(ROW_CHIP_PADDING).x);
+        let text_end = column.right() - tags_room - chip_room;
         let mut x = column.left();
         if let Some((name, icon)) = &self.program {
             let at = place(x, Vec2::splat(PROGRAM_ICON));
@@ -889,14 +903,36 @@ impl<'a> SecondLine<'a> {
                 paint_text(&mut x, one_line(ui, fact, terms, font.clone(), weak, room));
             }
         }
+        // Opaque: on a row at rest, its tint over the list's color; on a
+        // tinted row, the list's own color, so the chip stands out from the
+        // row's tint. The tags' chips take the same.
+        let panel = ui.visuals().panel_fill;
+        let chip = chip.map(|chip| {
+            if x > column.left() {
+                x += space::SMALL;
+            }
+            let fill = if on_tint {
+                panel
+            } else {
+                panel.blend(chip.fill())
+            };
+            let width = chip.size(ROW_CHIP_PADDING).x;
+            let start = Pos2::new(x, middle);
+            let within = (i18n::rtl(), column);
+            let placed = chip.paint(
+                &p.with_clip_rect(column),
+                start,
+                ROW_CHIP_PADDING,
+                Some(fill),
+                within,
+            );
+            x += width;
+            placed
+        });
         if !self.tags.is_empty() {
             if x > column.left() {
                 x += space::SMALL;
             }
-            // Opaque: on a row at rest, its tint over the list's color; on
-            // a tinted row, the list's own color, so the chip stands out
-            // from the row's tint.
-            let panel = ui.visuals().panel_fill;
             let chips = grid::tag_chips(ui, self.tags, column.right() - x, ROW_REST_TINT)
                 .into_iter()
                 .map(|(text, color, fill)| {
@@ -915,6 +951,7 @@ impl<'a> SecondLine<'a> {
                 within,
             );
         }
+        chip
     }
 }
 
@@ -1121,15 +1158,7 @@ impl App {
         } else {
             self.list_view
         };
-        let terms: Vec<String> = if searching {
-            self.query
-                .to_lowercase()
-                .split_whitespace()
-                .map(String::from)
-                .collect()
-        } else {
-            vec![]
-        };
+        let terms = search_words(&self.query);
         // Until the list has been drawn once, its height is unknown and every
         // row would seem to be below it: the scroll waits for that frame.
         let scrolling = self.scroll_to_selected && view_h > 0.0;
@@ -1313,15 +1342,14 @@ impl App {
                         // Selected alone or together with others.
                         let lit = chosen || (!in_popup && marked.contains(&it.id));
                         resp.widget_info(|| {
-                            egui::WidgetInfo::selected(
-                                egui::Role::ListBoxOption,
-                                true,
-                                lit,
-                                item_name(it, program),
-                            )
+                            let mut name = item_name(it, program);
+                            if hit.by_meaning {
+                                name = format!("{name}, {}", t!("item-by-meaning"));
+                            }
+                            egui::WidgetInfo::selected(egui::Role::ListBoxOption, true, lit, name)
                         });
                         let hot = !menu_open && ui.rect_contains_pointer(rect);
-                        paint_row(
+                        let chip = paint_row(
                             ui,
                             rect,
                             hot,
@@ -1339,6 +1367,11 @@ impl App {
                             time_column,
                             if h > row_h { 2 } else { 1 },
                         );
+                        if let Some(chip) = chip {
+                            let id = egui::Id::unique(("meaning-chip", it.id));
+                            let tip_text = t!("item-by-meaning-tip");
+                            tip(ui.interact(chip, id, Sense::hover()), &tip_text);
+                        }
                         if resp.clicked() {
                             // Ctrl and Shift select several, but not in the popup.
                             let keys = ui.input(|i| i.modifiers);
@@ -1620,6 +1653,70 @@ mod tests {
         );
     }
 
+    /// Where a row found by meaning puts its chip: on the second line,
+    /// inside the row; a one-line row has no room for it.
+    fn row_chip(compact: bool) -> (Option<Rect>, Rect) {
+        let ctx = egui::Context::default();
+        add_fonts(&ctx);
+        icons::register(&ctx);
+        // The fonts apply from the next frame.
+        ctx.run_ui(egui::RawInput::default(), |_| {})
+            .textures_delta
+            .clear();
+        let mut it = Item::new(
+            1,
+            Kind::Text,
+            Origin::Clipboard,
+            "The call is at ten".into(),
+        );
+        it.app = Some("Teams.exe".into());
+        let hit = Hit {
+            id: 1,
+            closeness: Some(0.8),
+            weak: false,
+            by_meaning: true,
+        };
+        let row_h = if compact { 40.0 } else { 58.0 };
+        let row = Rect::from_min_size(Pos2::new(0.0, 100.0), Vec2::new(600.0, row_h));
+        let mut chip = None;
+        let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+            let column = time_column(ui, std::iter::once((&it, false)));
+            chip = paint_row(
+                ui,
+                row,
+                false,
+                &it,
+                &hit,
+                None,
+                None,
+                false,
+                compact,
+                &[],
+                false,
+                None,
+                false,
+                false,
+                column,
+                1,
+            );
+        });
+        output.textures_delta.clear();
+        (chip, row)
+    }
+
+    #[test]
+    fn a_row_found_by_meaning_shows_the_chip_on_its_second_line() {
+        let (chip, row) = row_chip(false);
+        let chip = chip.expect("a chip on a two-line row");
+        assert!(row.contains_rect(chip), "{chip:?} in {row:?}");
+        assert!(
+            chip.top() > row.center().y - 4.0,
+            "on the second line: {chip:?}"
+        );
+        let (chip, _) = row_chip(true);
+        assert!(chip.is_none(), "one line has no room for it");
+    }
+
     /// Where the parts of a pinned row with a second line go: its title's
     /// and its time's text, its relevance bars, and the row. A `compact`
     /// row shows one line.
@@ -1644,6 +1741,7 @@ mod tests {
             id: 1,
             closeness: Some(1.0),
             weak: false,
+            by_meaning: false,
         };
         let row_h = if compact { 40.0 } else { 58.0 };
         let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
@@ -1763,6 +1861,7 @@ mod tests {
                         id: it.id,
                         closeness: Some(if weak(n) { 0.2 } else { 1.0 }),
                         weak: weak(n),
+                        by_meaning: false,
                     };
                     let top = 100.0 + (row_h + 2.0) * n as f32;
                     let rect = Rect::from_min_size(Pos2::new(0.0, top), Vec2::new(420.0, row_h));
@@ -1903,6 +2002,7 @@ mod tests {
                     id: 1,
                     closeness,
                     weak,
+                    by_meaning: false,
                 };
                 let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
                     let rect = Rect::from_min_size(Pos2::new(0.0, 100.0), Vec2::new(600.0, row_h));
@@ -2028,6 +2128,7 @@ mod tests {
             id: it.id,
             closeness: None,
             weak: false,
+            by_meaning: false,
         };
         let row = Rect::from_min_size(Pos2::new(0.0, 100.0), Vec2::new(600.0, 58.0));
         let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
@@ -2317,6 +2418,7 @@ mod tests {
             id: 1,
             closeness: None,
             weak: false,
+            by_meaning: false,
         };
         let row = Rect::from_min_size(Pos2::new(0.0, 100.0), Vec2::new(600.0, 58.0));
         let more: Vec<String> = (1..=tags.len())
@@ -2405,6 +2507,7 @@ mod tests {
             id: 1,
             closeness: None,
             weak: false,
+            by_meaning: false,
         };
         let row = Rect::from_min_size(Pos2::new(0.0, 100.0), Vec2::new(420.0, 40.0));
         let mut weak = Color32::PLACEHOLDER;
@@ -2528,6 +2631,7 @@ mod tests {
                         id: it.id,
                         closeness: None,
                         weak: false,
+                        by_meaning: false,
                     };
                     let number = numbered.then_some(it.id as usize);
                     paint_row(
@@ -2656,6 +2760,7 @@ mod tests {
                             id: it.id,
                             closeness: None,
                             weak: false,
+                            by_meaning: false,
                         };
                         let top = 100.0 + 42.0 * n as f32;
                         let rect = Rect::from_min_size(Pos2::new(0.0, top), Vec2::new(420.0, 40.0));
@@ -2722,6 +2827,7 @@ mod tests {
             id: it.id,
             closeness: None,
             weak: false,
+            by_meaning: false,
         };
         let time = row_time(it.created, false);
         let time = match bidi::has_rtl(&time) {
@@ -2818,6 +2924,7 @@ mod tests {
                     id: 1,
                     closeness: None,
                     weak: false,
+                    by_meaning: false,
                 };
                 let column = time_column(ui, std::iter::once((&it, false)));
                 lines = popup_title_lines(ui, &it, &hit, 420.0, column, &[]);
@@ -2864,6 +2971,7 @@ mod tests {
                 id: 2,
                 closeness: None,
                 weak: false,
+                by_meaning: false,
             };
             let column = time_column(ui, std::iter::once((&short, false)));
             lines = popup_title_lines(ui, &short, &hit, 420.0, column, &[]);
@@ -2954,6 +3062,7 @@ mod tests {
                                     id: it.id,
                                     closeness: Some(1.0),
                                     weak: false,
+                                    by_meaning: false,
                                 };
                                 let number = (numbered && n < 9).then_some(n + 1);
                                 let (hot, selected) = (n == 1, n == 0);
@@ -3068,6 +3177,7 @@ mod tests {
                         id: 1,
                         closeness: None,
                         weak: false,
+                        by_meaning: false,
                     };
                     let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
                         let rect =
@@ -3167,6 +3277,7 @@ mod tests {
             id: 1,
             closeness: None,
             weak: false,
+            by_meaning: false,
         };
         let white = egui::ColorImage::filled([48, 32], Color32::WHITE);
         let thumb = ctx.load_texture("picture", white, Default::default());

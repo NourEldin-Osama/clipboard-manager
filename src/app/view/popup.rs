@@ -107,7 +107,8 @@ impl App {
         }
         let handle = Rect::from_center_size(bar.center(), Vec2::new(36.0, 4.0));
         let weak = ui.visuals().weak_text_color();
-        ui.painter().rect_filled(handle, 2.0, weak);
+        ui.painter()
+            .rect_filled(handle, CornerRadius::same(radius::ROUND), weak);
         row(ui, |ui| {
             let small = Vec2::splat(30.0);
             if icon_button_ex(
@@ -265,7 +266,7 @@ impl App {
         ))
         .rect_stroke(
             ctx.content_rect(),
-            0.0,
+            CornerRadius::ZERO,
             Stroke::new(1.0, edge),
             egui::StrokeKind::Inside,
         );

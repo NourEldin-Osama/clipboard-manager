@@ -6,6 +6,7 @@
 
 mod app;
 mod autostart;
+mod backup;
 mod catalog;
 mod clipboard;
 mod code_colors;
@@ -55,6 +56,15 @@ fn main() -> eframe::Result {
         single_instance::Claim::AlreadyRunning => return Ok(()),
     };
     init_logging(&paths);
+    // A new version that never worked in two starts gives way to the
+    // previous one. Checked before anything else that could fail, but after
+    // the one-copy check, so a second start that only shows the running
+    // copy's window doesn't count.
+    let is_update_pending = match update::check_pending(&paths.config) {
+        update::Start::RolledBack => return Ok(()),
+        update::Start::Pending => true,
+        update::Start::Normal => false,
+    };
     // An update downloaded last time but never installed (a Windows shutdown
     // ends the app without the install on quit) goes in now.
     if !after_update {
@@ -102,7 +112,10 @@ fn main() -> eframe::Result {
     let result = eframe::run_native(
         "clipboard-manager",
         options,
-        Box::new(move |cc| Ok(Box::new(app::App::new(cc, paths, instance)?))),
+        Box::new(move |cc| {
+            let app = app::App::new(cc, paths, instance, is_update_pending)?;
+            Ok(Box::new(app))
+        }),
     );
     // A release build has no console, so a failed start needs a visible message.
     if let Err(e) = &result {

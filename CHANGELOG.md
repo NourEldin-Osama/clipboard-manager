@@ -4,6 +4,40 @@ What changed in each version, for the people who use the app. Each release
 starts its notes with the section of the version it was built from, so add
 the notes here before a push that makes a release.
 
+## 0.12.0
+
+- Settings, Privacy, Backup saves your whole history in one file locked
+  with a password: every item with its tags, pins and pictures. Import a
+  backup adds its items to your history and skips the ones already
+  there. Settings and API keys stay out of the backup, and nobody can
+  open a backup whose password is forgotten.
+- When your history can't be opened and a new, empty one starts, the
+  message stays until you close it and offers to restore from a backup.
+- When a new version doesn't start, the app goes back to the previous
+  one by itself. The previous version stays on your PC until the new one
+  has stayed open for 10 seconds; after two starts that never got there,
+  the next start brings the previous version back. It says so in a
+  message, and it won't install the failed version again by itself.
+- Smart search marks a result that has none of your words, but is
+  similar in meaning to your search, with a By meaning label.
+- Search finds Arabic words however their letters were typed: with or
+  without a hamza, with or without diacritics or the tatweel, and with
+  the other common ways to write the same letter. A word that matches is
+  highlighted whole, so its letters stay joined.
+- On Windows, the data that search by meaning uses is now encrypted
+  with your history's key, like your items and pictures. The first start
+  encrypts it in a moment, and the history's file gets smaller.
+- Settings, Clipboard, Recording has a new switch under Merge duplicate
+  copies, off at first: it also merges copies that differ only in spaces
+  or blank lines before or after the text.
+- Under Remove Markdown marks, Marks to remove lets you keep some kinds
+  of marks, such as headings or links, when the app copies or pastes.
+- A switch that is off has a lighter outline.
+- In Settings, Privacy, Where your data goes, each answer sits close to
+  its name.
+- The search field leaves its buttons the room they need, so they no
+  longer cover the end of your search in any language.
+
 ## 0.11.0
 
 - Search can show only the copies from the programs you pick: a Programs

@@ -2,10 +2,10 @@
 //!
 //! The key is 32 random bytes. The history file keeps it sealed with DPAPI
 //! (Windows encryption tied to the user's account), so only that account on
-//! that PC can use it. Each item and each image file is encrypted with
-//! AES-256-GCM and a fresh random nonce, and bound to what it is and its id,
-//! so a row or a file can't be swapped for another. Systems without DPAPI
-//! keep the history plain.
+//! that PC can use it. Each item, image file and search vector is encrypted
+//! with AES-256-GCM and a fresh random nonce, and bound to what it is and its
+//! id (a vector also to its model), so a row or a file can't be swapped for
+//! another. Systems without DPAPI keep the history plain.
 
 use anyhow::{anyhow, bail, Context, Result};
 use ring::aead::{Aad, LessSafeKey, Nonce, UnboundKey, AES_256_GCM, NONCE_LEN};
@@ -109,6 +109,13 @@ pub fn formats_context(id: u64) -> Vec<u8> {
 /// What an image file is bound to.
 pub fn image_context(id: u64) -> Vec<u8> {
     [b"image ".as_slice(), &id.to_le_bytes()].concat()
+}
+
+/// What a search vector row is bound to: its item and the model that made
+/// it. The id has a fixed length and comes first, so no other pair of a
+/// model and an id gives the same bytes.
+pub fn vector_context(model: &str, id: u64) -> Vec<u8> {
+    [b"vector ".as_slice(), &id.to_le_bytes(), model.as_bytes()].concat()
 }
 
 #[cfg(test)]

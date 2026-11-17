@@ -56,18 +56,16 @@ pub(crate) use messages::{Question, UpdateParts};
 pub(crate) use theme::{
     accent, accent_name, add_fonts, apply_theme, button_fill, card_frame, choice_track,
     chosen_face, chosen_pill, key_cap, line_color, lit, note_fill, radius, search_fill, search_hit,
-    semibold, set_accent, size, space, style, text_shade, warning_fill, ACCENTS, AMBER, GREEN,
-    READING_WIDTH, RED,
+    semibold, set_accent, size, space, style, switch_edge, text_shade, warning_fill, ACCENTS,
+    AMBER, GREEN, READING_WIDTH, RED,
 };
 pub(crate) use viewer::Viewer;
-/// For the tests of the menus in Settings, which search as the menus do.
-#[cfg(test)]
-pub(crate) use widgets::search_words;
 pub(crate) use widgets::{
     chip, cut_line, divider, enter_in, far, far_layout, flip, lbl, matches, menu_search_words,
     nothing_matches, paint_progress, paint_text, part_corners, pill_job, primary_button,
-    program_row, row, row_layout, row_of, row_wrapped, section_title, set_choice_name, set_name,
-    slow_spinner, start_anchor, steady_list, tip, title_lbl, txt, Reacts, PROGRESS_LINE,
+    program_row, row, row_layout, row_of, row_wrapped, search_words, section_title,
+    set_choice_name, set_name, slow_spinner, start_anchor, steady_list, tip, title_lbl, txt,
+    Reacts, PROGRESS_LINE,
 };
 
 /// Where a view `view` tall scrolls to so that an item `top` from the
@@ -347,13 +345,14 @@ impl eframe::App for App {
         self.keys_sheet(&ctx, false);
         self.whats_new(&ctx);
         self.licenses(&ctx);
+        self.backup_dialog(&ctx);
         if ctx.input(|i| !i.raw.hovered_files.is_empty()) {
             let r = ctx.content_rect();
             let p = ctx.layer_painter(egui::LayerId::new(
                 egui::Order::Foreground,
                 egui::Id::unique("drop"),
             ));
-            p.rect_filled(r, 0.0, theme::drop_shade());
+            p.rect_filled(r, CornerRadius::ZERO, theme::drop_shade());
             let g = ctx.fonts_mut(|f| {
                 f.layout_job(bidi::job(
                     &t!("list-drop-files"),
