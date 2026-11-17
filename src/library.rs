@@ -3,7 +3,7 @@
 //! through here; there is no UI code, so the rules can be tested on their own.
 
 use std::collections::{HashMap, HashSet};
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 use anyhow::Result;
 
@@ -26,6 +26,9 @@ pub struct Library {
     /// The current model's vector for each item that has one.
     embeddings: HashMap<u64, Arc<Embedding>>,
     next_id: u64,
+    /// Every tag in use with its count, worked out again only after the
+    /// history changes: the top bar shows them in every frame.
+    tags: OnceLock<Arc<[(String, usize)]>>,
 }
 
 /// An item taken out of the history but not yet deleted from the disk, so it
@@ -48,6 +51,7 @@ impl Library {
             positions: HashMap::new(),
             lower,
             embeddings: HashMap::new(),
+            tags: OnceLock::new(),
         };
         library.reindex_from(0);
         Ok(library)
@@ -118,11 +122,14 @@ impl Library {
         self.lower.insert(item.id, lowered(&item));
         self.positions.insert(item.id, self.items.len());
         self.items.push(Arc::new(item));
+        self.tags.take();
     }
 
     /// The item to change; copied first if a search still reads it.
     fn get_mut(&mut self, id: u64) -> Option<&mut Item> {
         let p = *self.positions.get(&id)?;
+        // Its tags may change.
+        self.tags.take();
         Some(Arc::make_mut(&mut self.items[p]))
     }
 
@@ -191,20 +198,8 @@ impl Library {
     // ----- tags --------------------------------------------------------------
 
     /// Every tag in use with its item count, most used first.
-    pub fn all_tags(&self) -> Vec<(String, usize)> {
-        let mut counts: HashMap<String, (String, usize)> = HashMap::new();
-        for t in self.items.iter().flat_map(|i| &i.tags) {
-            counts
-                .entry(t.to_lowercase())
-                .or_insert_with(|| (t.clone(), 0))
-                .1 += 1;
-        }
-        let mut tags: Vec<(String, usize)> = counts.into_values().collect();
-        tags.sort_by(|a, b| {
-            b.1.cmp(&a.1)
-                .then_with(|| a.0.to_lowercase().cmp(&b.0.to_lowercase()))
-        });
-        tags
+    pub fn all_tags(&self) -> Arc<[(String, usize)]> {
+        self.tags.get_or_init(|| count_tags(&self.items)).clone()
     }
 
     pub fn any_has_tag(&self, tag: &str) -> bool {
@@ -414,7 +409,27 @@ impl Library {
         for (p, item) in self.items.iter().enumerate().skip(start) {
             self.positions.insert(item.id, p);
         }
+        // Items came or went.
+        self.tags.take();
     }
+}
+
+/// Every tag `items` use with its item count, most used first; a tag's
+/// spellings count together.
+fn count_tags(items: &[Arc<Item>]) -> Arc<[(String, usize)]> {
+    let mut counts: HashMap<String, (String, usize)> = HashMap::new();
+    for t in items.iter().flat_map(|i| &i.tags) {
+        counts
+            .entry(t.to_lowercase())
+            .or_insert_with(|| (t.clone(), 0))
+            .1 += 1;
+    }
+    let mut tags: Vec<(String, usize)> = counts.into_values().collect();
+    tags.sort_by(|a, b| {
+        b.1.cmp(&a.1)
+            .then_with(|| a.0.to_lowercase().cmp(&b.0.to_lowercase()))
+    });
+    tags.into()
 }
 
 /// What keyword search looks in: the searchable text, lower-cased once.
@@ -474,9 +489,39 @@ mod tests {
         lib.add_tags(a, "Work").unwrap();
         lib.add_tags(b, "work, work").unwrap();
         assert_eq!(lib.get(b).unwrap().tags, ["Work"]);
-        assert_eq!(lib.all_tags(), [("Work".to_string(), 2)]);
+        assert_eq!(*lib.all_tags(), [("Work".to_string(), 2)]);
         assert_eq!(lib.delete_tag("WORK").unwrap(), 2);
         assert!(!lib.any_has_tag("work"));
+        drop(lib);
+        std::fs::remove_dir_all(dir).ok();
+    }
+
+    /// The tag list is worked out once and kept, so it must follow every
+    /// change: tags added and removed, items taken, put back and cleared.
+    #[test]
+    fn the_tag_list_follows_every_change() {
+        let (dir, mut lib) = open("tag-list");
+        let a = add(&mut lib, "a", 1);
+        let b = add(&mut lib, "b", 2);
+        let counts = |lib: &Library| lib.all_tags().to_vec();
+        assert!(counts(&lib).is_empty());
+        lib.add_tags(a, "Work, Home").unwrap();
+        lib.add_tags(b, "Work").unwrap();
+        assert_eq!(
+            counts(&lib),
+            [("Work".to_string(), 2), ("Home".to_string(), 1)]
+        );
+        lib.remove_tag(a, "home").unwrap();
+        assert_eq!(counts(&lib), [("Work".to_string(), 2)]);
+        let taken = lib.take(b).unwrap();
+        assert_eq!(counts(&lib), [("Work".to_string(), 1)]);
+        lib.put_back(taken);
+        assert_eq!(counts(&lib), [("Work".to_string(), 2)]);
+        let c = add(&mut lib, "c", 3);
+        lib.add_tags(c, "Later").unwrap();
+        assert_eq!(counts(&lib).len(), 2);
+        lib.delete_tag("work").unwrap();
+        assert_eq!(counts(&lib), [("Later".to_string(), 1)]);
         drop(lib);
         std::fs::remove_dir_all(dir).ok();
     }
