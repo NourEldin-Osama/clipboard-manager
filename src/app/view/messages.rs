@@ -1187,6 +1187,41 @@ mod tests {
         }
     }
 
+    /// The message after an update that never worked was put back shows
+    /// all of its text.
+    fn check_the_rolled_back_message_shows_whole() {
+        let mut toast = message("", None, None);
+        toast.secret = None;
+        crate::app::update_rolled_back(&mut toast, "10.10.10");
+        let lines = laid_lines(&toast);
+        assert!(
+            lines.iter().all(|line| !line.contains('…')),
+            "cut short: {lines:?}"
+        );
+        assert!(lines.len() > 1, "{lines:?}");
+    }
+
+    #[test]
+    fn the_rolled_back_message_shows_whole() {
+        check_the_rolled_back_message_shows_whole();
+    }
+
+    #[test]
+    fn the_rolled_back_message_shows_whole_right_to_left() {
+        crate::i18n::passes_in_arabic(
+            module_path!(),
+            "the_rolled_back_message_shows_whole_in_arabic",
+        );
+    }
+
+    #[test]
+    #[ignore = "run in a process of its own by the_rolled_back_message_shows_whole_right_to_left"]
+    fn the_rolled_back_message_shows_whole_in_arabic() {
+        if crate::i18n::arabic_run() {
+            check_the_rolled_back_message_shows_whole();
+        }
+    }
+
     /// Cancel and Esc close only the question, in its own window, and make
     /// no rule: nothing runs.
     #[test]

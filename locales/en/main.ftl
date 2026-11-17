@@ -861,6 +861,8 @@ toast-copied-text = Copied text
 toast-saved = Saved
 toast-deleted = Deleted
 toast-updated = Updated to { $version }
+toast-update-rolled-back = The update to version { $version } didn't work, so the previous version is back.
+toast-update-rolled-back-detail = The app won't install version { $version } again by itself.
 toast-pinned-group =
     { $count ->
         [one] Pinned 1 item

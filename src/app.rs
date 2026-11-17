@@ -1208,6 +1208,16 @@ impl App {
             let toast = app.toast_with(String::new(), Duration::MAX);
             backup::history_moved_aside(toast, &aside);
         }
+        // An update that never worked was put back: the version back in its
+        // place says so, once.
+        if !app.cfg.rolled_back_update.is_empty() {
+            let rolled_back = std::mem::take(&mut app.cfg.rolled_back_update);
+            app.save_config();
+            if let Some(version) = update::rolled_back_version(&rolled_back) {
+                let toast = app.toast_with(String::new(), Duration::MAX);
+                update_rolled_back(toast, version);
+            }
+        }
         #[cfg(windows)]
         photos::delete_old_copies();
         let win = app.win.clone();
@@ -3301,6 +3311,15 @@ fn write_clipboard(
         flags.ignore_next.store(false, Ordering::SeqCst);
     }
     result.map_err(|e| format!("{e:#}"))
+}
+
+/// The message of the previous version, back in place of an update to
+/// `version` that never worked. It stays until closed.
+fn update_rolled_back(toast: &mut Toast, version: &str) {
+    toast.text = t!("toast-update-rolled-back", version = version);
+    toast.detail = Some(t!("toast-update-rolled-back-detail", version = version));
+    toast.icon = Some(icons::Icon::Warning);
+    toast.how_long = Duration::MAX;
 }
 
 mod background;

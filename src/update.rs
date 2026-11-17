@@ -641,15 +641,33 @@ fn put_previous_back(
     start(exe)
 }
 
-/// Saves `key` as the skipped update in the settings at `config`. Settings
-/// that can't be read are left as they are.
+/// Saves `key` as the skipped update in the settings at `config`, and as
+/// the update put back, for the previous version to say so. Settings that
+/// can't be read are left as they are.
 fn skip_in_settings(config: &Path, key: &str) -> Result<()> {
     let (mut settings, problem) = crate::config::Config::load(config);
     if let Some(problem) = problem {
         bail!("the settings can't be read: {}", problem.error);
     }
     settings.skipped_update = key.to_string();
+    settings.rolled_back_update = key.to_string();
     settings.save(config)
+}
+
+/// The version of `rolled_back`, an update that never worked and was put
+/// back (`version+build`), when the running build is older than it: the
+/// version back in its place says so. A newer build, installed later, and
+/// a local build have nothing to say.
+pub fn rolled_back_version(rolled_back: &str) -> Option<&str> {
+    rolled_back_version_for(rolled_back, VERSION, build()?)
+}
+
+/// `rolled_back_version` for the build `build` of `version`.
+fn rolled_back_version_for<'a>(rolled_back: &'a str, version: &str, build: u32) -> Option<&'a str> {
+    let (failed_version, failed_build) = rolled_back.split_once('+')?;
+    let failed_build: u32 = failed_build.parse().ok()?;
+    let is_older = (numbers(version), build) < (numbers(failed_version), failed_build);
+    is_older.then_some(failed_version)
 }
 
 /// Starts the exe at `exe` the way this copy started (hidden at sign-in,
@@ -1136,8 +1154,23 @@ mod tests {
         assert_eq!(problem, None);
         // What "Skip this version" keeps, so the update check passes it by.
         assert_eq!(loaded.skipped_update, new_key());
+        // And what the previous version says at its start.
+        assert_eq!(loaded.rolled_back_update, new_key());
         assert_eq!(loaded.max_items, 123, "the other settings stay");
         std::fs::remove_dir_all(exe.parent().unwrap()).unwrap();
+    }
+
+    /// Only the version put back in place of the failed one, which is
+    /// older, says that the update was put back.
+    #[test]
+    fn the_version_put_back_says_so() {
+        let said = |version, build| rolled_back_version_for("0.13.0+57", version, build);
+        assert_eq!(said("0.12.0", 50), Some("0.13.0"));
+        assert_eq!(said("0.13.0", 56), Some("0.13.0"), "an older build");
+        assert_eq!(said("0.13.0", 57), None, "the failed version itself");
+        assert_eq!(said("0.13.1", 58), None, "a newer version, installed later");
+        assert_eq!(rolled_back_version_for("", "0.12.0", 50), None);
+        assert_eq!(rolled_back_version_for("0.13.0", "0.12.0", 50), None);
     }
 
     #[test]

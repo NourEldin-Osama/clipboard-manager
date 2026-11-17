@@ -672,6 +672,9 @@ pub struct Config {
     pub update_download: bool,
     /// The release "Skip this version" was used on (`version+build`).
     pub skipped_update: String,
+    /// An update that never worked and was put back (`version+build`), until
+    /// the version back in its place says so at its start.
+    pub rolled_back_update: String,
     /// The saved servers, each with the models used on it.
     pub servers: Vec<Server>,
     /// Servers outside this PC that the user agreed to send the history to,
@@ -741,6 +744,7 @@ impl Default for Config {
             update_check: true,
             update_download: true,
             skipped_update: String::new(),
+            rolled_back_update: String::new(),
             servers: Vec::new(),
             allowed_servers: Vec::new(),
             rules: Vec::new(),
