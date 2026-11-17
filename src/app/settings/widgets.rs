@@ -33,10 +33,7 @@ pub(super) fn toggle(ui: &mut Ui, on: &mut bool) -> egui::Response {
     let p = ui.painter();
     p.rect_filled(rect, CornerRadius::same(radius::ROUND), bg);
     // An outline while off, so the track stands out from the page.
-    let edge = ui
-        .visuals()
-        .weak_text_color()
-        .gamma_multiply(0.75 * (1.0 - t));
+    let edge = switch_edge(ui.visuals()).gamma_multiply(1.0 - t);
     p.rect_stroke(
         rect,
         CornerRadius::same(radius::ROUND),
