@@ -213,6 +213,8 @@ item-files-count =
     }
 item-empty = (empty)
 item-color = Color · { $value }
+item-by-meaning = By meaning
+item-by-meaning-tip = Similar in meaning to your search
 item-delete = Delete
 item-pin = Pin
 item-unpin = Unpin

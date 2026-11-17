@@ -232,6 +232,8 @@ item-files-count =
     }
 item-empty = (فارغ)
 item-color = لون · { $value }
+item-by-meaning = بالمعنى
+item-by-meaning-tip = معناه مشابه لما تبحث عنه
 item-delete = حذف
 item-pin = تثبيت
 item-unpin = إلغاء التثبيت

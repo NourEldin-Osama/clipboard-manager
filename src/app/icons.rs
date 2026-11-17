@@ -59,6 +59,8 @@ pub(super) enum Icon {
     /// A program that has no icon of its own.
     AppGeneric,
     FullScreen,
+    /// A result found by its meaning alone.
+    Sparkle,
     /// A plain filled circle (status light), not an icon.
     Dot,
 }
@@ -160,11 +162,12 @@ fn source(icon: Icon) -> Option<(&'static str, &'static [u8])> {
         Icon::Server => svg!("server"),
         Icon::AppGeneric => svg!("app_generic"),
         Icon::FullScreen => svg!("full_screen"),
+        Icon::Sparkle => svg!("sparkle"),
         Icon::Dot => return None,
     })
 }
 
-const ALL: [Icon; 44] = [
+const ALL: [Icon; 45] = [
     Icon::Refresh,
     Icon::Eye,
     Icon::EyeOff,
@@ -208,6 +211,7 @@ const ALL: [Icon; 44] = [
     Icon::Server,
     Icon::AppGeneric,
     Icon::FullScreen,
+    Icon::Sparkle,
     Icon::Dot,
 ];
 
