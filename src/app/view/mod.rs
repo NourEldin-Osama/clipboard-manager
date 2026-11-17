@@ -347,6 +347,7 @@ impl eframe::App for App {
         self.keys_sheet(&ctx, false);
         self.whats_new(&ctx);
         self.licenses(&ctx);
+        self.backup_dialog(&ctx);
         if ctx.input(|i| !i.raw.hovered_files.is_empty()) {
             let r = ctx.content_rect();
             let p = ctx.layer_painter(egui::LayerId::new(

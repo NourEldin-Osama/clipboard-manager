@@ -348,6 +348,11 @@ impl App {
     /// The keys of the full window, or of the popup when `in_popup`: the same,
     /// less those for what the popup doesn't have (details, tags, views).
     pub(super) fn keyboard(&mut self, ctx: &egui::Context, in_popup: bool) {
+        // The window that asks for a backup's password takes the keys while
+        // it is open; it closes on Esc itself.
+        if self.backup_dialog.is_some() && !in_popup {
+            return;
+        }
         // The licenses, opened from Settings, take the keys while they are
         // open: Esc closes them, not Settings.
         if self.licenses_open && !in_popup {

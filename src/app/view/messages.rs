@@ -1109,6 +1109,84 @@ mod tests {
         }
     }
 
+    /// The lines of `toast`'s title and second line, as its card lays them
+    /// out with the app's fonts, without the invisible marks.
+    fn laid_lines(toast: &Toast) -> Vec<String> {
+        let ctx = egui::Context::default();
+        add_fonts(&ctx);
+        // The fonts apply from the next frame.
+        ctx.run_ui(egui::RawInput::default(), |_| {})
+            .textures_delta
+            .clear();
+        let marks = ['\u{2066}', '\u{2067}', '\u{2068}', '\u{2069}'];
+        let mut lines = Vec::new();
+        let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+            let laid = lay_out(ui, toast, WIDTH, false, None);
+            lines = laid
+                .title
+                .iter()
+                .chain(&laid.detail)
+                .map(|(galley, _)| {
+                    galley
+                        .text()
+                        .chars()
+                        .filter(|c| !marks.contains(c))
+                        .collect()
+                })
+                .collect();
+        });
+        output.textures_delta.clear();
+        lines
+    }
+
+    /// The message about a history that couldn't be opened shows all of
+    /// its text, with the old file's name, however long the path to it.
+    fn check_the_moved_aside_message_shows_whole() {
+        let mut toast = message("", None, None);
+        toast.secret = None;
+        let aside = std::path::Path::new(
+            r"C:\Users\someone.with.a.long.name\AppData\Roaming\clipboard-manager\history-unreadable-2026-11-17-101010.redb",
+        );
+        // The check can tell: the whole path in one sentence is cut short.
+        let file = aside.display().to_string();
+        let one_sentence = t!("error-history-moved-aside", file = file);
+        let whole = message(&one_sentence, None, Some("Restore"));
+        assert!(laid_lines(&whole).iter().any(|line| line.contains('…')));
+        crate::app::backup::history_moved_aside(&mut toast, aside);
+        let lines = laid_lines(&toast);
+        assert!(
+            lines.iter().all(|line| !line.contains('…')),
+            "cut short: {lines:?}"
+        );
+        assert!(
+            lines
+                .concat()
+                .contains("history-unreadable-2026-11-17-101010.redb"),
+            "{lines:?}"
+        );
+    }
+
+    #[test]
+    fn the_moved_aside_message_shows_whole() {
+        check_the_moved_aside_message_shows_whole();
+    }
+
+    #[test]
+    fn the_moved_aside_message_shows_whole_right_to_left() {
+        crate::i18n::passes_in_arabic(
+            module_path!(),
+            "the_moved_aside_message_shows_whole_in_arabic",
+        );
+    }
+
+    #[test]
+    #[ignore = "run in a process of its own by the_moved_aside_message_shows_whole_right_to_left"]
+    fn the_moved_aside_message_shows_whole_in_arabic() {
+        if crate::i18n::arabic_run() {
+            check_the_moved_aside_message_shows_whole();
+        }
+    }
+
     /// Cancel and Esc close only the question, in its own window, and make
     /// no rule: nothing runs.
     #[test]

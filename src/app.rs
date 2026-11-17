@@ -489,6 +489,8 @@ pub(super) enum Command {
     /// Removes a tag from every item that has it.
     DeleteTag(String),
     Import(Vec<PathBuf>),
+    /// Asks for a backup's file and password, and restores it.
+    ImportBackup,
     ClearHistory,
     /// Brings back the items of one delete, by its number in the undo
     /// history: its message's Undo.
@@ -942,6 +944,10 @@ pub struct App {
     /// Imports still reading files, and the files they added so far.
     imports_running: usize,
     imported: usize,
+    /// The backup being written or restored, while it runs.
+    backup_job: Option<BackupJob>,
+    /// The window that asks for a backup's password, while it is open.
+    backup_dialog: Option<BackupDialog>,
 }
 
 impl App {
@@ -1131,6 +1137,8 @@ impl App {
             background: Background::spawn(ctx.clone()),
             imports_running: 0,
             imported: 0,
+            backup_job: None,
+            backup_dialog: None,
             recording: None,
             record_problem: None,
             cfg,
@@ -1184,12 +1192,13 @@ impl App {
             app.save_config();
         }
         if let Some(aside) = app.library.store().moved_aside.clone() {
-            let file = aside.display().to_string();
-            // The log gets the path as it is; the window sets it apart, so
-            // it reads left to right inside an Arabic sentence too.
-            log_error!("error-history-moved-aside", file = file.as_str());
-            let file = bidi::left_to_right(&file);
-            app.set_error(t!("error-history-moved-aside", file = file));
+            // The log gets the whole path.
+            log_error!(
+                "error-history-moved-aside",
+                file = aside.display().to_string()
+            );
+            let toast = app.toast_with(String::new(), Duration::MAX);
+            backup::history_moved_aside(toast, &aside);
         }
         #[cfg(windows)]
         photos::delete_old_copies();
@@ -1859,6 +1868,7 @@ impl App {
             Command::RemoveTag(id, tag) => self.remove_tag(id, &tag),
             Command::DeleteTag(tag) => self.delete_tag(&tag),
             Command::Import(paths) => self.import(paths),
+            Command::ImportBackup => self.ask_backup_file(),
             Command::ClearHistory => self.clear_history(),
             Command::UndoDelete(number) => self.undo_delete(number),
             Command::UndoNewestDelete => {
@@ -2394,6 +2404,10 @@ impl App {
                     self.toast(t!("toast-imported", count = n));
                 }
             }
+            Done::BackupSaved(saved) => self.backup_saved(saved),
+            Done::BackupOpened => self.backup_opened(),
+            Done::Restored(items) => self.add_restored(items),
+            Done::RestoreFinished(finished) => self.restore_finished(finished),
             Done::Crashed => self.set_error(log_error!("error-background-crash")),
         }
     }
@@ -3261,6 +3275,7 @@ fn write_clipboard(
 }
 
 mod background;
+mod backup;
 pub(crate) mod bidi;
 mod icons;
 #[cfg(windows)]
@@ -3272,6 +3287,7 @@ mod undo;
 mod view;
 
 use background::{Background, Done};
+use backup::{BackupDialog, BackupJob, BackupStage};
 use settings::{PendingSend, ServerEditor, SettingsPage};
 use undo::UndoHistory;
 use view::{add_fonts, apply_theme, looks_like_code, set_accent, style};

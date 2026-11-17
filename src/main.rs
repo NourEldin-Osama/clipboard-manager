@@ -6,6 +6,7 @@
 
 mod app;
 mod autostart;
+mod backup;
 mod catalog;
 mod clipboard;
 mod code_colors;

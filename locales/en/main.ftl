@@ -193,6 +193,9 @@ status-model-none = Words only · add a search model
 status-model-tip-named = Search model: { $model } on { $server }. Click to change.
 status-indexing = Indexing · { $done } of { $total }
 status-adding-files = Adding files · { $count } added
+status-backup-saving = Saving the backup · { $done } of { $total }
+status-backup-checking = Checking the backup…
+status-backup-restoring = Restoring the backup · { $done } of { $total }
 status-pause-recording = Pause recording
 status-resume-recording = Resume recording
 status-pause = Pause
@@ -476,6 +479,14 @@ settings-data-on-pc = Stays on this PC
 settings-data-sent = Sent to { $host }
 settings-data-windows = Read by Windows on this PC
 settings-data-updates-on = Downloads only the version file, from GitHub
+settings-backup = Backup
+settings-backup-file = Your history in one file
+settings-backup-file-hint = Every item with its tags, pins and pictures, locked with a password. Settings and API keys are left out.
+settings-backup-export = Export a backup…
+settings-backup-import = Import a backup…
+settings-backup-saving = Saving the backup · { $done } of { $total }
+settings-backup-checking = Checking the backup…
+settings-backup-restoring = Restoring the backup · { $done } of { $total }
 settings-pasting = Pasting
 settings-reset-section = Reset
 settings-merge-duplicates = Merge duplicate copies
@@ -767,6 +778,30 @@ settings-shortcut-escape = Close details, clear the search, or hide
 settings-shortcut-built-in = Built in; can't be changed
 settings-shortcuts-note = Click a shortcut, then press the new keys. Backspace turns it off, Esc cancels.
 
+## The window that asks for a backup's password, and the backup's file
+
+backup-export-title = Lock the backup with a password
+backup-restore-title = Restore the backup
+backup-password = Password
+backup-password-again = Password again
+backup-show-password = Show the password
+backup-hide-password = Hide the password
+backup-password-short =
+    { $count ->
+        [one] Use at least 1 character.
+       *[other] Use at least { $count } characters.
+    }
+backup-passwords-differ = The two passwords are not the same.
+backup-forget-warning = If you forget this password, nobody can open this backup.
+backup-export-next = Save the backup…
+backup-restore-start = Restore
+backup-checking = Checking the password…
+backup-refused = The password is wrong, or the file was changed or damaged.
+# The name a new backup's file gets; the date is like 2026-11-17.
+backup-file-name = Clipboard history { $date }
+backup-file-type = Clipboard Manager backup
+backup-all-files = All files
+
 ## Errors, statuses, messages and the tray icon
 
 error-saving-item = Could not save the item: { $error }
@@ -856,6 +891,31 @@ toast-imported =
         [one] Imported 1 file
        *[other] Imported { $count } files
     }
+toast-backup-saved =
+    { $count ->
+        [one] Saved 1 item in the backup
+       *[other] Saved { $count } items in the backup
+    }
+toast-backup-restored =
+    { $count ->
+        [0] Nothing new to add from the backup
+        [one] Added 1 item from the backup
+       *[other] Added { $count } items from the backup
+    }
+toast-backup-skipped =
+    { $count ->
+        [0] None were in your history already
+        [one] 1 item was in your history already, so it was skipped
+       *[other] { $count } items were in your history already, so they were skipped
+    }
+toast-backup-not-saved = Could not save the backup
+toast-backup-not-restored = Could not restore the backup
+toast-backup-refused = This backup can't be opened: the password is wrong, or the file was changed or damaged.
+toast-backup-not-a-backup = This file isn't a Clipboard Manager backup.
+toast-backup-newer = A newer version of the app made this backup. Update the app to restore it.
+toast-history-moved-aside = Your history couldn't be opened, so a new, empty one started.
+toast-history-kept-as = The old one was kept in the data folder as { $file }
+toast-restore-backup = Restore from a backup…
 toast-pruned-age =
     { $count ->
         [one] Deleted 1 item older than { $age }
