@@ -262,7 +262,7 @@ Dots.OCR, HunyuanOCR…) work as **Another model**, with the prompt their model 
 - `config.json` holds settings, with your servers and their models, and `app.ron` the window's size and place
 - `clipboard-manager.log` is a log of the current run (the previous run's is kept as `clipboard-manager.old.log`). Open it from Settings → About → *Show log* and attach it to bug reports.
 
-On Windows the items and copied images are encrypted (AES-256-GCM) with a key that Windows itself protects for your account (DPAPI): only your account, on this PC, can open the history. The search vectors are not encrypted. A history that can't be opened, for example one from an older version or one copied from another PC or account, is moved aside as `history-unreadable-<date>.redb` and an empty one starts; one from another account still opens on the account that made it.
+On Windows the items, copied images and search vectors are encrypted (AES-256-GCM) with a key that Windows itself protects for your account (DPAPI): only your account, on this PC, can open the history. A history that can't be opened, for example one from an older version or one copied from another PC or account, is moved aside as `history-unreadable-<date>.redb` and an empty one starts; one from another account still opens on the account that made it.
 
 Set `CLIPBOARD_MANAGER_HOME` to use another folder, for example a portable install on a USB stick. Its history is encrypted too, so it opens only on the PC and account that made it.
 
@@ -285,7 +285,7 @@ src/
     windows_reader.rs  Windows' own text reader (Windows.Media.Ocr)
     server.rs    a vision model on a server, through /chat/completions
   search.rs      keyword scoring, similarity ranking with a word-match boost
-  store.rs       redb persistence; items and copied images encrypted on Windows
+  store.rs       redb persistence; items, copied images and search vectors encrypted on Windows
   vault.rs       the history's key (sealed with DPAPI) and its AES-256-GCM encryption
   library.rs     the history in memory and every change to it, kept in step with the store
   import.rs      files/folders -> items

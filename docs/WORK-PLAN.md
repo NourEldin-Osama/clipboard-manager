@@ -24,7 +24,7 @@ history (the last full version of this file is in commit `c880dca`). Versions an
 | D12 | The full window uses the popup's keys: Enter pastes, Shift+Enter pastes plain text, Ctrl+C only copies; Alt+Shift+V opens it |
 | D13 | Delete by age is off by default; pinned and tagged items are never deleted by it |
 | D14 | Rules per app: ignore an app, and ignore text that matches a pattern (for one app or all); a copy a rule skipped can be kept with Save anyway |
-| D16 | Encryption covers items and images; search vectors stay unencrypted |
+| D16 | Encryption covers items, images and search vectors (the vectors were plain up to 0.11.0) |
 | D17 | If the history key can't be opened (another PC or account), the old history is set aside and the app starts empty, with a message |
 | D18 | Portable copies are encrypted too; a portable history opens only on the PC and account that made it |
 | D19 | Applying a search server that is not on this PC shows a warning and asks once |
