@@ -479,9 +479,9 @@ pub(super) fn paint_row(
                 .uv(uv)
                 .tint(small_picture_tint(ui, id, hot || selected))
                 .corner_radius(if compact {
-                    f32::from(radius::SMALL)
+                    radius::SMALL
                 } else {
-                    6.0
+                    radius::MEDIUM
                 })
                 .paint_at(ui, picture);
             if compact {
