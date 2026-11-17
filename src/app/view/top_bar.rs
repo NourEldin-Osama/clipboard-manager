@@ -469,7 +469,7 @@ impl App {
         let (sep_rect, _) = ui.allocate_exact_size(Vec2::new(1.0, 18.0), Sense::hover());
         ui.painter().rect_filled(
             sep_rect,
-            0.0,
+            CornerRadius::ZERO,
             ui.visuals().weak_text_color().gamma_multiply(0.3),
         );
         ui.add_space(space::SMALL);

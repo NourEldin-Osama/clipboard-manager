@@ -349,7 +349,7 @@ fn main_button(ui: &mut Ui, ways: &[CopyWay], reserved: f32) -> Option<Paste> {
                 Pos2::new(edge, rect.center().y),
                 Vec2::new(1.0, height - 14.0),
             ),
-            0.0,
+            CornerRadius::ZERO,
             theme::on_button(70),
         );
         icons::paint(
@@ -856,7 +856,7 @@ impl App {
                 ui.add(
                     egui::Image::new((tex.id(), size * scale))
                         .tint(tint)
-                        .corner_radius(8.0),
+                        .corner_radius(CornerRadius::same(radius::MEDIUM)),
                 );
             }
             Preview::Loading => {

@@ -302,7 +302,7 @@ pub(super) fn paint_card(
             let id = ui.scope_id().with(("card-picture", it.id));
             egui::Image::new((t.id(), s * k))
                 .tint(small_picture_tint(ui, id, hot || selected))
-                .corner_radius(6.0)
+                .corner_radius(CornerRadius::same(radius::MEDIUM))
                 .paint_at(ui, img);
             bp.rect_stroke(
                 img,

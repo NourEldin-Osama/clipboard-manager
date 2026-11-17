@@ -619,13 +619,13 @@ pub(crate) fn style(ctx: &egui::Context, panels: crate::config::DarkPanels) {
             &mut s.visuals.widgets.active,
             &mut s.visuals.widgets.open,
         ] {
-            w.corner_radius = CornerRadius::same(8);
+            w.corner_radius = CornerRadius::same(radius::MEDIUM);
         }
         // Flat controls: no outline until hovered.
         s.visuals.widgets.inactive.bg_stroke = Stroke::NONE;
         s.visuals.widgets.noninteractive.bg_stroke = Stroke::NONE;
-        s.visuals.window_corner_radius = CornerRadius::same(12);
-        s.visuals.menu_corner_radius = CornerRadius::same(10);
+        s.visuals.window_corner_radius = CornerRadius::same(radius::LARGE);
+        s.visuals.menu_corner_radius = CornerRadius::same(radius::LARGE);
     });
     // Input fields need a visible fill: the content panes are already the
     // lightest (or darkest) tone, so a default field would vanish into them.
@@ -711,19 +711,32 @@ mod tests {
                 continue;
             }
             let text = std::fs::read_to_string(&path).unwrap();
-            // Tests may use any value.
-            let code = text.split("#[cfg(test)]").next().unwrap_or("");
-            for (n, line) in code.lines().enumerate() {
+            // Tests may use any value: the code ends where its test module
+            // starts, not at a `#[cfg(test)]` on a single `use` above it.
+            let code = text
+                .match_indices("#[cfg(test)]")
+                .find(|(at, m)| text[at + m.len()..].trim_start().starts_with("mod "))
+                .map_or(text.as_str(), |(at, _)| &text[..at]);
+            let lines: Vec<&str> = code.lines().collect();
+            for (n, line) in lines.iter().enumerate() {
                 let number_in = |call: &str| {
                     line.split(call)
                         .skip(1)
                         .any(|rest| rest.starts_with(|c: char| c.is_ascii_digit()))
                 };
                 let raw = number_in("CornerRadius::same(")
+                    || number_in(".corner_radius(")
                     || number_in("add_space(")
                     || (line.contains("Color32::from_") && !line.contains("// copied color"));
                 if raw {
                     found.push(format!("{}:{}: {}", path.display(), n + 1, line.trim()));
+                }
+            }
+            // A painted rectangle's corners are its second argument, often on
+            // a line of its own.
+            for call in ["rect_filled(", "rect_stroke("] {
+                for n in raw_second_arguments(code, call) {
+                    found.push(format!("{}:{}: {}", path.display(), n, lines[n - 1].trim()));
                 }
             }
         }
@@ -732,6 +745,45 @@ mod tests {
             "raw sizes or colors:\n{}",
             found.join("\n")
         );
+    }
+
+    /// The lines (counted from 1) of the calls to `call` in `code` whose
+    /// second argument is a plain number, as in `rect_filled(r, 4.0, color)`.
+    /// The arguments may run over several lines.
+    fn raw_second_arguments(code: &str, call: &str) -> Vec<usize> {
+        let mut found = Vec::new();
+        for (at, _) in code.match_indices(call) {
+            let rest = &code[at + call.len()..];
+            let mut depth = 0;
+            let mut second = None;
+            for (i, c) in rest.char_indices() {
+                match c {
+                    '(' | '[' | '{' => depth += 1,
+                    ')' | ']' | '}' if depth == 0 => break,
+                    ')' | ']' | '}' => depth -= 1,
+                    ',' if depth == 0 => {
+                        second = Some(&rest[i + 1..]);
+                        break;
+                    }
+                    _ => {}
+                }
+            }
+            let is_number =
+                second.is_some_and(|s| s.trim_start().starts_with(|c: char| c.is_ascii_digit()));
+            if is_number {
+                found.push(code[..at].matches('\n').count() + 1);
+            }
+        }
+        found
+    }
+
+    #[test]
+    fn a_raw_corner_size_is_found_over_several_lines() {
+        let code = "p.rect_filled(r, CornerRadius::same(radius::SMALL), c);\n\
+                    p.rect_filled(\n    Rect::from_min_size(a, b),\n    2.0,\n    c,\n);\n\
+                    p.rect_stroke(r, 0.0, s, k);";
+        assert_eq!(raw_second_arguments(code, "rect_filled("), [2]);
+        assert_eq!(raw_second_arguments(code, "rect_stroke("), [7]);
     }
 
     /// `lay_out` in a frame of a window with the fonts `fonts`, at `scale`

@@ -353,7 +353,7 @@ impl eframe::App for App {
                 egui::Order::Foreground,
                 egui::Id::unique("drop"),
             ));
-            p.rect_filled(r, 0.0, theme::drop_shade());
+            p.rect_filled(r, CornerRadius::ZERO, theme::drop_shade());
             let g = ctx.fonts_mut(|f| {
                 f.layout_job(bidi::job(
                     &t!("list-drop-files"),

@@ -53,7 +53,7 @@ pub(super) fn focus_outline(ctx: &egui::Context) {
     ))
     .rect_stroke(
         focused.interact_rect.expand(2.0),
-        6.0,
+        CornerRadius::same(radius::MEDIUM),
         Stroke::new(2.0, accent()),
         egui::StrokeKind::Outside,
     );
