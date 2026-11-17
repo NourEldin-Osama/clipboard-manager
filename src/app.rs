@@ -3320,6 +3320,7 @@ mod tests {
                 id: i as u64,
                 closeness: None,
                 weak: i >= strong,
+                by_meaning: false,
             })
             .collect()
     }

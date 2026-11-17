@@ -19,9 +19,9 @@ fn cards_per_row(width: f32) -> usize {
 /// as tall as a card with one line of text; no card is taller than 1.6
 /// times the height cards have when they are all the same (`same`), and
 /// longer text is cut there.
-fn fitted_height(ui: &Ui, it: &Item, card_w: f32, same: f32) -> f32 {
+fn fitted_height(ui: &Ui, it: &Item, by_meaning: bool, card_w: f32, same: f32) -> f32 {
     let probe = Rect::from_min_size(Pos2::ZERO, Vec2::new(card_w, same * 1.6));
-    let most = card_body(probe, !it.tags.is_empty());
+    let most = card_body(probe, rows_below(it, by_meaning));
     let around = probe.height() - most.height();
     let body = if it.kind == Kind::Image {
         let picture = if it.width > 0 && it.height > 0 {
@@ -74,16 +74,23 @@ fn color_content_height(ui: &Ui) -> f32 {
 }
 
 /// Where a card's content goes in `rect`: inside its padding, above its
-/// tags row when it is `tagged`, and above its footer.
-fn card_body(rect: Rect, tagged: bool) -> Rect {
-    let tags = if tagged { TAG_ROW } else { 0.0 };
+/// `rows` (its tags, its meaning chip) and its footer.
+fn card_body(rect: Rect, rows: usize) -> Rect {
+    let rows = rows as f32 * TAG_ROW;
     Rect::from_min_max(
         rect.min + Vec2::splat(CARD_PADDING),
         Pos2::new(
             rect.right() - CARD_PADDING,
-            rect.bottom() - CARD_FOOTER - tags - BELOW_CONTENT,
+            rect.bottom() - CARD_FOOTER - rows - BELOW_CONTENT,
         ),
     )
+}
+
+/// The rows a card of `it` has between its content and its footer: its
+/// tags when it has some, and the meaning chip above them when Smart
+/// search found it `by_meaning`.
+fn rows_below(it: &Item, by_meaning: bool) -> usize {
+    usize::from(!it.tags.is_empty()) + usize::from(by_meaning)
 }
 
 /// The height of one line of text in `font`, as egui lays it out: on whole
@@ -222,9 +229,11 @@ pub(super) const CARD_FOOTER: f32 = 42.0;
 /// Height of a card's tags row, above the action strip.
 pub(super) const TAG_ROW: f32 = 28.0;
 
-/// One card: its content, the tags row when it has tags, and a quiet footer
-/// with the program it came from and when. While hovered, the footer holds
-/// the buttons instead, drawn by the grid.
+/// One card: its content, the tags row when it has tags, the meaning chip
+/// in a row of its own above them when Smart search found it `by_meaning`,
+/// and a quiet footer with the program it came from and when. While
+/// hovered, the footer holds the buttons instead, drawn by the grid.
+/// Returns where the meaning chip is, for its tip.
 #[allow(clippy::too_many_arguments)]
 pub(super) fn paint_card(
     ui: &Ui,
@@ -237,7 +246,8 @@ pub(super) fn paint_card(
     selected: bool,
     terms: &[String],
     colored: Option<&Colored>,
-) {
+    by_meaning: bool,
+) -> Option<Rect> {
     let v = ui.visuals();
     let a = accent();
     let radius = CornerRadius::same(radius::LARGE);
@@ -287,7 +297,23 @@ pub(super) fn paint_card(
     if !it.tags.is_empty() {
         paint_tags(ui, rect, it, pad, (tags_top, strip_top), selected);
     }
-    let body = card_body(rect, !it.tags.is_empty());
+    let chip = by_meaning.then(|| {
+        let row = Rect::from_min_max(
+            Pos2::new(rect.left() + pad, tags_top - TAG_ROW),
+            Pos2::new(rect.right() - pad, tags_top - 2.0),
+        );
+        // On a selected card the card's own color, as its tags have.
+        let fill = selected.then_some(v.extreme_bg_color);
+        let start = Pos2::new(row.left(), row.center().y);
+        MeaningChip::new(ui).paint(
+            &ui.painter_at(row),
+            start,
+            CARD_CHIP_PADDING,
+            fill,
+            (i18n::rtl(), rect),
+        )
+    });
+    let body = card_body(rect, rows_below(it, by_meaning));
     let bp = ui.painter_at(body);
     let color = (it.kind == Kind::Text)
         .then(|| color_in(&it.text))
@@ -429,6 +455,77 @@ pub(super) fn paint_card(
             Stroke::new(1.0, weak.gamma_multiply(0.35)),
             egui::StrokeKind::Inside,
         );
+    }
+    chip
+}
+
+/// How big the sparkle is in the meaning chip.
+const MEANING_ICON: f32 = 12.0;
+
+/// The chip of a result Smart search found by its meaning alone: the
+/// sparkle and "By meaning" in the accent's text shade on a tint of the
+/// accent, as a tag's chip is tinted with its color.
+pub(super) struct MeaningChip {
+    text: Arc<egui::Galley>,
+    color: Color32,
+    fill: Color32,
+}
+
+impl MeaningChip {
+    pub(super) fn new(ui: &Ui) -> Self {
+        let v = ui.visuals();
+        let color = tag_shade(accent(), v.dark_mode);
+        let fill = accent().gamma_multiply(if v.dark_mode { 0.3 } else { 0.13 });
+        let label = t!("item-by-meaning");
+        let font = FontId::proportional(size::SMALL);
+        let text = ui.fonts_mut(|f| f.layout_job(bidi::job(&label, font, color)));
+        Self { text, color, fill }
+    }
+
+    /// Its own tint, see-through.
+    pub(super) fn fill(&self) -> Color32 {
+        self.fill
+    }
+
+    /// How big it is with `padding` above and below its text.
+    pub(super) fn size(&self, padding: f32) -> Vec2 {
+        let width = CHIP_SIDE + MEANING_ICON + space::TINY + self.text.size().x + CHIP_SIDE;
+        Vec2::new(width, self.text.size().y + 2.0 * padding)
+    }
+
+    /// Paints it from `start`, its middle on `start`'s height, with `fill`
+    /// instead of its own tint when given. Placed left to right, then
+    /// mirrored in `within` when `rtl`. Returns where it is.
+    pub(super) fn paint(
+        self,
+        p: &egui::Painter,
+        start: Pos2,
+        padding: f32,
+        fill: Option<Color32>,
+        (rtl, within): (bool, Rect),
+    ) -> Rect {
+        let size = self.size(padding);
+        let chip = Rect::from_min_size(Pos2::new(start.x, start.y - size.y / 2.0), size);
+        let icon = Rect::from_center_size(
+            Pos2::new(
+                chip.left() + CHIP_SIDE + MEANING_ICON / 2.0,
+                chip.center().y,
+            ),
+            Vec2::splat(MEANING_ICON),
+        );
+        let text = Rect::from_min_size(
+            Pos2::new(icon.right() + space::TINY, chip.top() + padding),
+            self.text.size(),
+        );
+        let chip = flip_if(rtl, within, chip);
+        p.rect_filled(
+            chip,
+            CornerRadius::same(radius::MEDIUM),
+            fill.unwrap_or(self.fill),
+        );
+        icons::paint(p, flip_if(rtl, within, icon), Icon::Sparkle, self.color);
+        p.galley(flip_if(rtl, within, text).min, self.text, self.color);
+        chip
     }
 }
 
@@ -751,8 +848,8 @@ pub(crate) struct CardHeights {
 
 struct Measured {
     generation: u64,
-    /// The item had tags, which add their row.
-    tagged: bool,
+    /// The rows the card had between its content and its footer.
+    rows: usize,
     height: f32,
 }
 
@@ -765,22 +862,24 @@ impl CardHeights {
         }
     }
 
-    /// The height of `it`'s card, and whether it is up to date: as
-    /// measured for this layout; or measured now by `measure` before
-    /// `deadline`; or else, until a later frame, its height in an earlier
-    /// layout, or `stand_in` when it has none.
+    /// The height of `it`'s card, with the meaning chip when `by_meaning`,
+    /// and whether it is up to date: as measured for this layout; or
+    /// measured now by `measure` before `deadline`; or else, until a later
+    /// frame, its height in an earlier layout, or `stand_in` when it has
+    /// none.
     fn height(
         &mut self,
         it: &Item,
+        by_meaning: bool,
         deadline: Instant,
         stand_in: f32,
         measure: impl FnOnce() -> f32,
     ) -> (f32, bool) {
-        let tagged = !it.tags.is_empty();
+        let rows = rows_below(it, by_meaning);
         let known = self
             .by_item
             .get(&it.id)
-            .filter(|m| m.tagged == tagged)
+            .filter(|m| m.rows == rows)
             .map(|m| (m.generation, m.height));
         if let Some((generation, height)) = known {
             if generation == self.generation {
@@ -796,7 +895,7 @@ impl CardHeights {
             it.id,
             Measured {
                 generation,
-                tagged,
+                rows,
                 height,
             },
         );
@@ -829,8 +928,11 @@ impl App {
             .iter()
             .map(|hit| match self.library.get(hit.id) {
                 Some(it) => {
-                    let measure = || fitted_height(ui, it, card_w, same);
-                    let (height, current) = self.card_heights.height(it, deadline, same, measure);
+                    let by_meaning = hit.by_meaning;
+                    let measure = || fitted_height(ui, it, by_meaning, card_w, same);
+                    let (height, current) = self
+                        .card_heights
+                        .height(it, by_meaning, deadline, same, measure);
                     behind |= !current;
                     height
                 }
@@ -1010,7 +1112,10 @@ impl App {
                 let lit = chosen || marked.contains(&it.id);
                 let program = it.program.as_deref().and_then(|p| programs.get(p));
                 resp.widget_info(|| {
-                    let name = item_name(it, program);
+                    let mut name = item_name(it, program);
+                    if hit.by_meaning {
+                        name = format!("{name}, {}", t!("item-by-meaning"));
+                    }
                     egui::WidgetInfo::selected(egui::Role::ListBoxOption, true, lit, name)
                 });
                 let hot = !menu_open && ui.rect_contains_pointer(rect);
@@ -1020,9 +1125,26 @@ impl App {
                     .then(|| code_colors.of(it))
                     .flatten();
                 let colored = colored.as_deref();
-                paint_card(
-                    ui, rect, hot, it, thumb, program, relevance, lit, &terms, colored,
+                let chip = paint_card(
+                    ui,
+                    rect,
+                    hot,
+                    it,
+                    thumb,
+                    program,
+                    relevance,
+                    lit,
+                    &terms,
+                    colored,
+                    hit.by_meaning,
                 );
+                if let Some(chip) = chip {
+                    let id = egui::Id::unique(("meaning-chip", it.id));
+                    tip(
+                        ui.interact(chip, id, Sense::hover()),
+                        &t!("item-by-meaning-tip"),
+                    );
+                }
                 if resp.clicked() {
                     // Ctrl and Shift select several.
                     let keys = ui.input(|i| i.modifiers);
@@ -1190,17 +1312,22 @@ mod tests {
                 }) {
                     let case = format!("{:?} at {width} by {same}, scale {scale}", it.text);
                     let tagged = !it.tags.is_empty();
-                    let height = fitted_height(ui, it, width, same);
+                    let height = fitted_height(ui, it, false, width, same);
                     assert!(height <= same * 1.6, "{case}: {height}");
                     let card = Rect::from_min_size(Pos2::ZERO, Vec2::new(width, height));
-                    let body = card_body(card, tagged);
+                    let body = card_body(card, usize::from(tagged));
                     // As the card draws it, all of it, and at the cap.
                     let (shown, _) = card_text(ui, it, &[], body.size(), None);
                     let every = Vec2::new(body.width(), f32::INFINITY);
                     let (all, _) = card_text(ui, it, &[], every, None);
                     let tallest = Rect::from_min_size(Pos2::ZERO, Vec2::new(width, same * 1.6));
-                    let (capped, _) =
-                        card_text(ui, it, &[], card_body(tallest, tagged).size(), None);
+                    let (capped, _) = card_text(
+                        ui,
+                        it,
+                        &[],
+                        card_body(tallest, usize::from(tagged)).size(),
+                        None,
+                    );
                     assert_eq!(rows(&shown), rows(&capped), "{case}");
                     if *it.text == *long {
                         assert!(rows(&shown) < rows(&all), "{case}: the long text is cut");
@@ -1212,7 +1339,7 @@ mod tests {
                     let lines_h: f32 = shown.iter().map(|(g, _)| g.size().y).sum();
                     assert!((lines_h - body.height()).abs() < 0.01, "{case}: {lines_h}");
                 }
-                let one_line = fitted_height(ui, &samples[0], 370.0, 210.0);
+                let one_line = fitted_height(ui, &samples[0], false, 370.0, 210.0);
                 let line = line_height(ui, &FontId::proportional(size::LARGE));
                 let expected = CARD_PADDING + line + BELOW_CONTENT + CARD_FOOTER;
                 assert!((one_line - expected).abs() < 0.01, "{one_line} {expected}");
@@ -1239,6 +1366,7 @@ mod tests {
                 id: 1,
                 closeness,
                 weak,
+                by_meaning: false,
             };
             let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
                 let rect = Rect::from_min_size(Pos2::new(0.0, 100.0), Vec2::new(240.0, 210.0));
@@ -1254,6 +1382,7 @@ mod tests {
                     false,
                     &[],
                     None,
+                    false,
                 );
             });
             output.textures_delta.clear();
@@ -1303,15 +1432,27 @@ mod tests {
                 let mut card = Rect::NOTHING;
                 let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
                     let height = if fitted {
-                        fitted_height(ui, &it, 300.0, 210.0)
+                        fitted_height(ui, &it, false, 300.0, 210.0)
                     } else {
                         210.0
                     };
                     card = Rect::from_min_size(Pos2::new(0.0, 100.0), Vec2::new(300.0, height));
-                    paint_card(ui, card, false, &it, None, None, None, false, &[], None);
+                    paint_card(
+                        ui,
+                        card,
+                        false,
+                        &it,
+                        None,
+                        None,
+                        None,
+                        false,
+                        &[],
+                        None,
+                        false,
+                    );
                 });
                 output.textures_delta.clear();
-                let body = card_body(card, false);
+                let body = card_body(card, 0);
                 let mut swatches = Vec::new();
                 let (mut value_line, mut other_line) = (None, None);
                 for clipped in &output.shapes {
@@ -1402,7 +1543,19 @@ mod tests {
                 let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
                     let rect = Rect::from_min_size(Pos2::new(0.0, 100.0), Vec2::new(300.0, 210.0));
                     let picture = Some(thumb.clone());
-                    paint_card(ui, rect, hot, &it, picture, None, None, selected, &[], None);
+                    paint_card(
+                        ui,
+                        rect,
+                        hot,
+                        &it,
+                        picture,
+                        None,
+                        None,
+                        selected,
+                        &[],
+                        None,
+                        false,
+                    );
                 });
                 output.textures_delta.clear();
                 let tints: Vec<Color32> = output
@@ -1466,7 +1619,19 @@ mod tests {
                     let mut fill = Color32::PLACEHOLDER;
                     let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
                         fill = ui.visuals().extreme_bg_color;
-                        paint_card(ui, card, hot, &it, None, None, None, selected, &[], None);
+                        paint_card(
+                            ui,
+                            card,
+                            hot,
+                            &it,
+                            None,
+                            None,
+                            None,
+                            selected,
+                            &[],
+                            None,
+                            false,
+                        );
                     });
                     output.textures_delta.clear();
                     let (mut fills, mut words) = (Vec::new(), Vec::new());
@@ -1525,7 +1690,19 @@ mod tests {
             style(&ctx, panels);
             ctx.set_theme(theme);
             let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
-                paint_card(ui, card, false, &it, None, None, None, false, &[], None);
+                paint_card(
+                    ui,
+                    card,
+                    false,
+                    &it,
+                    None,
+                    None,
+                    None,
+                    false,
+                    &[],
+                    None,
+                    false,
+                );
             });
             output.textures_delta.clear();
             // The card's surface: the rect as big as the card, under its
@@ -1550,6 +1727,104 @@ mod tests {
         }
     }
 
+    /// A card found by meaning shows the chip in a row of its own above its
+    /// tags, at the reading start, and its content leaves room for both.
+    fn check_meaning_chip() {
+        let ctx = egui::Context::default();
+        add_fonts(&ctx);
+        icons::register(&ctx);
+        // The fonts apply from the next frame.
+        ctx.run_ui(egui::RawInput::default(), |_| {})
+            .textures_delta
+            .clear();
+        let mut it = Item::new(1, Kind::Text, Origin::Clipboard, "Lunch at noon".into());
+        it.tags = vec!["work".into()];
+        let card = Rect::from_min_size(Pos2::new(0.0, 100.0), Vec2::new(300.0, 210.0));
+        let mut chip = None;
+        let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+            chip = paint_card(
+                ui,
+                card,
+                false,
+                &it,
+                None,
+                None,
+                None,
+                false,
+                &[],
+                None,
+                true,
+            );
+        });
+        output.textures_delta.clear();
+        let chip = chip.expect("a chip on a card found by meaning");
+        let tags_top = card.bottom() - CARD_FOOTER - TAG_ROW;
+        assert!(chip.bottom() <= tags_top, "above the tags: {chip:?}");
+        assert!(
+            card_body(card, 2).bottom() <= chip.top(),
+            "the content ends above it"
+        );
+        if i18n::rtl() {
+            assert!(
+                (chip.right() - (card.right() - CARD_PADDING)).abs() < 0.5,
+                "{chip:?}"
+            );
+        } else {
+            assert!(
+                (chip.left() - (card.left() + CARD_PADDING)).abs() < 0.5,
+                "{chip:?}"
+            );
+        }
+        let label = t!("item-by-meaning");
+        let drawn = output.shapes.iter().any(|clipped| match &clipped.shape {
+            egui::Shape::Text(text) => {
+                text.galley.text() == label
+                    && chip.contains_rect(text.galley.rect.translate(text.pos.to_vec2()))
+            }
+            _ => false,
+        });
+        assert!(drawn, "its words inside it");
+        // Without it, no chip.
+        let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+            let none = paint_card(
+                ui,
+                card,
+                false,
+                &it,
+                None,
+                None,
+                None,
+                false,
+                &[],
+                None,
+                false,
+            );
+            assert!(none.is_none());
+        });
+        output.textures_delta.clear();
+    }
+
+    #[test]
+    fn a_card_found_by_meaning_shows_the_chip() {
+        check_meaning_chip();
+    }
+
+    #[test]
+    fn a_card_found_by_meaning_shows_the_chip_in_arabic_too() {
+        crate::i18n::passes_in_arabic(
+            module_path!(),
+            "a_card_found_by_meaning_shows_the_chip_in_arabic",
+        );
+    }
+
+    #[test]
+    #[ignore = "run in a process of its own by a_card_found_by_meaning_shows_the_chip_in_arabic_too"]
+    fn a_card_found_by_meaning_shows_the_chip_in_arabic() {
+        if crate::i18n::arabic_run() {
+            check_meaning_chip();
+        }
+    }
+
     #[test]
     fn a_card_is_measured_once_for_each_layout() {
         let mut heights = CardHeights::default();
@@ -1562,27 +1837,48 @@ mod tests {
         };
         let later = Instant::now() + Duration::from_secs(600);
         heights.start(layout(300.0));
-        assert_eq!(heights.height(&it, later, 210.0, || 84.0), (84.0, true));
+        assert_eq!(
+            heights.height(&it, false, later, 210.0, || 84.0),
+            (84.0, true)
+        );
         // The next frame with nothing new measures nothing.
         heights.start(layout(300.0));
         let not_again = || -> f32 { panic!("measured again") };
-        assert_eq!(heights.height(&it, later, 210.0, not_again), (84.0, true));
+        assert_eq!(
+            heights.height(&it, false, later, 210.0, not_again),
+            (84.0, true)
+        );
         // Another width measures again; out of time, the height of the
         // earlier width stands in.
         heights.start(layout(280.0));
         let no_time = Instant::now();
         assert_eq!(
-            heights.height(&it, no_time, 210.0, not_again),
+            heights.height(&it, false, no_time, 210.0, not_again),
             (84.0, false)
         );
-        assert_eq!(heights.height(&it, later, 210.0, || 106.0), (106.0, true));
+        assert_eq!(
+            heights.height(&it, false, later, 210.0, || 106.0),
+            (106.0, true)
+        );
         // Tags add their row: measured again, and until then the card is as
         // tall as cards of one height.
         it.tags = vec!["work".into()];
         assert_eq!(
-            heights.height(&it, no_time, 210.0, not_again),
+            heights.height(&it, false, no_time, 210.0, not_again),
             (210.0, false)
         );
-        assert_eq!(heights.height(&it, later, 210.0, || 134.0), (134.0, true));
+        assert_eq!(
+            heights.height(&it, false, later, 210.0, || 134.0),
+            (134.0, true)
+        );
+        // So does the meaning chip, in a search that finds the item by meaning.
+        assert_eq!(
+            heights.height(&it, true, no_time, 210.0, not_again),
+            (210.0, false)
+        );
+        assert_eq!(
+            heights.height(&it, true, later, 210.0, || 162.0),
+            (162.0, true)
+        );
     }
 }

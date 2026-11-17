@@ -84,6 +84,9 @@ pub struct Hit {
     /// best match's. Sorted by best match, weaker matches come last and the
     /// list folds them into one line.
     pub weak: bool,
+    /// Smart search found it by its meaning alone: it contains none of the
+    /// words. Its card and row say so.
+    pub by_meaning: bool,
 }
 
 /// A result while ranking: `idx` points into the items searched.
@@ -348,6 +351,7 @@ pub fn search(s: &Snapshot, q: &Query) -> Vec<Hit> {
             id: s.items[r.idx].id,
             closeness: r.closeness,
             weak: fold && !r.strong,
+            by_meaning: q.mode == SearchMode::Hybrid && r.keyword == 0.0 && r.closeness.is_some(),
         })
         .collect()
 }
@@ -688,6 +692,46 @@ mod tests {
         let h = search(&s, &q(SearchMode::Hybrid));
         assert_eq!(h[0].id, 1);
         assert_eq!(h.len(), 3);
+    }
+
+    /// Only Smart search says a result came by its meaning alone, and only
+    /// for a result that contains none of the words.
+    #[test]
+    fn smart_search_marks_what_it_found_by_meaning_alone() {
+        let s = snapshot(
+            vec![
+                item(1, "meeting moved to Thursday", 1),
+                item(2, "the call with the team is at ten", 2),
+                item(3, "grocery list", 3),
+            ],
+            vec![
+                (1, Embedding::dense(vec![1.0, 0.0], 0)),
+                (2, Embedding::dense(vec![0.95, 0.05], 0)),
+                (3, Embedding::dense(vec![0.0, 1.0], 0)),
+            ],
+        );
+        let q = |mode| query("meeting", Some(Embedding::dense(vec![1.0, 0.0], 0)), mode);
+        let by_meaning = |mode| {
+            let mut found: Vec<u64> = search(&s, &q(mode))
+                .iter()
+                .filter(|h| h.by_meaning)
+                .map(|h| h.id)
+                .collect();
+            found.sort();
+            found
+        };
+        // "the call..." has no "meeting" in it; the grocery list is far off
+        // but still a result by meaning.
+        assert_eq!(by_meaning(SearchMode::Hybrid), [2, 3]);
+        assert!(by_meaning(SearchMode::Semantic).is_empty());
+        assert!(by_meaning(SearchMode::Keyword).is_empty());
+        // Without search text nothing is found by meaning.
+        let browse = query(
+            "",
+            Some(Embedding::dense(vec![1.0, 0.0], 0)),
+            SearchMode::Hybrid,
+        );
+        assert!(search(&s, &browse).iter().all(|h| !h.by_meaning));
     }
 
     #[test]
