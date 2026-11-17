@@ -3,6 +3,7 @@
 //! through here; there is no UI code, so the rules can be tested on their own.
 
 use std::collections::{HashMap, HashSet};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, OnceLock};
 
 use anyhow::Result;
@@ -13,6 +14,17 @@ use crate::store::{now, Item, Kind, Origin, Store};
 
 /// Longest tag kept, in characters.
 const MAX_TAG_CHARS: usize = 40;
+
+/// Gives out item ids on any thread: the window takes them for new copies,
+/// and a restore for the items it adds.
+#[derive(Clone)]
+pub struct Ids(Arc<AtomicU64>);
+
+impl Ids {
+    pub fn next(&self) -> u64 {
+        self.0.fetch_add(1, Ordering::Relaxed)
+    }
+}
 
 pub struct Library {
     store: Arc<Store>,
@@ -26,7 +38,7 @@ pub struct Library {
     lower: HashMap<u64, Arc<str>>,
     /// The current model's vector for each item that has one.
     embeddings: HashMap<u64, Arc<Embedding>>,
-    next_id: u64,
+    ids: Ids,
     /// Every tag in use with its count, worked out again only after the
     /// history changes: the top bar shows them in every frame.
     tags: OnceLock<Arc<[(String, usize)]>>,
@@ -46,7 +58,7 @@ impl Library {
         let items: Vec<Arc<Item>> = store.all_items()?.into_iter().map(Arc::new).collect();
         let lower = items.iter().map(|i| (i.id, lowered(i))).collect();
         let mut library = Self {
-            next_id: store.next_id()?,
+            ids: Ids(Arc::new(AtomicU64::new(store.next_id()?))),
             store,
             items,
             positions: HashMap::new(),
@@ -82,9 +94,35 @@ impl Library {
 
     /// An id no item has used in this session.
     pub fn new_id(&mut self) -> u64 {
-        let id = self.next_id;
-        self.next_id += 1;
-        id
+        self.ids.next()
+    }
+
+    /// Where `new_id` takes its ids from, for a thread that adds items.
+    pub fn ids(&self) -> Ids {
+        self.ids.clone()
+    }
+
+    /// The kind and content of every item: what a restore leaves out.
+    pub fn contents(&self) -> HashSet<(Kind, u64)> {
+        self.items.iter().map(|i| (i.kind, i.hash)).collect()
+    }
+
+    /// Saves items a restore made, with the ids it gave them and their
+    /// formatting and pictures already saved, and adds them. Returns their
+    /// ids and kinds.
+    pub fn add_restored(&mut self, items: Vec<Item>) -> Result<Vec<(u64, Kind)>> {
+        if let Err(e) = self.store.put_many(&items) {
+            // Takes their formatting and pictures off the disk again.
+            if let Err(cleanup) = self.store.delete_many(&items) {
+                log::warn!("removing what a failed restore saved: {cleanup:#}");
+            }
+            return Err(e);
+        }
+        let added = items.iter().map(|i| (i.id, i.kind)).collect();
+        for item in items {
+            self.push(item);
+        }
+        Ok(added)
     }
 
     /// Saves a new item and adds it to the history.

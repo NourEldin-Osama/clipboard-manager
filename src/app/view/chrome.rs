@@ -192,6 +192,19 @@ impl App {
                             Some(weak),
                         ));
                     }
+                    if let Some(stage) = self.backup_stage() {
+                        let text = match stage {
+                            BackupStage::Saving { done, total } => {
+                                t!("status-backup-saving", done = done, total = total)
+                            }
+                            BackupStage::Checking => t!("status-backup-checking"),
+                            BackupStage::Restoring { done, total } => {
+                                t!("status-backup-restoring", done = done, total = total)
+                            }
+                        };
+                        slow_spinner(ui, 11.0, Some(weak));
+                        ui.label(txt(&text, size::SMALL, Some(weak)));
+                    }
                     if !self.status.is_empty() {
                         ui.label(txt(&self.status, size::SMALL, Some(weak)));
                     }

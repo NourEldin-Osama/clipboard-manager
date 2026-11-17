@@ -54,7 +54,7 @@ const SCHEMA_VERSION: u64 = 3;
 /// holds in memory; a clipboard history needs far less.
 const CACHE_BYTES: usize = 64 * 1024 * 1024;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Kind {
     Text,
     Link,
@@ -628,17 +628,23 @@ impl ImageFiles {
 
     /// Saves a copied image. Returns the path to keep in its item.
     pub fn save(&self, id: u64, rgba: &image::RgbaImage) -> Result<PathBuf> {
-        let Some(vault) = &self.vault else {
-            let path = self.dir.join(format!("{id}.png"));
-            rgba.save(&path)?;
-            return Ok(path);
-        };
         let mut png = Vec::new();
         rgba.write_to(&mut Cursor::new(&mut png), image::ImageFormat::Png)?;
+        self.save_png(id, &png)
+    }
+
+    /// Saves the PNG file of a copied image, such as one from a backup.
+    /// Returns the path to keep in its item.
+    pub fn save_png(&self, id: u64, png: &[u8]) -> Result<PathBuf> {
+        let Some(vault) = &self.vault else {
+            let path = self.dir.join(format!("{id}.png"));
+            std::fs::write(&path, png)?;
+            return Ok(path);
+        };
         let name = PathBuf::from(format!("{id}.png.enc"));
         std::fs::write(
             self.dir.join(&name),
-            vault.seal(&vault::image_context(id), &png)?,
+            vault.seal(&vault::image_context(id), png)?,
         )?;
         Ok(name)
     }
@@ -649,13 +655,22 @@ impl ImageFiles {
         if path.extension().is_none_or(|e| e != "enc") {
             return Ok(image::open(&path)?);
         }
+        Ok(image::load_from_memory(&self.read(id, stored)?)?)
+    }
+
+    /// The file of an image of the history as it was saved, decrypted: a
+    /// PNG for a copied image.
+    pub fn read(&self, id: u64, stored: &Path) -> Result<Vec<u8>> {
+        let path = self.path(stored);
+        let bytes = std::fs::read(&path).with_context(|| format!("reading {}", path.display()))?;
+        if path.extension().is_none_or(|e| e != "enc") {
+            return Ok(bytes);
+        }
         let vault = self
             .vault
             .as_ref()
             .context("an encrypted image, but no key")?;
-        let sealed = std::fs::read(&path).with_context(|| format!("reading {}", path.display()))?;
-        let png = vault.unseal(&vault::image_context(id), &sealed)?;
-        Ok(image::load_from_memory(&png)?)
+        vault.unseal(&vault::image_context(id), &bytes)
     }
 
     /// Deletes a copied image's file. Files outside the images folder are

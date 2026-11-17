@@ -1,6 +1,9 @@
-//! Settings, Privacy: what is never kept, and where your data goes.
+//! Settings, Privacy: what is never kept, where your data goes, and backups.
 
 use super::*;
+
+/// How long the line of a running backup's progress is.
+const BACKUP_PROGRESS_WIDTH: f32 = 120.0;
 
 impl App {
     pub(super) fn privacy_page(&mut self, ui: &mut Ui, d: &mut Config) {
@@ -43,6 +46,68 @@ impl App {
         }
         self.rules_section(ui, d);
         self.where_data_goes(ui, d);
+        self.backup_section(ui);
+    }
+
+    /// Writing the history to a file locked with a password, and restoring
+    /// one; while one runs, how far it is.
+    fn backup_section(&mut self, ui: &mut Ui) {
+        let stage = self.backup_stage();
+        let (mut export, mut import) = (false, false);
+        section(ui, &t!("settings-backup"), |ui| {
+            plain_setting(
+                ui,
+                &t!("settings-backup-file"),
+                &t!("settings-backup-file-hint"),
+                "",
+                |ui| {
+                    // From the far end; one backup at a time.
+                    let idle = stage.is_none();
+                    let button = |label: &str| egui::Button::new(txt(label, size::BODY, None));
+                    import = ui
+                        .add_enabled(idle, button(&t!("settings-backup-import")))
+                        .clicked();
+                    export = ui
+                        .add_enabled(idle, button(&t!("settings-backup-export")))
+                        .clicked();
+                },
+            );
+            let Some(stage) = stage else {
+                return;
+            };
+            card_row(ui, false, |ui| {
+                row(ui, |ui| {
+                    let weak = ui.visuals().weak_text_color();
+                    slow_spinner(ui, 14.0, Some(weak));
+                    let (text, part) = match stage {
+                        BackupStage::Saving { done, total } => (
+                            t!("settings-backup-saving", done = done, total = total),
+                            Some((done, total)),
+                        ),
+                        BackupStage::Checking => (t!("settings-backup-checking"), None),
+                        BackupStage::Restoring { done, total } => (
+                            t!("settings-backup-restoring", done = done, total = total),
+                            Some((done, total)),
+                        ),
+                    };
+                    lbl(ui, &text, size::SMALL, weak);
+                    if let Some((done, total)) = part {
+                        let (bar, _) = ui.allocate_exact_size(
+                            Vec2::new(BACKUP_PROGRESS_WIDTH, PROGRESS_LINE),
+                            Sense::hover(),
+                        );
+                        let done = done as f32 / total.max(1) as f32;
+                        paint_progress(ui.painter(), bar, done, ui.visuals().dark_mode);
+                    }
+                });
+            });
+        });
+        if export {
+            self.ask_backup_password();
+        }
+        if import {
+            self.run(Command::ImportBackup);
+        }
     }
 
     /// The programs copies in the history came from, newest first, each
