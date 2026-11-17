@@ -3,8 +3,8 @@
 //! Images are written as PNG files next to the database; the database keeps
 //! metadata, OCR text and one embedding per (model, item).
 //!
-//! On Windows the items and the copied images' files are encrypted with the
-//! history's key (see `vault`); the embeddings are not.
+//! On Windows the items, the copied images' files and the embeddings are
+//! encrypted with the history's key (see `vault`).
 
 use std::borrow::Cow;
 use std::io::Cursor;
@@ -12,7 +12,10 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use anyhow::{bail, Context, Result};
-use redb::{Database, ReadableDatabase, ReadableTable, ReadableTableMetadata, TableDefinition};
+use redb::{
+    Database, ReadableDatabase, ReadableTable, ReadableTableMetadata, TableDefinition, TableError,
+    TableHandle,
+};
 use serde::{Deserialize, Serialize};
 
 use crate::embed::Embedding;
@@ -20,9 +23,16 @@ use crate::i18n::t;
 use crate::vault::{self, Vault};
 
 const ITEMS: TableDefinition<u64, &[u8]> = TableDefinition::new("items");
-const EMBEDDINGS: TableDefinition<(&str, u64), &[u8]> = TableDefinition::new("embeddings");
-/// The model keys that have rows in EMBEDDINGS, so deleting an item visits
-/// one row per model instead of scanning every stored vector.
+/// A table of embeddings, by model key and item id.
+type VectorTable = TableDefinition<'static, (&'static str, u64), &'static [u8]>;
+/// The embeddings of a history without a key, as `Embedding::to_bytes`.
+const EMBEDDINGS: VectorTable = TableDefinition::new("embeddings");
+/// The embeddings of a history with a key, each sealed to its model and
+/// item. They need a table of their own: a plain multi-vector row starts
+/// with the same byte as a sealed value, so the two can't share one.
+const VECTORS: VectorTable = TableDefinition::new("vectors");
+/// The model keys that have rows in the embeddings' table, so deleting an
+/// item visits one row per model instead of scanning every stored vector.
 const MODELS: TableDefinition<&str, ()> = TableDefinition::new("models");
 /// Facts about the file itself, such as `schema_version`.
 const META: TableDefinition<&str, u64> = TableDefinition::new("meta");
@@ -35,7 +45,9 @@ const HISTORY_KEY: &str = "history_key";
 /// The stored format. A file from a later app version is refused rather
 /// than misread. Where the secrets table holds a key, item rows and the
 /// copied images' files are encrypted, and those images' paths are
-/// relative to the images folder.
+/// relative to the images folder. Since the version after 0.11.0 such a
+/// file keeps its embeddings sealed in VECTORS (`seal_plain_vectors`); the
+/// format stays 3, as an older version only misses them and indexes again.
 const SCHEMA_VERSION: u64 = 3;
 
 /// redb's page cache defaults to 1 GiB, on top of the history the app already
@@ -285,6 +297,9 @@ impl Store {
             }
             None => new_key(&db)?,
         };
+        if let Some(vault) = &vault {
+            seal_plain_vectors_and_compact(&mut db, vault);
+        }
         let vault = vault.map(Arc::new);
         Ok(Self {
             db,
@@ -297,9 +312,36 @@ impl Store {
         })
     }
 
-    /// Whether the items and images are encrypted.
+    /// Whether the items, images and embeddings are encrypted.
     pub fn is_encrypted(&self) -> bool {
         self.vault.is_some()
+    }
+
+    /// The table that keeps the embeddings: sealed ones apart from plain ones.
+    fn vector_table(&self) -> VectorTable {
+        if self.vault.is_some() {
+            VECTORS
+        } else {
+            EMBEDDINGS
+        }
+    }
+
+    /// The stored form of an embedding: sealed to its model and item when
+    /// there is a key.
+    fn encode_vector(&self, model: &str, id: u64, embedding: &Embedding) -> Result<Vec<u8>> {
+        let bytes = embedding.to_bytes();
+        match &self.vault {
+            Some(vault) => vault.seal(&vault::vector_context(model, id), &bytes),
+            None => Ok(bytes),
+        }
+    }
+
+    fn decode_vector(&self, model: &str, id: u64, stored: &[u8]) -> Result<Embedding> {
+        let bytes = match &self.vault {
+            Some(vault) => Cow::Owned(vault.unseal(&vault::vector_context(model, id), stored)?),
+            None => Cow::Borrowed(stored),
+        };
+        Embedding::from_bytes(&bytes).context("an embedding in an unknown layout")
     }
 
     /// The stored form of an item: encrypted when there is a key.
@@ -445,7 +487,7 @@ impl Store {
                 .map(|(k, _)| k.value().to_string())
                 .collect();
             let mut table = txn.open_table(ITEMS)?;
-            let mut vectors = txn.open_table(EMBEDDINGS)?;
+            let mut vectors = txn.open_table(self.vector_table())?;
             let mut formats = txn.open_table(FORMATS)?;
             for item in items {
                 table.remove(item.id)?;
@@ -478,9 +520,9 @@ impl Store {
         }
         let txn = self.db.begin_write()?;
         {
-            let mut table = txn.open_table(EMBEDDINGS)?;
+            let mut table = txn.open_table(self.vector_table())?;
             for (id, e) in rows {
-                table.insert((model, *id), e.to_bytes().as_slice())?;
+                table.insert((model, *id), self.encode_vector(model, *id, e)?.as_slice())?;
             }
             txn.open_table(MODELS)?.insert(model, ())?;
         }
@@ -488,18 +530,79 @@ impl Store {
         Ok(())
     }
 
-    /// All embeddings stored for `model`.
+    /// All embeddings stored for `model`. One that can't be read is
+    /// skipped, and its item gets a new one.
     pub fn embeddings(&self, model: &str) -> Result<Vec<(u64, Embedding)>> {
         let txn = self.db.begin_read()?;
-        let table = txn.open_table(EMBEDDINGS)?;
+        let table = match txn.open_table(self.vector_table()) {
+            // The first embedding saved makes the table.
+            Err(TableError::TableDoesNotExist(_)) => return Ok(Vec::new()),
+            table => table?,
+        };
         let mut out = Vec::new();
         for row in table.range((model, 0u64)..=(model, u64::MAX))? {
             let (k, v) = row?;
-            if let Some(e) = Embedding::from_bytes(v.value()) {
-                out.push((k.value().1, e));
+            let id = k.value().1;
+            match self.decode_vector(model, id, v.value()) {
+                Ok(e) => out.push((id, e)),
+                Err(e) => log::warn!("skipping the unreadable embedding of item {id}: {e:#}"),
             }
         }
         Ok(out)
+    }
+}
+
+/// Migration (D33): ships in the first version after 0.11.0 and is removed
+/// in the version after that, with its call in `Store::open`.
+///
+/// Seals the plain embeddings an older version kept in a history with a key
+/// into VECTORS, and drops their old table, in one transaction. Those of
+/// items no longer there are left out. Returns how many it sealed.
+fn seal_plain_vectors(db: &Database, vault: &Vault) -> Result<usize> {
+    let has_plain = db
+        .begin_read()?
+        .list_tables()?
+        .any(|table| table.name() == EMBEDDINGS.name());
+    if !has_plain {
+        return Ok(0);
+    }
+    let txn = db.begin_write()?;
+    let mut sealed = 0;
+    {
+        let plain = txn.open_table(EMBEDDINGS)?;
+        let items = txn.open_table(ITEMS)?;
+        let mut vectors = txn.open_table(VECTORS)?;
+        for row in plain.iter()? {
+            let (key, stored) = row?;
+            let (model, id) = key.value();
+            if items.get(id)?.is_none() {
+                continue;
+            }
+            let value = vault.seal(&vault::vector_context(model, id), stored.value())?;
+            vectors.insert((model, id), value.as_slice())?;
+            sealed += 1;
+        }
+    }
+    txn.delete_table(EMBEDDINGS)?;
+    txn.commit()?;
+    Ok(sealed)
+}
+
+/// Migration (D33), with `seal_plain_vectors`: seals the plain embeddings
+/// of a history with a key, then compacts the file, which writes it again
+/// without the plain copies its free space still holds. Compacting needs
+/// the file to itself, so this runs while the history opens. A failure is
+/// logged, and the next start tries again.
+fn seal_plain_vectors_and_compact(db: &mut Database, vault: &Vault) {
+    match seal_plain_vectors(db, vault) {
+        Ok(0) => {}
+        Ok(count) => {
+            log::info!("sealed {count} embeddings an older version kept plain");
+            if let Err(e) = db.compact() {
+                log::warn!("compacting the history after sealing its embeddings failed: {e:#}");
+            }
+        }
+        Err(e) => log::error!("sealing the plain embeddings failed: {e:#}"),
     }
 }
 
@@ -581,14 +684,14 @@ fn open_database(path: &Path) -> Result<Database> {
 }
 
 /// Creates missing tables and stamps the file with SCHEMA_VERSION; a file
-/// from a later version is refused.
+/// from a later version is refused. The embeddings' table, which depends
+/// on the key, is made by the first embedding saved.
 fn create_tables(db: &Database) -> Result<()> {
     let txn = db.begin_write()?;
     {
         txn.open_table(ITEMS)?;
         txn.open_table(SECRETS)?;
         txn.open_table(FORMATS)?;
-        txn.open_table(EMBEDDINGS)?;
         txn.open_table(MODELS)?;
         let mut meta = txn.open_table(META)?;
         let version = meta.get("schema_version")?.map_or(1, |v| v.value());
@@ -681,6 +784,50 @@ mod tests {
     fn file_contains(path: &Path, text: &str) -> bool {
         let bytes = std::fs::read(path).unwrap();
         bytes.windows(text.len()).any(|w| w == text.as_bytes())
+    }
+
+    /// A history without a key, as systems without DPAPI keep it.
+    fn plain_store(path: &Path, dir: &Path) -> Store {
+        Store {
+            db: open_database(path).unwrap(),
+            vault: None,
+            images: ImageFiles {
+                dir: dir.to_path_buf(),
+                vault: None,
+            },
+            moved_aside: None,
+        }
+    }
+
+    /// A row of an embeddings' table as it is stored.
+    fn stored_row(store: &Store, table: VectorTable, model: &str, id: u64) -> Option<Vec<u8>> {
+        let txn = store.db.begin_read().unwrap();
+        let table = txn.open_table(table).ok()?;
+        let row = table.get((model, id)).unwrap();
+        row.map(|stored| stored.value().to_vec())
+    }
+
+    fn has_table(store: &Store, table: VectorTable) -> bool {
+        let txn = store.db.begin_read().unwrap();
+        let mut tables = txn.list_tables().unwrap();
+        tables.any(|handle| handle.name() == table.name())
+    }
+
+    /// Whether `stored` is `embedding` sealed to its model and item, with
+    /// none of its plain bytes showing.
+    #[cfg(windows)]
+    fn is_sealed_vector(
+        store: &Store,
+        model: &str,
+        id: u64,
+        embedding: &Embedding,
+        stored: &[u8],
+    ) -> bool {
+        let plain = embedding.to_bytes();
+        let vault = store.vault.as_ref().unwrap();
+        let unsealed = vault.unseal(&vault::vector_context(model, id), stored);
+        let shows_plain = stored.windows(plain.len()).any(|w| w == plain.as_slice());
+        unsealed.is_ok_and(|bytes| bytes == plain) && !shows_plain
     }
 
     #[test]
@@ -839,6 +986,136 @@ mod tests {
         store.delete(&it).unwrap();
         assert!(store.embeddings("m1").unwrap().is_empty());
         assert!(store.embeddings("m2").unwrap().is_empty());
+        drop(store);
+        std::fs::remove_dir_all(dir).ok();
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn embeddings_are_sealed_and_read_back() {
+        let dir = temp_dir("sealed-vectors");
+        let path = dir.join("t.redb");
+        let store = Store::open(&path, &dir).unwrap();
+        assert!(store.embeddings("m").unwrap().is_empty(), "no table yet");
+        let dense = Embedding::Dense(vec![0.6, 0.8]);
+        let multi = Embedding::Multi(vec![vec![1.0, 0.0], vec![0.0, 1.0]]);
+        store
+            .put_embeddings("m", &[(1, &dense), (2, &multi)])
+            .unwrap();
+        for (id, embedding) in [(1, &dense), (2, &multi)] {
+            let stored = stored_row(&store, VECTORS, "m", id).unwrap();
+            assert!(is_sealed_vector(&store, "m", id, embedding, &stored));
+        }
+        assert!(!has_table(&store, EMBEDDINGS), "nothing is kept plain");
+        drop(store);
+        let store = Store::open(&path, &dir).unwrap();
+        assert_eq!(store.embeddings("m").unwrap(), [(1, dense), (2, multi)]);
+        store.delete(&item(2, "")).unwrap();
+        assert_eq!(stored_row(&store, VECTORS, "m", 2), None);
+        drop(store);
+        std::fs::remove_dir_all(dir).ok();
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn an_embedding_moved_to_another_item_or_model_is_refused() {
+        let dir = temp_dir("moved-vector");
+        let store = Store::open(&dir.join("t.redb"), &dir).unwrap();
+        let embedding = Embedding::Dense(vec![1.0, 0.0]);
+        store.put_embedding("m", 1, &embedding).unwrap();
+        let sealed = stored_row(&store, VECTORS, "m", 1).unwrap();
+        // The same bytes under another item, and under another model.
+        let txn = store.db.begin_write().unwrap();
+        {
+            let mut table = txn.open_table(VECTORS).unwrap();
+            table.insert(("m", 2), sealed.as_slice()).unwrap();
+            table.insert(("other", 1), sealed.as_slice()).unwrap();
+        }
+        txn.commit().unwrap();
+        assert_eq!(store.embeddings("m").unwrap(), [(1, embedding)]);
+        assert!(store.embeddings("other").unwrap().is_empty());
+        drop(store);
+        std::fs::remove_dir_all(dir).ok();
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn plain_embeddings_from_an_older_version_are_sealed_and_kept() {
+        let dir = temp_dir("seal-plain");
+        let path = dir.join("t.redb");
+        let store = Store::open(&path, &dir).unwrap();
+        store.put_many(&[item(1, "one"), item(2, "two")]).unwrap();
+        let dense = Embedding::Dense(vec![0.6, 0.8]);
+        // A plain multi-vector row starts with the byte of a sealed value.
+        let multi = Embedding::Multi(vec![vec![1.0, 0.0], vec![0.0, 1.0], vec![0.6, 0.8]]);
+        let other = Embedding::Dense(vec![1.0]);
+        let kept = [("m", 1, &dense), ("m", 2, &multi), ("other", 1, &other)];
+        // Plain rows, as 0.11.0 kept them; item 3 was deleted after the
+        // update, before they were sealed.
+        let txn = store.db.begin_write().unwrap();
+        {
+            let mut table = txn.open_table(EMBEDDINGS).unwrap();
+            for (model, id, embedding) in kept.into_iter().chain([("m", 3, &dense)]) {
+                table
+                    .insert((model, id), embedding.to_bytes().as_slice())
+                    .unwrap();
+            }
+            let mut models = txn.open_table(MODELS).unwrap();
+            models.insert("m", ()).unwrap();
+            models.insert("other", ()).unwrap();
+        }
+        txn.commit().unwrap();
+        drop(store);
+
+        // Opening the history seals them and compacts the file. The file
+        // is read while the store is closed: an open one is locked.
+        drop(Store::open(&path, &dir).unwrap());
+        let file = std::fs::read(&path).unwrap();
+        for (_, _, embedding) in kept.into_iter().chain([("m", 3, &dense)]) {
+            let plain = embedding.to_bytes();
+            let left = file.windows(plain.len()).any(|w| w == plain.as_slice());
+            assert!(!left, "no plain copy left in the file's free space");
+        }
+        let store = Store::open(&path, &dir).unwrap();
+        assert!(!has_table(&store, EMBEDDINGS), "the plain table is gone");
+        for (model, id, embedding) in kept {
+            let stored = stored_row(&store, VECTORS, model, id).unwrap();
+            assert!(is_sealed_vector(&store, model, id, embedding, &stored));
+        }
+        assert_eq!(stored_row(&store, VECTORS, "m", 3), None);
+        assert_eq!(
+            store.embeddings("m").unwrap(),
+            [(1, dense.clone()), (2, multi.clone())]
+        );
+        assert_eq!(store.embeddings("other").unwrap(), [(1, other.clone())]);
+        drop(store);
+        // Opening again finds nothing left to seal.
+        let store = Store::open(&path, &dir).unwrap();
+        assert_eq!(store.embeddings("other").unwrap(), [(1, other.clone())]);
+        store.delete(&item(1, "one")).unwrap();
+        assert_eq!(store.embeddings("m").unwrap(), [(2, multi)]);
+        assert!(store.embeddings("other").unwrap().is_empty());
+        drop(store);
+        std::fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn a_history_without_a_key_keeps_its_embeddings_plain() {
+        let dir = temp_dir("plain-vectors");
+        let store = plain_store(&dir.join("t.redb"), &dir);
+        assert!(store.embeddings("m").unwrap().is_empty(), "no table yet");
+        store.put(&item(1, "one")).unwrap();
+        let multi = Embedding::Multi(vec![vec![1.0, 0.0], vec![0.0, 1.0]]);
+        store.put_embedding("m", 1, &multi).unwrap();
+        assert_eq!(
+            stored_row(&store, EMBEDDINGS, "m", 1),
+            Some(multi.to_bytes())
+        );
+        assert!(!has_table(&store, VECTORS));
+        assert!(has_table(&store, EMBEDDINGS), "plain, in the plain table");
+        assert_eq!(store.embeddings("m").unwrap(), [(1, multi)]);
+        store.delete(&item(1, "one")).unwrap();
+        assert!(store.embeddings("m").unwrap().is_empty());
         drop(store);
         std::fs::remove_dir_all(dir).ok();
     }
