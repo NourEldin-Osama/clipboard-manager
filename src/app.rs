@@ -2114,7 +2114,11 @@ impl App {
         } = capture;
         let hash = c.hash();
         if self.cfg.dedupe {
-            let found = match self.library.touch_duplicate(hash) {
+            let trimmed = match &c {
+                Captured::Text(text) if self.cfg.dedupe_trimmed => Some(text.trim()),
+                _ => None,
+            };
+            let found = match self.library.touch_duplicate(hash, trimmed) {
                 Ok(found) => found,
                 // Only saving the time of the item found can fail.
                 Err(e) => {

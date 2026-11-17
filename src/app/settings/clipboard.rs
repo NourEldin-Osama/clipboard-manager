@@ -20,8 +20,10 @@ fn age_label(days: u32) -> String {
     }
 }
 
-/// The Recording section: whether copies are recorded, and whether a copy
-/// merges with one already in the history.
+/// The Recording section: whether copies are recorded, whether a copy
+/// merges with one already in the history, and whether it also merges with
+/// one that has other spaces around its text, which counts only while
+/// copies merge and is grayed out otherwise.
 fn recording_settings(ui: &mut Ui, d: &mut Config) {
     let def = Config::default();
     section(ui, &t!("settings-recording"), |ui| {
@@ -43,6 +45,28 @@ fn recording_settings(ui: &mut Ui, d: &mut Config) {
             def.dedupe,
             toggle,
         );
+        let merging = d.dedupe;
+        let changed = d.dedupe_trimmed != def.dedupe_trimmed;
+        // Only the row's content is grayed out: the line above it stays.
+        let reset = card_row(ui, changed, |ui| {
+            ui.add_enabled_ui(merging, |ui| {
+                setting_content(
+                    ui,
+                    &t!("settings-merge-trimmed"),
+                    &t!("settings-merge-trimmed-hint"),
+                    "",
+                    changed,
+                    changed,
+                    |ui| {
+                        toggle(ui, &mut d.dedupe_trimmed);
+                    },
+                )
+            })
+            .inner
+        });
+        if reset {
+            d.dedupe_trimmed = def.dedupe_trimmed;
+        }
     });
 }
 
@@ -260,12 +284,14 @@ mod tests {
     }
 
     /// What screen readers hear of one thing: its role, its name, whether
-    /// it is on or checked, whether it is open, and its place.
+    /// it is on or checked, whether it is open, whether it can't be used,
+    /// and its place.
     struct Heard {
         role: Role,
         name: String,
         toggled: Option<Toggled>,
         expanded: Option<bool>,
+        disabled: bool,
         place: Rect,
     }
 
@@ -297,6 +323,7 @@ mod tests {
                     name: node.label()?.to_string(),
                     toggled: node.toggled(),
                     expanded: node.is_expanded(),
+                    disabled: node.is_disabled(),
                     place: Rect::from_min_max(
                         Pos2::new(bounds.x0 as f32, bounds.y0 as f32),
                         Pos2::new(bounds.x1 as f32, bounds.y1 as f32),
@@ -382,5 +409,40 @@ mod tests {
             ..Marks::default()
         };
         assert_eq!(d.markdown_marks, want);
+    }
+
+    /// The switch that merges copies with other spaces around their text
+    /// is right under Merge duplicate copies, and can't be used while
+    /// copies don't merge: screen readers hear that, and a click changes
+    /// nothing. Once copies merge, a click turns it on.
+    #[test]
+    fn merging_around_spaces_waits_for_merging_duplicates() {
+        let ctx = window();
+        let mut d = Config::default();
+        let (merge_name, trimmed_name) = (
+            t!("settings-merge-duplicates"),
+            t!("settings-merge-trimmed"),
+        );
+        for merging in [false, true] {
+            d.dedupe = merging;
+            // Each row is laid out by its sizes from the frame before.
+            frame(&ctx, Vec::new(), |ui| recording_settings(ui, &mut d));
+            let heard = frame(&ctx, Vec::new(), |ui| recording_settings(ui, &mut d));
+            let switches: Vec<&Heard> = heard
+                .iter()
+                .filter(|thing| thing.role == Role::Switch)
+                .collect();
+            let names: Vec<&str> = switches.iter().map(|thing| thing.name.as_str()).collect();
+            let record = t!("settings-record");
+            assert_eq!(names, [&record, &merge_name, &trimmed_name]);
+            let (merge, trimmed) = (switches[1], switches[2]);
+            assert!(!merge.disabled);
+            assert_eq!(trimmed.disabled, !merging, "merging {merging}");
+            assert_eq!(trimmed.toggled, Some(Toggled::False));
+            for events in click(trimmed.place.center()) {
+                frame(&ctx, events, |ui| recording_settings(ui, &mut d));
+            }
+            assert_eq!(d.dedupe_trimmed, merging, "merging {merging}");
+        }
     }
 }
