@@ -594,7 +594,7 @@ const KEY_HINT_FOR: Duration = Duration::from_secs(4);
 fn copied_text(cfg: &Config, it: &Item) -> Option<String> {
     let mut text = std::borrow::Cow::Borrowed(&*it.text);
     if cfg.remove_copied_markdown && it.kind == Kind::Text {
-        text = std::borrow::Cow::Owned(crate::markdown::plain(&text));
+        text = std::borrow::Cow::Owned(crate::markdown::plain(&text, &cfg.markdown_marks));
     }
     if cfg.trim_copied_text && matches!(it.kind, Kind::Text | Kind::Link) {
         let trimmed = text.trim();

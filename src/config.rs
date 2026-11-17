@@ -617,6 +617,8 @@ pub struct Config {
     pub read_engine: ReadEngine,
     /// The server model that reads text; kept while another reader is
     /// chosen, so choosing the server again picks it.
+    /// The kinds of Markdown marks `remove_copied_markdown` leaves out.
+    pub markdown_marks: crate::markdown::Marks,
     pub read_model: Option<ModelRef>,
     pub search_mode: SearchMode,
     pub theme: Theme,
@@ -707,6 +709,7 @@ impl Default for Config {
             search_mode: SearchMode::Hybrid,
             theme: Theme::System,
             dark_panels: DarkPanels::default(),
+            markdown_marks: crate::markdown::Marks::default(),
             popup_hotkey: "Alt+V".into(),
             window_hotkey: "Alt+Shift+V".into(),
             ignore_next_hotkey: "Alt+C".into(),
