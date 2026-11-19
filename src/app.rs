@@ -349,6 +349,10 @@ impl WindowCtl {
             self.ctx.request_repaint();
         } else if self.tray.load(Ordering::SeqCst) {
             self.hidden.store(true, Ordering::SeqCst);
+            // A picture full screen ends first: ended later, while hidden,
+            // winit puts the window back in place with SetWindowPlacement,
+            // which also shows it.
+            self.main_window(egui::ViewportCommand::Fullscreen(false));
             self.main_window(egui::ViewportCommand::Visible(false));
         } else {
             self.main_window(egui::ViewportCommand::Minimized(true));
@@ -652,14 +656,31 @@ fn keep_window_state(
     }
 }
 
+/// Whether the window is on the screen although the app hid it: something
+/// outside the app showed it. `is_hidden` is what the app did, `is_shown`
+/// what Windows says (shown and not minimised; `None` where the system
+/// can't tell). A show counts only once the window has been seen off the
+/// screen (`hide_took_effect`): a hide takes effect at the end of a frame,
+/// so the window is still shown in the frame that hides it.
+fn is_outside_show(hide_took_effect: &mut bool, is_hidden: bool, is_shown: Option<bool>) -> bool {
+    if !is_hidden {
+        *hide_took_effect = false;
+        return false;
+    }
+    match is_shown {
+        Some(false) => {
+            *hide_took_effect = true;
+            false
+        }
+        Some(true) => std::mem::take(hide_took_effect),
+        None => false,
+    }
+}
+
 /// How long the message about a server that refused an image stays.
 const IMAGES_REFUSED_FOR: Duration = Duration::from_secs(15);
 /// How often deleting by age runs while it is on.
 const AGE_PRUNE_EVERY: Duration = Duration::from_secs(60 * 60);
-/// How long a shown window that hasn't drawn yet waits before it is shown
-/// again, and for how long after it was first shown.
-const SHOW_AGAIN_AFTER: Duration = Duration::from_millis(250);
-const SHOW_CHECK_FOR: Duration = Duration::from_secs(3);
 
 /// A search server that stopped answering is asked again after this long,
 /// then twice as long each time, up to `RETRY_AT_MOST`.
@@ -888,9 +909,9 @@ pub struct App {
     was_minimized: bool,
     /// Frames left in which to hide a window started by sign-in.
     start_hidden: u8,
-    /// A shown window that hasn't drawn a frame yet: when it was first
-    /// shown, and when it was last asked to show.
-    show_check: Option<(Instant, Instant)>,
+    /// The hidden window has been seen off the screen since it was hidden:
+    /// from then on, Windows showing it means something else showed it.
+    hide_took_effect: bool,
     /// The shortcut field listening for keys in Settings, and why the last try was refused.
     recording: Option<ShortcutField>,
     record_problem: Option<String>,
@@ -1014,7 +1035,7 @@ impl App {
             tray_rx,
             quitting: false,
             was_minimized: false,
-            show_check: None,
+            hide_took_effect: false,
             start_hidden: if crate::autostart::launched_minimized() {
                 3
             } else {
@@ -1364,27 +1385,29 @@ impl App {
         self.save_config();
     }
 
-    /// Shows the full window when asked, and asks again while it has drawn
-    /// nothing: a window shown but never drawn stays black.
-    fn show_logic(&mut self, ctx: &egui::Context) {
-        let now = Instant::now();
+    /// Shows the full window when asked, from the app's own thread.
+    fn show_logic(&mut self) {
         if self.win.show_wanted.swap(false, Ordering::SeqCst) {
             self.win.show_now();
-            self.show_check = Some((now, now));
         }
-        let Some((first, last)) = self.show_check else {
-            return;
-        };
-        if self.win.hidden.load(Ordering::SeqCst) || now - first > SHOW_CHECK_FOR {
-            self.show_check = None;
-            return;
+    }
+
+    /// Something outside the app can show the hidden window: another
+    /// program, or Windows itself. The app then drew nothing in it, a black
+    /// window, and couldn't hide it either: winit still took it for hidden.
+    /// Such a show now counts as a show, as the tray's Show does.
+    fn notice_outside_show(&mut self, frame: &eframe::Frame) {
+        let is_shown = frame.winit_window().and_then(|window| {
+            let is_visible = window.is_visible()?;
+            Some(is_visible && window.is_minimized() != Some(true))
+        });
+        // A window started by sign-in is hidden in its first frames, while
+        // eframe shows it once after the first.
+        let is_hidden = self.win.hidden.load(Ordering::SeqCst) && self.start_hidden == 0;
+        if is_outside_show(&mut self.hide_took_effect, is_hidden, is_shown) {
+            log::info!("the hidden window was shown from outside the app; showing it");
+            self.win.show();
         }
-        if now - last >= SHOW_AGAIN_AFTER {
-            log::info!("the shown window hasn't drawn yet; showing it again");
-            self.win.show_now();
-            self.show_check = Some((first, now));
-        }
-        ctx.request_repaint_after(SHOW_AGAIN_AFTER);
     }
 
     /// Hides to the tray on close or minimise, and handles tray commands.
@@ -1405,7 +1428,12 @@ impl App {
                 }
             }
         }
-        self.show_logic(ctx);
+        self.show_logic();
+        // Hiding ended full screen (`WindowCtl::hide`): the picture closes
+        // with it, so the window comes back with the list.
+        if self.win.hidden.load(Ordering::SeqCst) {
+            self.close_viewer();
+        }
         while let Ok(cmd) = self.tray_rx.try_recv() {
             match cmd {
                 TrayCmd::Show => self.win.show(),
@@ -3522,5 +3550,75 @@ mod tests {
         assert_eq!(save("0 by 0 at -32000", true), "1040 by 680 at 32,32");
         assert_eq!(save("1200 by 900 at 40,40", false), "1200 by 900 at 40,40");
         assert_eq!(save("full screen", true), "1200 by 900 at 40,40");
+    }
+
+    /// What `is_outside_show` says frame after frame, for what the app did
+    /// (hidden or not) and what Windows says (shown or not, or unknown).
+    fn outside_shows(frames: &[(bool, Option<bool>)]) -> Vec<bool> {
+        let mut hide_took_effect = false;
+        frames
+            .iter()
+            .map(|&(is_hidden, is_shown)| {
+                is_outside_show(&mut hide_took_effect, is_hidden, is_shown)
+            })
+            .collect()
+    }
+
+    /// The black window: hidden by the app, then shown by something else.
+    /// It counts once; the show that follows makes it the app's again.
+    #[test]
+    fn a_hidden_window_shown_by_windows_counts_as_shown() {
+        let frames = [
+            (false, Some(true)),
+            // The hide is asked for; the window goes at the end of the frame.
+            (true, Some(true)),
+            (true, Some(false)),
+            (true, Some(false)),
+            // Another program, or Windows, shows it.
+            (true, Some(true)),
+            (true, Some(true)),
+        ];
+        assert_eq!(
+            outside_shows(&frames),
+            [false, false, false, false, true, false]
+        );
+    }
+
+    /// A hide asked for between frames (the window shortcut) is still on
+    /// the screen in the next frame: that is no show.
+    #[test]
+    fn a_hide_that_has_not_taken_effect_is_no_outside_show() {
+        let frames = [(false, Some(true)), (true, Some(true)), (true, Some(true))];
+        assert_eq!(outside_shows(&frames), [false, false, false]);
+    }
+
+    /// Shown again by the app, the window forgets the hide; so does a window
+    /// started by sign-in during the frames that hide it (counted as not
+    /// hidden by the app), while eframe shows it once.
+    #[test]
+    fn showing_the_window_forgets_the_hide() {
+        let frames = [
+            (true, Some(false)),
+            (false, Some(false)),
+            (false, Some(true)),
+            (true, Some(true)),
+        ];
+        assert_eq!(outside_shows(&frames), [false, false, false, false]);
+    }
+
+    /// A window that comes back minimised is not on the screen yet; it
+    /// counts when it opens.
+    #[test]
+    fn a_window_shown_minimised_counts_once_it_opens() {
+        let frames = [(true, Some(false)), (true, Some(false)), (true, Some(true))];
+        assert_eq!(outside_shows(&frames), [false, false, true]);
+    }
+
+    /// Where the system can't tell whether the window is shown (Wayland),
+    /// nothing counts.
+    #[test]
+    fn an_unknown_window_never_counts_as_shown() {
+        let frames = [(true, None), (true, None), (true, Some(true))];
+        assert_eq!(outside_shows(&frames), [false, false, false]);
     }
 }

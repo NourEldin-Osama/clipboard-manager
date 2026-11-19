@@ -251,7 +251,7 @@ impl eframe::App for App {
         super::photos::delete_old_copies();
     }
 
-    fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+    fn logic(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
         // However a shortcut recording ended (new keys, the same keys, Esc, another
         // settings page, or leaving Settings), the global shortcuts come back.
         // New keys are already registered by apply_settings, which clears the flag.
@@ -283,6 +283,7 @@ impl eframe::App for App {
             self.prune(true);
             ctx.request_repaint_after(AGE_PRUNE_EVERY);
         }
+        self.notice_outside_show(frame);
         self.window_logic(ctx);
         self.popup_logic(ctx);
         self.note_logic(ctx);
@@ -327,8 +328,6 @@ impl eframe::App for App {
         {
             return;
         }
-        // The window draws, so a show has worked.
-        self.show_check = None;
         // Settings and what is new need the window: a picture full screen
         // gives it back.
         if self.draft.is_some() || self.whats_new_open {
