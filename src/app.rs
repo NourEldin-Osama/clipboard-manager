@@ -349,6 +349,10 @@ impl WindowCtl {
             self.ctx.request_repaint();
         } else if self.tray.load(Ordering::SeqCst) {
             self.hidden.store(true, Ordering::SeqCst);
+            // A picture full screen ends first: ended later, while hidden,
+            // winit puts the window back in place with SetWindowPlacement,
+            // which also shows it.
+            self.main_window(egui::ViewportCommand::Fullscreen(false));
             self.main_window(egui::ViewportCommand::Visible(false));
         } else {
             self.main_window(egui::ViewportCommand::Minimized(true));
@@ -1406,6 +1410,11 @@ impl App {
             }
         }
         self.show_logic(ctx);
+        // Hiding ended full screen (`WindowCtl::hide`): the picture closes
+        // with it, so the window comes back with the list.
+        if self.win.hidden.load(Ordering::SeqCst) {
+            self.close_viewer();
+        }
         while let Ok(cmd) = self.tray_rx.try_recv() {
             match cmd {
                 TrayCmd::Show => self.win.show(),
