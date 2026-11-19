@@ -80,6 +80,9 @@ One egui `App` (`src/app.rs`) owns all state; background threads talk to it over
 
 `App::logic` runs every frame **even while the window is hidden** (tray mode), so channel draining, tray commands,
 hide/show and update checks live there (`window_logic`, `update_logic`, `handle_events`); `App::ui` only draws.
+`App::ui` draws nothing while the app counts the window hidden, so a hidden window that something else shows (another
+program, Windows) would stay black: `notice_outside_show` counts such a show as a show, and `WindowCtl::hide` ends a
+picture's full screen first, as ending it later shows the window again (winit's `SetWindowPlacement`).
 `src/app/view/` is the main window (`mod.rs` wires `top_bar`, `list`, `grid`, `details`, `chrome`, `keyboard`), `src/app/settings/` the settings (one file per page, `mod.rs` the frame); settings apply live except a server's
 settings (Save in its editor, `settings/servers.rs`) and global hotkeys, and a change that would send to a server
 outside this PC waits for the user's yes (`PendingSend`). `Config` (`config.rs`) is JSON with `#[serde(default)]`, so
