@@ -328,8 +328,6 @@ impl eframe::App for App {
         {
             return;
         }
-        // The window draws, so a show has worked.
-        self.show_check = None;
         // Settings and what is new need the window: a picture full screen
         // gives it back.
         if self.draft.is_some() || self.whats_new_open {

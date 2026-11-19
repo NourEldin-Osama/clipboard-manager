@@ -681,10 +681,6 @@ fn is_outside_show(hide_took_effect: &mut bool, is_hidden: bool, is_shown: Optio
 const IMAGES_REFUSED_FOR: Duration = Duration::from_secs(15);
 /// How often deleting by age runs while it is on.
 const AGE_PRUNE_EVERY: Duration = Duration::from_secs(60 * 60);
-/// How long a shown window that hasn't drawn yet waits before it is shown
-/// again, and for how long after it was first shown.
-const SHOW_AGAIN_AFTER: Duration = Duration::from_millis(250);
-const SHOW_CHECK_FOR: Duration = Duration::from_secs(3);
 
 /// A search server that stopped answering is asked again after this long,
 /// then twice as long each time, up to `RETRY_AT_MOST`.
@@ -913,9 +909,6 @@ pub struct App {
     was_minimized: bool,
     /// Frames left in which to hide a window started by sign-in.
     start_hidden: u8,
-    /// A shown window that hasn't drawn a frame yet: when it was first
-    /// shown, and when it was last asked to show.
-    show_check: Option<(Instant, Instant)>,
     /// The hidden window has been seen off the screen since it was hidden:
     /// from then on, Windows showing it means something else showed it.
     hide_took_effect: bool,
@@ -1042,7 +1035,6 @@ impl App {
             tray_rx,
             quitting: false,
             was_minimized: false,
-            show_check: None,
             hide_took_effect: false,
             start_hidden: if crate::autostart::launched_minimized() {
                 3
@@ -1393,27 +1385,11 @@ impl App {
         self.save_config();
     }
 
-    /// Shows the full window when asked, and asks again while it has drawn
-    /// nothing: a window shown but never drawn stays black.
-    fn show_logic(&mut self, ctx: &egui::Context) {
-        let now = Instant::now();
+    /// Shows the full window when asked, from the app's own thread.
+    fn show_logic(&mut self) {
         if self.win.show_wanted.swap(false, Ordering::SeqCst) {
             self.win.show_now();
-            self.show_check = Some((now, now));
         }
-        let Some((first, last)) = self.show_check else {
-            return;
-        };
-        if self.win.hidden.load(Ordering::SeqCst) || now - first > SHOW_CHECK_FOR {
-            self.show_check = None;
-            return;
-        }
-        if now - last >= SHOW_AGAIN_AFTER {
-            log::info!("the shown window hasn't drawn yet; showing it again");
-            self.win.show_now();
-            self.show_check = Some((first, now));
-        }
-        ctx.request_repaint_after(SHOW_AGAIN_AFTER);
     }
 
     /// Something outside the app can show the hidden window: another
@@ -1452,7 +1428,7 @@ impl App {
                 }
             }
         }
-        self.show_logic(ctx);
+        self.show_logic();
         // Hiding ended full screen (`WindowCtl::hide`): the picture closes
         // with it, so the window comes back with the list.
         if self.win.hidden.load(Ordering::SeqCst) {
