@@ -4,6 +4,12 @@ What changed in each version, for the people who use the app. Each release
 starts its notes with the section of the version it was built from, so add
 the notes here before a push that makes a release.
 
+## 0.12.1
+
+- The window no longer stays black when something other than the app
+  shows it again, such as Windows or another program, or when the popup
+  opens after the window was hidden with a picture full screen.
+
 ## 0.12.0
 
 - Settings, Privacy, Backup saves your whole history in one file locked

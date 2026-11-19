@@ -1,6 +1,6 @@
 [package]
 name = "clipboard-manager"
-version = "0.12.0"
+version = "0.12.1"
 edition = "2021"
 # egui 0.37 needs it; an older Rust stops here with a clear message.
 rust-version = "1.95"
