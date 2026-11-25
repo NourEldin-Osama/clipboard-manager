@@ -26,7 +26,7 @@ global-hotkey = "0.10"
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "bmp", "webp", "tiff"] }
 log = "0.4"
 env_logger = "0.11"
-redb = "4.4"
+redb = "5.0"
 # Encrypts the history (AES-256-GCM) and makes its key; already built in for HTTPS.
 ring = "0.17"
 rfd = "0.18"
