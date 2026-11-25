@@ -37,7 +37,7 @@ jobs:
       # Runs in a Linux container. Unmaintained crates only warn (-W); any
       # other finding fails the job. The container's own Rust is old, so it
       # takes the newest stable first.
-      - uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25 # v2.1.1
+      - uses: EmbarkStudios/cargo-deny-action@17aeb3c839e42274e2b8adf721c8c65edfdc74dd # v2.1.3
         with:
           rust-version: stable
           command-arguments: -W unmaintained
